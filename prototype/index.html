@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ZEC Yield Orchestrator — Interactive Prototype</title>
+<style>
+  :root {
+    --bg: #0B0E14; --surface: #131826; --raised: #1A2132; --border: #232B3D;
+    --muted: #8A94A8; --soft: #B9C2D4; --white: #F5F7FB;
+    --zec: #F4B728; --zec-deep: #C79215;
+    --good: #34D399; --warn: #FBBF24; --serious: #F87171; --critical: #EF4444;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--soft);
+    font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-feature-settings: "tnum" 1; min-height: 100vh;
+  }
+  a { color: inherit; text-decoration: none; }
+  header { border-bottom: 1px solid var(--border); }
+  nav { max-width: 960px; margin: 0 auto; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; color: var(--white); cursor: pointer; }
+  .logo-mark { width: 32px; height: 32px; border-radius: 50%; background: var(--zec); color: var(--bg); display: flex; align-items: center; justify-content: center; font-weight: 900; }
+  .nav-links { display: flex; gap: 22px; align-items: center; font-size: 14px; }
+  .nav-links a { color: var(--muted); cursor: pointer; transition: color .15s; }
+  .nav-links a:hover, .nav-links a.active { color: var(--white); }
+  .chainchip { border: 1px solid var(--border); border-radius: 99px; padding: 4px 12px; font-size: 11px; color: var(--muted); }
+  main { max-width: 960px; margin: 0 auto; padding: 40px 24px 80px; }
+  h1 { color: var(--white); }
+  .hero { text-align: center; padding-top: 24px; }
+  .eyebrow { color: var(--zec); font-size: 13px; font-weight: 600; letter-spacing: .18em; text-transform: uppercase; margin-bottom: 14px; }
+  .hero h1 { font-size: clamp(30px, 5vw, 44px); line-height: 1.15; max-width: 720px; margin: 0 auto; }
+  .hero p { color: var(--muted); font-size: 17px; max-width: 600px; margin: 20px auto 0; line-height: 1.6; }
+  .cta-row { display: flex; gap: 14px; justify-content: center; margin-top: 30px; }
+  .btn { border: 0; border-radius: 10px; padding: 11px 22px; font-size: 15px; font-weight: 600; cursor: pointer; transition: all .15s; font-family: inherit; }
+  .btn-primary { background: var(--zec); color: var(--bg); }
+  .btn-primary:hover { background: var(--zec-deep); }
+  .btn-primary:disabled { opacity: .35; cursor: not-allowed; }
+  .btn-ghost { background: transparent; color: var(--soft); border: 1px solid var(--border); }
+  .btn-ghost:hover { border-color: var(--muted); }
+  .btn-sm { padding: 7px 13px; font-size: 12px; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-top: 56px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 22px; }
+  .card h3 { color: var(--white); font-size: 15px; margin: 8px 0; }
+  .card .n { color: var(--zec); font-weight: 700; font-size: 13px; }
+  .card p { color: var(--muted); font-size: 13.5px; line-height: 1.6; }
+  .selectable { cursor: pointer; transition: border-color .15s; text-align: left; width: 100%; font-family: inherit; }
+  .selectable:hover { border-color: var(--muted); }
+  .selectable.selected { border-color: var(--zec); }
+  .wizard { max-width: 620px; margin: 0 auto; }
+  .progress { display: flex; gap: 6px; margin-bottom: 34px; }
+  .progress span { height: 4px; flex: 1; border-radius: 99px; background: var(--raised); }
+  .progress span.on { background: var(--zec); }
+  .step h1 { font-size: 24px; margin-bottom: 20px; }
+  .stack > * + * { margin-top: 14px; }
+  label.field { display: block; font-size: 13px; color: var(--muted); font-weight: 500; margin-bottom: 6px; }
+  input[type=text] { width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--soft); border-radius: 10px; padding: 11px 13px; font-size: 15px; outline: 0; font-family: inherit; }
+  input[type=text]:focus { border-color: var(--zec); }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  input[type=range] { width: 100%; accent-color: var(--zec); }
+  input[type=checkbox] { width: 19px; height: 19px; accent-color: var(--zec); }
+  .hint { font-size: 13px; color: var(--muted); margin-top: 6px; line-height: 1.55; }
+  .rowline { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+  .rowline b { color: var(--white); font-size: 14px; }
+  .minmax { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 5px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 99px; padding: 3px 11px; font-size: 11.5px; font-weight: 500; color: var(--muted); }
+  .pill.good { border-color: rgba(52,211,153,.4); color: var(--good); }
+  .pill.warn { border-color: rgba(251,191,36,.4); color: var(--warn); }
+  .pill.serious { border-color: rgba(248,113,113,.4); color: var(--serious); }
+  .pill.critical { border-color: rgba(239,68,68,.4); color: var(--critical); }
+  .stat3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; text-align: center; }
+  .stat3 .k { font-size: 11.5px; color: var(--muted); }
+  .stat3 .v { font-size: 17px; font-weight: 700; color: var(--white); margin-top: 3px; }
+  .stat3 .s { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .navrow { display: flex; justify-content: space-between; margin-top: 34px; }
+  .pool-head { display: flex; justify-content: space-between; align-items: center; }
+  .pool-name { color: var(--white); font-weight: 600; font-size: 15px; }
+  .pool-meta { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 8px; }
+  .apr { color: var(--good); font-weight: 700; text-align: right; }
+  .apr small { display: block; color: var(--muted); font-weight: 400; font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase; }
+  .review-table { border: 1px solid var(--border); border-radius: 14px; background: var(--surface); overflow: hidden; }
+  .review-table .r { display: flex; justify-content: space-between; gap: 24px; padding: 13px 18px; border-bottom: 1px solid var(--border); font-size: 13.5px; }
+  .review-table .r:last-child { border-bottom: 0; }
+  .review-table .k { color: var(--muted); flex-shrink: 0; }
+  .review-table .v { color: var(--white); text-align: right; word-break: break-all; }
+  .qr { width: 158px; height: 158px; background: var(--white); border-radius: 12px; margin: 0 auto 18px; display: flex; align-items: center; justify-content: center; color: var(--bg); font-size: 11px; padding: 10px; text-align: center; }
+  .addr-box { background: var(--bg); border-radius: 10px; padding: 13px; color: var(--zec); font-size: 13px; word-break: break-all; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+  .tile .k { font-size: 13px; color: var(--muted); }
+  .tile .v { font-size: 24px; font-weight: 700; color: var(--white); margin-top: 4px; }
+  .tile .s { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+  .dash-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 26px; }
+  .strat-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+  .legcols { display: grid; grid-template-columns: 1fr; gap: 26px; }
+  @media (min-width: 800px) { .legcols { grid-template-columns: 1fr 1fr; } }
+  .leg-title { font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+  .kv { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .kv .k { font-size: 11.5px; color: var(--muted); }
+  .kv .v { font-weight: 700; color: var(--white); font-size: 15px; }
+  .kv .s { font-size: 11px; color: var(--muted); }
+  .gauge-track { position: relative; height: 8px; background: var(--raised); border-radius: 99px; overflow: hidden; margin-top: 8px; }
+  .gauge-fill { height: 100%; border-radius: 99px; transition: width .3s; }
+  .gauge-ticks { display: flex; justify-content: space-between; font-size: 9.5px; color: var(--muted); margin-top: 4px; }
+  .tick { position: absolute; top: 0; height: 100%; width: 1.5px; background: var(--bg); }
+  .empty-leg { border: 1px dashed var(--border); border-radius: 12px; min-height: 110px; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13.5px; text-align: center; padding: 14px; }
+  .toggle-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+  .toggle-row .t { color: var(--white); font-weight: 500; font-size: 14.5px; }
+  .toggle-row .d { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  footer { border-top: 1px solid var(--border); padding: 26px; text-align: center; font-size: 12px; color: var(--muted); }
+  .banner { background: rgba(244,183,40,.08); border: 1px solid rgba(244,183,40,.35); color: var(--zec); border-radius: 10px; padding: 10px 14px; font-size: 12.5px; margin-bottom: 26px; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <nav>
+    <div class="logo" onclick="go('home')"><span class="logo-mark">Z</span> Yield Orchestrator</div>
+    <div class="nav-links">
+      <a id="nav-deposit" onclick="go('wizard')">Deposit</a>
+      <a id="nav-dashboard" onclick="go('dashboard')">Dashboard</a>
+      <span class="chainchip">Base · NEAR · Zcash</span>
+    </div>
+  </nav>
+</header>
+<main id="app"></main>
+<footer>Interactive prototype — all data simulated. Non-custodial strategy orchestration; withdrawals are always open.</footer>
+
+<script>
+/* ------------------------------------------------------------------ data */
+const ZEC_PRICE = 48.75, LT = 0.7, MAX_LTV = 5000, DEFAULT_LTV = 3500;
+const PRESETS = [
+  { id: "CONSERVATIVE", label: "Conservative", bps: 2500, delay: 48,
+    desc: "Wide range (15–50%). Survives large moves; lower fee APR, fewer rebalances." },
+  { id: "MODERATE", label: "Moderate", bps: 800, delay: 12,
+    desc: "Balanced range (3.5–15%). Good fee capture with tolerable rebalance frequency." },
+  { id: "AGGRESSIVE", label: "Aggressive", bps: 150, delay: 2,
+    desc: "Tight range (0.5–3%). Max fee capture; frequent out-of-range periods." },
+];
+/* Curated v2 — grounded in live Base TVL/volume (GeckoTerminal, 2026-08-05). */
+const POOLS = [
+  { id: "uni-weth-usdc-5", pair: "WETH/USDC", dex: "Uniswap v3", fee: .05, proto: "MaxFi", entry: "USDC", risk: "blue chip", apr: 18.4, desc: "Deepest pool on Base — ~$114M TVL, ~$46M/day." },
+  { id: "aero-cbbtc-usdc", pair: "cbBTC/USDC", dex: "Aerodrome", fee: .05, proto: "SnuggleFi", entry: "USDC", risk: "blue chip", apr: 31.7, desc: "Top BTC volume on Base — ~$9M TVL, ~$72M/day." },
+  { id: "aero-usdc-weth-5", pair: "WETH/USDC", dex: "Aerodrome", fee: .05, proto: "SnuggleFi", entry: "USDC", risk: "blue chip", apr: 24.6, desc: "Flagship Aerodrome ETH pool — ~$10M TVL, ~$42M/day." },
+  { id: "uni-usdc-weth-30", pair: "USDC/WETH", dex: "Uniswap v3", fee: .30, proto: "MaxFi", entry: "USDC", risk: "blue chip", apr: 14.9, desc: "0.30% tier — ~$10M TVL, higher fee per trade." },
+  { id: "uni-usdc-cbbtc-30", pair: "USDC/cbBTC", dex: "Uniswap v3", fee: .30, proto: "MaxFi", entry: "USDC", risk: "blue chip", apr: 9.8, desc: "0.30% BTC pool — calmer companion venue." },
+  { id: "aero-usdt-usdc", pair: "USDT/USDC", dex: "Aerodrome", fee: .01, proto: "SnuggleFi", entry: "USDC", risk: "stable", apr: 6.2, desc: "Stable/stable — minimal IL, ~$6.5M/day." },
+  { id: "uni-cbbtc-weth-30", pair: "cbBTC/WETH", dex: "Uniswap v3", fee: .30, proto: "MaxFi", entry: "cbBTC", risk: "blue chip", apr: 12.4, desc: "ETH/BTC ratio pair — ~$5M TVL, ~$13M/day." },
+  { id: "aero-aero-cbbtc", pair: "AERO/cbBTC", dex: "Aerodrome", fee: .30, proto: "SnuggleFi", entry: "cbBTC", risk: "volatile", apr: 33.5, desc: "AERO incentives against BTC — ~$2.4M/day." },
+  { id: "cbeth-weth", pair: "cbETH/WETH", dex: "Aerodrome", fee: .01, proto: "SnuggleFi", entry: "WETH", risk: "stable", apr: 5.1, desc: "Correlated LST pair — near-zero IL, conservative WETH entry." },
+  { id: "aero-aero-weth", pair: "AERO/WETH", dex: "Aerodrome", fee: .30, proto: "SnuggleFi", entry: "WETH", risk: "volatile", apr: 41.2, desc: "Incentivized AERO pair — higher APR, real volatility." },
+];
+const BORROW_ASSETS = [
+  { s: "USDC", d: "Stable, predictable debt. The default choice." },
+  { s: "cbBTC", d: "BTC-denominated debt — short-ZEC/long-BTC tilt." },
+  { s: "WETH", d: "ETH-denominated debt for ETH-pair strategies." },
+];
+let strategies = [
+  { id: "strat-a41f", mode: "FULL", status: "active full", zec: 25, borrowUsd: 437.5, borrowAsset: "USDC", ltv: 3500, hf: 2.00,
+    pool: POOLS[0], bps: 800, delay: 12, autoc: true, rewards: 18.42, pref: "SEND", zaddr: "t1KrbA8XLcmZUsSdcXhkpKUWX5rMctSH5dP", inRange: true },
+  { id: "strat-b7d2", mode: "SIMPLE", status: "active simple", zec: 8, borrowUsd: 0, hf: Infinity,
+    rewards: 0, pref: "COMPOUND", zaddr: "t1Vt91RNqhwFheyN6PYzJs57PMGoyWzR34D", inRange: null },
+];
+
+/* ------------------------------------------------------------------ state */
+let view = "home";
+let W = null; // wizard state
+
+function freshWizard() {
+  return { step: 0, mode: "SIMPLE", zec: "10", zaddr: "", wantBorrow: false,
+    asset: "USDC", ltv: DEFAULT_LTV, poolId: null, preset: "MODERATE",
+    bps: 800, delay: 12, autoc: true, pref: "COMPOUND", created: null };
+}
+
+/* ------------------------------------------------------------------ utils */
+const usd = v => v.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
+const esc = s => s.replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+const zAddrKind = a => /^t[13][a-zA-Z0-9]{33}$/.test(a) ? "transparent" : /^u1[a-z0-9]{50,}$/.test(a) ? "unified" : "invalid";
+const hfFor = ltv => ltv <= 0 ? Infinity : LT / (ltv / 10000);
+const liqPrice = ltv => ZEC_PRICE * (ltv / 10000) / LT;
+const hfBand = hf => !isFinite(hf) || hf >= 1.7 ? ["good","Healthy"] : hf >= 1.5 ? ["warn","Comfortable"] : hf >= 1.2 ? ["serious","Caution"] : ["critical","At risk"];
+const pill = (kind, label) => `<span class="pill ${kind}"><span aria-hidden="true">${kind==="good"?"●":kind==="warn"||kind==="serious"?"▲":kind==="critical"?"■":"○"}</span>${label}</span>`;
+
+function gauge(hf) {
+  const finite = isFinite(hf);
+  const t = finite ? Math.max(0, Math.min(1, (hf - 1) / 2)) : 1;
+  const [kind, label] = hfBand(hf);
+  const color = { good: "var(--good)", warn: "var(--warn)", serious: "var(--serious)", critical: "var(--critical)" }[kind];
+  return `
+    <div class="rowline"><span style="font-size:13px;color:var(--muted)">Health factor</span>
+      <span style="display:flex;gap:8px;align-items:center"><b style="font-size:19px">${finite ? hf.toFixed(2) : "∞"}</b>${pill(kind, label)}</span></div>
+    <div class="gauge-track">
+      <div class="gauge-fill" style="width:${t*100}%;background:${color}"></div>
+      <div class="tick" style="left:10%"></div><div class="tick" style="left:25%"></div>
+    </div>
+    <div class="gauge-ticks"><span>1.0 liquidation</span><span>1.2 critical</span><span>1.5 warning</span><span>3.0+</span></div>`;
+}
+
+/* ------------------------------------------------------------------ views */
+function homeView() {
+  const cards = [
+    ["01","Deposit native ZEC","Send ZEC from your own wallet to your personal deposit address. No wrapping, no manual bridging."],
+    ["02","Earn on Rhea Finance","Your ZEC is supplied as collateral on Rhea (NEAR). Simple mode stops here — supply APY, zero leverage."],
+    ["03","Optional: full strategy","Borrow USDC, cbBTC, or WETH against your ZEC and deploy into curated MaxFi / SnuggleFi concentrated-liquidity positions on Base — your exact range, rebalance, and compounding settings."],
+    ["04","Rewards, your way","Auto-compound into the position, or receive rewards as native ZEC in your Zcash wallet via NEAR Intents."],
+  ].map(([n,t,b]) => `<div class="card"><div class="n">${n}</div><h3>${t}</h3><p>${b}</p></div>`).join("");
+  return `
+    <div class="hero">
+      <div class="eyebrow">Your ZEC. Working.</div>
+      <h1>Yield on native ZEC — from simple lending to full DeFi strategies</h1>
+      <p>One deposit. Two modes. Start with hands-off lending on Rhea Finance, upgrade to a managed concentrated-liquidity strategy on Base whenever you're ready — and take profits in ZEC, back in your own wallet.</p>
+      <div class="cta-row">
+        <button class="btn btn-primary" onclick="go('wizard')">Start earning</button>
+        <button class="btn btn-ghost" onclick="go('dashboard')">View dashboard</button>
+      </div>
+    </div>
+    <div class="grid2">${cards}</div>
+    <div class="card" style="margin-top:16px">
+      <h3>Honest by design</h3>
+      <p>Borrowing against ZEC carries liquidation risk — your health factor is shown at every step, and the agent notifies, deleverages, or unwinds at thresholds you can see. Concentrated liquidity carries impermanent-loss risk — presets are explained before you commit. Principal never routes through the reward path, and your withdrawal right is never pausable.</p>
+    </div>`;
+}
+
+function wizardFlow() {
+  return W.mode === "FULL"
+    ? ["mode","amount","borrow","pool","params","rewards","review","deposit"]
+    : W.wantBorrow ? ["mode","amount","borrow","review","deposit"] : ["mode","amount","review","deposit"];
+}
+
+function wizardView() {
+  const flow = wizardFlow(), name = flow[W.step];
+  const prog = flow.slice(0, -1).map((_, i) => `<span class="${i <= W.step ? "on" : ""}"></span>`).join("");
+  let body = "";
+
+  if (name === "mode") body = `
+    <div class="step"><h1>How do you want to earn?</h1><div class="stack">
+      <button class="card selectable ${W.mode==="SIMPLE"?"selected":""}" onclick="W.mode='SIMPLE';render()">
+        <div class="pool-head"><span class="pool-name">Simple lending</span><span class="pool-meta">Lower risk</span></div>
+        <p style="margin-top:6px">Supply ZEC on Rhea Finance and earn supply APY. Optionally borrow against it. No Base chain involvement. Upgrade any time.</p></button>
+      <button class="card selectable ${W.mode==="FULL"?"selected":""}" onclick="W.mode='FULL';render()">
+        <div class="pool-head"><span class="pool-name">Full strategy</span><span class="pool-meta">Higher yield · managed</span></div>
+        <p style="margin-top:6px">Supply ZEC, borrow an asset, and deploy it into a MaxFi / SnuggleFi concentrated-liquidity position on Base with your exact parameters. Rewards compound or flow back to your Zcash wallet.</p></button>
+    </div></div>`;
+
+  if (name === "amount") {
+    const z = parseFloat(W.zec) || 0, kind = zAddrKind(W.zaddr);
+    const addrNote = !W.zaddr ? `<span class="hint">Where ZEC returns when you withdraw or take rewards.</span>`
+      : kind === "transparent" ? pill("good","Transparent address — fully supported")
+      : kind === "unified" ? pill("warn","Unified address — partial support; t-addr recommended")
+      : pill("serious","Not a recognized Zcash address");
+    body = `
+    <div class="step"><h1>Deposit amount</h1><div class="stack">
+      <div><label class="field">ZEC to deposit</label>
+        <input type="text" inputmode="decimal" value="${esc(W.zec)}" oninput="W.zec=this.value.replace(/[^0-9.]/g,'');softRender()">
+        <div class="hint">≈ <span id="zusd">${usd(z*ZEC_PRICE)}</span> at ${usd(ZEC_PRICE)}/ZEC</div></div>
+      <div><label class="field">Your Zcash address (refunds &amp; rewards)</label>
+        <input type="text" class="mono" placeholder="t1…  (transparent) or u1… (unified)" value="${esc(W.zaddr)}" oninput="W.zaddr=this.value.trim();softRender()">
+        <div class="hint" id="addrnote">${addrNote}</div></div>
+      ${W.mode==="SIMPLE" ? `<label class="card toggle-row" style="cursor:pointer">
+        <span><span class="t">Borrow against my ZEC</span><div class="d">Take a loan (USDC, cbBTC, WETH) while your ZEC earns supply APY.</div></span>
+        <input type="checkbox" ${W.wantBorrow?"checked":""} onchange="W.wantBorrow=this.checked;render()"></label>` : ""}
+    </div></div>`;
+  }
+
+  if (name === "borrow") {
+    const z = parseFloat(W.zec) || 0, debt = z * ZEC_PRICE * W.ltv / 10000;
+    const hf = hfFor(W.ltv), [hk, hl] = hfBand(hf), lp = liqPrice(W.ltv);
+    body = `
+    <div class="step"><h1>Borrow settings</h1><div class="stack">
+      <div class="stat3" style="gap:12px;text-align:left">
+        ${BORROW_ASSETS.map(a => `<button class="card selectable ${W.asset===a.s?"selected":""}" style="padding:15px" onclick="W.asset='${a.s}';W.poolId=null;render()">
+          <div class="pool-name">${a.s}</div><p style="font-size:11.5px;margin-top:4px">${a.d}</p></button>`).join("")}
+      </div>
+      <div><div class="rowline"><label class="field" style="margin:0">Target loan-to-value</label><b id="ltvpct">${(W.ltv/100).toFixed(0)}%</b></div>
+        <input type="range" min="1000" max="${MAX_LTV}" step="100" value="${W.ltv}" oninput="W.ltv=+this.value;softRender()">
+        <div class="minmax"><span>10% · safer</span><span>${MAX_LTV/100}% · max allowed</span></div></div>
+      <div class="card stat3" id="borrowstats">
+        <div><div class="k">You borrow</div><div class="v">${usd(debt)}</div><div class="s">${W.asset}</div></div>
+        <div><div class="k">Health factor</div><div class="v" style="color:var(--${hk==='good'?'good':hk})">${hf.toFixed(2)}</div><div class="s">${hl}</div></div>
+        <div><div class="k">Liq. price (ZEC)</div><div class="v">${usd(lp)}</div><div class="s">−${(100 - lp/ZEC_PRICE*100).toFixed(0)}% from now</div></div>
+      </div>
+      <p class="hint">The agent watches this position continuously: it notifies you at HF &lt; 1.5, suggests deleveraging at HF &lt; 1.2, and can emergency-unwind near liquidation.</p>
+    </div></div>`;
+  }
+
+  if (name === "pool") {
+    const pools = POOLS.filter(p => p.entry === W.asset);
+    body = `
+    <div class="step"><h1>Choose a pool</h1>
+      <p class="hint" style="margin-bottom:16px">Curated Base pools entered single-sided with your borrowed ${W.asset}. APR is recent, not guaranteed.</p>
+      <div class="stack">${pools.map(p => `
+        <button class="card selectable ${W.poolId===p.id?"selected":""}" style="padding:16px" onclick="W.poolId='${p.id}';render()">
+          <div class="pool-head">
+            <span class="pool-name">${p.pair}<span class="pool-meta">${p.dex} · ${p.fee.toFixed(2)}% · ${p.proto}</span></span>
+            <span class="apr">${p.apr.toFixed(1)}%<small>est. APR</small></span></div>
+          <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+            ${pill(p.risk === "stable" ? "good" : p.risk === "volatile" ? "warn" : "", p.risk)}
+            <span style="font-size:12px;color:var(--muted)">${p.desc}</span></div>
+        </button>`).join("")}</div></div>`;
+  }
+
+  if (name === "params") body = `
+    <div class="step"><h1>Position settings</h1><div class="stack">
+      <div class="stat3" style="gap:12px;text-align:left">
+        ${PRESETS.map(p => `<button class="card selectable ${W.preset===p.id?"selected":""}" style="padding:15px" onclick="W.preset='${p.id}';W.bps=${p.bps};W.delay=${p.delay};render()">
+          <div class="pool-name" style="font-size:14px">${p.label}</div><p style="font-size:11px;margin-top:4px;line-height:1.5">${p.desc}</p></button>`).join("")}
+      </div>
+      <div class="card stack" style="padding:20px">
+        <div><div class="rowline"><label class="field" style="margin:0">Range width</label><b id="bpsval">${(W.bps/100).toFixed(2)}%</b></div>
+          <input type="range" min="10" max="5000" step="10" value="${W.bps}" oninput="W.bps=+this.value;W.preset='CUSTOM';softRender()">
+          <div class="minmax"><span>0.1% · max fees, frequent rebalancing</span><span>50% · set-and-forget</span></div></div>
+        <div><div class="rowline"><label class="field" style="margin:0">Rebalance delay</label><b id="delayval">${W.delay}h</b></div>
+          <input type="range" min="0" max="168" step="1" value="${W.delay}" oninput="W.delay=+this.value;W.preset='CUSTOM';softRender()">
+          <div class="minmax"><span>0h · reposition immediately</span><span>168h · wait out a full week</span></div></div>
+        <label class="toggle-row" style="cursor:pointer">
+          <span><span class="t">Auto-compound fees</span><div class="d">Matching-token fees reinvest automatically inside the position.</div></span>
+          <input type="checkbox" ${W.autoc?"checked":""} onchange="W.autoc=this.checked"></label>
+      </div>
+    </div></div>`;
+
+  if (name === "rewards") body = `
+    <div class="step"><h1>What happens to rewards?</h1><div class="stack">
+      <button class="card selectable ${W.pref==="COMPOUND"?"selected":""}" onclick="W.pref='COMPOUND';render()">
+        <div class="pool-name">Compound into the position</div>
+        <p style="margin-top:5px">Claimed rewards are re-deposited into your LP position, growing the principal. Cheapest option — no bridging.</p></button>
+      <button class="card selectable ${W.pref==="SEND"?"selected":""}" onclick="W.pref='SEND';render()">
+        <div class="pool-name">Send to my Zcash wallet</div>
+        <p style="margin-top:5px">Rewards are converted and delivered as native ZEC to <span class="mono" style="font-size:11px">${esc(W.zaddr || "your address")}</span> via NEAR Intents. The agent claims only when rewards clear gas + bridge costs by a safe multiple.</p></button>
+      <p class="hint">A percentage split is on the roadmap; you can switch preference any time from the dashboard.</p>
+    </div></div>`;
+
+  if (name === "review") {
+    const z = parseFloat(W.zec) || 0, borrows = W.mode === "FULL" || W.wantBorrow;
+    const debt = z * ZEC_PRICE * W.ltv / 10000, pool = POOLS.find(p => p.id === W.poolId);
+    body = `
+    <div class="step"><h1>Review</h1>
+      <div class="review-table">
+        <div class="r"><span class="k">Mode</span><span class="v">${W.mode==="FULL"?"Full strategy":"Simple lending"}</span></div>
+        <div class="r"><span class="k">Deposit</span><span class="v">${z} ZEC (≈ ${usd(z*ZEC_PRICE)})</span></div>
+        <div class="r"><span class="k">Zcash address</span><span class="v mono" style="font-size:12px">${esc(W.zaddr)}</span></div>
+        ${borrows ? `
+        <div class="r"><span class="k">Borrow</span><span class="v">${usd(debt)} in ${W.asset} @ ${(W.ltv/100).toFixed(0)}% LTV</span></div>
+        <div class="r"><span class="k">Health factor at entry</span><span class="v">${hfFor(W.ltv).toFixed(2)}</span></div>
+        <div class="r"><span class="k">Liquidation price</span><span class="v">${usd(liqPrice(W.ltv))} per ZEC</span></div>` : ""}
+        ${W.mode==="FULL" && pool ? `
+        <div class="r"><span class="k">Pool</span><span class="v">${pool.pair} · ${pool.dex} · ${pool.proto}</span></div>
+        <div class="r"><span class="k">Position</span><span class="v">±${(W.bps/200).toFixed(2)}% range · ${W.delay}h delay · auto-compound ${W.autoc?"on":"off"}</span></div>
+        <div class="r"><span class="k">Rewards</span><span class="v">${W.pref==="COMPOUND"?"Compound into position":"Send to Zcash wallet"}</span></div>` : ""}
+      </div>
+      <p class="hint" style="margin-top:14px">Next you'll get a personal deposit address. Funds route: Zcash → Rhea (supply${borrows?" + borrow":""})${W.mode==="FULL"?" → NEAR Intents → Base → LP position":""}. You can watch every hop on the dashboard.</p>
+    </div>`;
+  }
+
+  if (name === "deposit") body = `
+    <div class="step" style="text-align:center"><h1>Send your ZEC</h1>
+      <div class="card" style="max-width:420px;margin:0 auto;padding:26px">
+        <div class="qr">QR<br>${W.created.addr}</div>
+        <div class="addr-box mono">${W.created.addr}</div>
+        <p class="hint" style="margin-top:12px">Send exactly <b style="color:var(--white)">${parseFloat(W.zec)||0} ZEC</b> from any Zcash wallet. Strategy <span class="mono">${W.created.id}</span> activates automatically on arrival.</p>
+      </div>
+      <button class="btn btn-primary" style="margin-top:22px" onclick="go('dashboard')">Go to dashboard</button>
+    </div>`;
+
+  const canNext = name === "amount" ? ((parseFloat(W.zec)||0) > 0 && zAddrKind(W.zaddr) !== "invalid")
+    : name === "pool" ? !!W.poolId : true;
+  const nav = name === "deposit" ? "" : `
+    <div class="navrow">
+      <button class="btn btn-ghost" ${W.step===0?"disabled style='opacity:.3'":""} onclick="W.step=Math.max(0,W.step-1);render()">Back</button>
+      ${name === "review"
+        ? `<button class="btn btn-primary" onclick="createStrategy()">Create strategy</button>`
+        : `<button class="btn btn-primary" ${canNext?"":"disabled"} onclick="W.step++;render()">Continue</button>`}
+    </div>`;
+
+  return `<div class="wizard"><div class="progress">${prog}</div>${body}${nav}</div>`;
+}
+
+function dashboardView() {
+  const totalZec = strategies.reduce((s, x) => s + x.zec, 0);
+  const totalRewards = strategies.reduce((s, x) => s + x.rewards, 0);
+  const fulls = strategies.filter(s => s.mode === "FULL").length;
+  const cards = strategies.map(s => {
+    const lendCols = `
+      <div><div class="leg-title">Rhea Finance · NEAR</div>
+        <div class="kv" style="margin-bottom:14px">
+          <div><div class="k">Supplied</div><div class="v">${s.zec} ZEC</div><div class="s">${usd(s.zec*ZEC_PRICE)}</div></div>
+          <div><div class="k">Borrowed</div><div class="v">${s.borrowUsd ? usd(s.borrowUsd) : "—"}</div>
+            <div class="s">${s.borrowUsd ? `${s.borrowAsset} · ${s.ltv/100}% LTV` : "supply only"}</div></div>
+        </div>${gauge(s.hf)}</div>`;
+    const lpCols = s.mode === "FULL" ? `
+      <div><div class="leg-title">${s.pool.proto} · Base</div>
+        <div class="kv">
+          <div><div class="k">Pool</div><div class="v">${s.pool.pair}</div><div class="s">${s.pool.dex} · ${s.pool.fee.toFixed(2)}%</div></div>
+          <div><div class="k">Range status</div><div style="margin-top:3px">${s.inRange ? pill("good","In range — earning") : pill("warn","Out of range")}</div>
+            <div class="s" style="margin-top:4px">±${(s.bps/200).toFixed(2)}% · ${s.delay}h delay</div></div>
+          <div><div class="k">Unclaimed rewards</div><div class="v" style="color:var(--good)">${usd(s.rewards)}</div></div>
+          <div><div class="k">Reward destination</div><div class="v" style="font-size:13px">${s.pref==="SEND"?"→ Zcash wallet":"→ compound"}</div>
+            ${s.pref==="SEND" ? `<div class="s mono" style="font-size:9.5px;word-break:break-all">${s.zaddr}</div>` : ""}</div>
+        </div></div>` : `
+      <div><div class="leg-title">Base leg</div>
+        <div class="empty-leg">No Base position — upgrade to deploy borrowed capital into an LP strategy.</div></div>`;
+    return `
+    <div class="card" style="margin-bottom:16px">
+      <div class="strat-head">
+        <span style="display:flex;gap:10px;align-items:center">
+          <span class="mono" style="font-size:12.5px;color:var(--muted)">${s.id}</span>
+          ${pill(s.status.startsWith("active") ? "good" : "warn", s.status)}
+          <span style="font-size:11.5px;color:var(--muted)">${s.mode==="FULL"?"Full strategy":"Simple lending"}</span></span>
+        <span style="display:flex;gap:8px">
+          ${s.mode==="SIMPLE" ? `<button class="btn btn-ghost btn-sm" onclick="alert('Upgrade flow: borrow → bridge → LP. Wire to agent API.')">Upgrade to full strategy</button>` : ""}
+          <button class="btn btn-ghost btn-sm" onclick="alert('Reward preference toggle. Wire to vault setRewardPreference.')">Change rewards</button>
+          <button class="btn btn-ghost btn-sm" onclick="alert('Withdraw flow — always available, even when paused.')">Withdraw</button></span>
+      </div>
+      <div class="legcols">${lendCols}${lpCols}</div>
+    </div>`;
+  }).join("");
+
+  return `
+    <div class="dash-head"><h1 style="font-size:24px">Your strategies</h1>
+      <button class="btn btn-primary" onclick="go('wizard')">New strategy</button></div>
+    <div class="tiles" style="margin-bottom:26px">
+      <div class="card tile"><div class="k">ZEC supplied</div><div class="v">${totalZec} ZEC</div><div class="s">${usd(totalZec*ZEC_PRICE)}</div></div>
+      <div class="card tile"><div class="k">Active strategies</div><div class="v">${strategies.length}</div><div class="s">${fulls} full · ${strategies.length-fulls} simple</div></div>
+      <div class="card tile"><div class="k">Unclaimed rewards</div><div class="v">${usd(totalRewards)}</div><div class="s">claimed when they clear costs 3×</div></div>
+    </div>
+    ${cards}`;
+}
+
+/* --------------------------------------------------------------- actions */
+function createStrategy() {
+  const id = "strat-" + Math.random().toString(16).slice(2, 6);
+  W.created = { id, addr: "t1MockDepositAddrGeneratedByRheaMCA00" };
+  const z = parseFloat(W.zec) || 0, isFull = W.mode === "FULL";
+  const pool = POOLS.find(p => p.id === W.poolId);
+  strategies.unshift({
+    id, mode: isFull ? "FULL" : "SIMPLE", status: "awaiting zec deposit",
+    zec: z, borrowUsd: (isFull || W.wantBorrow) ? z * ZEC_PRICE * W.ltv / 10000 : 0,
+    borrowAsset: W.asset, ltv: W.ltv, hf: (isFull || W.wantBorrow) ? hfFor(W.ltv) : Infinity,
+    pool: pool || null, bps: W.bps, delay: W.delay, autoc: W.autoc,
+    rewards: 0, pref: W.pref, zaddr: W.zaddr, inRange: isFull ? true : null,
+  });
+  W.step = wizardFlow().indexOf("deposit");
+  render();
+}
+
+/* ---------------------------------------------------------------- render */
+function go(v) { view = v; if (v === "wizard") W = freshWizard(); render(); window.scrollTo(0, 0); }
+
+/** Full re-render (loses input focus — used on structural changes). */
+function render() {
+  const app = document.getElementById("app");
+  app.innerHTML = view === "home" ? homeView() : view === "wizard" ? wizardView() : dashboardView();
+  document.getElementById("nav-deposit").classList.toggle("active", view === "wizard");
+  document.getElementById("nav-dashboard").classList.toggle("active", view === "dashboard");
+}
+
+/** Light re-render for slider/typing updates: patch dependent nodes only. */
+function softRender() {
+  const z = parseFloat(W.zec) || 0;
+  const set = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+  set("zusd", usd(z * ZEC_PRICE));
+  const kind = zAddrKind(W.zaddr);
+  set("addrnote", !W.zaddr ? `<span class="hint">Where ZEC returns when you withdraw or take rewards.</span>`
+    : kind === "transparent" ? pill("good","Transparent address — fully supported")
+    : kind === "unified" ? pill("warn","Unified address — partial support; t-addr recommended")
+    : pill("serious","Not a recognized Zcash address"));
+  set("ltvpct", (W.ltv/100).toFixed(0) + "%");
+  const debt = z * ZEC_PRICE * W.ltv / 10000, hf = hfFor(W.ltv), [hk, hl] = hfBand(hf), lp = liqPrice(W.ltv);
+  set("borrowstats", `
+    <div><div class="k">You borrow</div><div class="v">${usd(debt)}</div><div class="s">${W.asset}</div></div>
+    <div><div class="k">Health factor</div><div class="v" style="color:var(--${hk})">${hf.toFixed(2)}</div><div class="s">${hl}</div></div>
+    <div><div class="k">Liq. price (ZEC)</div><div class="v">${usd(lp)}</div><div class="s">−${(100 - lp/ZEC_PRICE*100).toFixed(0)}% from now</div></div>`);
+  set("bpsval", (W.bps/100).toFixed(2) + "%");
+  set("delayval", W.delay + "h");
+  // keep Continue button state honest on the amount step
+  const flow = wizardFlow();
+  if (flow[W.step] === "amount") {
+    const btn = document.querySelector(".navrow .btn-primary");
+    if (btn) btn.disabled = !((parseFloat(W.zec)||0) > 0 && zAddrKind(W.zaddr) !== "invalid");
+  }
+}
+
+render();
+</script>
+</body>
+</html>
