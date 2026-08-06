@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-ink-bg text-ink-soft antialiased;
+  font-feature-settings: "tnum" 1;
+}
+
+.card {
+  @apply rounded-xl border border-ink-border bg-ink-surface;
+}
+
+.btn-primary {
+  @apply rounded-lg bg-zec px-5 py-2.5 font-semibold text-ink-bg transition hover:bg-zec-deep disabled:cursor-not-allowed disabled:opacity-40;
+}
+
+.btn-ghost {
+  @apply rounded-lg border border-ink-border px-5 py-2.5 font-medium text-ink-soft transition hover:border-ink-muted;
+}
+
+.input {
+  @apply w-full rounded-lg border border-ink-border bg-ink-bg px-3 py-2.5 text-ink-soft outline-none transition focus:border-zec;
+}
+
+.label {
+  @apply mb-1.5 block text-sm font-medium text-ink-muted;
+}
