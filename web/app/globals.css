@@ -8,25 +8,46 @@
 
 body {
   @apply bg-ink-bg text-ink-soft antialiased;
+  background-image:
+    radial-gradient(1100px 500px at 85% -10%, rgba(244, 183, 40, 0.055), transparent 60%),
+    radial-gradient(900px 480px at -10% 110%, rgba(139, 156, 249, 0.05), transparent 55%);
   font-feature-settings: "tnum" 1;
 }
 
+/* Cards carry a faint top sheen so surfaces read as lit, not flat. */
 .card {
-  @apply rounded-xl border border-ink-border bg-ink-surface;
+  @apply rounded-card border border-ink-border bg-ink-surface shadow-card;
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.022), transparent 32%);
 }
 
 .btn-primary {
-  @apply rounded-lg bg-zec px-5 py-2.5 font-semibold text-ink-bg transition hover:bg-zec-deep disabled:cursor-not-allowed disabled:opacity-40;
+  @apply rounded-ctl px-5 py-2.5 font-semibold text-zec-on transition disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none;
+  background-image: linear-gradient(180deg, #ffcd45, #f4b728);
+  box-shadow: 0 2px 14px rgba(244, 183, 40, 0.28);
+}
+.btn-primary:hover:not(:disabled) {
+  box-shadow: 0 4px 22px rgba(244, 183, 40, 0.42);
 }
 
 .btn-ghost {
-  @apply rounded-lg border border-ink-border px-5 py-2.5 font-medium text-ink-soft transition hover:border-ink-muted;
+  @apply rounded-ctl border border-ink-border bg-ink-surface px-5 py-2.5 font-medium text-ink-soft transition hover:bg-ink-raised;
 }
 
 .input {
-  @apply w-full rounded-lg border border-ink-border bg-ink-bg px-3 py-2.5 text-ink-soft outline-none transition focus:border-zec;
+  @apply w-full rounded-ctl border border-ink-border bg-ink-bg2 px-3 py-2.5 text-ink-hi outline-none transition focus:border-zec;
 }
 
 .label {
-  @apply mb-1.5 block text-sm font-medium text-ink-muted;
+  @apply mb-1.5 block text-sm font-semibold text-ink-soft;
 }
+
+/* Status chips — state is icon + label + hue, never color alone. */
+.chip {
+  @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold;
+}
+.chip-good { @apply border-status-good/30 bg-status-good/10 text-status-good; }
+.chip-warn { @apply border-status-warn/30 bg-status-warn/10 text-status-warn; }
+.chip-serious { @apply border-status-serious/30 bg-status-serious/10 text-status-serious; }
+.chip-info { @apply border-status-info/30 bg-status-info/10 text-status-info; }
+.chip-gold { @apply border-zec/30 bg-zec/10 text-zec; }
+.chip-neutral { @apply border-ink-border bg-ink-raised text-ink-soft; }

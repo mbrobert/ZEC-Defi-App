@@ -193,9 +193,9 @@ export default function DepositWizard() {
                   Where ZEC returns to when you withdraw or take rewards.
                 </span>
               ) : addrKind === "transparent" ? (
-                <StatusPill kind="good" label="Transparent address — fully supported" />
+                <StatusPill kind="good" label="Transparent — supported (arrivals publicly visible)" />
               ) : addrKind === "unified" ? (
-                <StatusPill kind="warn" label="Unified address — partial support, t-addr recommended" />
+                <StatusPill kind="info" label="Unified — private; support confirmed at quote time" />
               ) : (
                 <StatusPill kind="serious" label="Not a recognized Zcash address" />
               )}
