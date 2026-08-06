@@ -26,7 +26,7 @@ take rewards back as native ZEC through NEAR Intents.
 cd contracts && forge test                 # local suite
 FORK_URL=<base-rpc> forge test --match-contract EngineForkTest   # live-engine
 
-# agent (Node >= 20, zero deps)
+# agent (Node ≥ 20, zero deps)
 cd agent && npm test
 RHEA_MODE=mock npm run dev
 
@@ -45,15 +45,16 @@ per-token routing caps + **per-pool exposure caps** bound concentration;
 **withdrawal slippage floor** (`minOut`) protects against MEV sandwiching and
 deep price impact. A third-party audit is required before mainnet TVL.
 
-## Pushing the full source (history + all files)
+## Syncing a local copy
 
-This landing page and the audit report were pushed via the Composio GitHub
-connector. To publish the **complete** repository from your machine:
+This repo is the source of truth. Vendored libraries under `contracts/lib/`
+are intentionally not committed — fetch them once after cloning:
 
 ```bash
-cd "path/to/zec-yield-orchestrator"
-git remote add origin https://github.com/mbrobert/ZEC-Defi-App.git
-git push -u origin master
+git clone https://github.com/mbrobert/ZEC-Defi-App.git && cd ZEC-Defi-App/contracts
+git clone --depth 1 --branch v5.7.0 https://github.com/OpenZeppelin/openzeppelin-contracts lib/openzeppelin-contracts
+git clone --depth 1 --branch v1.16.2 https://github.com/foundry-rs/forge-std lib/forge-std
 ```
 
-`.env` is git-ignored; secrets never leave your disk.
+`.env` is git-ignored; secrets never leave your disk. CI
+(`.github/workflows/ci.yml`) runs the contract + agent suites on every push.

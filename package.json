@@ -1,0 +1,21 @@
+{
+  "name": "zec-yield-orchestrator",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ZEC Yield Orchestrator — earn yield on native ZEC via Rhea Finance lending and Base concentrated-liquidity strategies (MaxFi/SnuggleFi), with rewards deliverable back to a native Zcash wallet via NEAR Intents.",
+  "workspaces": [
+    "packages/shared",
+    "agent",
+    "web"
+  ],
+  "scripts": {
+    "build": "npm run build -w @zyo/shared && npm run build -w @zyo/agent && npm run build -w @zyo/web",
+    "test": "npm run test -w @zyo/agent && npm run test:contracts",
+    "test:contracts": "cd contracts && forge test -vv",
+    "agent": "npm run dev -w @zyo/agent",
+    "web": "npm run dev -w @zyo/web"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

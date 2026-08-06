@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.next/
+out/
+cache/
+broadcast/
+contracts/out/
+contracts/cache/
+.env
+.env.local
+*.log
+.DS_Store
+agent/data/*.json
+coverage/
+*.tar.gz
