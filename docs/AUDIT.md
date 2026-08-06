@@ -1,5 +1,45 @@
 # Internal security review — v0.5 (2026-08-06)
 
+## Round 3: guarded fork suite re-run + a via-IR test-harness footgun
+
+Re-ran the full fork suite (8 tests) against the live engine with the round-2
+guards in place: **7/8 passed first try; the 1 failure was root-caused to the
+test harness, not the protocol** — engine and adapter fully exonerated.
+
+Fork-proven this round, on real Base liquidity:
+
+- **Exposure cap live**: a $250k deposit against a $100k pool cap reverts
+  `PoolExposureCapExceeded` in the vault (~230k gas) — the engine is never
+  touched.
+- **Slippage floor live**: demanding more USDC out than the pool can return
+  reverts on the real engine close path.
+- **Moderate-size economics**: a $50k single-sided open → 50% partial →
+  full exit on Aerodrome WETH/USDC returned **49,999.999998 USDC of 50,000**
+  (loss ≈ $0.000002) once timing was correct.
+
+**T-1 (test-harness, would have masked/faked failures):** under `via_ir`,
+solc may legally CSE repeated `block.timestamp` reads inside one function
+(TIMESTAMP is transaction-invariant in real EVM), so a second
+`vm.warp(block.timestamp + x)` can silently re-warp to the SAME second. Our
+$50k fork test tripped exactly this: the post-partial warp was a no-op, the
+full exit executed 0s after the re-deposit, and the engine *correctly*
+reverted `MinimumHoldTimeNotMet`. Diagnosis confirmed two ways: (1) the
+engine's verified source — `MIN_POSITION_HOLD_TIME` is a flat
+`1 minutes` constant compared against per-position `depositTimestamp`
+(`_main.sol:41,534-544`; live value 60 via `cast call`); (2) an on-fork probe
+of the same $50k sequence succeeded at +90s. **Fix:** every multi-warp test
+now derives all warp targets from a single cached timestamp read
+(`EngineFork.t.sol`, `ScenarioMatrix.t.sol`) — warps can no longer be
+silently elided by codegen. Full local suite re-verified green after the
+change.
+
+Product note (UX, feeds the app + agent): the engine's 60s hold restarts on
+*every* deposit — including the internal re-deposit that implements partial
+withdrawals. After any deposit **or partial withdrawal**, the remainder is
+untouchable for 60s. The UI surfaces this as a short cooldown; the agent
+treats `MinimumHoldTimeNotMet` (`0xb586467e`) as retry-after-60s, never as an
+error.
+
 ## Round 2: fuzzing, invariants, adversarial + a fork-caught economic finding
 
 Testing this round: an **8-invariant stateful suite** driving ~10,000 random
@@ -7,7 +47,7 @@ action sequences per invariant (≈82k state transitions) over every user- and
 operator-controllable action; a **540-scenario enumerated matrix**
 (pool × range × delay × pref × size × withdrawal-pattern), each asserting exact
 value conservation; **62 agent tests** including hostile-RPC, hostile-1Click,
-MEV/malicious-quote, and extreme-price grids; and **9 fork tests** against the
+MEV/malicious-quote, and extreme-price grids; and **8 fork tests** against the
 live Base engine.
 
 | ID | Severity | Finding | Fix |

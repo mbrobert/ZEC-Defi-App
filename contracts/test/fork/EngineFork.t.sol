@@ -105,7 +105,12 @@ contract EngineForkTest is Test {
         console2.log("opened engine tokenId", adapter.tokenIdsOf(id, 0));
 
         // Engine flash-loan protection: MIN_POSITION_HOLD_TIME = 1 minute.
-        vm.warp(block.timestamp + 2 minutes);
+        // Warp targets derive from ONE timestamp read: via-IR legally CSEs
+        // repeated block.timestamp reads (TIMESTAMP is tx-invariant in real
+        // EVM), which silently no-ops a second warp(block.timestamp + x).
+        // Root-caused on-fork 2026-08-06 (docs/AUDIT.md round 3).
+        uint256 t0 = block.timestamp;
+        vm.warp(t0 + 2 minutes);
 
         // Partial 40% out — engine full-close + re-deposit path.
         vm.prank(alice);
@@ -117,7 +122,7 @@ contract EngineForkTest is Test {
         assertEq(adapter.tokenCount(id), 1, "no re-deposit happened");
 
         // The re-deposited position restarts the engine's 1-minute hold clock.
-        vm.warp(block.timestamp + 2 minutes);
+        vm.warp(t0 + 4 minutes);
 
         // Full exit.
         vm.prank(alice);
@@ -183,10 +188,11 @@ contract EngineForkTest is Test {
             alice, address(adapter), POOL_AERO_WETH_USDC, USDC, 50_000e6, p,
             PositionVault.RewardPreference.COMPOUND, ""
         );
-        vm.warp(block.timestamp + 2 minutes);
+        uint256 t0 = block.timestamp; // single read — see CSE note in openWithdrawRoundTrip
+        vm.warp(t0 + 2 minutes);
         vm.prank(alice);
         vault.withdraw(id, 5_000, alice, 0, 0); // 50% partial → close + re-deposit
-        vm.warp(block.timestamp + 2 minutes);
+        vm.warp(t0 + 4 minutes); // clears the re-deposit's fresh 60s hold
         vm.prank(alice);
         vault.withdraw(id, 10_000, alice, 0, 0);
         assertGt(IERC20(USDC).balanceOf(alice), 49_500e6, "moderate round-trip lost >1%");

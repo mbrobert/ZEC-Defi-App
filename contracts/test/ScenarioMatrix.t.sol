@@ -131,8 +131,11 @@ contract ScenarioMatrixTest is Test {
             router.compound(id);
         }
 
-        // Withdrawal pattern.
-        vm.warp(block.timestamp + 61);
+        // Withdrawal pattern. Warp targets derive from ONE timestamp read —
+        // via-IR may CSE repeated block.timestamp reads, no-op'ing later
+        // warp(block.timestamp + x) calls (root-caused on-fork, AUDIT round 3).
+        uint256 tW = block.timestamp;
+        vm.warp(tW + 61);
         uint256 before = usdc.balanceOf(user);
         if (wp == 0) {
             vm.prank(user);
@@ -140,16 +143,16 @@ contract ScenarioMatrixTest is Test {
         } else if (wp == 1) {
             vm.prank(user);
             vault.withdraw(id, 5_000, user, 0, 0);
-            vm.warp(block.timestamp + 61);
+            vm.warp(tW + 122);
             vm.prank(user);
             vault.withdraw(id, 10_000, user, 0, 0);
         } else {
             vm.prank(user);
             vault.withdraw(id, 2_500, user, 0, 0);
-            vm.warp(block.timestamp + 61);
+            vm.warp(tW + 122);
             vm.prank(user);
             vault.withdraw(id, 3_333, user, 0, 0);
-            vm.warp(block.timestamp + 61);
+            vm.warp(tW + 183);
             vm.prank(user);
             vault.withdraw(id, 10_000, user, 0, 0);
         }
