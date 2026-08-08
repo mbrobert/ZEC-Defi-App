@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ZEC Yield — earn on native Zcash</title>
 <style>
-/* ─── Design tokens ──────────────────────────────────────────────────── */
+/* ─── Design tokens ────────────────────────────────────── */
 :root{
   --bg:#121016; --bg-2:#17141d; --surface:#1c1824; --surface-2:#262031;
   --line:#2e2839; --line-soft:rgba(255,255,255,.055);
@@ -39,7 +39,7 @@ a{color:var(--gold);text-decoration:none}
 .muted{color:var(--ink-2)} .faint{color:var(--ink-3)}
 .small{font-size:12.5px} .tiny{font-size:11.5px}
 
-/* ─── Nav ────────────────────────────────────────────────────────────── */
+/* ─── Nav ────────────────────────────────────────────── */
 nav{
   position:sticky;top:0;z-index:50;
   background:rgba(18,16,22,.82);backdrop-filter:blur(14px);
@@ -74,7 +74,7 @@ nav{
 .btn[disabled]{opacity:.45;cursor:not-allowed;box-shadow:none}
 .btn-lg{padding:12px 22px;font-size:15px;border-radius:12px}
 
-/* ─── Chips & badges ─────────────────────────────────────────────────── */
+/* ─── Chips & badges ─────────────────────────────────────────── */
 .chip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;
   font-size:12px;font-weight:600;border:1px solid transparent}
 .chip-good{color:var(--good);background:var(--good-bg);border-color:rgba(61,214,140,.25)}
@@ -85,7 +85,7 @@ nav{
 .chip-mute{color:var(--ink-2);background:var(--surface-2);border-color:var(--line)}
 .dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
 
-/* ─── Cards & layout ─────────────────────────────────────────────────── */
+/* ─── Cards & layout ─────────────────────────────────────────── */
 .view{display:none;padding:28px 0 72px}
 .view.on{display:block}
 .card{background:linear-gradient(180deg,rgba(255,255,255,.022),transparent 32%),var(--surface);
@@ -102,7 +102,7 @@ nav{
 .cols{display:grid;grid-template-columns:1fr 340px;gap:18px;align-items:start}
 @media(max-width:980px){.cols{grid-template-columns:1fr}}
 
-/* ─── Health band gauge ──────────────────────────────────────────────── */
+/* ─── Health band gauge ──────────────────────────────────────── */
 .band{position:relative;height:64px;margin:14px 2px 4px}
 .band-track{position:absolute;left:0;right:0;top:26px;height:10px;border-radius:6px;overflow:hidden;display:flex}
 .band-seg{height:100%}
@@ -113,7 +113,7 @@ nav{
   white-space:nowrap;font-size:11px;color:var(--ink-3)}
 .band-zonelbl{position:absolute;top:44px;font-size:10.5px;color:var(--ink-3);letter-spacing:.02em}
 
-/* ─── Position cards ─────────────────────────────────────────────────── */
+/* ─── Position cards ─────────────────────────────────────────── */
 .pos{margin-bottom:14px;overflow:hidden}
 .pos-head{display:flex;align-items:center;gap:14px;padding:16px 20px;cursor:pointer}
 .pos-head:hover{background:rgba(255,255,255,.015)}
@@ -147,13 +147,13 @@ nav{
 .cool-ring{width:16px;height:16px;border-radius:50%;
   background:conic-gradient(var(--info) var(--p,0%),rgba(139,156,249,.2) 0)}
 
-/* ─── Activity ───────────────────────────────────────────────────────── */
+/* ─── Activity ──────────────────────────────────────────── */
 .act{display:flex;gap:12px;padding:11px 0;border-bottom:1px solid var(--line-soft);font-size:13.5px}
 .act:last-child{border-bottom:none}
 .act-ic{width:28px;height:28px;border-radius:9px;display:grid;place-items:center;font-size:13px;flex:none}
 .act time{color:var(--ink-3);font-size:12px;display:block;margin-top:1px}
 
-/* ─── Wizard ─────────────────────────────────────────────────────────── */
+/* ─── Wizard ────────────────────────────────────────────── */
 .steps{display:flex;gap:8px;margin:26px 0 20px;align-items:center}
 .step{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--ink-3)}
 .step .n{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;
@@ -224,7 +224,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
 .note.warn{border-color:var(--warn);background:var(--warn-bg)}
 .wnav{display:flex;justify-content:space-between;margin-top:24px}
 
-/* ─── Bridge timeline ────────────────────────────────────────────────── */
+/* ─── Bridge timeline ───────────────────────────────────────── */
 .bridge{display:grid;gap:0;margin:6px 0}
 .bstep{display:flex;gap:13px;position:relative;padding-bottom:20px}
 .bstep:last-child{padding-bottom:0}
@@ -237,7 +237,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
 .bstep .bt{font-weight:600;font-size:13.5px}
 .bstep .bd{font-size:12px;color:var(--ink-3)}
 
-/* ─── Pools view ─────────────────────────────────────────────────────── */
+/* ─── Pools view ─────────────────────────────────────────── */
 .ptable{width:100%;border-collapse:collapse;font-size:13.8px}
 .ptable th{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);
   text-align:left;padding:10px 14px;border-bottom:1px solid var(--line)}
@@ -246,7 +246,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
 .ptable tr.rowp:hover{background:rgba(255,255,255,.018);cursor:pointer}
 .ver{display:inline-flex;align-items:center;gap:5px;color:var(--good);font-size:12px;font-weight:600}
 
-/* ─── Modal ──────────────────────────────────────────────────────────── */
+/* ─── Modal ────────────────────────────────────────────── */
 .overlay{position:fixed;inset:0;background:rgba(10,8,14,.66);backdrop-filter:blur(5px);
   display:none;place-items:center;z-index:100;padding:20px}
 .overlay.on{display:grid}
@@ -256,7 +256,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
 .x{color:var(--ink-3);font-size:18px;padding:4px 8px;border-radius:8px}
 .x:hover{background:var(--line-soft);color:var(--ink)}
 
-/* ─── Footer / toast ─────────────────────────────────────────────────── */
+/* ─── Footer / toast ─────────────────────────────────────────── */
 footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px;font-size:12.5px;color:var(--ink-3)}
 .foot-in{display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap}
 #toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(90px);
@@ -265,9 +265,51 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
 #toast.on{transform:translateX(-50%) translateY(0)}
 .fresh{font-size:11.5px;color:var(--ink-3)}
 .tt{border-bottom:1px dotted var(--ink-3);cursor:help;font-style:normal}
+
+/* ─── Privacy language ─────────────────────────────────────────── */
+.ic{width:1em;height:1em;fill:none;stroke:currentColor;stroke-width:1.9;
+  stroke-linecap:round;stroke-linejoin:round;flex:none;vertical-align:-.12em}
+.priv-shield{color:var(--priv)} .priv-open{color:var(--ink-3)}
+:root{--priv:#7ee0c0; --priv-bg:rgba(126,224,192,.11)}
+.chip-priv{color:var(--priv);background:var(--priv-bg);border-color:rgba(126,224,192,.28)}
+/* Leg map: one row per hop, private vs public stated outright */
+.legs{display:grid;gap:10px}
+.leg{display:flex;gap:13px;align-items:flex-start;padding:13px 15px;border-radius:12px;
+  border:1px solid var(--line);background:var(--bg-2)}
+.leg.private{border-color:rgba(126,224,192,.3);background:linear-gradient(90deg,var(--priv-bg),transparent 55%),var(--bg-2)}
+.leg.public{border-color:rgba(255,107,44,.22);background:linear-gradient(90deg,rgba(255,107,44,.07),transparent 55%),var(--bg-2)}
+.leg .lic{width:32px;height:32px;border-radius:10px;display:grid;place-items:center;font-size:15px;flex:none;
+  background:var(--surface-2);border:1px solid var(--line)}
+.leg.private .lic{color:var(--priv);border-color:rgba(126,224,192,.35)}
+.leg.public .lic{color:var(--warn);border-color:rgba(255,107,44,.3)}
+.leg .lt{font-weight:650;font-size:14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.leg .ld{font-size:12.8px;color:var(--ink-2);margin-top:4px;line-height:1.5}
+.leg .lk{font-size:12.3px;margin-top:6px;display:grid;gap:3px}
+.leg .lk span{color:var(--ink-3)}
+.leg .lk b{color:var(--ink-2);font-weight:600}
+/* Privacy checklist */
+.pchk{display:grid;gap:7px;margin-top:9px}
+.pchk-row{display:flex;gap:9px;align-items:flex-start;font-size:12.6px;line-height:1.45}
+.pchk-row .st{flex:none;margin-top:.1em}
+.pchk-ok{color:var(--priv)} .pchk-no{color:var(--warn)} .pchk-bad{color:var(--crit)}
+.pgrade{display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.pgrade .gv{font-size:19px;font-weight:750;letter-spacing:-.01em}
+.src-cards{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:760px){.src-cards{grid-template-columns:1fr}}
+.addr-help{border:1px solid rgba(139,156,249,.3);background:var(--info-bg);border-radius:11px;
+  padding:12px 14px;font-size:12.8px;color:var(--ink-2);margin-top:10px;line-height:1.5}
+.addr-help b{color:var(--ink)}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}
 </style>
 </head>
 <body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v5.5c0 4.3-2.9 8.2-7 9.5-4.1-1.3-7-5.2-7-9.5V6l7-3z"/><path d="M9.2 12.2l2 2 3.6-3.9"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.2 12S5.7 5.9 12 5.9 21.8 12 21.8 12 18.3 18.1 12 18.1 2.2 12 2.2 12z"/><circle cx="12" cy="12" r="2.9"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M4.5 12.5l5 5 10-11"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4.5l8.5 15h-17l8.5-15z"/><path d="M12 10v4.2"/><circle cx="12" cy="16.8" r=".6" fill="currentColor"/></symbol>
+</defs></svg>
 
 <nav><div class="wrap nav-in">
   <div class="logo"><div class="logo-mark">Z</div>ZEC Yield</div>
@@ -275,6 +317,7 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
     <button class="tab on" data-view="dash">Dashboard</button>
     <button class="tab" data-view="wiz">New deposit</button>
     <button class="tab" data-view="pools">Pools</button>
+    <button class="tab" data-view="privacy">Privacy</button>
   </div>
   <div class="price-chip num"><span class="pulse"></span>ZEC <b id="zecPrice">$46.18</b><span id="zecDelta" class="small" style="color:var(--good)">+2.1%</span></div>
   <button class="btn btn-ghost" id="connectBtn">Connect wallet</button>
@@ -345,6 +388,20 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
             <div class="in-suffix"><span>ZEC</span><button class="maxb" id="maxBtn">MAX 450</button></div>
           </div>
           <div class="small faint num" style="margin-top:6px">≈ <span id="amtUsd">$4,618</span> · arrives from your Zcash wallet via NEAR Intents</div>
+        </div>
+        <div class="field">
+          <label>Funding this from <span class="tt" title="Zcash lets you spend shielded funds to a transparent address. The bridge only ever sees the deposit — never where your funds came from.">ⓘ</span></label>
+          <div class="src-cards">
+            <div class="opt sel" data-src="SHIELDED">
+              <div class="t"><span><svg class="ic priv-shield"><use href="#i-shield"/></svg> Shielded balance</span><span class="chip chip-priv">Recommended</span></div>
+              <div class="d">Spend from your shielded pool. Your balance, address and entire transaction history stay private — the deposit reveals nothing about where the funds came from.</div>
+            </div>
+            <div class="opt" data-src="TRANSPARENT">
+              <div class="t"><span><svg class="ic priv-open"><use href="#i-eye"/></svg> Transparent balance</span></div>
+              <div class="d">Spend from a t-address. Works fine, but links this deposit to that address's public history.</div>
+            </div>
+          </div>
+          <div class="addr-help" id="srcHelp"><b>How it works:</b> we give you a freshly generated deposit address for this deposit only. Send to it straight from your shielded balance — Zcash calls this a deshielding transaction, and it does not expose your history. Only the amount becomes public.</div>
         </div>
         <div class="field">
           <label>Mode</label>
@@ -420,14 +477,15 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
             </div>
             <div class="opt" data-rew="ZEC">
               <div class="t">Send home as ZEC</div>
-              <div class="d">Rewards convert via NEAR Intents and arrive as native ZEC in your wallet.</div>
+              <div class="d">Rewards convert via NEAR Intents and arrive as native ZEC. They land transparent — your wallet can shield them on arrival.</div>
             </div>
           </div>
           <div id="zaddrWrap" style="display:none;margin-top:12px">
             <div class="field" style="margin-bottom:0">
-              <label>Your Zcash address</label>
-              <input class="in" id="zaddr" placeholder="t1… or u1…" spellcheck="false">
-              <div class="small" id="zaddrHint" style="margin-top:6px;color:var(--ink-3)">Rewards only — principal never routes through this path.</div>
+              <label>Where rewards arrive <span class="tt" title="The bridge settles Zcash withdrawals to transparent addresses only (verified against the live API). Your wallet can shield the moment funds land.">ⓘ</span></label>
+              <input class="in mono" id="zaddr" placeholder="t1… receiving address (u1… accepted — we'll explain)" spellcheck="false">
+              <div class="small" id="zaddrHint" style="margin-top:6px;color:var(--ink-3)">Use a <b>fresh</b> address for this position — reusing one publicly links your positions together.</div>
+              <div id="zaddrHelp"></div>
             </div>
           </div>
         </div>
@@ -465,6 +523,16 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
       <div class="row"><span class="l">1-Click bridge fee</span><span class="v" style="color:var(--good)">0% <span class="faint tiny">(partner)</span></span></div>
       <div class="row"><span class="l">Engine performance fee</span><span class="v num">15% of yield</span></div>
       <div class="note small" id="pNote" style="margin:12px 0 0">Simple lending: no borrowing, no liquidation risk — withdraw any time.</div>
+
+      <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:13px">
+        <div class="pgrade">
+          <svg class="ic priv-shield" style="width:19px;height:19px"><use href="#i-shield"/></svg>
+          <span class="gv" id="pGrade">Strong</span>
+          <span class="small faint" style="margin-left:auto">Privacy</span>
+        </div>
+        <div class="pchk" id="pChk"></div>
+        <button class="btn-quiet small" id="toPrivacy" style="color:var(--gold);font-weight:650;padding:6px 0 0">See exactly what's public →</button>
+      </div>
     </div>
   </div>
 </div></div>
@@ -478,6 +546,73 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
     <thead><tr><th>Pool</th><th>Venue</th><th>Fee tier</th><th>Entry asset</th><th>Risk</th><th style="text-align:right">Est. APY</th><th>Engine id</th></tr></thead>
     <tbody></tbody>
   </table></div>
+</div></div>
+
+<!-- ═══ PRIVACY ═══ -->
+<div class="view" id="view-privacy"><div class="wrap">
+  <h1 style="font-size:22px;margin-top:26px">Privacy</h1>
+  <p class="muted" style="margin-top:4px;max-width:760px">Exactly what an observer can and cannot see. Every claim below was probed against the live NEAR Intents API on 2026-08-08 — not taken from documentation.</p>
+
+  <div class="cols" style="margin-top:20px">
+    <div>
+      <div class="card card-pad">
+        <h2 style="font-size:16px;margin-bottom:4px">The three legs</h2>
+        <p class="small muted" style="margin-bottom:14px">Privacy is not one switch — it differs per hop. We default to the most private path available at each one.</p>
+        <div class="legs">
+          <div class="leg private">
+            <div class="lic"><svg class="ic" style="width:17px;height:17px"><use href="#i-shield"/></svg></div>
+            <div>
+              <div class="lt">1 · Your ZEC in <span class="chip chip-priv">History stays private</span></div>
+              <div class="ld">The bridge issues a fresh transparent deposit address for every deposit. Spending to it <b>from your shielded pool</b> is an ordinary deshielding transaction — Zcash never reveals where shielded funds came from.</div>
+              <div class="lk">
+                <span><b>Private:</b> your balance, your address, your entire transaction history. Nothing links backwards.</span>
+                <span><b>Public:</b> the amount, and that some shielded holder funded this one address.</span>
+              </div>
+            </div>
+          </div>
+          <div class="leg public">
+            <div class="lic"><svg class="ic" style="width:17px;height:17px"><use href="#i-eye"/></svg></div>
+            <div>
+              <div class="lt">2 · The strategy itself <span class="chip chip-warn">Public — unavoidably</span></div>
+              <div class="ld">Once bridged, your ZEC is a token on NEAR, collateral on Rhea, and an LP position on Base. Those are transparent ledgers. We will not dress this up: position size, health factor, pool, rebalances and claims are all visible.</div>
+              <div class="lk">
+                <span><b>What still protects you:</b> an observer sees a position, not a person — unless leg 3 hands them the link.</span>
+              </div>
+            </div>
+          </div>
+          <div class="leg public">
+            <div class="lic"><svg class="ic" style="width:17px;height:17px"><use href="#i-eye"/></svg></div>
+            <div>
+              <div class="lt">3 · ZEC back to you <span class="chip chip-warn">Public on arrival, then shielded</span></div>
+              <div class="ld">The bridge settles to transparent addresses only — we verified that <code class="mono">u1…</code> and <code class="mono">zs1…</code> recipients are rejected today. Funds land in the open, then your wallet shields them; most do it automatically.</div>
+              <div class="lk">
+                <span><b>Your job:</b> a fresh receiving address per position, shielded on arrival. We track this and warn you.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card card-pad" style="margin-top:16px">
+        <h2 style="font-size:16px;margin-bottom:4px">What actually deanonymizes people</h2>
+        <p class="small muted" style="margin-bottom:12px">The bridge is not the weak point. These are, in order of real-world impact.</p>
+        <div class="pchk">
+          <div class="pchk-row"><svg class="ic pchk-bad st"><use href="#i-alert"/></svg><span><b>Reusing one receiving address.</b> Every position paid to the same address is publicly linked to every other one, and to you. Highest-impact mistake by far — we detect it across your positions and flag it.</span></div>
+          <div class="pchk-row"><svg class="ic pchk-bad st"><use href="#i-alert"/></svg><span><b>Reusing your deposit-refund address for rewards.</b> Joins the inbound and outbound legs directly, connecting your Zcash identity to the whole position.</span></div>
+          <div class="pchk-row"><svg class="ic pchk-no st"><use href="#i-alert"/></svg><span><b>Amount and timing correlation.</b> A distinctive amount leaving a shielded pool and the same amount appearing on Base moments later correlates the two regardless of address hygiene. Round amounts and elapsed time help; this one has real residual risk and we would rather say so.</span></div>
+          <div class="pchk-row"><svg class="ic pchk-no st"><use href="#i-alert"/></svg><span><b>Shielding rewards back into the account you deposited from.</b> Fine for most threat models; weak against an adversary already watching that account.</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card card-pad proj">
+        <h2 style="font-size:15px;margin-bottom:10px">Your positions</h2>
+        <div id="privPos"></div>
+        <div class="note small" style="margin-top:14px"><b>If shielded settlement ships</b>, nothing in the contracts or agent has to change — one flag in the shared address module makes shielded payouts the default end to end, and this interface follows automatically.</div>
+      </div>
+    </div>
+  </div>
 </div></div>
 
 <footer><div class="wrap foot-in">
@@ -519,8 +654,40 @@ const S = {
   connected: false,
   mode: "SIMPLE", asset: "USDC", ltv: 35, poolId: null,
   preset: "MODERATE", rw: 800, rd: 12, rew: "COMPOUND", econ: true,
+  src: "SHIELDED",           // privacy default: fund from the shielded pool
   step: 1,
 };
+
+/* ── Zcash address handling ────────────────────────────────────────────────
+   Settlement reality, probed against the live 1-Click API 2026-08-08:
+   t1…/t3… → HTTP 201 (settleable) · u1… and zs1… → HTTP 400
+   "recipient is not valid". Shielded addresses are ACCEPTED AS INPUT and
+   explained — never met with a dead-end error — because wallets now hand
+   users unified addresses by default. See docs/PRIVACY.md.            */
+const ZADDR_RE = {
+  transparent: /^t[13][a-zA-Z0-9]{33}$/,
+  unified: /^u1[a-z0-9]{50,}$/,
+  sapling: /^zs1[a-z0-9]{70,}$/,
+};
+function describeZaddr(a){
+  const s=(a||"").trim();
+  if(!s) return {kind:"empty",settleable:false};
+  if(ZADDR_RE.transparent.test(s)) return {kind:"transparent",settleable:true,
+    note:"Transparent address — the bridge can deliver here. Arrivals are public, so shield the funds once they land."};
+  if(ZADDR_RE.unified.test(s)) return {kind:"unified",settleable:false,
+    note:"<b>Unified address — private, but the bridge can't settle to it yet.</b> Open the same wallet and copy its <b>transparent receiving address</b> (starts <span class='mono'>t1</span>). Most wallets shield automatically the moment funds arrive, so you keep the privacy and the payment works."};
+  if(ZADDR_RE.sapling.test(s)) return {kind:"sapling",settleable:false,
+    note:"<b>Shielded (Sapling) address — private, but not settleable by the bridge yet.</b> Use the transparent receiving address from the same wallet and let it shield on arrival."};
+  if(/^u1/i.test(s)||/^zs1/i.test(s)||/^t[13]/i.test(s)) return {kind:"partial",settleable:false,
+    note:"Keep going — that address looks incomplete."};
+  return {kind:"invalid",settleable:false,
+    note:"Not a recognized Zcash address. Expected <span class='mono'>t1…</span>/<span class='mono'>t3…</span>, <span class='mono'>u1…</span> or <span class='mono'>zs1…</span>."};
+}
+/** Reusing a receiving address publicly links positions — the #1 real-world leak. */
+function addressReused(a){
+  const s=(a||"").trim(); if(!s) return false;
+  return positions.some(p=>p.zaddr && p.zaddr.toLowerCase()===s.toLowerCase());
+}
 const LIQ_T = 0.7; // Rhea liquidation threshold for ZEC
 const POOLS = [
   {id:"uni-weth-usdc-5",  name:"WETH / USDC", dex:"Uniswap v3", fee:"0.05%", entry:"USDC",  risk:"BLUE_CHIP", base:22.4, c:["weth","usdc"],  eid:"0x12fc…1796", desc:"The deepest pool on Base (~$114M TVL, ~$46M/day). Workhorse ETH exposure with maximum depth."},
@@ -545,10 +712,11 @@ const RISK_CHIP = {BLUE_CHIP:'<span class="chip chip-info">Blue chip</span>', ST
 let PID = 4;
 const positions = [
   {id:1, kind:"FULL", pool:POOLS[2], value:5230, zecIn:80, apy:20.5, range:"in", rew:"COMPOUND",
-   preset:"Moderate 8%", fees:41.2, inc:31.8, cooldown:0, opened:"12d ago"},
+   preset:"Moderate 8%", fees:41.2, inc:31.8, cooldown:0, opened:"12d ago", src:"SHIELDED"},
   {id:2, kind:"FULL", pool:POOLS[0], value:6410, zecIn:95, apy:11.9, range:"out", outFor:"3h", rebalIn:"~9h", rew:"ZEC",
-   preset:"Conservative 25%", fees:18.3, inc:5.1, cooldown:0, opened:"31d ago", zaddr:"u1k7…qf0d"},
-  {id:3, kind:"SIMPLE", value:10160, zecIn:220, apy:2.4, opened:"45d ago"},
+   preset:"Conservative 25%", fees:18.3, inc:5.1, cooldown:0, opened:"31d ago", src:"SHIELDED",
+   zaddr:"t1Py8kAoQrfmRRWTbtHkDkGb6JuaXPmpGxy"},
+  {id:3, kind:"SIMPLE", value:10160, zecIn:220, apy:2.4, opened:"45d ago", src:"TRANSPARENT"},
 ];
 const activity = [
   {t:"Rewards routed home", d:"$38.90 → 0.84 ZEC to u1k7…qf0d · quote hash emitted", ic:"⚡", cls:"chip-gold", when:"2h ago"},
@@ -621,7 +789,8 @@ function posCard(p){
       (p.cooldown>0?`<span class="chip chip-info cool"><span class="cool-ring" style="--p:${(1-p.cooldown/60)*100}%"></span>Cooldown ${p.cooldown}s</span>`
         : inRange?`<span class="chip chip-good"><span class="dot"></span>In range</span>`
         :`<span class="chip chip-warn"><span class="dot"></span>Out of range ${p.outFor} · rebalances ${p.rebalIn}</span>`)+
-      (p.rew==="ZEC"?`<span class="chip chip-gold">→ ZEC rewards</span>`:`<span class="chip chip-mute">Auto-compound</span>`);
+      (p.rew==="ZEC"?`<span class="chip chip-gold">→ ZEC rewards</span>`:`<span class="chip chip-mute">Auto-compound</span>`)+
+      (p.src==="SHIELDED"?`<span class="chip chip-priv" title="Funded from a shielded balance — your transaction history was never exposed"><svg class="ic"><use href="#i-shield"/></svg>Shielded source</span>`:"");
     nums=`<div class="pos-num"><div class="lbl">Value</div><div class="v num">${usd(p.value)}</div></div>
           <div class="pos-num"><div class="lbl">Net APY</div><div class="v num" style="color:var(--good)">${pct(p.apy)}</div></div>
           <div class="pos-num"><div class="lbl">Claimable</div><div class="v num">${usd((p.fees+p.inc)*0.85)}</div></div>`;
@@ -637,7 +806,7 @@ function posCard(p){
         <div class="small muted" style="flex:1;min-width:220px">
           <div style="margin-bottom:6px"><b>${p.preset}</b> · opened ${p.opened}</div>
           <div>Funded with ${p.zecIn} ZEC of borrowing power.</div>
-          ${p.rew==="ZEC"?`<div style="margin-top:6px">Rewards route to <span class="num">${p.zaddr}</span> as native ZEC.</div>`:""}
+          ${p.rew==="ZEC"?`<div style="margin-top:6px">Rewards route to <span class="mono">${p.zaddr.slice(0,14)}…</span> as native ZEC — shield on arrival.</div>`:""}
         </div>
       </div>
       <div class="pos-actions">
@@ -656,6 +825,45 @@ function posCard(p){
 function renderPositions(){
   const L=$("#posList");L.innerHTML="";
   positions.forEach(p=>L.appendChild(posCard(p)));
+  renderPrivacyPositions();
+}
+
+/* Per-position privacy status, mirrored in the Privacy view. */
+function privacyOf(p){
+  const items=[];
+  items.push(p.src==="SHIELDED"
+    ? {ok:true, t:"Funded from a shielded balance — your history never entered this"}
+    : {ok:false,t:"Funded from a transparent address — linked to that address's history"});
+  if(p.rew==="ZEC"&&p.zaddr){
+    const dup=positions.filter(q=>q.zaddr&&q.zaddr===p.zaddr).length>1;
+    items.push(dup
+      ? {bad:true,t:`Receiving address <span class="mono">${p.zaddr.slice(0,12)}…</span> is shared with another position — publicly links them`}
+      : {ok:true,t:`Receiving address <span class="mono">${p.zaddr.slice(0,12)}…</span> is unique to this position`});
+    items.push({ok:false,t:"Payouts arrive transparent — shield them in your wallet on arrival"});
+  } else if(p.kind!=="SIMPLE"){
+    items.push({ok:true,t:"Compounding — no payout leg, nothing lands on a public Zcash address"});
+  }
+  items.push(p.kind==="SIMPLE"
+    ? {ok:false,t:"The Rhea supply position is visible on NEAR"}
+    : {ok:false,t:"The Base LP position is public — size, pool and health are visible"});
+  const bad=items.some(i=>i.bad), warnOnly=items.every(i=>i.ok||!i.bad);
+  return {items, grade: bad?"Weak":(items.filter(i=>i.ok).length>=2?"Strong":"Partial")};
+}
+function renderPrivacyPositions(){
+  const box=$("#privPos"); if(!box) return;
+  box.innerHTML=positions.map(p=>{
+    const pv=privacyOf(p);
+    const title=p.kind==="SIMPLE"?"ZEC on Rhea":`${p.pool.name} · ${p.pool.dex}`;
+    const col=pv.grade==="Strong"?"var(--priv)":pv.grade==="Partial"?"var(--warn)":"var(--crit)";
+    return `<div style="padding:12px 0;border-bottom:1px solid var(--line-soft)">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
+        <b style="font-size:13.5px">${title}</b>
+        <span class="small" style="color:${col};font-weight:650">${pv.grade}</span>
+      </div>
+      <div class="pchk" style="margin-top:7px">${pv.items.map(i=>
+        `<div class="pchk-row"><svg class="ic ${i.bad?"pchk-bad":i.ok?"pchk-ok":"pchk-no"} st"><use href="#i-${i.ok?"check":"alert"}"/></svg><span>${i.t}</span></div>`
+      ).join("")}</div></div>`;
+  }).join("");
 }
 function act(p,a){
   if(a==="withdraw"){wd.p=p;$("#wdTitle").textContent=`Withdraw — ${p.kind==="SIMPLE"?"ZEC on Rhea":p.pool.name}`;wdUpd();$("#wdOverlay").classList.add("on");}
@@ -729,6 +937,7 @@ function setStep(n){
   $$("#stepsBar .step").forEach(s=>{const k=+s.dataset.s;s.classList.toggle("on",k===n);s.classList.toggle("done",k<n);});
   $("#backBtn").style.visibility=n===1?"hidden":"visible";
   $("#nextBtn").textContent=n===4?"Confirm deposit ✓":"Continue →";
+  gateNext();
 }
 $("#backBtn").addEventListener("click",()=>{
   let n=S.step-1;if(S.mode==="SIMPLE"&&n>1&&n<4)n=1;setStep(n);
@@ -754,12 +963,35 @@ $$("[data-rew]").forEach(o=>o.addEventListener("click",()=>{S.rew=o.dataset.rew;
   $$("[data-rew]").forEach(x=>x.classList.toggle("sel",x===o));
   $("#zaddrWrap").style.display=S.rew==="ZEC"?"block":"none";proj();}));
 $("#econToggle").addEventListener("click",e=>{e.target.classList.toggle("on");S.econ=!S.econ;});
+$$("[data-src]").forEach(o=>o.addEventListener("click",()=>{S.src=o.dataset.src;
+  $$("[data-src]").forEach(x=>x.classList.toggle("sel",x===o));
+  $("#srcHelp").innerHTML=S.src==="SHIELDED"
+    ? "<b>How it works:</b> we give you a freshly generated deposit address for this deposit only. Send to it straight from your shielded balance — Zcash calls this a deshielding transaction, and it does not expose your history. Only the amount becomes public."
+    : "<b>Heads up:</b> funding from a transparent address links this position to that address's public history. If you hold shielded ZEC, sending from the shielded balance instead costs nothing and reveals nothing.";
+  proj();}));
+
 $("#zaddr").addEventListener("input",e=>{
-  const v=e.target.value.trim(),h=$("#zaddrHint");
-  if(!v){h.textContent="Rewards only — principal never routes through this path.";h.style.color="var(--ink-3)";return;}
-  if(v.startsWith("t1")||v.startsWith("t3")){h.textContent="✓ Transparent address — broadly supported by the bridge. Note: arrivals are publicly visible on-chain.";h.style.color="var(--good)";}
-  else if(v.startsWith("u1")||v.startsWith("zs")){h.textContent="◆ Unified/shielded address — private on arrival; bridge support is confirmed at quote time.";h.style.color="var(--info)";}
-  else{h.textContent="✕ Doesn't look like a Zcash address (expect u1…, zs… or t1…).";h.style.color="var(--crit)";}
+  const v=e.target.value.trim(), d=describeZaddr(v), H=$("#zaddrHelp"), h=$("#zaddrHint");
+  if(d.kind==="empty"){
+    h.innerHTML="Use a <b>fresh</b> address for this position — reusing one publicly links your positions together.";
+    h.style.color="var(--ink-3)"; H.innerHTML=""; H.className=""; H.style.cssText=""; proj(); return;
+  }
+  const reused=addressReused(v);
+  // reset the help box every keystroke so stale styling can't linger
+  H.innerHTML=""; H.className=""; H.style.cssText="";
+  if(d.settleable&&!reused){
+    h.innerHTML="<svg class='ic pchk-ok'><use href='#i-check'/></svg> Fresh transparent address — the bridge can deliver here.";
+    h.style.color="var(--priv)";
+  } else if(d.settleable&&reused){
+    h.innerHTML="<svg class='ic pchk-bad'><use href='#i-alert'/></svg> This address already receives another position.";
+    h.style.color="var(--crit)";
+    H.innerHTML="<b>Address reuse is the biggest real-world privacy leak.</b> Anyone watching can now link these positions to each other and to you. Generate a new receiving address in your wallet — it costs nothing.";
+    H.className="addr-help"; H.style.borderColor="rgba(229,72,77,.35)"; H.style.background="var(--crit-bg)";
+  } else {
+    h.innerHTML="";
+    H.innerHTML=d.note; H.className="addr-help";
+  }
+  proj();
 });
 
 function ltvUi(){
@@ -837,9 +1069,61 @@ function proj(){
   } else {
     $("#pNote").textContent="Simple lending: no borrowing, no liquidation risk — withdraw any time.";
   }
+  privacyChecklist();
   ltvUi();
 }
+
+/* Live privacy grade for the choices currently on screen. */
+function privacyChecklist(){
+  const rows=[]; let score=0, max=0;
+  const ok=t=>rows.push(`<div class="pchk-row"><svg class="ic pchk-ok st"><use href="#i-check"/></svg><span>${t}</span></div>`);
+  const warn=t=>rows.push(`<div class="pchk-row"><svg class="ic pchk-no st"><use href="#i-alert"/></svg><span>${t}</span></div>`);
+  const bad=t=>rows.push(`<div class="pchk-row"><svg class="ic pchk-bad st"><use href="#i-alert"/></svg><span>${t}</span></div>`);
+
+  max++;
+  if(S.src==="SHIELDED"){score++;ok("Funded from your <b>shielded balance</b> — history stays private");}
+  else warn("Funding from a transparent address links this to its public history");
+
+  max++;
+  if(S.mode==="SIMPLE"){score++;ok("Simple lending — nothing is deployed to a public chain beyond NEAR");}
+  else warn("The Base position itself is <b>public</b> — size, pool and health are visible");
+
+  if(S.rew==="ZEC"){
+    max++;
+    const v=$("#zaddr")?$("#zaddr").value.trim():"", d=describeZaddr(v);
+    if(!v) warn("Add a receiving address — use a fresh one for this position");
+    else if(!d.settleable) bad("That address type can't receive yet — see the note above");
+    else if(addressReused(v)) bad("<b>Address reused</b> — publicly links this to another position");
+    else {score++;ok("Fresh receiving address — not linked to your other positions");}
+  } else {
+    max++;score++;
+    ok("Auto-compounding — no payout leg, so nothing lands on a public Zcash address");
+  }
+
+  const ratio=score/max;
+  const g=$("#pGrade");
+  g.textContent = ratio===1 ? "Strong" : ratio>=0.5 ? "Partial" : "Weak";
+  g.style.color = ratio===1 ? "var(--priv)" : ratio>=0.5 ? "var(--warn)" : "var(--crit)";
+  $("#pChk").innerHTML=rows.join("");
+  gateNext();
+}
+
+/** Never let someone reach Review with a payout address the bridge would reject. */
+function gateNext(){
+  const btn=$("#nextBtn"); if(!btn) return;
+  let block=false, why="";
+  if(S.mode==="FULL"&&S.rew==="ZEC"&&(S.step===3||S.step===4)){
+    const v=$("#zaddr").value.trim(), d=describeZaddr(v);
+    if(!v){block=true;why="Add a receiving address first";}
+    else if(!d.settleable){block=true;why="Use a transparent (t1…) receiving address";}
+  }
+  btn.disabled=block;
+  btn.textContent = block ? why : (S.step===4?"Confirm deposit ✓":"Continue →");
+}
+$("#toPrivacy").addEventListener("click",()=>showView("privacy"));
+
 function syncWizard(){
+  $$("[data-src]").forEach(x=>x.classList.toggle("sel",x.dataset.src===S.src));
   $$("[data-mode]").forEach(x=>x.classList.toggle("sel",x.dataset.mode===S.mode));
   $$("#assetSeg button").forEach(x=>x.classList.toggle("sel",x.dataset.asset===S.asset));
   renderPoolList();renderPresets();rwUi();proj();
@@ -866,8 +1150,13 @@ function renderReview(){
     <span class="k">Rebalance delay</span><span class="v num">${S.rd}h out-of-range</span>
     <span class="k">Auto-compound</span><span class="v">${S.rew==="COMPOUND"?"On":"Off — rewards route home"}</span>`;
   }
+  const zv=$("#zaddr").value.trim();
+  rows+=`<div class="rev-sec">Privacy</div>
+    <span class="k">Funding from</span><span class="v">${S.src==="SHIELDED"?"Shielded balance — history private":"Transparent balance — public history"}</span>
+    <span class="k">Strategy visibility</span><span class="v">${full?"Public on NEAR + Base":"Public on NEAR"}</span>
+    <span class="k">Payout address</span><span class="v">${S.rew==="ZEC"?(zv?(addressReused(zv)?"⚠ reused — links positions":"Fresh, transparent"):"— not set"):"None (compounding)"}</span>`;
   rows+=`<div class="rev-sec">Rewards &amp; fees</div>
-    <span class="k">Reward preference</span><span class="v">${S.rew==="ZEC"?`Native ZEC → ${$("#zaddr").value.trim()||"u1… (add address)"}`:"Auto-compound into position"}</span>
+    <span class="k">Reward preference</span><span class="v">${S.rew==="ZEC"?`Native ZEC → ${zv?zv.slice(0,10)+"…":"(add address)"}`:"Auto-compound into position"}</span>
     <span class="k">Claim economics</span><span class="v">${S.econ?"≥3× costs · $5 min · 30d max":"Manual claims"}</span>
     <span class="k">1-Click bridge fee</span><span class="v" style="color:var(--good)">0% (partner JWT)</span>
     <span class="k">Engine performance fee</span><span class="v num">15% of yield only</span>`;
@@ -879,7 +1168,7 @@ function renderReview(){
 function launch(){
   const full=S.mode==="FULL";
   const steps=[
-    {t:"Deposit address created",d:"1-Click quote: fee 0% · quote hash logged"},
+    {t:"Fresh deposit address created",d:S.src==="SHIELDED"?"Send from your shielded balance — history not exposed":"Send from your t-address"},
     {t:"ZEC received on NEAR",d:"Supplied to Rhea as collateral"},
     ...(full?[{t:`Borrowed ${S.asset} on Rhea`,d:`${S.ltv}% LTV · delivered to Base via NEAR Intents`},
               {t:"LP position opened",d:"Engine depositSingleSided — parameters exactly as reviewed"}]
@@ -901,8 +1190,8 @@ function launch(){
       const pool=POOLS.find(p=>p.id===S.poolId)||POOLS[2];
       const np=full?{id:++PID,kind:"FULL",pool,value:amt*S.zec*(S.ltv/100),zecIn:amt,apy:estApy(),range:"in",
           rew:S.rew==="ZEC"?"ZEC":"COMPOUND",preset:PRESETS.find(p=>p.k===S.preset).label+" "+(S.rw/100).toFixed(1)+"%",
-          fees:0,inc:0,cooldown:60,opened:"just now",zaddr:$("#zaddr").value.trim()||"u1k7…qf0d"}
-        :{id:++PID,kind:"SIMPLE",value:amt*S.zec,zecIn:amt,apy:2.4,opened:"just now"};
+          fees:0,inc:0,cooldown:60,opened:"just now",src:S.src,zaddr:$("#zaddr").value.trim()}
+        :{id:++PID,kind:"SIMPLE",value:amt*S.zec,zecIn:amt,apy:2.4,opened:"just now",src:S.src};
       positions.unshift(np);
       if(full)startCooldown(np);
       activity.unshift({t:"Deposited",d:`${amt} ZEC → ${full?pool.name+" ("+pool.dex+")":"Rhea lending"}`,ic:"＋",cls:"chip-gold",when:"just now"});

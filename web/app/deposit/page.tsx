@@ -6,6 +6,7 @@ import {
   RANGE_PRESETS,
   RHEA,
   classifyZcashAddress,
+  describeZcashAddress,
   presetToLpParams,
   validateLpParams,
   type BorrowAssetSymbol,
@@ -68,6 +69,7 @@ export default function DepositWizard() {
   );
   const pool = CURATED_POOLS.find((p) => p.id === poolId) ?? null;
   const addrKind = classifyZcashAddress(zcashAddress);
+  const addr = describeZcashAddress(zcashAddress);
   const paramErrors = validateLpParams(lpParams);
 
   const flow: Step[] = isFull
@@ -80,7 +82,10 @@ export default function DepositWizard() {
   const canNext = (): boolean => {
     switch (step) {
       case "amount":
-        return zec > 0 && addrKind !== "invalid";
+        // The bridge settles Zcash withdrawals to transparent addresses only
+        // (probed live 2026-08-08 — see docs/PRIVACY.md). Shielded addresses are
+        // accepted as input and explained, but cannot be the payout target yet.
+        return zec > 0 && addr.settleable;
       case "pool":
         return pool !== null;
       case "params":
@@ -180,26 +185,42 @@ export default function DepositWizard() {
             </p>
           </div>
           <div>
-            <label className="label">Your Zcash address (refunds & rewards)</label>
+            <label className="label">Where ZEC returns to (refunds &amp; rewards)</label>
             <input
               className="input font-mono text-sm"
-              placeholder="t1…  (transparent) or u1… (unified)"
+              placeholder="t1… receiving address (u1… accepted — we'll explain)"
               value={zcashAddress}
               onChange={(e) => setZcashAddress(e.target.value.trim())}
             />
             <div className="mt-1.5 text-sm">
               {zcashAddress.length === 0 ? (
                 <span className="text-ink-muted">
-                  Where ZEC returns to when you withdraw or take rewards.
+                  Use a <b className="text-ink-soft">fresh</b> address for this position — reusing
+                  one publicly links your positions together.
                 </span>
-              ) : addrKind === "transparent" ? (
-                <StatusPill kind="good" label="Transparent — supported (arrivals publicly visible)" />
-              ) : addrKind === "unified" ? (
-                <StatusPill kind="info" label="Unified — private; support confirmed at quote time" />
-              ) : (
+              ) : addr.settleable ? (
+                <StatusPill kind="good" label="Transparent — the bridge can deliver here" />
+              ) : addrKind === "invalid" ? (
                 <StatusPill kind="serious" label="Not a recognized Zcash address" />
+              ) : (
+                <StatusPill kind="info" label={`${addrKind === "unified" ? "Unified" : "Shielded"} — private, but not settleable yet`} />
               )}
             </div>
+            {/* Shielded addresses are explained, never dead-ended: wallets now hand
+                users unified addresses by default, and a bare rejection would
+                strand exactly the users who care most about privacy. */}
+            {zcashAddress.length > 0 && !addr.settleable && (
+              <p className="mt-2.5 rounded-ctl border border-status-info/30 bg-status-info/10 p-3 text-sm leading-relaxed text-ink-soft">
+                {addr.note}
+              </p>
+            )}
+            {addr.settleable && (
+              <p className="mt-2 text-xs text-ink-muted">
+                Arrivals here are public on the Zcash chain — shield them in your wallet once they
+                land. Funding your deposit <b className="text-ink-soft">from a shielded balance</b> keeps
+                your history private either way.
+              </p>
+            )}
           </div>
           {!isFull && (
             <label className="card flex cursor-pointer items-center justify-between p-4">
