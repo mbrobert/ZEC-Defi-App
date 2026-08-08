@@ -72,6 +72,26 @@ clear gas + bridge costs by a configurable multiple (default 3×, $5 floor,
 1-Click quote: recipient must equal the stored Zcash address, destination must
 be native ZEC, and the quote hash is emitted on-chain for auditability.
 
+## Privacy posture
+
+ZEC holders are the users, so the boundary is stated exactly — and measured, not
+assumed. Probed against the live NEAR Intents API on 2026-08-08: withdrawals
+settle to **transparent addresses only** (`u1…` and `zs1…` recipients are
+rejected today), and ZEC deposit addresses are freshly generated per quote.
+
+That constrains the payout leg — not where your ZEC comes from. Spending from a
+**shielded pool** to the deposit address is an ordinary deshielding transaction,
+so your balance, address and entire history stay private. That is the app's
+default assumption, with instructions written for it.
+
+Shielded addresses are accepted as input and **explained**, never dead-ended —
+wallets now hand users unified addresses by default, and a bare "invalid
+address" would strand exactly the users who care most. The app tracks receiving
+addresses across positions and flags reuse (the highest-impact real-world leak),
+and a dedicated Privacy view maps what is public at every hop. The middle leg —
+NEAR and Base — is public and we say so plainly rather than implying protection
+that does not exist. Full model: `docs/PRIVACY.md`.
+
 ## Security posture
 
 - Principal never routes through the reward path.
