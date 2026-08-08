@@ -171,6 +171,40 @@ describe("RewardExecutor", () => {
     assert.equal(chain.routeToZcash.calls.length, 0);
   });
 
+  // Shielded recipients: the bridge rejects u1…/zs1… with a generic
+  // "recipient is not valid" (probed live 2026-08-08). We must fail fast with a
+  // legible reason BEFORE burning a quote — rewards stay accrued and retry.
+  for (const [label, addr] of [
+    ["unified", "u1l8xunezsvhq8fgzfl7404m450nwnd76zshscn6nfys7vyz2ywyh4cc5daaq0c7q2su5lqfh23sp7fkyy00c7qqfqfqhqvxr0pmw6snjrg"],
+    ["sapling", "zs1z7rejlpsa98s2rrrfkwmaxu53e4ue0ulcrw0h4x5g8jl04tak0d3mm47vdtahatqrlkngh9sly"],
+    ["garbage", "not-an-address"],
+  ] as const) {
+    it(`refuses to quote a ${label} recipient the bridge cannot settle`, async () => {
+      const chain = makeChain();
+      const oneClick = makeOneClick();
+      const exec = new RewardExecutor(chain.service, oneClick.client, policy);
+      const ctx = makeCtx(1);
+      ctx.position = { ...ctx.position, zcashAddress: addr };
+
+      await assert.rejects(() => exec.execute(ctx), /cannot settle to/);
+      // no quote requested, no funds moved
+      assert.equal(oneClick.getQuote.calls.length, 0);
+      assert.equal(chain.routeToZcash.calls.length, 0);
+    });
+  }
+
+  it("accepts a transparent (t3 P2SH) recipient", async () => {
+    const chain = makeChain();
+    const oneClick = makeOneClick();
+    const exec = new RewardExecutor(chain.service, oneClick.client, policy);
+    const ctx = makeCtx(1);
+    // makeOneClick echoes the request, so invariant #1 (recipient match) holds.
+    ctx.position = { ...ctx.position, zcashAddress: "t3Vz22vK5z2LcKEdg16Yv4FFneEL1zg9ojd" };
+
+    const out = await exec.execute(ctx);
+    assert.equal(out.kind, "ROUTED_TO_ZCASH");
+  });
+
   it("still succeeds when deposit/submit nudge fails (solver auto-detects)", async () => {
     const chain = makeChain();
     const oneClick = makeOneClick();

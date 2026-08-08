@@ -1,4 +1,4 @@
-import { INTENTS_ASSET_IDS } from "@zyo/shared";
+import { INTENTS_ASSET_IDS, describeZcashAddress } from "@zyo/shared";
 import type { Address, Hex } from "../types/evm.js";
 import { decideReward, type RewardDecisionInput } from "../engine/rewardDecision.js";
 import {
@@ -95,6 +95,17 @@ export class RewardExecutor {
     const zcashAddress = ctx.position.zcashAddress;
     if (!zcashAddress) {
       throw new QuoteSafetyError("position has SEND_TO_ZCASH pref but no zcash address");
+    }
+
+    // ---- safety invariant #0: fail fast on an address the bridge cannot settle.
+    // Shielded (u1…/zs1…) recipients are rejected by 1-Click with a generic
+    // "recipient is not valid"; catching it here keeps the reason legible and
+    // avoids burning a quote. Rewards accrue and retry — nothing is lost.
+    const addr = describeZcashAddress(zcashAddress);
+    if (!addr.settleable) {
+      throw new QuoteSafetyError(
+        `position zcash address is ${addr.kind}, which the bridge cannot settle to: ${addr.note}`
+      );
     }
 
     const deadline = new Date(

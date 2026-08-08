@@ -70,18 +70,89 @@ export const REWARD_CLAIM_POLICY = {
   maxHoldDays: 30,
 } as const;
 
-/** Basic Zcash address shape checks (full validation happens server-side). */
+/**
+ * Zcash address shapes (full validation happens at the bridge).
+ *
+ * SETTLEMENT REALITY — probed against the live 1-Click API on 2026-08-08:
+ *   • `t1…` transparent recipient  → HTTP 201, quote returned. SETTLEABLE.
+ *   • `u1…` unified recipient      → HTTP 400 "recipient is not valid".
+ *   • `zs1…` Sapling recipient     → HTTP 400 "recipient is not valid".
+ *   • control (malformed t-addr)   → HTTP 400, so the endpoint really validates.
+ * NEAR Intents' own chain-support page agrees: Zcash is
+ * "Partially supported — Transparent addresses only".
+ *
+ * This constrains the SETTLEMENT leg only. It does NOT constrain where the
+ * user's ZEC comes from: spending from a shielded pool to a transparent
+ * address is an ordinary deshielding transaction, so a shielded holder can
+ * fund a position today without exposing their coin history. See
+ * docs/PRIVACY.md for the full boundary map.
+ */
 export const ZCASH_ADDRESS_PATTERNS = {
-  /** Transparent P2PKH / P2SH — fully supported by NEAR Intents. */
+  /** Transparent P2PKH (t1) / P2SH (t3) — the only settleable recipient type. */
   transparent: /^t[13][a-zA-Z0-9]{33}$/,
-  /** Unified addresses — partially supported; warn in UI. */
+  /** Unified address (ZIP-316). Private, but not settleable by the bridge yet. */
   unified: /^u1[a-z0-9]{50,}$/,
+  /** Sapling shielded. Private, not settleable by the bridge. */
+  sapling: /^zs1[a-z0-9]{70,}$/,
 } as const;
 
-export function classifyZcashAddress(
-  addr: string
-): "transparent" | "unified" | "invalid" {
-  if (ZCASH_ADDRESS_PATTERNS.transparent.test(addr)) return "transparent";
-  if (ZCASH_ADDRESS_PATTERNS.unified.test(addr)) return "unified";
+export type ZcashAddressKind = "transparent" | "unified" | "sapling" | "invalid";
+
+export interface ZcashAddressInfo {
+  kind: ZcashAddressKind;
+  /** Can NEAR Intents settle a withdrawal to this address today? */
+  settleable: boolean;
+  /** Are amounts arriving here publicly visible on the Zcash chain? */
+  publiclyVisible: boolean;
+  /** Short, user-facing explanation — the UI should not invent its own. */
+  note: string;
+}
+
+export function classifyZcashAddress(addr: string): ZcashAddressKind {
+  const a = addr.trim();
+  if (ZCASH_ADDRESS_PATTERNS.transparent.test(a)) return "transparent";
+  if (ZCASH_ADDRESS_PATTERNS.unified.test(a)) return "unified";
+  if (ZCASH_ADDRESS_PATTERNS.sapling.test(a)) return "sapling";
   return "invalid";
 }
+
+/** Everything the UI needs to guide a user to a working, private-as-possible setup. */
+export function describeZcashAddress(addr: string): ZcashAddressInfo {
+  const kind = classifyZcashAddress(addr);
+  switch (kind) {
+    case "transparent":
+      return {
+        kind,
+        settleable: true,
+        publiclyVisible: true,
+        note:
+          "Transparent address — the bridge can deliver here. Arrivals are public on the Zcash chain, so shield the funds once they land and use a fresh address for each position.",
+      };
+    case "unified":
+      return {
+        kind,
+        settleable: false,
+        publiclyVisible: false,
+        note:
+          "Unified address — private, but the bridge cannot settle to it yet. Paste the transparent receiving address from the same wallet; most wallets can auto-shield the moment funds arrive.",
+      };
+    case "sapling":
+      return {
+        kind,
+        settleable: false,
+        publiclyVisible: false,
+        note:
+          "Sapling shielded address — private, but the bridge cannot settle to it yet. Use the transparent receiving address from the same wallet and shield on arrival.",
+      };
+    default:
+      return {
+        kind,
+        settleable: false,
+        publiclyVisible: false,
+        note: "Not a recognized Zcash address. Expected t1…/t3… (transparent), u1… (unified) or zs1… (shielded).",
+      };
+  }
+}
+
+/** Where the user is funding a deposit FROM — decides the privacy of the inbound leg. */
+export type DepositSource = "SHIELDED" | "TRANSPARENT";
