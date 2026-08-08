@@ -156,3 +156,4 @@ export function describeZcashAddress(addr: string): ZcashAddressInfo {
 
 /** Where the user is funding a deposit FROM — decides the privacy of the inbound leg. */
 export type DepositSource = "SHIELDED" | "TRANSPARENT";
+
