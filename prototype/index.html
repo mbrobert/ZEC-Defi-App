@@ -481,6 +481,11 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
             </div>
           </div>
           <div id="zaddrWrap" style="display:none;margin-top:12px">
+            <div class="field">
+              <label>Which wallet receives them? <span class="tt" title="Payouts land transparent. Wallets differ in whether they shield automatically — pick yours and we'll show exactly what to paste and what happens next.">ⓘ</span></label>
+              <select class="in" id="walletSel"></select>
+              <div id="walletHelp" class="addr-help"></div>
+            </div>
             <div class="field" style="margin-bottom:0">
               <label>Where rewards arrive <span class="tt" title="The bridge settles Zcash withdrawals to transparent addresses only (verified against the live API). Your wallet can shield the moment funds land.">ⓘ</span></label>
               <input class="in mono" id="zaddr" placeholder="t1… receiving address (u1… accepted — we'll explain)" spellcheck="false">
@@ -601,6 +606,34 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
           <div class="pchk-row"><svg class="ic pchk-bad st"><use href="#i-alert"/></svg><span><b>Reusing your deposit-refund address for rewards.</b> Joins the inbound and outbound legs directly, connecting your Zcash identity to the whole position.</span></div>
           <div class="pchk-row"><svg class="ic pchk-no st"><use href="#i-alert"/></svg><span><b>Amount and timing correlation.</b> A distinctive amount leaving a shielded pool and the same amount appearing on Base moments later correlates the two regardless of address hygiene. Round amounts and elapsed time help; this one has real residual risk and we would rather say so.</span></div>
           <div class="pchk-row"><svg class="ic pchk-no st"><use href="#i-alert"/></svg><span><b>Shielding rewards back into the account you deposited from.</b> Fine for most threat models; weak against an adversary already watching that account.</span></div>
+        </div>
+      </div>
+
+      <div class="card card-pad" style="margin-top:16px">
+        <h2 style="font-size:16px;margin-bottom:4px">Getting funds back into the shielded pool</h2>
+        <p class="small muted" style="margin-bottom:12px">Payouts land transparent. Here is exactly how they become private again \u2014 and why we never do it for you.</p>
+        <div class="legs">
+          <div class="leg private">
+            <div class="lic"><svg class="ic" style="width:17px;height:17px"><use href="#i-shield"/></svg></div>
+            <div>
+              <div class="lt">Your wallet shields it \u2014 usually by itself</div>
+              <div class="ld">Zashi (now Zodl) shields ZEC it receives, so a payout is exposed only briefly. Its unified address is shielded-only since 2.0.3, which is why we ask for the <b>separate transparent address</b> on its Receive screen. Other wallets expose a shield action to run once funds land.</div>
+            </div>
+          </div>
+          <div class="leg private">
+            <div class="lic"><svg class="ic" style="width:17px;height:17px"><use href="#i-check"/></svg></div>
+            <div>
+              <div class="lt">Payouts are always large enough to be worth shielding</div>
+              <div class="ld">Shielding costs a small network fee, and wallets skip dust. The agent already batches rewards until they clear <b>3\u00d7 the cost of claiming, with a $5 floor</b> \u2014 comfortably above any auto-shield threshold. That floor is doing double duty; lowering it would start stranding dust in the open.</div>
+            </div>
+          </div>
+          <div class="leg public">
+            <div class="lic"><svg class="ic" style="width:17px;height:17px"><use href="#i-alert"/></svg></div>
+            <div>
+              <div class="lt">We cannot shield on your behalf \u2014 by design</div>
+              <div class="ld">Shielding is a transaction signed by whoever holds the keys. For us to do it, we would have to custody your ZEC. We do not, and will not. What we can do is route the payout to a wallet that shields itself, and tell you precisely how \u2014 which is what the deposit flow does.</div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -970,6 +1003,51 @@ $$("[data-src]").forEach(o=>o.addEventListener("click",()=>{S.src=o.dataset.src;
     : "<b>Heads up:</b> funding from a transparent address links this position to that address's public history. If you hold shielded ZEC, sending from the shielded balance instead costs nothing and reveals nothing.";
   proj();}));
 
+/* ── Getting funds back into the shielded pool ───────────────────────
+   We never hold Zcash keys, so we cannot shield for the user — shielding is
+   a transaction their own wallet signs. What we can do is route the payout
+   to a wallet that shields on receipt, and say exactly how. Only Zashi/Zodl
+   is asserted to auto-shield (verified); others point at their own action. */
+const WALLETS=[
+  {id:"zashi",label:"Zashi / Zodl (Zcash official)",auto:true,
+   addr:"Receive screen \u2192 the transparent address is listed separately, below the shielded one. Copy that <span class='mono'>t1\u2026</span> address.",
+   shield:"Zashi shields ZEC it receives, so your payout spends only moments in the open before it is private again."},
+  {id:"ywallet",label:"Ywallet",auto:"unverified",
+   addr:"Receive \u2192 switch the address type to transparent and copy it.",
+   shield:"Ywallet exposes a shield action for transparent balances \u2014 run it once a payout lands, or check whether your version does it for you."},
+  {id:"zingo",label:"Zingo",auto:"unverified",
+   addr:"Receive \u2192 transparent address.",
+   shield:"Run the wallet's shield / consolidate action after the payout arrives to move it into the shielded pool."},
+  {id:"other",label:"Another self-custody wallet",auto:"unverified",
+   addr:"Any transparent (<span class='mono'>t1\u2026</span>/<span class='mono'>t3\u2026</span>) address the wallet controls \u2014 generate a fresh one for this position.",
+   shield:"Look for a 'shield' action and run it after each payout. If the wallet has none, use one that does."},
+  {id:"exchange",label:"An exchange account",auto:false,
+   addr:"An exchange deposit address.",
+   shield:"Exchanges hold the funds \u2014 nothing is shielded.",
+   warn:"<b>Strongly discouraged.</b> An exchange deposit address is tied to your verified identity, which links this position \u2014 and every future payout to it \u2014 directly to you. Exchanges also generally do not support shielded withdrawals, so the funds cannot easily be made private again. Use a self-custody wallet instead."},
+];
+S.wallet="zashi";
+function renderWallets(){
+  const sel=$("#walletSel"); if(!sel) return;
+  sel.innerHTML=WALLETS.map(w=>`<option value="${w.id}"${w.id===S.wallet?" selected":""}>${w.label}</option>`).join("");
+  walletHelp();
+}
+function walletHelp(){
+  const w=WALLETS.find(x=>x.id===S.wallet), H=$("#walletHelp"); if(!H) return;
+  if(w.warn){
+    H.className="addr-help"; H.style.borderColor="rgba(229,72,77,.35)"; H.style.background="var(--crit-bg)";
+    H.innerHTML=w.warn;
+  } else {
+    H.className="addr-help"; H.style.borderColor=""; H.style.background="";
+    const badge = w.auto===true
+      ? `<span class="chip chip-priv" style="margin-left:6px"><svg class="ic"><use href="#i-shield"/></svg>Shields automatically</span>`
+      : `<span class="chip chip-mute" style="margin-left:6px">Shield manually</span>`;
+    H.innerHTML=`<b>Where to find the address</b>${badge}<div style="margin-top:5px">${w.addr}</div>
+      <div style="margin-top:8px"><b>After it lands:</b> ${w.shield}</div>`;
+  }
+}
+$("#walletSel").addEventListener("change",e=>{S.wallet=e.target.value;walletHelp();privacyChecklist();});
+
 $("#zaddr").addEventListener("input",e=>{
   const v=e.target.value.trim(), d=describeZaddr(v), H=$("#zaddrHelp"), h=$("#zaddrHint");
   if(d.kind==="empty"){
@@ -1094,7 +1172,13 @@ function privacyChecklist(){
     if(!v) warn("Add a receiving address — use a fresh one for this position");
     else if(!d.settleable) bad("That address type can't receive yet — see the note above");
     else if(addressReused(v)) bad("<b>Address reused</b> — publicly links this to another position");
+    else if(S.wallet==="exchange") bad("Paying out to an <b>exchange</b> — ties this position to your verified identity");
     else {score++;ok("Fresh receiving address — not linked to your other positions");}
+    max++;
+    const w=WALLETS.find(x=>x.id===S.wallet);
+    if(w&&w.auto===true){score++;ok("Your wallet <b>shields on arrival</b> — funds are private again within moments");}
+    else if(w&&w.auto===false) bad("Funds stay transparent and custodied — never shielded");
+    else warn("Shield the payout manually once it lands — your wallet has an action for it");
   } else {
     max++;score++;
     ok("Auto-compounding — no payout leg, so nothing lands on a public Zcash address");
@@ -1236,7 +1320,7 @@ setInterval(()=>{ // gentle price jitter + freshness
 },4000);
 
 /* ═══ Boot ═══ */
-renderBand();renderPositions();renderActivity();renderPoolTable();syncWizard();refreshStats();
+renderBand();renderPositions();renderActivity();renderPoolTable();renderWallets();syncWizard();refreshStats();
 </script>
 </body>
 </html>

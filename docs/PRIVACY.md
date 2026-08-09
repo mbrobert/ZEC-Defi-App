@@ -98,6 +98,39 @@ The bridge is not the weak point. These are:
 - A dedicated **Privacy view** shows this boundary map per position, so the
   answer to "what can people see about me?" is a click away.
 
+## Getting funds from transparent back into the shielded pool
+
+This is the question every ZEC holder will ask, so the app answers it in the
+deposit flow rather than in a help article.
+
+**We cannot shield on the user's behalf, by design.** Shielding is a transaction
+signed by whoever holds the keys. For the platform to do it, the platform would
+have to custody user ZEC. It does not and will not. What it can do is route the
+payout to a wallet that shields itself, and say precisely how.
+
+**For most users the wallet already handles it.** Zashi (now Zodl, the ECC
+wallet) shields ZEC it receives, so a payout is exposed only briefly. Since
+Zashi 2.0.3 its unified address contains shielded receivers only, and the
+transparent address is shown separately on the Receive screen — that separate
+`t1…` address is what our payouts must target, which is exactly what the
+wizard's wallet picker tells the user to copy. Other wallets expose a shield
+action to run once funds land; we do not assert auto-shield behaviour for
+wallets where we have not verified it, and say "shield manually" instead.
+
+**Payout size is a privacy parameter, not just an economic one.** Shielding
+costs a Zcash network fee (ZIP-317 — fractions of a cent at normal prices) and
+wallets skip shielding dust, so a stream of tiny payouts would leave a trail of
+small transparent amounts nobody bothers to shield. The agent already batches
+rewards until they clear **3× the cost of claiming, with a $5 floor**
+(`REWARD_CLAIM_POLICY`), which sits far above any auto-shield threshold. That
+floor is doing double duty: lowering it would start stranding dust in the open.
+
+**Exchange addresses are refused-by-warning.** An exchange deposit address is
+tied to a verified identity, which links the position — and every future payout
+to that address — directly to the user. Exchanges also generally do not support
+shielded withdrawals, so funds sent there cannot easily be made private again.
+The wallet picker marks this path in red and drops the privacy grade.
+
 ## If shielded settlement ships
 
 Nothing in the contracts or the agent assumes transparent addresses beyond the

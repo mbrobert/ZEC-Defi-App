@@ -157,3 +157,83 @@ export function describeZcashAddress(addr: string): ZcashAddressInfo {
 /** Where the user is funding a deposit FROM — decides the privacy of the inbound leg. */
 export type DepositSource = "SHIELDED" | "TRANSPARENT";
 
+/**
+ * Getting funds from transparent back into the shielded pool.
+ *
+ * We never hold the user's Zcash keys, so the platform cannot shield on their
+ * behalf — shielding is a transaction their own wallet signs. What we CAN do is
+ * route payouts to a wallet that shields automatically, and say exactly how.
+ *
+ * Verified behaviour: Zashi (now Zodl, the ECC wallet) shields ZEC received into
+ * the wallet, and since 2.0.3 its unified address contains shielded receivers
+ * only — the transparent address is shown separately on the Receive screen.
+ * That separate t-address is the one our payouts must target.
+ *
+ * For other wallets we deliberately do NOT assert auto-shield behaviour we
+ * haven't verified; we point the user at their wallet's own shield action.
+ *
+ * Economics note: shielding costs a Zcash network fee (ZIP-317, fractions of a
+ * cent at normal prices), and wallets skip auto-shielding dust. The existing
+ * REWARD_CLAIM_POLICY.minAbsoluteUsd floor ($5) already sits far above any
+ * auto-shield threshold, so every payout we make is worth shielding — that
+ * floor is doing double duty and should not be lowered without revisiting this.
+ */
+export interface WalletShieldGuide {
+  id: string;
+  label: string;
+  /** Do we have verified evidence this wallet shields received funds itself? */
+  autoShields: boolean | "unverified";
+  /** Where to find the transparent receiving address. */
+  addressHint: string;
+  /** What happens after funds land. */
+  shieldHint: string;
+  warn?: string;
+}
+
+export const WALLET_SHIELD_GUIDES: WalletShieldGuide[] = [
+  {
+    id: "zashi",
+    label: "Zashi / Zodl",
+    autoShields: true,
+    addressHint:
+      "Receive screen → the transparent address is listed separately, below the shielded one. Copy that t-address.",
+    shieldHint:
+      "Zashi shields ZEC it receives, so your payout spends only moments in the open before it is private again.",
+  },
+  {
+    id: "ywallet",
+    label: "Ywallet",
+    autoShields: "unverified",
+    addressHint: "Receive → switch the address type to transparent and copy it.",
+    shieldHint:
+      "Ywallet exposes a shield action for transparent balances — run it after a payout lands, or check whether your version does it automatically.",
+  },
+  {
+    id: "zingo",
+    label: "Zingo",
+    autoShields: "unverified",
+    addressHint: "Receive → transparent address.",
+    shieldHint:
+      "Use the wallet's shield/consolidate action once the payout arrives to move it into the shielded pool.",
+  },
+  {
+    id: "other",
+    label: "Another self-custody wallet",
+    autoShields: "unverified",
+    addressHint:
+      "Any transparent (t1…/t3…) receiving address the wallet controls. Generate a new one per position.",
+    shieldHint:
+      "Check the wallet for a 'shield' action and run it after each payout. If it has none, move the funds to a wallet that does.",
+  },
+  {
+    id: "exchange",
+    label: "An exchange account",
+    autoShields: false,
+    addressHint: "An exchange deposit address.",
+    shieldHint: "Exchanges hold the funds; nothing is shielded.",
+    warn:
+      "Strongly discouraged. Exchange deposits are tied to your verified identity, which links this position — and every future payout to the same address — directly to you. Exchanges also generally do not support shielded withdrawals, so the funds cannot easily be made private again. Use a self-custody wallet instead.",
+  },
+];
+
+
