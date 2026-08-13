@@ -266,6 +266,80 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
 .fresh{font-size:11.5px;color:var(--ink-3)}
 .tt{border-bottom:1px dotted var(--ink-3);cursor:help;font-style:normal}
 
+/* ─── Tooltips (custom — native title tooltips are unreliable) ───────── */
+#tip{position:fixed;z-index:300;max-width:290px;background:var(--surface-2);
+  border:1px solid var(--line);border-radius:10px;padding:10px 12px;
+  font-size:12.6px;line-height:1.5;color:var(--ink-2);box-shadow:var(--shadow);
+  pointer-events:none;opacity:0;transform:translateY(4px);
+  transition:opacity .12s, transform .12s}
+#tip.on{opacity:1;transform:translateY(0)}
+#tip b{color:var(--ink)}
+
+/* ─── Tx links ───────────────────────────────────────────────────────── */
+.txlink{display:inline-flex;align-items:center;gap:4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:11px;color:var(--info);border:1px solid rgba(139,156,249,.25);
+  background:var(--info-bg);border-radius:6px;padding:1px 7px;margin-top:4px}
+.txlink:hover{border-color:var(--info)}
+
+/* ─── Metric strip (protocol social proof) ───────────────────────────── */
+.mstrip{display:flex;gap:26px;align-items:center;flex-wrap:wrap;
+  border:1px solid var(--line);border-radius:12px;background:var(--bg-2);
+  padding:10px 18px;margin-top:22px;font-size:13px}
+.mstrip .m{display:flex;gap:8px;align-items:baseline}
+.mstrip .m b{font-size:15px}
+.mstrip .m span{color:var(--ink-3);font-size:12px}
+
+/* ─── Token marks ────────────────────────────────────────────────────── */
+.coin svg{width:100%;height:100%;display:block;border-radius:50%}
+
+/* ─── Docs view ──────────────────────────────────────────────────────── */
+.docs-grid{display:grid;grid-template-columns:230px 1fr;gap:26px;align-items:start;margin-top:20px}
+@media(max-width:860px){.docs-grid{grid-template-columns:1fr}}
+.docs-nav{position:sticky;top:82px;display:grid;gap:2px}
+@media(max-width:860px){.docs-nav{position:static;grid-template-columns:1fr 1fr;gap:4px}}
+.docs-nav button{text-align:left;padding:9px 13px;border-radius:9px;font-size:13.5px;
+  font-weight:550;color:var(--ink-2)}
+.docs-nav button:hover{background:var(--line-soft);color:var(--ink)}
+.docs-nav button.on{background:var(--surface-2);color:var(--gold)}
+.doc-sec{display:none}
+.doc-sec.on{display:block}
+.doc-sec h2{font-size:19px;margin-bottom:12px}
+.doc-sec h3{font-size:14.5px;margin:20px 0 7px;color:var(--gold)}
+.doc-sec p{font-size:13.8px;color:var(--ink-2);margin-bottom:10px;max-width:640px;line-height:1.6}
+.doc-sec p b{color:var(--ink)}
+.doc-sec .mono{color:var(--ink)}
+.dtable{width:100%;border-collapse:collapse;font-size:13px;margin:10px 0 14px;max-width:640px}
+.dtable th{text-align:left;color:var(--ink-3);font-size:11.5px;text-transform:uppercase;
+  letter-spacing:.05em;padding:7px 10px;border-bottom:1px solid var(--line)}
+.dtable td{padding:8px 10px;border-bottom:1px solid var(--line-soft);color:var(--ink-2)}
+.dtable td:first-child{color:var(--ink);font-weight:600}
+
+/* ─── Mobile pass ────────────────────────────────────────────────────── */
+@media(max-width:720px){
+  .wrap{padding:0 14px}
+  .nav-in{gap:10px;height:auto;flex-wrap:wrap;padding:10px 0}
+  .logo{font-size:15px}
+  .tabs{order:3;flex-basis:100%;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tab{padding:7px 11px;white-space:nowrap;font-size:13px}
+  .price-chip{margin-left:auto;padding:5px 10px;font-size:12px}
+  #connectBtn{padding:7px 11px;font-size:13px}
+  .grid-stats{grid-template-columns:1fr 1fr;gap:10px;margin:16px 0 14px}
+  .stat .val{font-size:21px}
+  .pos-head{flex-wrap:wrap;gap:10px;padding:14px 14px}
+  .pos-nums{gap:18px;width:100%;order:3}
+  .pos-body{padding:14px}
+  .pos-actions .btn{padding:8px 12px;font-size:13px}
+  .steps{overflow-x:auto;scrollbar-width:none}
+  .steps .step{white-space:nowrap}
+  .card-pad{padding:15px}
+  .proj{position:static}
+  .mstrip{gap:14px;padding:9px 13px}
+  .modal{width:100%}
+  .opt-cards{grid-template-columns:1fr!important}
+  h1{font-size:19px!important}
+}
+
 /* ─── Privacy language ───────────────────────────────────────────────── */
 .ic{width:1em;height:1em;fill:none;stroke:currentColor;stroke-width:1.9;
   stroke-linecap:round;stroke-linejoin:round;flex:none;vertical-align:-.12em}
@@ -309,6 +383,52 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
   <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.2 12S5.7 5.9 12 5.9 21.8 12 21.8 12 18.3 18.1 12 18.1 2.2 12 2.2 12z"/><circle cx="12" cy="12" r="2.9"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="M4.5 12.5l5 5 10-11"/></symbol>
   <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4.5l8.5 15h-17l8.5-15z"/><path d="M12 10v4.2"/><circle cx="12" cy="16.8" r=".6" fill="currentColor"/></symbol>
+  <!-- Token marks — faithful vector recreations of the official symbols
+       (ETH diamond, ₿, $, ₮…). The production web app swaps these for the
+       official token-list raster assets; the geometry below keeps the
+       prototype dependency-free. -->
+  <symbol id="tk-zec" viewBox="0 0 32 32">
+    <circle cx="16" cy="16" r="16" fill="#f4b728"/>
+    <path d="M11 10.2h10v2.6l-6.2 6.4H21v2.6H11v-2.6l6.2-6.4H11z" fill="#1a1204"/>
+    <path d="M14.9 7.5h2.2v3.4h-2.2zM14.9 21.1h2.2v3.4h-2.2z" fill="#1a1204"/>
+  </symbol>
+  <symbol id="tk-usdc" viewBox="0 0 32 32">
+    <circle cx="16" cy="16" r="16" fill="#2775ca"/>
+    <path d="M13 20.5c0 1.9 1.2 2.9 3.2 2.9 1.9 0 3.1-1 3.1-2.6 0-1.4-.8-2-2.6-2.4l-1.5-.4c-2.6-.6-3.9-1.8-3.9-3.9 0-2.2 1.6-3.7 4-3.9V8h1.6v2.2c2.3.3 3.7 1.7 3.8 3.8h-2.1c-.1-1.5-1.1-2.4-2.7-2.4-1.7 0-2.8.9-2.8 2.3 0 1.2.8 1.9 2.5 2.3l1.5.4c2.8.6 4 1.7 4 3.9 0 2.4-1.7 3.9-4.2 4.1V27h-1.6v-2.3c-2.5-.3-4.2-1.7-4.3-4.2z" fill="#fff"/>
+    <path d="M12.3 26.6a11.1 11.1 0 0 1 0-21.1v1.7a9.5 9.5 0 0 0 0 17.7zM19.7 5.5a11.1 11.1 0 0 1 0 21.1v-1.7a9.5 9.5 0 0 0 0-17.7z" fill="#fff"/>
+  </symbol>
+  <symbol id="tk-usdt" viewBox="0 0 32 32">
+    <circle cx="16" cy="16" r="16" fill="#26a17b"/>
+    <path d="M8 8.5h16v3.2h-6.3v2c3.8.2 6.6 1 6.6 2s-2.8 1.8-6.6 2v6.8h-3.4v-6.8c-3.8-.2-6.6-1-6.6-2s2.8-1.8 6.6-2v-2H8zm6.3 7.7c-3 .1-5.2.6-5.2 1.1s2.2 1 5.2 1.1h3.4c3-.1 5.2-.6 5.2-1.1s-2.2-1-5.2-1.1l-1.7.1z" fill="#fff"/>
+  </symbol>
+  <symbol id="tk-weth" viewBox="0 0 32 32">
+    <circle cx="16" cy="16" r="16" fill="#454a75"/>
+    <path d="M16 4.5v8.6l7 3.2z" fill="#fff" opacity=".7"/>
+    <path d="M16 4.5L9 16.3l7-3.2z" fill="#fff"/>
+    <path d="M16 21.3v6.2l7-9.7z" fill="#fff" opacity=".7"/>
+    <path d="M16 27.5v-6.2l-7-3.5z" fill="#fff"/>
+    <path d="M16 20l7-3.7-7-3.2z" fill="#fff" opacity=".45"/>
+    <path d="M9 16.3L16 20v-6.9z" fill="#fff" opacity=".8"/>
+  </symbol>
+  <symbol id="tk-cbbtc" viewBox="0 0 32 32">
+    <circle cx="16" cy="16" r="16" fill="#0052ff"/>
+    <path d="M20.8 14.2c.3-1.9-1.1-2.9-3.1-3.6l.6-2.5-1.5-.4-.6 2.5-1.2-.3.6-2.5-1.5-.4-.6 2.5-3.1-.8-.4 1.7s1.1.3 1.1.3c.6.2.8.6.7 1l-1.7 7c-.1.2-.3.5-.8.4 0 0-1.1-.3-1.1-.3l-.8 1.8 3.1.8-.6 2.6 1.5.4.6-2.5 1.2.3-.6 2.5 1.5.4.6-2.6c2.6.5 4.6.3 5.4-2.1.7-1.9 0-3-1.4-3.7 1-.2 1.8-.9 2.1-2.3zm-3.6 5c-.5 1.9-3.7.9-4.7.6l.8-3.4c1 .3 4.4.8 3.9 2.8zm.5-5c-.4 1.8-3.1.9-4 .7l.8-3.1c.9.2 3.7.6 3.2 2.4z" fill="#fff" transform="translate(2.5 1.5) scale(.92)"/>
+  </symbol>
+  <symbol id="tk-cbeth" viewBox="0 0 32 32">
+    <circle cx="16" cy="16" r="16" fill="#0052ff"/>
+    <path d="M16 6v7.4l6 2.8z" fill="#fff" opacity=".75"/>
+    <path d="M16 6l-6 10.2 6-2.8z" fill="#fff"/>
+    <path d="M16 20.6V26l6-8.4z" fill="#fff" opacity=".75"/>
+    <path d="M16 26v-5.4l-6-3z" fill="#fff"/>
+  </symbol>
+  <symbol id="tk-aero" viewBox="0 0 32 32">
+    <circle cx="16" cy="16" r="16" fill="#1652f0"/>
+    <path d="M5.5 20.5c7-1 14.5-5.5 21-12-1.5 5.5-4.5 10-8.5 12.5l1.5 4.5-4-2.5c-3.2 1-6.8 0-10-2.5z" fill="#fff"/>
+  </symbol>
+  <symbol id="tk-near" viewBox="0 0 32 32">
+    <circle cx="16" cy="16" r="16" fill="#f2f1e9"/>
+    <path d="M21.6 8.2l-4.1 6.1c-.3.4.3.9.7.5l4-3.5c.2-.2.4 0 .4.2v8.9c0 .2-.3.3-.4.1L10.1 8.9c-.4-.5-1-.7-1.6-.7-1.2 0-2 .9-2 2v11.5c0 1.1.9 2 2 2 .7 0 1.4-.4 1.8-1l4.1-6.1c.3-.4-.3-.9-.7-.5l-4 3.4c-.2.2-.4 0-.4-.2v-8.8c0-.2.3-.3.4-.1l12.1 11.6c.4.5 1 .7 1.6.7 1.2 0 2.1-.9 2.1-2V10.2c0-1.1-.9-2-2-2-.8 0-1.5.4-1.9 1z" fill="#111"/>
+  </symbol>
 </defs></svg>
 
 <nav><div class="wrap nav-in">
@@ -318,6 +438,7 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
     <button class="tab" data-view="wiz">New deposit</button>
     <button class="tab" data-view="pools">Pools</button>
     <button class="tab" data-view="privacy">Privacy</button>
+    <button class="tab" data-view="docs">Docs</button>
   </div>
   <div class="price-chip num"><span class="pulse"></span>ZEC <b id="zecPrice">$46.18</b><span id="zecDelta" class="small" style="color:var(--good)">+2.1%</span></div>
   <button class="btn btn-ghost" id="connectBtn">Connect wallet</button>
@@ -326,11 +447,19 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
 <!-- ═══ DASHBOARD ═══ -->
 <div class="view on" id="view-dash"><div class="wrap">
 
+  <div class="mstrip num">
+    <div class="m"><b>$4.21M</b><span>TVL</span></div>
+    <div class="m"><b>$11.8M</b><span>total value processed</span></div>
+    <div class="m"><b>214</b><span>positions</span></div>
+    <div class="m"><b>9,410 ZEC</b><span>routed home</span></div>
+    <span class="chip chip-mute" style="margin-left:auto">demo data</span>
+  </div>
+
   <div class="grid-stats">
-    <div class="card stat"><div class="lbl">Total value</div><div class="val num" id="stTotal">$21,847</div><div class="sub num"><span id="stZec">395</span> ZEC deployed · <span class="fresh" data-fresh>updated 3s ago</span></div></div>
-    <div class="card stat"><div class="lbl">Net APY <span class="tt tiny" title="Blended yield across lending + LP positions, after the engine's 15% performance fee and all costs.">ⓘ</span></div><div class="val num" style="color:var(--good)" id="stApy">14.6%</div><div class="sub">after all fees</div></div>
+    <div class="card stat"><div class="lbl">Your net value <span class="tt tiny" title="Collateral + LP value − debt. What you'd hold after a full unwind, before exit costs.">ⓘ</span></div><div class="val num" id="stTotal">$21,847</div><div class="sub num"><span id="stZec">395</span> ZEC collateral · <span class="fresh" data-fresh>updated 3s ago</span></div></div>
+    <div class="card stat"><div class="lbl">Net APY <span class="tt tiny" title="Blended yield across lending + LP positions, after the engine's 15% performance fee, our 10% platform fee, and borrow costs.">ⓘ</span></div><div class="val num" style="color:var(--good)" id="stApy">14.6%</div><div class="sub">after all fees</div></div>
     <div class="card stat"><div class="lbl">ZEC collateral on Rhea</div><div class="val num"><span id="stColl">395</span> ZEC</div><div class="sub num" id="stCollUsd">$18,241 · supply APY 2.4%</div></div>
-    <div class="card stat"><div class="lbl">Claimable rewards</div><div class="val num" id="stClaim">$96.40</div><div class="sub"><button class="btn-quiet small" id="claimAll" style="color:var(--gold);font-weight:650;padding:0">Claim all →</button></div></div>
+    <div class="card stat"><div class="lbl">Claimable rewards <span class="tt tiny" title="Accrued LP fees + incentives, net of fees. Claim to your Zcash wallet, your Rhea position (repays debt first), or your Base wallet — per position, or all at once.">ⓘ</span></div><div class="val num" id="stClaim">$96.40</div><div class="sub"><button class="btn-quiet small" id="claimAll" style="color:var(--gold);font-weight:650;padding:0">Claim all →</button></div></div>
   </div>
 
   <div class="cols">
@@ -343,9 +472,10 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
         </div>
         <div class="band" id="band"><div class="band-track" id="bandTrack"></div></div>
         <div class="small muted" style="display:flex;justify-content:space-between;margin-top:10px;flex-wrap:wrap;gap:6px">
-          <span>Borrowed <b class="num">$3,742 USDC</b> at 36.8% LTV</span>
-          <span>Liquidation at <b class="num" style="color:var(--crit)" id="liqPx">$28.72</b> · ZEC now <b class="num" id="nowPx">$46.18</b></span>
+          <span id="hfBorrowLine">Borrowed <b class="num">$10,027 USDC</b> against <b class="num">590 ZEC</b> · 36.8% LTV</span>
+          <span id="hfLiqLine">Liquidation at <b class="num" style="color:var(--crit)" id="liqPx">$24.28</b> · ZEC now <b class="num" id="nowPx">$46.18</b></span>
         </div>
+        <div class="tiny faint" style="margin-top:7px">Agent ladder: warn ≤ 1.5 · rewards repay debt ≤ 1.35 · minimal unwind ≤ 1.2 · emergency ≤ 1.05 — <button class="btn-quiet tiny" data-doc="health" style="color:var(--gold);padding:0">how liquidation works →</button></div>
       </div>
 
       <!-- Positions -->
@@ -387,7 +517,7 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
             <input class="in num" id="amt" type="number" value="100" min="0" step="any" style="padding-right:130px">
             <div class="in-suffix"><span>ZEC</span><button class="maxb" id="maxBtn">MAX 450</button></div>
           </div>
-          <div class="small faint num" style="margin-top:6px">≈ <span id="amtUsd">$4,618</span> · arrives from your Zcash wallet via NEAR Intents</div>
+          <div class="small faint num" style="margin-top:6px">≈ <span id="amtUsd">$4,618</span> · arrives from your Zcash wallet via NEAR Intents <span class="tt" title="Why no live balance? No Zcash wallet exposes a web connection, and shielded balances are unreadable by anyone but you — by design. You type the amount; the deposit QR pre-fills it in your wallet (ZIP-321). MAX here is demo data.">ⓘ</span></div>
         </div>
         <div class="field">
           <label>Funding this from <span class="tt" title="Zcash lets you spend shielded funds to a transparent address. The bridge only ever sees the deposit — never where your funds came from.">ⓘ</span></label>
@@ -405,16 +535,21 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
         </div>
         <div class="field">
           <label>Mode</label>
-          <div class="opt-cards">
+          <div class="opt-cards" style="grid-template-columns:1fr 1fr 1fr">
             <div class="opt sel" data-mode="SIMPLE">
               <div class="t">Simple lending <span class="chip chip-mute">Lower risk</span></div>
-              <div class="d">Supply ZEC as collateral on Rhea Finance (NEAR). Earn supply APY. No borrowing, no LP — upgrade any time.</div>
+              <div class="d">Supply ZEC as collateral on Rhea Finance (NEAR). Earn supply APY — interest accrues in-protocol, nothing to manage. Upgrade any time.</div>
               <div class="small num" style="margin-top:8px;color:var(--good);font-weight:650">≈ 2.4% APY</div>
             </div>
             <div class="opt" data-mode="FULL">
-              <div class="t">Full strategy <span class="chip chip-gold">Higher yield</span></div>
-              <div class="d">Borrow against your ZEC and deploy into a managed concentrated-liquidity position on Base. You set every parameter.</div>
+              <div class="t">Full strategy <span class="chip chip-gold">Keep your ZEC</span></div>
+              <div class="d">Borrow against your ZEC — without selling it — and deploy into a managed concentrated-liquidity position on Base. You set every parameter.</div>
               <div class="small num" style="margin-top:8px;color:var(--good);font-weight:650">≈ 8–31% APY · borrow risk applies</div>
+            </div>
+            <div class="opt" data-mode="DIRECT">
+              <div class="t">Direct LP <span class="chip chip-info">No loan</span></div>
+              <div class="d">Swap ZEC straight into the pool assets and LP. No borrowing, no liquidation risk. Note: swapping ZEC is a disposal — borrowing exists so holders can earn without selling.</div>
+              <div class="small num" style="margin-top:8px;color:var(--good);font-weight:650">≈ 4–26% APY · IL risk only</div>
             </div>
           </div>
         </div>
@@ -423,15 +558,15 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
       <!-- Step 2 -->
       <div class="wstep" data-step="2">
         <div class="field">
-          <label>Borrow asset <span class="tt" title="The asset borrowed against your ZEC on Rhea, bridged to Base, and deposited into the pool.">ⓘ</span></label>
+          <label id="assetLbl">Borrow asset <span class="tt" title="The asset borrowed against your ZEC on Rhea, bridged to Base, and deposited into the pool. Tip: cbBTC is partially correlated with ZEC, which cushions your health factor in a drawdown — USDC debt has no cushion.">ⓘ</span></label>
           <div class="seg" id="assetSeg">
             <button class="sel" data-asset="USDC">USDC</button>
             <button data-asset="cbBTC">cbBTC</button>
             <button data-asset="WETH">WETH</button>
           </div>
         </div>
-        <div class="field">
-          <label>Loan-to-value — <span class="num" id="ltvLbl">35%</span></label>
+        <div class="field" id="ltvBlock">
+          <label>Loan-to-value — <span class="num" id="ltvLbl">35%</span> <span class="tt" title="How much you borrow against your collateral. The cap is 50% — at Rhea's 70% liquidation threshold that leaves a 29% price-drop buffer. Higher LTV = higher yield and a much closer liquidation price.">ⓘ</span></label>
           <div class="slider-row">
             <span class="tiny faint">0%</span>
             <input type="range" id="ltv" min="5" max="50" value="35" step="1">
@@ -440,12 +575,13 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
           <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
             <span class="chip chip-good" id="ltvHf"><span class="dot"></span>HF 2.00</span>
             <span class="chip chip-mute num" id="ltvLiq">Liquidation at $23.09 (−50%)</span>
-            <span class="chip chip-mute num" id="ltvBorrow">Borrows $1,616 USDC</span>
+            <span class="chip chip-mute num" id="ltvBorrow">Borrows $1,616 USDC against $4,618 ZEC</span>
           </div>
         </div>
         <div class="field">
-          <label>Pool — <span id="poolCount" class="faint">6 engine-verified pools for USDC</span></label>
+          <label>Pool — <span id="poolCount" class="faint">6 engine-verified pools containing USDC</span> <span class="tt" title="Every curated pool containing your chosen asset on either side. The engine id shown is the exact bytes32 registry key our deposit passes on-chain — verify it yourself against the engine's approvedPools registry.">ⓘ</span></label>
           <div class="pool-list" id="poolList"></div>
+          <div class="tiny faint" style="margin-top:8px">5 more engine-verified pairs (EURC/USDC ×2, EURC/cbBTC, cbETH/cbBTC, WETH/wstETH) ship once their registry ids are pinned at the next enumeration.</div>
         </div>
       </div>
 
@@ -490,6 +626,8 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
               <label>Where rewards arrive <span class="tt" title="The bridge settles Zcash withdrawals to transparent addresses only (verified against the live API). Your wallet can shield the moment funds land.">ⓘ</span></label>
               <input class="in mono" id="zaddr" placeholder="t1… receiving address (u1… accepted — we'll explain)" spellcheck="false">
               <div class="small" id="zaddrHint" style="margin-top:6px;color:var(--ink-3)">Use a <b>fresh</b> address for this position — reusing one publicly links your positions together.</div>
+              <button class="btn-quiet tiny" id="zaddrReuse" style="display:none;color:var(--ink-2);padding:4px 0">Reuse my last payout address <span class="faint">(works, but links positions — a fresh one is more private)</span></button>
+              <div class="tiny faint" style="margin-top:4px">Why no auto-fill? Your connected wallet is a Base (0x…) wallet — it can't receive ZEC, and Zcash wallets expose no connection for us to read. Paste from your wallet's Receive screen.</div>
               <div id="zaddrHelp"></div>
             </div>
           </div>
@@ -519,14 +657,15 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
       <div class="proj-apy num" id="pApy">2.4%</div>
       <div class="small faint num" id="pYear" style="margin-bottom:10px">≈ $110 / year on this deposit</div>
       <div class="row"><span class="l">Deposit</span><span class="v num" id="pDep">100 ZEC · $4,618</span></div>
-      <div class="row" data-full style="display:none"><span class="l">Borrow</span><span class="v num" id="pBor">—</span></div>
-      <div class="row" data-full style="display:none"><span class="l">Health factor</span><span class="v num" id="pHf">—</span></div>
-      <div class="row" data-full style="display:none"><span class="l">Liquidation price</span><span class="v num" id="pLiq">—</span></div>
-      <div class="row" data-full style="display:none"><span class="l">Pool</span><span class="v" id="pPool">—</span></div>
-      <div class="row" data-full style="display:none"><span class="l">Range</span><span class="v num" id="pRange">—</span></div>
+      <div class="row" data-borrow style="display:none"><span class="l">Borrow</span><span class="v num" id="pBor">—</span></div>
+      <div class="row" data-borrow style="display:none"><span class="l">Health factor <span class="tt" title="Account-level: your collateral and debt pool together on Rhea, so this number includes any existing borrow.">ⓘ</span></span><span class="v num" id="pHf">—</span></div>
+      <div class="row" data-borrow style="display:none"><span class="l">Liquidation price</span><span class="v num" id="pLiq">—</span></div>
+      <div class="row" data-lp style="display:none"><span class="l">Pool</span><span class="v" id="pPool">—</span></div>
+      <div class="row" data-lp style="display:none"><span class="l">Range</span><span class="v num" id="pRange">—</span></div>
       <div class="row"><span class="l">Rewards</span><span class="v" id="pRew">Auto-compound</span></div>
       <div class="row"><span class="l">1-Click bridge fee</span><span class="v" style="color:var(--good)">0% <span class="faint tiny">(partner)</span></span></div>
-      <div class="row"><span class="l">Engine performance fee</span><span class="v num">15% of yield</span></div>
+      <div class="row" data-lp style="display:none"><span class="l">Engine performance fee <span class="tt" title="MaxFi/SnuggleFi's fee for running the position — 15% of earnings only, never principal. Docs → Fees explains our plan to bring this in-house at scale.">ⓘ</span></span><span class="v num">15% of yield</span></div>
+      <div class="row"><span class="l">Platform fee <span class="tt" title="Our fee: 10% of realized rewards, netted automatically at each harvest — never charged on deposits or principal. Simple lending is free at launch.">ⓘ</span></span><span class="v num" id="pFeePlat">10% of yield</span></div>
       <div class="note small" id="pNote" style="margin:12px 0 0">Simple lending: no borrowing, no liquidation risk — withdraw any time.</div>
 
       <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:13px">
@@ -611,12 +750,12 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
 
       <div class="card card-pad" style="margin-top:16px">
         <h2 style="font-size:16px;margin-bottom:4px">Getting funds back into the shielded pool</h2>
-        <p class="small muted" style="margin-bottom:12px">Payouts land transparent. Here is exactly how they become private again \u2014 and why we never do it for you.</p>
+        <p class="small muted" style="margin-bottom:12px">Payouts land transparent. Here is exactly how they become private again — and why we never do it for you.</p>
         <div class="legs">
           <div class="leg private">
             <div class="lic"><svg class="ic" style="width:17px;height:17px"><use href="#i-shield"/></svg></div>
             <div>
-              <div class="lt">Your wallet shields it \u2014 usually by itself</div>
+              <div class="lt">Your wallet shields it — usually by itself</div>
               <div class="ld">Zashi (now Zodl) shields ZEC it receives, so a payout is exposed only briefly. Its unified address is shielded-only since 2.0.3, which is why we ask for the <b>separate transparent address</b> on its Receive screen. Other wallets expose a shield action to run once funds land.</div>
             </div>
           </div>
@@ -624,14 +763,14 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
             <div class="lic"><svg class="ic" style="width:17px;height:17px"><use href="#i-check"/></svg></div>
             <div>
               <div class="lt">Payouts are always large enough to be worth shielding</div>
-              <div class="ld">Shielding costs a small network fee, and wallets skip dust. The agent already batches rewards until they clear <b>3\u00d7 the cost of claiming, with a $5 floor</b> \u2014 comfortably above any auto-shield threshold. That floor is doing double duty; lowering it would start stranding dust in the open.</div>
+              <div class="ld">Shielding costs a small network fee, and wallets skip dust. The agent already batches rewards until they clear <b>3× the cost of claiming, with a $5 floor</b> — comfortably above any auto-shield threshold. That floor is doing double duty; lowering it would start stranding dust in the open.</div>
             </div>
           </div>
           <div class="leg public">
             <div class="lic"><svg class="ic" style="width:17px;height:17px"><use href="#i-alert"/></svg></div>
             <div>
-              <div class="lt">We cannot shield on your behalf \u2014 by design</div>
-              <div class="ld">Shielding is a transaction signed by whoever holds the keys. For us to do it, we would have to custody your ZEC. We do not, and will not. What we can do is route the payout to a wallet that shields itself, and tell you precisely how \u2014 which is what the deposit flow does.</div>
+              <div class="lt">We cannot shield on your behalf — by design</div>
+              <div class="ld">Shielding is a transaction signed by whoever holds the keys. For us to do it, we would have to custody your ZEC. We do not, and will not. What we can do is route the payout to a wallet that shields itself, and tell you precisely how — which is what the deposit flow does.</div>
             </div>
           </div>
         </div>
@@ -648,6 +787,130 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
   </div>
 </div></div>
 
+<!-- ═══ DOCS ═══ -->
+<div class="view" id="view-docs"><div class="wrap">
+  <h1 style="font-size:22px;margin-top:26px">Docs</h1>
+  <p class="muted" style="margin-top:4px">Every feature, explained the way we'd want it explained to us.</p>
+  <div class="docs-grid">
+    <div class="docs-nav" id="docsNav">
+      <button class="on" data-doc="start">Getting started</button>
+      <button data-doc="modes">The three modes</button>
+      <button data-doc="deposit">Deposits &amp; funding</button>
+      <button data-doc="health">Health &amp; liquidations</button>
+      <button data-doc="rewards">Rewards &amp; claiming</button>
+      <button data-doc="withdraw">Withdrawals</button>
+      <button data-doc="fees">Fees</button>
+      <button data-doc="privacy">Privacy</button>
+      <button data-doc="risks">Risks &amp; venue status</button>
+      <button data-doc="faq">FAQ</button>
+    </div>
+    <div class="card card-pad">
+
+      <div class="doc-sec on" data-doc="start">
+        <h2>Getting started</h2>
+        <p>You need two things: <b>a Zcash wallet</b> (Zodl, Ywallet, Zingo — any wallet that sends ZEC) and, for Full-strategy positions, <b>an EVM wallet on Base</b> (MetaMask is fine) that authorizes your withdrawals. Your Zcash wallet never connects to anything — it just sends and receives ZEC.</p>
+        <p>Want a single app for both sides? <b>Unstoppable Wallet</b> holds shielded ZEC <i>and</i> connects to Base dApps via WalletConnect. It's the only mainstream wallet that does both.</p>
+        <h3>Your first deposit, in three steps</h3>
+        <p>1 · Pick an amount and a mode in <b>New deposit</b> — the defaults are chosen to be sane, and everything advanced stays folded away until you want it.</p>
+        <p>2 · Review the projection rail: yield estimate, health factor, liquidation price, fees, and a live privacy grade. Nothing moves until you confirm.</p>
+        <p>3 · Scan the deposit QR with your wallet (amount pre-filled via ZIP-321) and send. The progress view tracks every hop with a verifiable transaction id per step.</p>
+        <p>There is no account, no email, no KYC. Your position is keyed to addresses you control.</p>
+      </div>
+
+      <div class="doc-sec" data-doc="modes">
+        <h2>The three modes</h2>
+        <h3>Simple lending</h3>
+        <p>ZEC supplied as collateral on Rhea Finance (NEAR). Earns supply APY that <b>accrues in-protocol automatically</b> — there is nothing to compound and nothing to manage. No borrow, no liquidation exposure. Upgrades to Full strategy in place, without re-bridging.</p>
+        <h3>Full strategy</h3>
+        <p>Borrow USDC, cbBTC or WETH against your ZEC (≤50% LTV), bridge to Base via NEAR Intents, and deploy into a managed concentrated-liquidity position with your exact parameters. <b>Your ZEC is never sold</b> — that's the point. Borrowing against an asset is how holders earn on it without a disposal.</p>
+        <h3>Direct LP</h3>
+        <p>Swap ZEC straight into the pool assets and LP — no loan, no health factor, no liquidation risk. The trade-off: the swap itself is a disposal of your ZEC (tax treatment varies by jurisdiction — not advice, just mechanics), and you take the LP's price exposure instead of ZEC's.</p>
+      </div>
+
+      <div class="doc-sec" data-doc="deposit">
+        <h2>Deposits &amp; funding</h2>
+        <p>Every deposit gets a <b>freshly generated address</b> — deposits are never linked to each other by a shared address. Send from your shielded balance (recommended, default) and your history stays private; the app shows a ZIP-321 QR your wallet scans with the amount pre-filled.</p>
+        <h3>Why can't the amount field read my balance?</h3>
+        <p>No Zcash wallet exposes a connection a web app can query, and shielded balances are unreadable by third parties <b>by design</b> — that's the privacy you're here for. You type the amount; the QR carries it into your wallet.</p>
+        <h3>The 60-second hold</h3>
+        <p>The LP engine enforces a 60s minimum hold after <b>every</b> deposit into a position (flash-loan/JIT defense) — including compounds and the internal re-deposit behind a partial withdrawal. The UI shows the countdown; the agent handles retries.</p>
+      </div>
+
+      <div class="doc-sec" data-doc="health">
+        <h2>Health &amp; liquidations</h2>
+        <p>Your health factor is <b>account-level</b>: all your ZEC collateral and all your debt on Rhea pool into one number. HF = collateral × 70% ÷ debt. No debt = infinite HF, shown as ∞.</p>
+        <h3>Hard liquidation (Rhea's — the thing we keep you away from)</h3>
+        <p>At HF 1.0, third-party liquidators repay part of your debt and take collateral at a discount. You pay that discount, at the worst price, at the worst time.</p>
+        <h3>The agent's soft ladder (ours — runs first)</h3>
+        <p><b>HF ≤ 1.5</b> — warn + notify; new borrows blocked. <b>HF ≤ 1.35</b> — all claimable rewards route to debt repayment instead of compounding; principal untouched. <b>HF ≤ 1.2</b> — minimal unwind: sell exactly enough LP to restore HF 1.6 (repay = debt − collateral×0.7÷1.6), starting with the most out-of-range slice. <b>HF ≤ 1.05</b> — emergency full unwind, slippage floors still on.</p>
+        <p>The app also refuses collateral withdrawals that would push post-withdraw HF below 1.2 — stricter than the protocol's 1.0 on purpose.</p>
+      </div>
+
+      <div class="doc-sec" data-doc="rewards">
+        <h2>Rewards &amp; claiming</h2>
+        <p>LP positions earn trading fees plus incentives. <b>Claimable</b> is what's accrued, net of fees. Every position has <b>Compound now</b> (re-deposit into the position, works whether or not auto-compound is on) and <b>Claim</b>, with three destinations:</p>
+        <p>1 · <b>Your Zcash wallet</b> — converted via NEAR Intents, arrives as native ZEC. The quote is hard-verified before send: recipient must equal your stored address, asset must be native ZEC, quote hash emitted on-chain.<br>2 · <b>Your Rhea position</b> — repays debt first (raises your health factor; usually the smartest choice while borrowing), surplus tops up collateral.<br>3 · <b>Your Base wallet</b> — raw reward tokens, no conversion.</p>
+        <h3>Claim economics — why we don't claim constantly</h3>
+        <p>Claiming costs gas (+ bridge cost for ZEC routing). The agent claims when rewards ≥ <b>3× the cost</b>, with a <b>$5 floor</b> and a <b>30-day max hold</b>. Example: costs $1.80 → trigger is $5.40. The $5 floor doubles as privacy hygiene: payouts always land big enough that your wallet shields them rather than stranding dust in the open.</p>
+        <h3>What triggers auto-compound</h3>
+        <p>Not a timer: the same economics gate, checked every agent cycle — plus a free ride on every rebalance, since fees get collected then anyway.</p>
+      </div>
+
+      <div class="doc-sec" data-doc="withdraw">
+        <h2>Withdrawals</h2>
+        <p><b>Never pausable.</b> Not by us, not by anyone — it's a contract invariant, not a policy.</p>
+        <p>Withdrawals offer the same three destinations as claims: repay your loan (default while you have debt — you see the HF before/after), home as native ZEC, or tokens to your Base wallet. Withdrawn LP funds are never silently re-supplied as collateral.</p>
+        <h3>The slippage floor</h3>
+        <p>Before any exit we compute what the position should return from current pool state and set <span class="mono">minOut</span> just under it. If an MEV sandwich would push your proceeds below the floor, the transaction reverts instead of eating the loss. This exists because our fork tests measured a &gt;1% round-trip loss on an oversized position in a thin pool — the floor plus per-pool caps are the fix.</p>
+        <h3>Partial withdrawals</h3>
+        <p>The engine has no partial-exit call, so the adapter closes and re-opens the remainder — which restarts the 60s hold on what stays.</p>
+      </div>
+
+      <div class="doc-sec" data-doc="fees">
+        <h2>Fees</h2>
+        <table class="dtable"><thead><tr><th>Fee</th><th>Rate</th><th>Charged on</th></tr></thead><tbody>
+          <tr><td>Engine performance fee</td><td class="num">15%</td><td>LP earnings only, at harvest — MaxFi/SnuggleFi's fee for running positions</td></tr>
+          <tr><td>Platform fee</td><td class="num">10%</td><td>Realized rewards, netted at each harvest. Never on deposits or principal</td></tr>
+          <tr><td>Simple lending</td><td class="num">0%</td><td>Free at launch</td></tr>
+          <tr><td>Bridge (1-Click)</td><td class="num">0%</td><td>Partner integration — no integrator fee on quotes</td></tr>
+          <tr><td>Deposit / withdrawal / exit</td><td class="num">0%</td><td>Never</td></tr>
+        </tbody></table>
+        <p>Every yield number in this app is shown <b>after</b> all fees, itemized — if a display ever hides a fee, that's a bug, report it. Roadmap honesty: at scale we intend to run our own position manager and retire the engine's 15% — users keep at least as much as today, likely more.</p>
+      </div>
+
+      <div class="doc-sec" data-doc="privacy">
+        <h2>Privacy</h2>
+        <p>The full boundary map — what's private, what's public, at every hop, with live per-position grades — lives in the <b>Privacy</b> tab. The short version: fund from your shielded balance and your history stays private; the strategy legs (NEAR, Base) are public, and we say so instead of dressing it up; payouts land transparent and your wallet shields them on arrival.</p>
+        <p>The rules that matter most, learned from real deanonymizations of other products: fresh receiving address per position (we detect reuse and warn), never reuse your refund address for rewards, and payout sizes stay above dust so they always get shielded.</p>
+      </div>
+
+      <div class="doc-sec" data-doc="risks">
+        <h2>Risks &amp; venue status</h2>
+        <p>Plainly, the risks you take: <b>ZEC price risk</b> on collateral (liquidation exists — see Health), <b>impermanent loss</b> inside LP ranges, and <b>smart-contract risk</b> across Rhea, NEAR Intents and the LP engine. Diversification across those layers is deliberate but does not make any of them zero.</p>
+        <h3>Rhea Finance — stated openly</h3>
+        <p>Rhea was exploited for <b>$18.4M in April 2026</b> (margin-engine validation flaw; post-mortems by Halborn and others; funds substantially recovered per reporting). What we do about depending on it: per-venue exposure caps, the agent independently monitors collateral/borrow invariants rather than trusting venue numbers, and our kill-switch can pause <b>new deposits only</b> — user withdrawals are exempt from pause at the contract level, always.</p>
+        <h3>Structural protections</h3>
+        <p>Principal never routes through the reward path. The operator can manage yield but can never redirect principal. Per-pool caps keep any position a small share of pool liquidity so exits stay clean. Every reward route home emits its quote hash on-chain for auditability.</p>
+      </div>
+
+      <div class="doc-sec" data-doc="faq">
+        <h2>FAQ</h2>
+        <h3>Does my ZEC get sold?</h3>
+        <p>Simple lending and Full strategy: never — it sits as collateral and comes back as ZEC. Direct LP: yes, that mode explicitly swaps it (that's the trade-off it exists to offer).</p>
+        <h3>Why does my new position show a 60-second cooldown?</h3>
+        <p>The engine's flash-loan defense. Every deposit restarts it, including compounds. It's cosmetic in normal use.</p>
+        <h3>Why do you need a transparent (t1…) address for payouts?</h3>
+        <p>The bridge settles to transparent addresses only today — we verified this against the live API (unified and Sapling recipients are rejected). Your wallet shields on arrival; if shielded settlement ships, one flag flips and shielded payouts become the default end to end.</p>
+        <h3>What's the engine pool id on each pool?</h3>
+        <p>The exact bytes32 key our deposit passes to the engine's registry — shown so you can verify the pool you picked is the pool you got, on-chain, yourself.</p>
+        <h3>Can you freeze my funds?</h3>
+        <p>No. Withdrawal is exempt from pause in the contract. The operator role can manage yield strategy, never move principal anywhere but back to you.</p>
+      </div>
+
+    </div>
+  </div>
+</div></div>
+
 <footer><div class="wrap foot-in">
   <span>ZEC Yield Orchestrator — prototype with demo data. Withdrawals are never pausable · principal never routes through the reward path.</span>
   <span class="num">Engine 0x7d27…d55 (Base) · Rhea Finance (NEAR) · NEAR Intents 1-Click</span>
@@ -658,13 +921,69 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
   <div class="modal-h"><h3 id="wdTitle">Withdraw</h3><button class="x" data-close>✕</button></div>
   <div class="card-pad">
     <div class="field">
-      <label>Amount — <span class="num" id="wdPct">50%</span> of position</label>
+      <label>Amount — <span class="num" id="wdPct">50%</span> <span id="wdOf">of position</span></label>
       <input type="range" id="wdSlider" min="5" max="100" value="50" step="5">
       <div class="small muted num" style="margin-top:8px" id="wdEst">≈ $2,610 back to you</div>
+      <div class="note warn small" id="wdCap" style="display:none"></div>
     </div>
-    <div class="note small">Partial withdrawals close and re-open the engine position — a fresh <b>60s hold</b> applies to the remainder. A slippage floor (minOut) protects the payout: the transaction reverts rather than accept a sandwiched price.</div>
+    <div class="field" id="wdDestWrap">
+      <label>Where should it go?</label>
+      <div class="opt-cards" style="grid-template-columns:1fr" id="wdDests"></div>
+      <div id="wdAddrWrap" style="display:none;margin-top:10px">
+        <input class="in mono" id="wdAddr" placeholder="t1… receiving address" spellcheck="false">
+        <div class="small" id="wdAddrHint" style="margin-top:6px;color:var(--ink-3)"></div>
+      </div>
+    </div>
+    <div class="small muted num" id="wdHf" style="margin:2px 0 10px"></div>
+    <div class="note small" id="wdMech">Partial withdrawals close and re-open the engine position — a fresh <b>60s hold</b> applies to the remainder. A slippage floor (minOut) protects the payout: the transaction reverts rather than accept a sandwiched price.</div>
     <div class="note warn small" id="wdWarn" style="display:none">Withdrawing 100% closes this position entirely.</div>
     <button class="btn btn-gold btn-lg" id="wdConfirm" style="width:100%;margin-top:6px">Withdraw</button>
+  </div>
+</div></div>
+
+<!-- Claim modal -->
+<div class="overlay" id="clOverlay"><div class="card modal">
+  <div class="modal-h"><h3 id="clTitle">Claim rewards</h3><button class="x" data-close>✕</button></div>
+  <div class="card-pad">
+    <div class="ybreak" id="clBreak" style="max-width:none;margin-bottom:14px"></div>
+    <div class="field">
+      <label>Send them to</label>
+      <div class="opt-cards" style="grid-template-columns:1fr" id="clDests"></div>
+      <div id="clAddrWrap" style="display:none;margin-top:10px">
+        <input class="in mono" id="clAddr" placeholder="t1… receiving address" spellcheck="false">
+        <div class="small" id="clAddrHint" style="margin-top:6px;color:var(--ink-3)"></div>
+        <button class="btn-quiet tiny" id="clReuse" style="color:var(--ink-2);padding:4px 0;display:none">Reuse this position's saved address (links payouts — a fresh one is more private)</button>
+      </div>
+    </div>
+    <div class="small muted num" id="clHf" style="margin:2px 0 10px"></div>
+    <button class="btn btn-gold btn-lg" id="clConfirm" style="width:100%;margin-top:4px">Claim</button>
+  </div>
+</div></div>
+
+<!-- Adjust parameters modal -->
+<div class="overlay" id="prmOverlay"><div class="card modal">
+  <div class="modal-h"><h3 id="prmTitle">Adjust parameters</h3><button class="x" data-close>✕</button></div>
+  <div class="card-pad">
+    <div class="field">
+      <label>Range width — <span class="num" id="prmRwLbl">8.0%</span></label>
+      <div class="slider-row"><span class="tiny faint">0.5%</span><input type="range" id="prmRw" min="50" max="5000" value="800" step="10"><span class="tiny faint">50%</span></div>
+      <div class="tiny faint" style="margin-top:5px">Tighter = more fees while in range, more rebalances.</div>
+    </div>
+    <div class="field">
+      <label>Rebalance delay — <span class="num" id="prmRdLbl">12h</span></label>
+      <div class="slider-row"><span class="tiny faint">0h</span><input type="range" id="prmRd" min="0" max="168" value="12" step="1"><span class="tiny faint">7d</span></div>
+    </div>
+    <div class="trow">
+      <div><div class="tl">Auto-compound</div><div class="td">Agent re-deposits rewards when claim economics clear. Off = rewards accrue for manual claims or route home.</div></div>
+      <div class="toggle on" id="prmComp"></div>
+    </div>
+    <div id="prmAddrWrap" style="display:none;margin-top:8px">
+      <label class="small" style="display:block;font-weight:600;color:var(--ink-2);margin-bottom:6px">Payout address (rewards route home as ZEC)</label>
+      <input class="in mono" id="prmAddr" placeholder="t1… receiving address" spellcheck="false">
+      <div class="small" id="prmAddrHint" style="margin-top:5px;color:var(--ink-3)"></div>
+    </div>
+    <div class="note small" style="margin-top:12px">Applies via the engine's <span class="mono">updateParameters</span> — the position is <b>not</b> closed or re-opened, no new hold, no exit costs.</div>
+    <button class="btn btn-gold btn-lg" id="prmApply" style="width:100%;margin-top:6px">Apply changes</button>
   </div>
 </div></div>
 
@@ -689,7 +1008,29 @@ const S = {
   preset: "MODERATE", rw: 800, rd: 12, rew: "COMPOUND", econ: true,
   src: "SHIELDED",           // privacy default: fund from the shielded pool
   step: 1,
+  demoBal: 450,              // MAX is demo data — Zcash wallets expose no balance API
 };
+
+/* Demo token prices (production: on-chain oracles / indexer) */
+const PRICES = {usdc:1, usdt:1, weth:3720, cbbtc:98400, cbeth:4020, aero:1.18};
+const fmtTok = v => v>=1000 ? v.toLocaleString("en-US",{maximumFractionDigits:0})
+                : v>=1 ? v.toFixed(2) : v.toFixed(4);
+
+/* Fees: engine 15% on LP earnings (verified on-chain) + our 10% platform fee
+   on realized rewards. Net factor on gross LP rewards = 0.85 × 0.90.       */
+const ENGINE_FEE = 0.15, PLATFORM_FEE = 0.10, NET = (1-ENGINE_FEE)*(1-PLATFORM_FEE);
+
+/* Per-leg explorers — there is no single cross-chain explorer, so every step
+   links to the right one for its chain. Demo ids don't resolve.            */
+const EXPLORER = {
+  zcash:{name:"Zcash explorer", url:"https://mainnet.zcashexplorer.app/transactions/"},
+  near:{name:"nearblocks",      url:"https://nearblocks.io/txns/"},
+  base:{name:"basescan",        url:"https://basescan.org/tx/"},
+};
+const rndHex = n => Array.from({length:n},()=> "0123456789abcdef"[Math.floor(Math.random()*16)]).join("");
+const rnd58  = n => Array.from({length:n},()=> "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"[Math.floor(Math.random()*58)]).join("");
+const mkTx = c => ({c, id: c==="zcash" ? rndHex(64) : c==="near" ? rnd58(43) : "0x"+rndHex(64)});
+const txLink = tx => `<a class="txlink" href="${EXPLORER[tx.c].url}${tx.id}" target="_blank" rel="noopener" data-demo>tx ${tx.id.slice(0,6)}…${tx.id.slice(-4)} · ${EXPLORER[tx.c].name} ↗</a>`;
 
 /* ── Zcash address handling ───────────────────────────────────────────
    Settlement reality, probed against the live 1-Click API 2026-08-08:
@@ -741,20 +1082,38 @@ const PRESETS = [
 ];
 const RISK_CHIP = {BLUE_CHIP:'<span class="chip chip-info">Blue chip</span>', STABLE:'<span class="chip chip-good">Stable</span>', VOLATILE:'<span class="chip chip-warn">Volatile</span>'};
 
-/* Demo positions */
+/* Demo positions — internally consistent account model:
+   collateral 590 ZEC ($27,246 @ $46.18) · debt $10,027 → LTV 36.8%, HF 1.90 */
 let PID = 4;
 const positions = [
-  {id:1, kind:"FULL", pool:POOLS[2], value:5230, zecIn:80, apy:20.5, range:"in", rew:"COMPOUND",
-   preset:"Moderate 8%", fees:41.2, inc:31.8, cooldown:0, opened:"12d ago", src:"SHIELDED"},
-  {id:2, kind:"FULL", pool:POOLS[0], value:6410, zecIn:95, apy:11.9, range:"out", outFor:"3h", rebalIn:"~9h", rew:"ZEC",
-   preset:"Conservative 25%", fees:18.3, inc:5.1, cooldown:0, opened:"31d ago", src:"SHIELDED",
+  {id:1, kind:"FULL", pool:POOLS[2], value:5230, zecIn:160, borrowUsd:4300, borrowAsset:"USDC",
+   apy:20.5, range:"in", rew:"COMPOUND", preset:"Moderate 8%", rw:800, rd:12,
+   fees:41.2, inc:31.8, cooldown:0, opened:"12d ago", src:"SHIELDED"},
+  {id:2, kind:"FULL", pool:POOLS[0], value:6410, zecIn:210, borrowUsd:5727, borrowAsset:"USDC",
+   apy:11.9, range:"out", outFor:"3h", rebalIn:"~9h", rew:"ZEC", preset:"Conservative 25%", rw:2500, rd:48,
+   fees:18.3, inc:5.1, cooldown:0, opened:"31d ago", src:"SHIELDED",
    zaddr:"t1Py8kAoQrfmRRWTbtHkDkGb6JuaXPmpGxy"},
-  {id:3, kind:"SIMPLE", value:10160, zecIn:220, apy:2.4, opened:"45d ago", src:"TRANSPARENT"},
+  {id:3, kind:"SIMPLE", zecIn:220, apy:2.4, opened:"45d ago", src:"TRANSPARENT"},
 ];
+/* Account-level model: Rhea pools all collateral + debt per user (one MCA). */
+const collZec = () => positions.filter(p=>p.kind!=="DIRECT").reduce((a,p)=>a+(p.zecIn||0),0);
+const debtUsd = () => positions.reduce((a,p)=>a+(p.borrowUsd||0),0);
+const acctHf  = (dColl=0,dDebt=0) => {
+  const d=debtUsd()+dDebt; if(d<=0) return Infinity;
+  return (collZec()+dColl)*S.zec*LIQ_T/d;
+};
+const posValue = p => p.kind==="SIMPLE" ? p.zecIn*S.zec : p.value;
+const grossRewards = p => (p.fees||0)+(p.inc||0);
+/* Position ≈ half each side while in range (demo simplification). */
+function tokAmounts(p){
+  if(!p.pool) return "";
+  const [a,b]=p.pool.c, half=p.value/2;
+  return `≈ ${fmtTok(half/PRICES[a])} ${a.toUpperCase().replace("CBBTC","cbBTC").replace("CBETH","cbETH")} + ${fmtTok(half/PRICES[b])} ${b.toUpperCase().replace("CBBTC","cbBTC").replace("CBETH","cbETH")}`;
+}
 const activity = [
-  {t:"Rewards routed home", d:"$38.90 → 0.84 ZEC to u1k7…qf0d · quote hash emitted", ic:"⚡", cls:"chip-gold", when:"2h ago"},
-  {t:"Auto-compounded", d:"$27.14 fees re-deposited · WETH/USDC (Aero)", ic:"↻", cls:"chip-good", when:"9h ago"},
-  {t:"Range rebalanced", d:"WETH/USDC re-centered after 12h out of range", ic:"⇄", cls:"chip-info", when:"1d ago"},
+  {t:"Rewards routed home", d:"$38.90 → 0.84 ZEC to t1MZ…kd2w · quote hash emitted", ic:"⚡", cls:"chip-gold", when:"2h ago", tx:mkTx("zcash")},
+  {t:"Auto-compounded", d:"$27.14 fees re-deposited · WETH/USDC (Aero)", ic:"↻", cls:"chip-good", when:"9h ago", tx:mkTx("base")},
+  {t:"Range rebalanced", d:"WETH/USDC re-centered after 12h out of range", ic:"⇄", cls:"chip-info", when:"1d ago", tx:mkTx("base")},
   {t:"Health check", d:"HF 1.90 · no action needed (warns at 1.5)", ic:"♥", cls:"chip-good", when:"1d ago"},
 ];
 
@@ -773,34 +1132,85 @@ function hfMeta(hf){
   return {cls:"chip-crit",label:"At risk"};
 }
 function toast(msg){const t=$("#toast");t.innerHTML=msg;t.classList.add("on");clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove("on"),3400);}
-function coins(list){return `<span class="pair">${list.map(c=>`<span class="coin c-${c}">${c==="cbbtc"?"₿":c==="cbeth"?"cE":c.slice(0,1).toUpperCase()+ (c==="weth"?"Ξ":"")}</span>`).join("")}</span>`;}
-const coinTxt = {zec:"Z",usdc:"$",weth:"Ξ",cbbtc:"₿",usdt:"T",cbeth:"cE",aero:"A",near:"N"};
-function coins2(list){return `<span class="pair">${list.map(c=>`<span class="coin c-${c}">${coinTxt[c]||c[0].toUpperCase()}</span>`).join("")}</span>`;}
+/* Token marks: faithful vector recreations (see <defs>); production swaps in
+   the official token-list raster assets. */
+function coins2(list){return `<span class="pair">${list.map(c=>`<span class="coin" title="${c.toUpperCase()}"><svg><use href="#tk-${c}"/></svg></span>`).join("")}</span>`;}
 
-/* ═══ Health band (Curve-Llamalend-style price scale) ═══ */
-function renderBand(){
+/* ═══ Tooltips — custom; native title tooltips are unreliable (hover delay,
+       nothing at all on touch), which is why every ⓘ seemed dead. ═══ */
+const tipBox=document.createElement("div");tipBox.id="tip";document.body.appendChild(tipBox);
+let tipFor=null;
+function showTip(el){
+  const t=el.dataset.tip; if(!t) return;
+  tipBox.innerHTML=t; tipBox.classList.add("on");
+  tipBox.style.left="0px"; tipBox.style.top="0px";
+  const r=el.getBoundingClientRect(), tw=tipBox.offsetWidth, th=tipBox.offsetHeight;
+  let x=Math.min(Math.max(8, r.left+r.width/2-tw/2), innerWidth-tw-8);
+  let y=r.top-th-9; if(y<8) y=r.bottom+9;
+  tipBox.style.left=x+"px"; tipBox.style.top=y+"px"; tipFor=el;
+}
+function hideTip(){tipBox.classList.remove("on");tipFor=null;}
+let tipAt=0;
+function bindTips(root){
+  $$("[title]",root||document).forEach(el=>{
+    el.dataset.tip=el.getAttribute("title"); el.removeAttribute("title");
+    el.addEventListener("mouseenter",()=>{showTip(el);tipAt=Date.now();});
+    el.addEventListener("mouseleave",hideTip);
+    // Tap on touch devices fires a synthetic mouseenter right before click —
+    // only treat the click as "dismiss" if the tip has been up for a while.
+    el.addEventListener("click",e=>{
+      e.stopPropagation();
+      if(tipFor===el&&Date.now()-tipAt>600) hideTip();
+      else {showTip(el);tipAt=Date.now();}
+    });
+  });
+}
+document.addEventListener("click",hideTip);
+window.addEventListener("scroll",hideTip,{passive:true});
+
+/* ═══ Health (Curve-Llamalend-style price scale, live account model) ═══
+   HF and the band recompute from actual collateral & debt on every action —
+   withdraw collateral, repay via rewards, unwind LP — and show ∞ when
+   there is no debt at all. */
+function renderHealth(){
   const track=$("#bandTrack"), band=$("#band");
   $$(".band-tick,.band-zonelbl",band).forEach(e=>e.remove());
-  const lp=28.72, now=S.zec;
+  const D=debtUsd(), C=collZec(), now=S.zec, chip=$("#hfChip");
+  const mk=(x,lbl,val,color)=>{
+    const el=document.createElement("div");el.className="band-tick";
+    el.style.left=x+"%";el.style.background=color;
+    el.innerHTML=`<span class="tk-lbl" style="color:${color}">${lbl}</span><span class="tk-val num">${val}</span>`;
+    band.appendChild(el);
+  };
+  const zl=(x,txt)=>{const e=document.createElement("div");e.className="band-zonelbl";e.style.left=x+"%";e.textContent=txt;band.appendChild(e);};
+  if(D<=0){
+    track.innerHTML=`<div class="band-seg" style="flex:1;background:var(--good)"></div>`;
+    mk(50,"ZEC now",usd(now),"var(--ink)");
+    zl(1,"no debt — nothing can be liquidated");
+    chip.className="chip chip-good";
+    chip.innerHTML=`<span class="dot"></span>No debt · HF <span class="num">∞</span>`;
+    $("#hfBorrowLine").innerHTML=`No borrow against your <b class="num">${C.toLocaleString()} ZEC</b> collateral`;
+    $("#hfLiqLine").innerHTML=`Liquidation — none possible · ZEC now <b class="num" id="nowPx">${usd(now)}</b>`;
+    return;
+  }
+  const lp=D/(LIQ_T*C);                      // price where HF = 1.0
+  const hf=C*now*LIQ_T/D, m=hfMeta(hf);
   const lo=lp*0.72, hi=Math.max(now*1.18, lp*2.05);
   const X=p=>((p-lo)/(hi-lo))*100;
-  // zones by HF at price p: hf = p*collat*T/debt → boundaries at hf 1.2 & 1.5 → price = bound*lp/1.0
-  const p12=lp*1.2, p15=lp*1.5; // agent thresholds: critical 1.2, warn 1.5
+  const p12=lp*1.2, p15=lp*1.5;              // agent thresholds: critical 1.2, warn 1.5
   track.innerHTML=[
     `<div class="band-seg" style="width:${X(p12)}%;background:var(--crit)"></div>`,
     `<div class="band-seg" style="width:${X(p15)-X(p12)}%;background:var(--warn)"></div>`,
     `<div class="band-seg" style="flex:1;background:var(--good)"></div>`,
   ].join("");
-  const mk=(p,lbl,val,color)=>{
-    const el=document.createElement("div");el.className="band-tick";
-    el.style.left=X(p)+"%";el.style.background=color;
-    el.innerHTML=`<span class="tk-lbl" style="color:${color}">${lbl}</span><span class="tk-val num">${val}</span>`;
-    band.appendChild(el);
-  };
-  mk(lp,"Liquidation",usd(lp),"var(--crit)");
-  mk(now,"ZEC now",usd(now),"var(--ink)");
-  const zl=(x,txt)=>{const e=document.createElement("div");e.className="band-zonelbl";e.style.left=x+"%";e.textContent=txt;band.appendChild(e);};
+  mk(X(lp),"Liquidation",usd(lp),"var(--crit)");
+  mk(X(now),"ZEC now",usd(now),"var(--ink)");
   zl(1,"at risk"); zl(X(p12)+1,"caution"); zl(X(p15)+1,"healthy");
+  chip.className="chip "+m.cls;
+  chip.innerHTML=`<span class="dot"></span>${m.label} · HF <span class="num" id="hfVal">${hf.toFixed(2)}</span>`;
+  const ltvPct=(D/(C*now)*100).toFixed(1);
+  $("#hfBorrowLine").innerHTML=`Borrowed <b class="num">${usd(D)} USDC</b> against <b class="num">${C.toLocaleString()} ZEC</b> (${usd(C*now)}) · ${ltvPct}% LTV`;
+  $("#hfLiqLine").innerHTML=`Liquidation at <b class="num" style="color:var(--crit)" id="liqPx">${usd(lp)}</b> · ZEC now <b class="num" id="nowPx">${usd(now)}</b>`;
 }
 
 /* ═══ Positions ═══ */
@@ -808,17 +1218,20 @@ function posCard(p){
   const el=document.createElement("div");el.className="card pos";el.dataset.id=p.id;
   let statusChips="", nums="", body="";
   if(p.kind==="SIMPLE"){
-    statusChips=`<span class="chip chip-mute">Simple lending</span><span class="chip chip-good"><span class="dot"></span>No debt</span>`;
-    nums=`<div class="pos-num"><div class="lbl">Value</div><div class="v num">${usd(p.value)}</div></div>
+    statusChips=`<span class="chip chip-mute">Simple lending</span><span class="chip chip-good"><span class="dot"></span>Collateral</span>`;
+    nums=`<div class="pos-num"><div class="lbl">Deposited</div><div class="v num">${p.zecIn.toLocaleString()} ZEC</div></div>
+          <div class="pos-num"><div class="lbl">Value</div><div class="v num">${usd(posValue(p))}</div></div>
           <div class="pos-num"><div class="lbl">Supply APY</div><div class="v num" style="color:var(--good)">${pct(p.apy)}</div></div>`;
-    body=`<div class="small muted" style="max-width:520px">ZEC supplied as collateral on Rhea Finance. No borrow, no liquidation exposure. Upgrade deploys a borrow into an LP strategy without re-bridging.</div>
+    const D=debtUsd();
+    body=`<div class="small muted" style="max-width:560px">ZEC supplied as collateral on Rhea Finance. Interest accrues in-protocol automatically — nothing to compound. ${D>0?`This collateral currently backs <b class="num">${usd(D)}</b> of account debt — withdrawals are capped so your health factor stays ≥ 1.2.`:"No debt against it — withdraw any amount, any time."}</div>
       <div class="pos-actions">
         <button class="btn btn-gold" data-act="upgrade">Upgrade to Full strategy</button>
         <button class="btn btn-ghost" data-act="withdraw">Withdraw</button>
       </div>`;
   } else {
-    const inRange=p.range==="in";
+    const inRange=p.range==="in", direct=p.kind==="DIRECT";
     statusChips=`<span class="chip chip-mute">${p.pool.dex}</span>`+
+      (direct?`<span class="chip chip-info">Direct LP · no loan</span>`:"")+
       (p.cooldown>0?`<span class="chip chip-info cool"><span class="cool-ring" style="--p:${(1-p.cooldown/60)*100}%"></span>Cooldown ${p.cooldown}s</span>`
         : inRange?`<span class="chip chip-good"><span class="dot"></span>In range</span>`
         :`<span class="chip chip-warn"><span class="dot"></span>Out of range ${p.outFor} · rebalances ${p.rebalIn}</span>`)+
@@ -826,33 +1239,39 @@ function posCard(p){
       (p.src==="SHIELDED"?`<span class="chip chip-priv" title="Funded from a shielded balance — your transaction history was never exposed"><svg class="ic"><use href="#i-shield"/></svg>Shielded source</span>`:"");
     nums=`<div class="pos-num"><div class="lbl">Value</div><div class="v num">${usd(p.value)}</div></div>
           <div class="pos-num"><div class="lbl">Net APY</div><div class="v num" style="color:var(--good)">${pct(p.apy)}</div></div>
-          <div class="pos-num"><div class="lbl">Claimable</div><div class="v num">${usd((p.fees+p.inc)*0.85)}</div></div>`;
-    const gross=p.fees+p.inc, fee=gross*0.15, net=gross-fee;
+          <div class="pos-num"><div class="lbl">Claimable</div><div class="v num">${usd(grossRewards(p)*NET)}</div></div>`;
+    const gross=grossRewards(p), feeE=gross*ENGINE_FEE, feeP=(gross-feeE)*PLATFORM_FEE, net=gross*NET;
     body=`
       <div style="display:flex;gap:34px;flex-wrap:wrap">
         <div class="ybreak" style="flex:1;min-width:260px">
           <span class="r">LP trading fees</span><span class="v num">${usd(p.fees)}</span>
           <span class="r">Incentives (${p.pool.dex==="Aerodrome"?"AERO":"engine"})</span><span class="v num">${usd(p.inc)}</span>
-          <span class="r">Engine performance fee (15%)</span><span class="v num" style="color:var(--ink-3)">−${usd(fee)}</span>
+          <span class="r">Engine performance fee (15%)</span><span class="v num" style="color:var(--ink-3)">−${usd(feeE)}</span>
+          <span class="r">Platform fee (10%)</span><span class="v num" style="color:var(--ink-3)">−${usd(feeP)}</span>
           <span class="r net">Net claimable</span><span class="v num net">${usd(net)}</span>
         </div>
         <div class="small muted" style="flex:1;min-width:220px">
           <div style="margin-bottom:6px"><b>${p.preset}</b> · opened ${p.opened}</div>
-          <div>Funded with ${p.zecIn} ZEC of borrowing power.</div>
-          ${p.rew==="ZEC"?`<div style="margin-top:6px">Rewards route to <span class="mono">${p.zaddr.slice(0,14)}…</span> as native ZEC — shield on arrival.</div>`:""}
+          <div class="num">Position ${tokAmounts(p)}</div>
+          <div style="margin-top:5px">${direct
+            ? `Funded by swapping <b class="num">${p.zecIn} ZEC</b> — no loan, no liquidation risk.`
+            : `Backed by <b class="num">${p.zecIn} ZEC</b> collateral · borrowed <b class="num">${usd(p.borrowUsd)} ${p.borrowAsset}</b>`}</div>
+          ${p.rew==="ZEC"&&p.zaddr?`<div style="margin-top:6px">Rewards route to <span class="mono">${p.zaddr.slice(0,14)}…</span> as native ZEC — shield on arrival.</div>`:""}
         </div>
       </div>
       <div class="pos-actions">
-        <button class="btn btn-gold" data-act="claim" ${p.cooldown>0?"disabled":""}>${p.rew==="ZEC"?"Claim → ZEC":"Compound now"}</button>
+        <button class="btn btn-gold" data-act="compound" ${p.cooldown>0||gross<=0?"disabled":""} title="Collects accrued fees + incentives and re-deposits them into this position. Works whether or not auto-compound is on. Restarts the 60s hold.">Compound now</button>
+        <button class="btn btn-ghost" data-act="claim" ${gross<=0?"disabled":""} title="Send accrued rewards to your Zcash wallet, your Rhea position (repays debt first), or your Base wallet.">Claim rewards</button>
         <button class="btn btn-ghost" data-act="withdraw" ${p.cooldown>0?"disabled":""}>Withdraw</button>
         <button class="btn btn-quiet" data-act="settings">Adjust parameters</button>
       </div>`;
   }
   const title=p.kind==="SIMPLE"?`${coins2(["zec"])} <div class="pos-title"><div class="t">ZEC on Rhea ${statusChips}</div><div class="s">Simple lending · NEAR</div></div>`
-    :`${coins2(p.pool.c)} <div class="pos-title"><div class="t">${p.pool.name} <span class="faint small">${p.pool.fee}</span> ${statusChips}</div><div class="s">${p.pool.dex} · engine ${p.pool.eid}</div></div>`;
+    :`${coins2(p.pool.c)} <div class="pos-title"><div class="t">${p.pool.name} <span class="faint small">${p.pool.fee}</span> ${statusChips}</div><div class="s">${p.pool.dex} · engine <span title="The bytes32 key in the engine's on-chain approvedPools registry — the exact id our deposit passed. Verify it yourself against the registry.">${p.pool.eid}</span></div></div>`;
   el.innerHTML=`<div class="pos-head">${title}<div class="pos-nums">${nums}</div><span class="caret">▾</span></div><div class="pos-body">${body}</div>`;
   $(".pos-head",el).addEventListener("click",()=>el.classList.toggle("open"));
   $$("[data-act]",el).forEach(b=>b.addEventListener("click",e=>{e.stopPropagation();act(p,b.dataset.act);}));
+  bindTips(el);
   return el;
 }
 function renderPositions(){
@@ -899,15 +1318,19 @@ function renderPrivacyPositions(){
   }).join("");
 }
 function act(p,a){
-  if(a==="withdraw"){wd.p=p;$("#wdTitle").textContent=`Withdraw — ${p.kind==="SIMPLE"?"ZEC on Rhea":p.pool.name}`;wdUpd();$("#wdOverlay").classList.add("on");}
-  if(a==="claim"){
-    const net=((p.fees||0)+(p.inc||0))*0.85;
-    if(p.rew==="ZEC"){toast(`⚡ Routing ${usd(net)} home — 1-Click quote verified: recipient ${p.zaddr}, native ZEC`);}
-    else{toast(`↻ Compounded ${usd(net)} back into ${p.pool.name}`);}
-    p.fees=0;p.inc=0;startCooldown(p);renderPositions();refreshStats();
+  if(a==="withdraw") wdOpen(p);
+  if(a==="claim") clOpen(p);
+  if(a==="compound"){
+    const net=grossRewards(p)*NET;
+    if(net<=0) return;
+    p.value+=net; p.fees=0; p.inc=0;
+    const tx=mkTx("base");
+    activity.unshift({t:"Compounded",d:`${usd(net)} re-deposited · ${p.pool.name} (${p.pool.dex})`,ic:"↻",cls:"chip-good",when:"just now",tx});
+    toast(`↻ Compounded ${usd(net)} back into ${p.pool.name} — 60s hold restarted`);
+    startCooldown(p); renderAll();
   }
   if(a==="upgrade"){S.mode="FULL";showView("wiz");setStep(2);syncWizard();toast("Upgrading in place — no re-bridging needed");}
-  if(a==="settings"){toast("Parameter update calls the engine's updateParameters — no close/re-open needed");}
+  if(a==="settings") prmOpen(p);
 }
 function startCooldown(p){
   p.cooldown=60;renderPositions();
@@ -917,29 +1340,252 @@ function startCooldown(p){
     if(chip)chip.innerHTML=`<span class="cool-ring" style="--p:${(1-p.cooldown/60)*100}%"></span>Cooldown ${p.cooldown}s`;
   },1000);
 }
+function renderAll(){renderPositions();renderActivity();renderHealth();refreshStats();}
 
-/* Withdraw modal */
-const wd={p:null};
+/* Repay debt across positions (rewards/withdrawals routed to Rhea).
+   Returns how much was actually applied. */
+function repayDebt(amount, firstP){
+  let left=amount;
+  const order=[firstP,...positions.filter(q=>q!==firstP)].filter(q=>q&&q.borrowUsd>0);
+  for(const q of order){const r=Math.min(left,q.borrowUsd);q.borrowUsd-=r;left-=r;if(left<=0)break;}
+  return amount-left;
+}
+
+/* Fresh-looking demo t-address for prefills */
+const demoTaddr=()=> "t1"+rnd58(33).replace(/[^1-9A-HJ-NP-Za-km-z]/g,"a").slice(0,33);
+
+/* Destination cards shared by claim + withdraw modals */
+function destCards(hasDebt, ctx){
+  const cards=[];
+  if(hasDebt) cards.push({k:"RHEA",t:"My Rhea position",badge:`<span class="chip chip-good">Raises health factor</span>`,
+    d:"Repays your loan first (borrow APR > supply APY, so this is usually the smartest move while borrowing); any surplus tops up collateral."});
+  else if(ctx==="claim") cards.push({k:"RHEA",t:"My Rhea position",badge:"",
+    d:"No debt to repay — tops up your ZEC-side collateral on Rhea."});
+  cards.push({k:"ZEC",t:"My Zcash wallet",badge:`<span class="chip chip-gold">Native ZEC</span>`,
+    d:"Converts via NEAR Intents and lands as ZEC. Quote is hard-verified: recipient must equal your address, asset must be native ZEC. Shield on arrival."});
+  cards.push({k:"BASE",t:"My Base wallet",badge:"",
+    d:`The raw tokens, no conversion — sent to your connected wallet${S.connected?" (0x7a3f…c21e)":""}.`});
+  return cards;
+}
+function renderDests(elId, cards, sel, onPick){
+  const box=$(elId); box.innerHTML="";
+  cards.forEach(c=>{
+    const el=document.createElement("div");el.className="opt"+(sel===c.k?" sel":"");
+    el.innerHTML=`<div class="t"><span>${c.t}</span>${c.badge}</div><div class="d">${c.d}</div>`;
+    el.addEventListener("click",()=>onPick(c.k));
+    box.appendChild(el);
+  });
+}
+function addrFeedback(inputId, hintId){
+  const v=$(inputId).value.trim(), h=$(hintId);
+  if(!v){h.innerHTML="Paste a fresh t1… address — reusing one publicly links your positions.";h.style.color="var(--ink-3)";return false;}
+  const d=describeZaddr(v);
+  if(d.settleable&&addressReused(v)){h.innerHTML="⚠ This address already receives another position — publicly links them.";h.style.color="var(--warn)";return true;}
+  if(d.settleable){h.innerHTML="✓ Transparent address — the bridge can deliver here. Shield on arrival.";h.style.color="var(--priv)";return true;}
+  h.innerHTML=d.note;h.style.color="var(--warn)";return false;
+}
+
+/* ═══ Claim modal ═══ */
+const cl={p:null,dest:"RHEA"};
+function clOpen(p){
+  cl.p=p; cl.dest=debtUsd()>0?"RHEA":(p.rew==="ZEC"&&p.zaddr?"ZEC":"BASE");
+  $("#clTitle").textContent=`Claim — ${p.pool.name}`;
+  const gross=grossRewards(p), feeE=gross*ENGINE_FEE, feeP=(gross-feeE)*PLATFORM_FEE;
+  $("#clBreak").innerHTML=`
+    <span class="r">Accrued (fees + incentives)</span><span class="v num">${usd(gross)}</span>
+    <span class="r">Engine fee (15%)</span><span class="v num" style="color:var(--ink-3)">−${usd(feeE)}</span>
+    <span class="r">Platform fee (10%)</span><span class="v num" style="color:var(--ink-3)">−${usd(feeP)}</span>
+    <span class="r net">You receive</span><span class="v num net">${usd(gross*NET)}</span>`;
+  clSync();
+  $("#clOverlay").classList.add("on");
+}
+function clSync(){
+  renderDests("#clDests",destCards(debtUsd()>0,"claim"),cl.dest,k=>{cl.dest=k;clSync();});
+  const zec=cl.dest==="ZEC";
+  $("#clAddrWrap").style.display=zec?"block":"none";
+  if(zec){
+    if(cl.p.zaddr&&!$("#clAddr").value){$("#clReuse").style.display="block";}
+    else $("#clReuse").style.display="none";
+    addrFeedback("#clAddr","#clAddrHint");
+  }
+  const net=grossRewards(cl.p)*NET;
+  if(cl.dest==="RHEA"&&debtUsd()>0){
+    const hf0=acctHf(), hf1=acctHf(0,-Math.min(net,debtUsd()));
+    $("#clHf").innerHTML=`Health factor: <b>${hf0===1/0?"∞":hf0.toFixed(2)}</b> → <b style="color:var(--good)">${hf1===1/0?"∞":hf1.toFixed(2)}</b> after repaying ${usd(Math.min(net,debtUsd()))}`;
+  } else $("#clHf").innerHTML="";
+  clGate();
+}
+function clGate(){
+  const zec=cl.dest==="ZEC";
+  const ok=!zec||describeZaddr($("#clAddr").value.trim()).settleable;
+  const b=$("#clConfirm");b.disabled=!ok;
+  b.textContent=ok?"Claim":"Add a t1… receiving address first";
+}
+$("#clAddr").addEventListener("input",()=>{addrFeedback("#clAddr","#clAddrHint");clGate();});
+$("#clReuse").addEventListener("click",()=>{$("#clAddr").value=cl.p.zaddr;addrFeedback("#clAddr","#clAddrHint");clGate();});
+$("#clConfirm").addEventListener("click",()=>{
+  const p=cl.p, net=grossRewards(p)*NET;
+  p.fees=0;p.inc=0;
+  $("#clOverlay").classList.remove("on");
+  if(cl.dest==="RHEA"){
+    const applied=repayDebt(net,p), topup=net-applied;
+    activity.unshift({t:"Rewards → Rhea",d:`${usd(applied)} repaid${topup>0?` · ${usd(topup)} added to collateral`:""} · HF now ${acctHf()===1/0?"∞":acctHf().toFixed(2)}`,ic:"♥",cls:"chip-good",when:"just now",tx:mkTx("near")});
+    if(topup>0){const sp=positions.find(q=>q.kind==="SIMPLE");if(sp)sp.zecIn+=topup/S.zec;}
+    toast(`♥ Repaid ${usd(applied)} — health factor ${acctHf()===1/0?"∞":acctHf().toFixed(2)}`);
+  } else if(cl.dest==="ZEC"){
+    const addr=$("#clAddr").value.trim();
+    activity.unshift({t:"Rewards routed home",d:`${usd(net)} → ${(net/S.zec).toFixed(2)} ZEC to ${addr.slice(0,8)}… · quote hash emitted`,ic:"⚡",cls:"chip-gold",when:"just now",tx:mkTx("zcash")});
+    toast(`⚡ Routing ${usd(net)} home as native ZEC — shield on arrival`);
+  } else {
+    activity.unshift({t:"Rewards claimed",d:`${usd(net)} in reward tokens → your Base wallet`,ic:"⚡",cls:"chip-info",when:"just now",tx:mkTx("base")});
+    toast(`Sent ${usd(net)} in reward tokens to your Base wallet`);
+  }
+  renderAll();
+});
+
+/* ═══ Adjust-parameters modal — actually edits the position ═══ */
+const prm={p:null};
+function prmOpen(p){
+  prm.p=p;
+  $("#prmTitle").textContent=`Adjust — ${p.pool.name}`;
+  $("#prmRw").value=p.rw||800; $("#prmRd").value=p.rd??12;
+  $("#prmComp").classList.toggle("on",p.rew!=="ZEC");
+  $("#prmAddr").value=p.zaddr||"";
+  prmSync();
+  $("#prmOverlay").classList.add("on");
+}
+function prmSync(){
+  $("#prmRwLbl").textContent=(+$("#prmRw").value/100).toFixed(1)+"%";
+  $("#prmRdLbl").textContent=$("#prmRd").value+"h";
+  const comp=$("#prmComp").classList.contains("on");
+  $("#prmAddrWrap").style.display=comp?"none":"block";
+  if(!comp) addrFeedback("#prmAddr","#prmAddrHint");
+  const ok=comp||describeZaddr($("#prmAddr").value.trim()).settleable;
+  $("#prmApply").disabled=!ok;
+  $("#prmApply").textContent=ok?"Apply changes":"Add a t1… payout address first";
+}
+$("#prmRw").addEventListener("input",prmSync);
+$("#prmRd").addEventListener("input",prmSync);
+$("#prmComp").addEventListener("click",e=>{e.target.classList.toggle("on");prmSync();});
+$("#prmAddr").addEventListener("input",prmSync);
+$("#prmApply").addEventListener("click",()=>{
+  const p=prm.p;
+  p.rw=+$("#prmRw").value; p.rd=+$("#prmRd").value;
+  const comp=$("#prmComp").classList.contains("on");
+  p.rew=comp?"COMPOUND":"ZEC";
+  if(!comp) p.zaddr=$("#prmAddr").value.trim();
+  p.preset=`Custom ${(p.rw/100).toFixed(1)}% · ${p.rd}h`;
+  $("#prmOverlay").classList.remove("on");
+  activity.unshift({t:"Parameters updated",d:`${p.pool.name}: range ${(p.rw/100).toFixed(1)}%, rebalance ${p.rd}h, ${comp?"auto-compound":"rewards → ZEC"} · engine updateParameters`,ic:"⚙",cls:"chip-info",when:"just now",tx:mkTx("base")});
+  toast(`⚙ Parameters applied via updateParameters — no close/re-open, no new hold`);
+  renderAll();
+});
+
+/* ═══ Withdraw modal — destinations, live HF preview, collateral guard ═══ */
+const wd={p:null,dest:"RHEA",capPct:100};
+function wdOpen(p){
+  wd.p=p;
+  wd.dest=p.kind==="SIMPLE"?"ZEC":(debtUsd()>0?"RHEA":"ZEC");
+  $("#wdTitle").textContent=`Withdraw — ${p.kind==="SIMPLE"?"ZEC on Rhea":p.pool.name}`;
+  $("#wdOf").textContent=p.kind==="SIMPLE"?"of your collateral":"of position";
+  // Collateral withdrawals are capped so post-withdraw HF stays ≥ 1.2 —
+  // you can no longer strip collateral out from under an open loan.
+  if(p.kind==="SIMPLE"){
+    const D=debtUsd();
+    let maxZec=p.zecIn;
+    if(D>0) maxZec=Math.min(p.zecIn, collZec()-1.2*D/(LIQ_T*S.zec));
+    wd.capPct=Math.max(0, Math.min(100, Math.floor(maxZec/p.zecIn*100/5)*5));
+    $("#wdCap").style.display=wd.capPct<100?"block":"none";
+    if(wd.capPct<100) $("#wdCap").innerHTML=`Capped at <b>${wd.capPct}%</b> — your <b class="num">${usd(D)}</b> debt needs the rest as collateral (post-withdraw HF ≥ 1.2). Repay debt first (withdraw an LP position to “My Rhea position”, or claim rewards there) to free the rest.`;
+    $("#wdMech").innerHTML=`Collateral leaves Rhea and routes home as native ZEC via NEAR Intents. ${D>0?"The slider is capped so the loan stays safely collateralized.":""}`;
+  } else {
+    wd.capPct=100;
+    $("#wdCap").style.display="none";
+    $("#wdMech").innerHTML=`Partial withdrawals close and re-open the engine position — a fresh <b>60s hold</b> applies to the remainder. A slippage floor (minOut) protects the payout: the transaction reverts rather than accept a sandwiched price.`;
+  }
+  const sl=$("#wdSlider");
+  sl.max=Math.max(wd.capPct,5); sl.value=Math.min(50,wd.capPct);
+  sl.disabled=wd.capPct<5;
+  wdUpd();
+  $("#wdOverlay").classList.add("on");
+}
+function wdSync(){
+  const p=wd.p, simple=p.kind==="SIMPLE";
+  const cards=simple
+    ? [{k:"ZEC",t:"My Zcash wallet",badge:`<span class="chip chip-gold">Native ZEC</span>`,d:"Collateral converts back and lands as ZEC. Shield on arrival; use a fresh address."}]
+    : destCards(debtUsd()>0,"withdraw");
+  renderDests("#wdDests",cards,wd.dest,k=>{wd.dest=k;wdUpd();});
+  const zec=wd.dest==="ZEC";
+  $("#wdAddrWrap").style.display=zec?"block":"none";
+  if(zec){
+    if(!$("#wdAddr").value) $("#wdAddr").value=demoTaddr(); // demo prefill — production: user pastes
+    addrFeedback("#wdAddr","#wdAddrHint");
+  }
+}
 function wdUpd(){
+  const p=wd.p; if(!p) return;
   const v=+$("#wdSlider").value;$("#wdPct").textContent=v+"%";
-  const est=wd.p?wd.p.value*v/100:0;
-  $("#wdEst").textContent=`≈ ${usd(est)} back to you · slippage floor set automatically`;
-  $("#wdWarn").style.display=v===100?"block":"none";
+  const base=posValue(p), est=base*v/100;
+  $("#wdEst").textContent=`≈ ${usd(est)}${p.kind==="SIMPLE"?` · ${(p.zecIn*v/100).toFixed(1)} ZEC`:""} · slippage floor set automatically`;
+  $("#wdWarn").style.display=v>=100&&p.kind!=="SIMPLE"?"block":"none";
+  wdSync();
+  const hf0=acctHf();
+  let hf1=hf0, note="";
+  if(p.kind==="SIMPLE"){ hf1=acctHf(-(p.zecIn*v/100),0); note="withdrawing collateral"; }
+  else if(wd.dest==="RHEA"&&debtUsd()>0){ hf1=acctHf(0,-Math.min(est,debtUsd())); note="repaying debt"; }
+  else if(debtUsd()>0){ note="debt unchanged"; }
+  const f=x=>x===1/0?"∞":x.toFixed(2);
+  $("#wdHf").innerHTML=debtUsd()>0?`Health factor: <b>${f(hf0)}</b> → <b style="color:${hf1>=hf0?"var(--good)":hf1>=1.5?"var(--ink)":hf1>=1.2?"var(--warn)":"var(--crit)"}">${f(hf1)}</b> (${note})`:"";
+  const ok=wd.dest!=="ZEC"||describeZaddr($("#wdAddr").value.trim()).settleable;
+  $("#wdConfirm").disabled=!ok||(+$("#wdSlider").value<=0)||wd.capPct<5;
+  $("#wdConfirm").textContent=wd.capPct<5?"Nothing withdrawable — repay debt first":(ok?"Withdraw":"Add a t1… receiving address first");
 }
 $("#wdSlider").addEventListener("input",wdUpd);
+$("#wdAddr").addEventListener("input",wdUpd);
 $("#wdConfirm").addEventListener("click",()=>{
   const v=+$("#wdSlider").value,p=wd.p;
   $("#wdOverlay").classList.remove("on");
-  if(v===100){const i=positions.indexOf(p);if(i>-1)positions.splice(i,1);toast(`Position closed — ${usd(p.value)} on its way`);}
-  else{p.value*=(1-v/100);toast(`Withdrew ${v}% — remainder re-deposited, 60s hold restarted`);startCooldown(p);}
-  renderPositions();refreshStats();
+  const est=posValue(p)*v/100;
+  if(p.kind==="SIMPLE"){
+    const zecOut=p.zecIn*v/100;
+    p.zecIn-=zecOut;
+    if(p.zecIn<0.01){const i=positions.indexOf(p);if(i>-1)positions.splice(i,1);}
+    activity.unshift({t:"Collateral withdrawn",d:`${zecOut.toFixed(1)} ZEC (${usd(est)}) → your Zcash wallet · HF ${acctHf()===1/0?"∞":acctHf().toFixed(2)}`,ic:"↑",cls:"chip-gold",when:"just now",tx:mkTx("zcash")});
+    toast(`Withdrew ${zecOut.toFixed(1)} ZEC — on its way home`);
+  } else {
+    let msg;
+    if(wd.dest==="RHEA"){const applied=repayDebt(est,p);msg=`♥ ${usd(applied)} repaid — HF ${acctHf()===1/0?"∞":acctHf().toFixed(2)}`;
+      activity.unshift({t:"Withdrawal → loan repaid",d:`${usd(applied)} from ${p.pool.name} · HF now ${acctHf()===1/0?"∞":acctHf().toFixed(2)}`,ic:"♥",cls:"chip-good",when:"just now",tx:mkTx("near")});}
+    else if(wd.dest==="ZEC"){msg=`⚡ ${usd(est)} routing home as native ZEC`;
+      activity.unshift({t:"Withdrawal routed home",d:`${usd(est)} → ${(est/S.zec).toFixed(2)} ZEC · quote hash emitted`,ic:"⚡",cls:"chip-gold",when:"just now",tx:mkTx("zcash")});}
+    else {msg=`${usd(est)} in tokens sent to your Base wallet`;
+      activity.unshift({t:"Withdrawn to Base wallet",d:`${usd(est)} from ${p.pool.name}`,ic:"↑",cls:"chip-info",when:"just now",tx:mkTx("base")});}
+    if(v>=100){
+      const i=positions.indexOf(p);if(i>-1)positions.splice(i,1);
+      // Closing the LP does NOT release collateral — the ZEC stays on Rhea
+      // (as a Simple-lending position) until the debt is repaid/withdrawn.
+      if(p.kind==="FULL"&&p.zecIn>0){
+        const sp=positions.find(q=>q.kind==="SIMPLE");
+        if(sp) sp.zecIn+=p.zecIn;
+        else positions.push({id:++PID,kind:"SIMPLE",zecIn:p.zecIn,apy:2.4,opened:"just now",src:p.src});
+        msg+=` · your ${p.zecIn} ZEC collateral stays on Rhea${p.borrowUsd>0?" (debt outstanding)":""}`;
+      }
+      toast(`Position closed — ${msg}`);
+    } else {
+      p.value*=(1-v/100);
+      toast(`Withdrew ${v}% — remainder re-deposited, 60s hold restarted. ${msg}`);
+      startCooldown(p);
+    }
+  }
+  renderAll();
 });
 
-/* ═══ Activity ═══ */
+/* ═══ Activity — every entry carries its tx id + the right explorer for its
+       chain (Zcash / NEAR / Base — there is no single cross-chain explorer) ═══ */
 function renderActivity(){
   $("#actList").innerHTML=activity.map(a=>`<div class="act">
     <div class="act-ic ${a.cls}" style="background:var(--surface-2)">${a.ic}</div>
-    <div><b>${a.t}</b><div class="muted small">${a.d}</div><time>${a.when}</time></div></div>`).join("");
+    <div><b>${a.t}</b><div class="muted small">${a.d}</div>${a.tx?txLink(a.tx):""}<time>${a.when}</time></div></div>`).join("");
 }
 
 /* ═══ Pools view ═══ */
@@ -979,7 +1625,7 @@ $("#nextBtn").addEventListener("click",()=>{
   if(S.step===4){launch();return;}
   let n=S.step+1;
   if(S.mode==="SIMPLE"&&n>1)n=4;                       // simple skips strategy steps
-  if(n===2&&!S.poolId){const first=POOLS.find(p=>p.entry===S.asset);S.poolId=first.id;}
+  if(n===2&&!S.poolId){const first=POOLS.find(p=>p.c.includes(S.asset.toLowerCase()));S.poolId=first.id;}
   if(n===4)renderReview();
   setStep(n);syncWizard();
 });
@@ -991,10 +1637,9 @@ $$("#assetSeg [data-asset]").forEach(b=>b.addEventListener("click",()=>{S.asset=
   $$("#assetSeg button").forEach(x=>x.classList.toggle("sel",x===b));renderPoolList();proj();}));
 $("#ltv").addEventListener("input",e=>{S.ltv=+e.target.value;ltvUi();proj();});
 $("#amt").addEventListener("input",proj);
-$("#maxBtn").addEventListener("click",()=>{$("#amt").value=450;proj();});
 $$("[data-rew]").forEach(o=>o.addEventListener("click",()=>{S.rew=o.dataset.rew;
   $$("[data-rew]").forEach(x=>x.classList.toggle("sel",x===o));
-  $("#zaddrWrap").style.display=S.rew==="ZEC"?"block":"none";proj();}));
+  $("#zaddrWrap").style.display=S.rew==="ZEC"?"block":"none";syncZaddrReuse();proj();}));
 $("#econToggle").addEventListener("click",e=>{e.target.classList.toggle("on");S.econ=!S.econ;});
 $$("[data-src]").forEach(o=>o.addEventListener("click",()=>{S.src=o.dataset.src;
   $$("[data-src]").forEach(x=>x.classList.toggle("sel",x===o));
@@ -1010,21 +1655,21 @@ $$("[data-src]").forEach(o=>o.addEventListener("click",()=>{S.src=o.dataset.src;
    is asserted to auto-shield (verified); others point at their own action. */
 const WALLETS=[
   {id:"zashi",label:"Zashi / Zodl (Zcash official)",auto:true,
-   addr:"Receive screen \u2192 the transparent address is listed separately, below the shielded one. Copy that <span class='mono'>t1\u2026</span> address.",
+   addr:"Receive screen → the transparent address is listed separately, below the shielded one. Copy that <span class='mono'>t1…</span> address.",
    shield:"Zashi shields ZEC it receives, so your payout spends only moments in the open before it is private again."},
   {id:"ywallet",label:"Ywallet",auto:"unverified",
-   addr:"Receive \u2192 switch the address type to transparent and copy it.",
-   shield:"Ywallet exposes a shield action for transparent balances \u2014 run it once a payout lands, or check whether your version does it for you."},
+   addr:"Receive → switch the address type to transparent and copy it.",
+   shield:"Ywallet exposes a shield action for transparent balances — run it once a payout lands, or check whether your version does it for you."},
   {id:"zingo",label:"Zingo",auto:"unverified",
-   addr:"Receive \u2192 transparent address.",
+   addr:"Receive → transparent address.",
    shield:"Run the wallet's shield / consolidate action after the payout arrives to move it into the shielded pool."},
   {id:"other",label:"Another self-custody wallet",auto:"unverified",
-   addr:"Any transparent (<span class='mono'>t1\u2026</span>/<span class='mono'>t3\u2026</span>) address the wallet controls \u2014 generate a fresh one for this position.",
+   addr:"Any transparent (<span class='mono'>t1…</span>/<span class='mono'>t3…</span>) address the wallet controls — generate a fresh one for this position.",
    shield:"Look for a 'shield' action and run it after each payout. If the wallet has none, use one that does."},
   {id:"exchange",label:"An exchange account",auto:false,
    addr:"An exchange deposit address.",
-   shield:"Exchanges hold the funds \u2014 nothing is shielded.",
-   warn:"<b>Strongly discouraged.</b> An exchange deposit address is tied to your verified identity, which links this position \u2014 and every future payout to it \u2014 directly to you. Exchanges also generally do not support shielded withdrawals, so the funds cannot easily be made private again. Use a self-custody wallet instead."},
+   shield:"Exchanges hold the funds — nothing is shielded.",
+   warn:"<b>Strongly discouraged.</b> An exchange deposit address is tied to your verified identity, which links this position — and every future payout to it — directly to you. Exchanges also generally do not support shielded withdrawals, so the funds cannot easily be made private again. Use a self-custody wallet instead."},
 ];
 S.wallet="zashi";
 function renderWallets(){
@@ -1048,7 +1693,18 @@ function walletHelp(){
 }
 $("#walletSel").addEventListener("change",e=>{S.wallet=e.target.value;walletHelp();privacyChecklist();});
 
+/* “Auto-populate” the honest way: a cross-chain wallet connection can't hand
+   us a Zcash address, but we can offer back the last one the user gave us —
+   with the reuse trade-off stated. */
+function syncZaddrReuse(){
+  const last=[...positions].find(p=>p.zaddr);
+  const b=$("#zaddrReuse"); if(!b) return;
+  b.style.display=(last&&!$("#zaddr").value)?"block":"none";
+  b.onclick=()=>{$("#zaddr").value=last.zaddr;$("#zaddr").dispatchEvent(new Event("input"));};
+}
+
 $("#zaddr").addEventListener("input",e=>{
+  syncZaddrReuse();
   const v=e.target.value.trim(), d=describeZaddr(v), H=$("#zaddrHelp"), h=$("#zaddrHint");
   if(d.kind==="empty"){
     h.innerHTML="Use a <b>fresh</b> address for this position — reusing one publicly links your positions together.";
@@ -1072,17 +1728,35 @@ $("#zaddr").addEventListener("input",e=>{
   proj();
 });
 
-function ltvUi(){
-  $("#ltvLbl").textContent=S.ltv+"%";
-  const hf=hfFor(S.ltv),m=hfMeta(hf),lp=liqPx(S.ltv);
-  const c=$("#ltvHf");c.className="chip "+m.cls;c.innerHTML=`<span class="dot"></span>HF ${hf.toFixed(2)} · ${m.label}`;
-  $("#ltvLiq").textContent=`Liquidation at ${usd(lp)} (−${Math.round((1-lp/S.zec)*100)}%)`;
+/* Account-level projections: your collateral and debt pool on Rhea, so a new
+   deposit's HF includes any existing borrow. */
+function newDepositHf(){
   const amt=+$("#amt").value||0;
-  $("#ltvBorrow").textContent=`Borrows ${usd(amt*S.zec*S.ltv/100)} ${S.asset}`;
+  const borrow=S.mode==="FULL"?amt*S.zec*S.ltv/100:0;
+  return acctHf(S.mode==="DIRECT"?0:amt, borrow);
+}
+function newDepositLiq(){
+  const amt=+$("#amt").value||0;
+  const D=debtUsd()+(S.mode==="FULL"?amt*S.zec*S.ltv/100:0);
+  const C=collZec()+(S.mode==="DIRECT"?0:amt);
+  return D<=0?0:D/(LIQ_T*C);
+}
+function ltvUi(){
+  $("#ltvBlock").style.display=S.mode==="DIRECT"?"none":"";
+  $("#assetLbl").childNodes[0].textContent=S.mode==="DIRECT"?"Pool asset — what your ZEC swaps into ":"Borrow asset ";
+  if(S.mode==="DIRECT") return;
+  $("#ltvLbl").textContent=S.ltv+"%";
+  const hf=newDepositHf(),m=hfMeta(hf),lp=newDepositLiq();
+  const c=$("#ltvHf");c.className="chip "+m.cls;c.innerHTML=`<span class="dot"></span>HF ${hf===1/0?"∞":hf.toFixed(2)} · ${m.label}`;
+  $("#ltvLiq").textContent=lp>0?`Liquidation at ${usd(lp)} (−${Math.round((1-lp/S.zec)*100)}%)`:"No liquidation";
+  const amt=+$("#amt").value||0;
+  $("#ltvBorrow").textContent=`Borrows ${usd(amt*S.zec*S.ltv/100)} ${S.asset} against ${usd(amt*S.zec)} ZEC`;
 }
 function renderPoolList(){
-  const list=POOLS.filter(p=>p.entry===S.asset);
-  $("#poolCount").textContent=`${list.length} engine-verified pools for ${S.asset}`;
+  // Every pool CONTAINING the chosen asset on either side — borrow WETH and
+  // WETH/USDC, cbBTC/WETH, cbETH/WETH, AERO/WETH all show up.
+  const list=POOLS.filter(p=>p.c.includes(S.asset.toLowerCase()));
+  $("#poolCount").textContent=`${list.length} engine-verified pools containing ${S.asset}`;
   $("#poolList").innerHTML="";
   list.forEach(p=>{
     const el=document.createElement("div");el.className="pool-row"+(S.poolId===p.id?" sel":"");
@@ -1120,30 +1794,37 @@ function estApy(){
   const pool=POOLS.find(p=>p.id===S.poolId)||POOLS[0];
   const pr=PRESETS.find(p=>p.k===S.preset);
   const widthMult=pr.mult*(pr.rw/S.rw)**0.35;          // tighter than default → more fees
-  const lpApy=pool.base*widthMult*0.85;                 // engine 15% fee
+  const lpApy=pool.base*widthMult*NET;                  // engine 15% + platform 10%
+  if(S.mode==="DIRECT") return Math.max(lpApy,0);       // whole deposit in the LP, no borrow cost
   const borrowCost=3.1*(S.ltv/35);                      // demo borrow rate scaling
-  return Math.max(2.4+ (lpApy-borrowCost)*(S.ltv/100)*(1/1), 2.4) ;
+  return Math.max(2.4+ (lpApy-borrowCost)*(S.ltv/100), 2.4);
 }
 function proj(){
   const amt=+$("#amt").value||0, usdIn=amt*S.zec;
   $("#amtUsd").textContent=usd(usdIn);
-  const full=S.mode==="FULL";
-  $$("[data-full]").forEach(r=>r.style.display=full?"flex":"none");
+  const full=S.mode==="FULL", lp=S.mode!=="SIMPLE";
+  $$("[data-borrow]").forEach(r=>r.style.display=full?"flex":"none");
+  $$("[data-lp]").forEach(r=>r.style.display=lp?"flex":"none");
+  $("#pFeePlat").textContent=S.mode==="SIMPLE"?"0% (Simple is free)":"10% of yield";
   const apy=estApy();
   $("#pApy").textContent=pct(apy);
   $("#pYear").textContent=`≈ ${usd(usdIn*apy/100)} / year on this deposit`;
   $("#pDep").textContent=`${amt} ZEC · ${usd(usdIn)}`;
   $("#pRew").textContent=S.rew==="ZEC"?"Send home as ZEC":"Auto-compound";
-  if(full){
-    const pool=POOLS.find(p=>p.id===S.poolId);
-    const hf=hfFor(S.ltv),lp=liqPx(S.ltv);
-    $("#pBor").textContent=`${usd(usdIn*S.ltv/100)} ${S.asset} @ ${S.ltv}% LTV`;
-    $("#pHf").textContent=hf.toFixed(2)+" — "+hfMeta(hf).label;
-    $("#pHf").style.color=hf>=1.5?"var(--good)":hf>=1.2?"var(--warn)":"var(--crit)";
-    $("#pLiq").textContent=`${usd(lp)} (−${Math.round((1-lp/S.zec)*100)}%)`;
+  const pool=POOLS.find(p=>p.id===S.poolId);
+  if(lp){
     $("#pPool").textContent=pool?`${pool.name} · ${pool.dex}`:"—";
     $("#pRange").textContent=`${(S.rw/100).toFixed(1)}% · rebalance after ${S.rd}h`;
-    $("#pNote").innerHTML=`If ZEC falls ${Math.round((1-liqPx(S.ltv)/S.zec)*100)}% to <b class="num">${usd(liqPx(S.ltv))}</b>, liquidation begins. The agent warns at HF 1.5 and can de-risk automatically below 1.2.`;
+  }
+  if(full){
+    const hf=newDepositHf(), lqp=newDepositLiq();
+    $("#pBor").textContent=`${usd(usdIn*S.ltv/100)} ${S.asset} against ${usd(usdIn)} ZEC`;
+    $("#pHf").textContent=(hf===1/0?"∞":hf.toFixed(2))+" — "+hfMeta(hf).label;
+    $("#pHf").style.color=hf>=1.5?"var(--good)":hf>=1.2?"var(--warn)":"var(--crit)";
+    $("#pLiq").textContent=lqp>0?`${usd(lqp)} (−${Math.round((1-lqp/S.zec)*100)}%)`:"—";
+    $("#pNote").innerHTML=`If ZEC falls ${Math.round((1-lqp/S.zec)*100)}% to <b class="num">${usd(lqp)}</b>, liquidation begins. The agent warns at HF 1.5, repays from rewards at 1.35, and de-risks below 1.2.`;
+  } else if(S.mode==="DIRECT"){
+    $("#pNote").innerHTML=`Direct LP: no loan, no liquidation risk. Impermanent loss inside the range applies — and the entry swap is a <b>disposal of your ZEC</b> (the borrow route exists to avoid exactly that).`;
   } else {
     $("#pNote").textContent="Simple lending: no borrowing, no liquidation risk — withdraw any time.";
   }
@@ -1164,6 +1845,7 @@ function privacyChecklist(){
 
   max++;
   if(S.mode==="SIMPLE"){score++;ok("Simple lending — nothing is deployed to a public chain beyond NEAR");}
+  else if(S.mode==="DIRECT") warn("The swap and the Base position are <b>public</b> — size, pool and range are visible");
   else warn("The Base position itself is <b>public</b> — size, pool and health are visible");
 
   if(S.rew==="ZEC"){
@@ -1196,7 +1878,7 @@ function privacyChecklist(){
 function gateNext(){
   const btn=$("#nextBtn"); if(!btn) return;
   let block=false, why="";
-  if(S.mode==="FULL"&&S.rew==="ZEC"&&(S.step===3||S.step===4)){
+  if(S.mode!=="SIMPLE"&&S.rew==="ZEC"&&(S.step===3||S.step===4)){
     const v=$("#zaddr").value.trim(), d=describeZaddr(v);
     if(!v){block=true;why="Add a receiving address first";}
     else if(!d.settleable){block=true;why="Use a transparent (t1…) receiving address";}
@@ -1210,23 +1892,34 @@ function syncWizard(){
   $$("[data-src]").forEach(x=>x.classList.toggle("sel",x.dataset.src===S.src));
   $$("[data-mode]").forEach(x=>x.classList.toggle("sel",x.dataset.mode===S.mode));
   $$("#assetSeg button").forEach(x=>x.classList.toggle("sel",x.dataset.asset===S.asset));
+  $("#zaddrWrap").style.display=(S.rew==="ZEC"&&S.mode!=="SIMPLE")?"block":"none";
+  syncZaddrReuse();
   renderPoolList();renderPresets();rwUi();proj();
 }
 
 /* review + launch */
 function renderReview(){
-  const amt=+$("#amt").value||0,usdIn=amt*S.zec,full=S.mode==="FULL";
+  const amt=+$("#amt").value||0,usdIn=amt*S.zec,full=S.mode==="FULL",direct=S.mode==="DIRECT";
   const pool=POOLS.find(p=>p.id===S.poolId);
   let rows=`<div class="rev-sec">Deposit</div>
     <span class="k">Amount</span><span class="v num">${amt} ZEC (${usd(usdIn)})</span>
-    <span class="k">Route</span><span class="v">Zcash → NEAR Intents → ${full?"Rhea + Base":"Rhea (NEAR)"}</span>
-    <span class="k">Mode</span><span class="v">${full?"Full strategy":"Simple lending"}</span>`;
+    <span class="k">Route</span><span class="v">${full?"Zcash → NEAR Intents → Rhea + Base":direct?"Zcash → NEAR Intents swap → Base LP":"Zcash → NEAR Intents → Rhea (NEAR)"}</span>
+    <span class="k">Mode</span><span class="v">${full?"Full strategy":direct?"Direct LP — no loan":"Simple lending"}</span>`;
   if(full){
-    const hf=hfFor(S.ltv);
+    const hf=newDepositHf(), lqp=newDepositLiq();
     rows+=`<div class="rev-sec">Borrow &amp; pool</div>
-    <span class="k">Borrow</span><span class="v num">${usd(usdIn*S.ltv/100)} ${S.asset} @ ${S.ltv}% LTV</span>
-    <span class="k">Health factor at entry</span><span class="v num">${hf.toFixed(2)} (${hfMeta(hf).label})</span>
-    <span class="k">Liquidation price</span><span class="v num">${usd(liqPx(S.ltv))} ZEC (−${Math.round((1-liqPx(S.ltv)/S.zec)*100)}%)</span>
+    <span class="k">Borrow</span><span class="v num">${usd(usdIn*S.ltv/100)} ${S.asset} against ${usd(usdIn)} ZEC (${S.ltv}% LTV)</span>
+    <span class="k">Health factor after deposit</span><span class="v num">${hf===1/0?"∞":hf.toFixed(2)} (${hfMeta(hf).label}${debtUsd()>0?" · includes your existing debt":""})</span>
+    <span class="k">Liquidation price</span><span class="v num">${usd(lqp)} ZEC (−${Math.round((1-lqp/S.zec)*100)}%)</span>`;
+  }
+  if(direct){
+    const [a,b]=pool.c;
+    rows+=`<div class="rev-sec">Swap &amp; pool</div>
+    <span class="k">Swapped into</span><span class="v num">≈ ${fmtTok(usdIn/2/PRICES[a])} ${a.toUpperCase().replace("CBBTC","cbBTC").replace("CBETH","cbETH")} + ${fmtTok(usdIn/2/PRICES[b])} ${b.toUpperCase().replace("CBBTC","cbBTC").replace("CBETH","cbETH")}</span>
+    <span class="k">Loan / liquidation risk</span><span class="v">None — nothing borrowed</span>`;
+  }
+  if(full||direct){
+    rows+=`
     <span class="k">Pool</span><span class="v">${pool.name} · ${pool.dex} ${pool.fee}</span>
     <span class="k">Engine pool id</span><span class="v num">${pool.eid} ✓ verified</span>
     <div class="rev-sec">LP parameters</div>
@@ -1237,49 +1930,85 @@ function renderReview(){
   const zv=$("#zaddr").value.trim();
   rows+=`<div class="rev-sec">Privacy</div>
     <span class="k">Funding from</span><span class="v">${S.src==="SHIELDED"?"Shielded balance — history private":"Transparent balance — public history"}</span>
-    <span class="k">Strategy visibility</span><span class="v">${full?"Public on NEAR + Base":"Public on NEAR"}</span>
-    <span class="k">Payout address</span><span class="v">${S.rew==="ZEC"?(zv?(addressReused(zv)?"⚠ reused — links positions":"Fresh, transparent"):"— not set"):"None (compounding)"}</span>`;
+    <span class="k">Strategy visibility</span><span class="v">${S.mode==="SIMPLE"?"Public on NEAR":"Public on NEAR + Base"}</span>
+    <span class="k">Payout address</span><span class="v">${S.rew==="ZEC"&&S.mode!=="SIMPLE"?(zv?(addressReused(zv)?"⚠ reused — links positions":"Fresh, transparent"):"— not set"):"None (compounding)"}</span>`;
   rows+=`<div class="rev-sec">Rewards &amp; fees</div>
-    <span class="k">Reward preference</span><span class="v">${S.rew==="ZEC"?`Native ZEC → ${zv?zv.slice(0,10)+"…":"(add address)"}`:"Auto-compound into position"}</span>
+    <span class="k">Reward preference</span><span class="v">${S.rew==="ZEC"&&S.mode!=="SIMPLE"?`Native ZEC → ${zv?zv.slice(0,10)+"…":"(add address)"}`:S.mode==="SIMPLE"?"Interest accrues in-protocol":"Auto-compound into position"}</span>
     <span class="k">Claim economics</span><span class="v">${S.econ?"≥3× costs · $5 min · 30d max":"Manual claims"}</span>
     <span class="k">1-Click bridge fee</span><span class="v" style="color:var(--good)">0% (partner JWT)</span>
-    <span class="k">Engine performance fee</span><span class="v num">15% of yield only</span>`;
+    ${S.mode==="SIMPLE"?`<span class="k">Fees</span><span class="v" style="color:var(--good)">Free — Simple lending has no platform fee</span>`
+      :`<span class="k">Engine performance fee</span><span class="v num">15% of yield only</span>
+    <span class="k">Platform fee</span><span class="v num">10% of yield only</span>`}`;
   $("#revList").innerHTML=rows;
   $("#revRisk").innerHTML=full
-    ?`<b>Risks you're taking:</b> ZEC price risk on collateral (liquidation at ${usd(liqPx(S.ltv))}), impermanent loss inside the LP range, smart-contract risk across Rhea, NEAR Intents and the LP engine. Withdrawals are never pausable.`
+    ?`<b>Risks you're taking:</b> ZEC price risk on collateral (liquidation at ${usd(newDepositLiq())}), impermanent loss inside the LP range, smart-contract risk across Rhea, NEAR Intents and the LP engine. Withdrawals are never pausable.`
+    :direct
+    ?`<b>Risks you're taking:</b> impermanent loss inside the LP range and smart-contract risk (NEAR Intents + the LP engine). No loan, no liquidation. Note: the entry swap is a disposal of your ZEC — tax treatment varies by jurisdiction.`
     :`<b>Risks you're taking:</b> Rhea smart-contract risk and ZEC price movement. No borrow, no liquidation exposure. Withdrawals are never pausable.`;
 }
+/* Tiny deterministic QR-look SVG (demo — production renders a real ZIP-321 QR) */
+function qrSvg(seed){
+  let h=0; for(const ch of seed) h=(h*31+ch.charCodeAt(0))>>>0;
+  const n=17, cells=[];
+  for(let y=0;y<n;y++)for(let x=0;x<n;x++){
+    const fin=(x<5&&y<5)||(x>=n-5&&y<5)||(x<5&&y>=n-5);
+    if(fin){const ring=(x%(n-1)<5)&&(y%(n-1)<5);continue;}
+    h=(h*1103515245+12345)>>>0;
+    if(h%100<46) cells.push(`<rect x="${x}" y="${y}" width="1" height="1"/>`);
+  }
+  const finder=(cx,cy)=>`<rect x="${cx}" y="${cy}" width="5" height="5"/><rect x="${cx+1}" y="${cy+1}" width="3" height="3" fill="#121016"/><rect x="${cx+2}" y="${cy+2}" width="1" height="1" fill="#f2eff7"/>`;
+  return `<svg viewBox="-1 -1 ${n+2} ${n+2}" width="92" height="92" style="background:#f2eff7;border-radius:8px" fill="#121016"><g fill="#121016">${finder(0,0)}${finder(n-5,0)}${finder(0,n-5)}</g><g fill="#121016">${cells.join("")}</g></svg>`;
+}
 function launch(){
-  const full=S.mode==="FULL";
+  const full=S.mode==="FULL", direct=S.mode==="DIRECT";
+  const amt=+$("#amt").value||0;
+  const pool=POOLS.find(p=>p.id===S.poolId)||POOLS[2];
+  const qr=`<div style="display:flex;gap:12px;align-items:center;margin-top:8px">${qrSvg("zyo"+amt+S.asset)}<div class="tiny faint" style="max-width:180px">Scan with Zodl / Ywallet — address + amount pre-filled (ZIP-321). <span class="mono">zcash:t1…?amount=${amt}</span><br><b>demo QR</b></div></div>`;
   const steps=[
-    {t:"Fresh deposit address created",d:S.src==="SHIELDED"?"Send from your shielded balance — history not exposed":"Send from your t-address"},
-    {t:"ZEC received on NEAR",d:"Supplied to Rhea as collateral"},
-    ...(full?[{t:`Borrowed ${S.asset} on Rhea`,d:`${S.ltv}% LTV · delivered to Base via NEAR Intents`},
-              {t:"LP position opened",d:"Engine depositSingleSided — parameters exactly as reviewed"}]
-            :[]),
-    {t:"Done — position live",d:"60s flash-loan hold, then fully unlocked"},
+    {t:"Fresh deposit address created",d:(S.src==="SHIELDED"?"Send from your shielded balance — history not exposed.":"Send from your t-address.")+qr,tx:[]},
+    ...(full?[
+      {t:"ZEC received · supplied to Rhea",d:"Deposit confirmed on Zcash, collateral live on NEAR",tx:[mkTx("zcash"),mkTx("near")]},
+      {t:`Borrowed ${S.asset} on Rhea`,d:`${S.ltv}% LTV against your ${amt} ZEC`,tx:[mkTx("near")]},
+      {t:"Bridged to Base via NEAR Intents",d:"Intent settled — funds on Base",tx:[mkTx("near"),mkTx("base")]},
+      {t:"LP position opened",d:"Engine depositSingleSided — parameters exactly as reviewed",tx:[mkTx("base")]},
+    ]:direct?[
+      {t:"ZEC received",d:"Deposit confirmed on Zcash",tx:[mkTx("zcash")]},
+      {t:`Swapped to ${pool.name} assets`,d:"1-Click swap — quote locked before send",tx:[mkTx("near")]},
+      {t:"Delivered to Base",d:"Intent settled",tx:[mkTx("base")]},
+      {t:"LP position opened",d:"Engine depositSingleSided — parameters exactly as reviewed",tx:[mkTx("base")]},
+    ]:[
+      {t:"ZEC received · supplied to Rhea",d:"Deposit confirmed on Zcash, collateral live on NEAR",tx:[mkTx("zcash"),mkTx("near")]},
+    ]),
+    {t:"Done — position live",d:S.mode==="SIMPLE"?"Interest accrues automatically":"60s flash-loan hold, then fully unlocked",tx:[]},
   ];
   const B=$("#bridgeSteps");
-  B.innerHTML=steps.map((s,i)=>`<div class="bstep" data-i="${i}"><div class="bic">${i+1}</div><div><div class="bt">${s.t}</div><div class="bd">${s.d}</div></div></div>`).join("");
+  B.innerHTML=steps.map((s,i)=>`<div class="bstep" data-i="${i}"><div class="bic">${i+1}</div><div style="flex:1"><div class="bt">${s.t}</div><div class="bd">${s.d}</div><div class="btx" style="display:flex;gap:6px;flex-wrap:wrap"></div></div></div>`).join("");
+  $("#goTitle").textContent="Placing your deposit";
   $("#goDone").style.display="none";$("#goOverlay").classList.add("on");
   let i=0;
   const tick=()=>{
     const rows=$$("#bridgeSteps .bstep");
-    if(i>0){rows[i-1].classList.remove("doing");rows[i-1].classList.add("done");rows[i-1].querySelector(".bic").textContent="✓";}
-    if(i<rows.length){rows[i].classList.add("doing");i++;setTimeout(tick,i===1?600:1300);}
+    if(i>0){
+      const r=rows[i-1];
+      r.classList.remove("doing");r.classList.add("done");r.querySelector(".bic").textContent="✓";
+      // per-step tx ids land as each leg confirms — verify any of them yourself
+      r.querySelector(".btx").innerHTML=(steps[i-1].tx||[]).map(txLink).join("");
+    }
+    if(i<rows.length){rows[i].classList.add("doing");i++;setTimeout(tick,i===1?1500:1300);}
     else{
       $("#goTitle").textContent="Deposit placed";
       $("#goDone").style.display="block";
-      const amt=+$("#amt").value||0;
-      const pool=POOLS.find(p=>p.id===S.poolId)||POOLS[2];
-      const np=full?{id:++PID,kind:"FULL",pool,value:amt*S.zec*(S.ltv/100),zecIn:amt,apy:estApy(),range:"in",
-          rew:S.rew==="ZEC"?"ZEC":"COMPOUND",preset:PRESETS.find(p=>p.k===S.preset).label+" "+(S.rw/100).toFixed(1)+"%",
-          fees:0,inc:0,cooldown:60,opened:"just now",src:S.src,zaddr:$("#zaddr").value.trim()}
-        :{id:++PID,kind:"SIMPLE",value:amt*S.zec,zecIn:amt,apy:2.4,opened:"just now",src:S.src};
+      const np=(full||direct)?{id:++PID,kind:full?"FULL":"DIRECT",pool,
+          value:full?amt*S.zec*(S.ltv/100):amt*S.zec,zecIn:amt,
+          borrowUsd:full?amt*S.zec*(S.ltv/100):0,borrowAsset:full?S.asset:undefined,
+          apy:estApy(),range:"in",rew:S.rew==="ZEC"?"ZEC":"COMPOUND",
+          preset:PRESETS.find(p=>p.k===S.preset).label+" "+(S.rw/100).toFixed(1)+"%",rw:S.rw,rd:S.rd,
+          fees:0,inc:0,cooldown:60,opened:"just now",src:S.src,zaddr:$("#zaddr").value.trim()||undefined}
+        :{id:++PID,kind:"SIMPLE",zecIn:amt,apy:2.4,opened:"just now",src:S.src};
       positions.unshift(np);
-      if(full)startCooldown(np);
-      activity.unshift({t:"Deposited",d:`${amt} ZEC → ${full?pool.name+" ("+pool.dex+")":"Rhea lending"}`,ic:"＋",cls:"chip-gold",when:"just now"});
-      renderPositions();renderActivity();refreshStats();
+      if(full||direct)startCooldown(np);
+      activity.unshift({t:"Deposited",d:`${amt} ZEC → ${S.mode==="SIMPLE"?"Rhea lending":pool.name+" ("+pool.dex+")"}${direct?" · swapped, no loan":""}`,ic:"＋",cls:"chip-gold",when:"just now",tx:steps[1]&&steps[1].tx&&steps[1].tx[0]?steps[1].tx[0]:mkTx("zcash")});
+      renderAll();
     }
   };
   tick();
@@ -1289,38 +2018,63 @@ $$("[data-close]").forEach(b=>b.addEventListener("click",()=>b.closest(".overlay
 
 /* ═══ Stats + live jitter ═══ */
 function refreshStats(){
-  const total=positions.reduce((a,p)=>a+p.value,0);
-  $("#stTotal").textContent=usd(total);
-  const claim=positions.reduce((a,p)=>a+((p.fees||0)+(p.inc||0))*0.85,0);
+  // Net value = collateral + LP value − debt: what a full unwind returns.
+  const lpVal=positions.filter(p=>p.kind!=="SIMPLE").reduce((a,p)=>a+p.value,0);
+  const C=collZec(), D=debtUsd();
+  const equity=C*S.zec+lpVal-D;
+  $("#stTotal").textContent=usd(equity);
+  const claim=positions.reduce((a,p)=>a+grossRewards(p)*NET,0);
   $("#stClaim").textContent=usd(claim);
-  const wApy=positions.reduce((a,p)=>a+p.apy*p.value,0)/Math.max(total,1);
+  const basis=positions.reduce((a,p)=>a+posValue(p),0);
+  const wApy=positions.reduce((a,p)=>a+p.apy*posValue(p),0)/Math.max(basis,1);
   $("#stApy").textContent=pct(wApy);
-  const totZec=positions.reduce((a,p)=>a+(p.zecIn||0),0);
-  $("#stZec").textContent=totZec.toLocaleString();
-  $("#stColl").textContent=totZec.toLocaleString();
-  $("#stCollUsd").textContent=`${usd(totZec*S.zec)} · supply APY 2.4%`;
+  $("#stZec").textContent=C.toLocaleString();
+  $("#stColl").textContent=C.toLocaleString();
+  $("#stCollUsd").textContent=`${usd(C*S.zec)} · supply APY 2.4%`;
 }
 $("#claimAll").addEventListener("click",()=>{
-  positions.forEach(p=>{if(p.kind==="FULL"&&(p.fees||p.inc)){p.fees=0;p.inc=0;}});
-  toast("⚡ Claimed across all positions — routed per each position's preference");
-  renderPositions();refreshStats();
+  let routed=0,compounded=0;
+  positions.forEach(p=>{
+    const net=grossRewards(p)*NET; if(net<=0||p.kind==="SIMPLE") return;
+    if(p.rew==="ZEC"&&p.zaddr){routed+=net;activity.unshift({t:"Rewards routed home",d:`${usd(net)} → ${(net/S.zec).toFixed(2)} ZEC to ${p.zaddr.slice(0,8)}…`,ic:"⚡",cls:"chip-gold",when:"just now",tx:mkTx("zcash")});}
+    else{compounded+=net;p.value+=net;startCooldown(p);activity.unshift({t:"Compounded",d:`${usd(net)} re-deposited · ${p.pool.name}`,ic:"↻",cls:"chip-good",when:"just now",tx:mkTx("base")});}
+    p.fees=0;p.inc=0;
+  });
+  if(routed+compounded<=0){toast("Nothing claimable yet");return;}
+  toast(`⚡ Claimed all — ${routed>0?usd(routed)+" routing home":""}${routed>0&&compounded>0?" · ":""}${compounded>0?usd(compounded)+" compounded":""}`);
+  renderAll();
 });
 $("#connectBtn").addEventListener("click",function(){
-  this.textContent="0x7a3f…c21e";this.classList.add("num");toast("Demo wallet connected");
+  S.connected=true;
+  this.textContent="0x7a3f…c21e";this.classList.add("num");
+  toast("Base wallet connected — authorizes your vault withdrawals. Your Zcash wallet never connects to anything.");
 });
+$("#maxBtn").addEventListener("click",()=>{$("#amt").value=S.demoBal;proj();});
 let freshT=0;
 setInterval(()=>{ // gentle price jitter + freshness
   freshT+=4;
   if(freshT%12===0){
     const d=(Math.random()-0.48)*0.14;S.zec=Math.max(20,S.zec+d);
-    $("#zecPrice").textContent=usd(S.zec);$("#nowPx").textContent=usd(S.zec);
-    renderBand();proj();freshT=0;
+    $("#zecPrice").textContent=usd(S.zec);
+    renderHealth();proj();freshT=0;
   }
   $$("[data-fresh]").forEach(e=>e.textContent=`updated ${freshT===0?3:freshT}s ago`);
 },4000);
 
+/* ═══ Docs navigation (also reachable from “how liquidation works →”) ═══ */
+function showDoc(key){
+  $$("#docsNav button").forEach(b=>b.classList.toggle("on",b.dataset.doc===key));
+  $$(".doc-sec").forEach(s=>s.classList.toggle("on",s.dataset.doc===key));
+}
+document.addEventListener("click",e=>{
+  const b=e.target.closest("[data-doc]");
+  if(!b||b.tagName!=="BUTTON")return;
+  showDoc(b.dataset.doc);
+  if(!$("#view-docs").classList.contains("on"))showView("docs");
+});
+
 /* ═══ Boot ═══ */
-renderBand();renderPositions();renderActivity();renderPoolTable();renderWallets();syncWizard();refreshStats();
+renderHealth();renderPositions();renderActivity();renderPoolTable();renderWallets();syncWizard();refreshStats();bindTips();
 </script>
 </body>
 </html>
