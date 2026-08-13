@@ -60,6 +60,28 @@ export const RHEA = {
   },
 } as const;
 
+/**
+ * Fee model (decision 2026-08-13, docs/FEEDBACK-ANSWERS.md §2).
+ *
+ * The engine (MaxFi/SnuggleFi) takes 15% of LP earnings at harvest — verified
+ * from the deployed contracts; never touches principal. Our platform fee
+ * stacks on the post-engine remainder, netted at the same harvest/claim
+ * events, itemized in every UI yield breakdown. Simple lending is free at
+ * launch. Performance-only by design: no deposit, withdrawal, or management
+ * fees, ever — fee opacity is the #1 documented complaint against ALM
+ * incumbents and deposit fees punish principal.
+ *
+ * Phase 2 (trigger ≈ $25–30M TVL, see the break-even math in the decision
+ * doc): run our own position manager and retire the engine's 15%.
+ */
+export const PLATFORM_FEE = {
+  /** Of realized rewards, after the engine's cut. */
+  performanceBps: 1000,
+  /** Simple-lending mode: free at launch. */
+  simpleLendingBps: 0,
+  engineFeeBps: 1500,
+} as const;
+
 /** Reward-claim economics: claim only when rewards clear costs by this multiple. */
 export const REWARD_CLAIM_POLICY = {
   /** accruedUsd must exceed (gasUsd + bridgeUsd) * multiple. */
