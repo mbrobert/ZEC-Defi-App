@@ -183,3 +183,14 @@ export function poolById(id: string): CuratedPool | undefined {
 export function poolsForEntryAsset(asset: CuratedPool["entryAsset"]): CuratedPool[] {
   return CURATED_POOLS.filter((p) => p.entryAsset === asset);
 }
+
+/**
+ * Every curated pool CONTAINING the asset on either side — what the deposit
+ * wizard lists (feedback 2026-08-13: borrowing WETH must surface WETH/USDC,
+ * cbBTC/WETH, cbETH/WETH and AERO/WETH, not just pools whose entry asset is
+ * WETH). Single-sided entry via the engine's depositSingleSided makes any
+ * side a valid entry.
+ */
+export function poolsContainingAsset(asset: CuratedPool["token0"] | CuratedPool["token1"]): CuratedPool[] {
+  return CURATED_POOLS.filter((p) => p.token0 === asset || p.token1 === asset);
+}
