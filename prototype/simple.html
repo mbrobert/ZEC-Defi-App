@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Oilskin — weatherproof yield for Zcash</title>
+<style>
+/* ─── Oilskin v1 tokens: brick & linen (validated palette) ───────────── */
+:root{
+  --bg:#F1E8D8; --bg-2:#EBE0CC; --surface:#FBF6EC; --surface-2:#F1E9DA;
+  --line:#D8CBB4; --line-soft:rgba(60,40,20,.09);
+  --ink:#2E2118; --ink-2:#6B5B4C; --ink-3:#8F8071;
+  --brick:#A6432C; --brick-deep:#8C3521; --brick-hi:#C05A3C;
+  --brick-bg:rgba(166,67,44,.08); --on-brick:#FFF7EF;
+  --good:#0F6E44; --warn:#8F6200; --crit:#C0273D; --info:#3B5BA5;
+  --good-bg:rgba(15,110,68,.10); --warn-bg:rgba(143,98,0,.10);
+  --crit-bg:rgba(192,39,61,.09); --info-bg:rgba(59,91,165,.10);
+  --r:16px; --rs:11px;
+  --shadow:0 1px 2px rgba(60,40,20,.05), 0 10px 30px rgba(60,40,20,.07);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:
+  radial-gradient(900px 420px at 90% -8%, rgba(166,67,44,.05), transparent 60%),
+  var(--bg);
+  color:var(--ink);font-size:15.5px;line-height:1.55;min-height:100vh;
+  font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased}
+.num{font-variant-numeric:tabular-nums}
+button{font:inherit;color:inherit;cursor:pointer;border:none;background:none}
+input{font:inherit;color:inherit}
+.wrap{max-width:760px;margin:0 auto;padding:0 20px}
+.muted{color:var(--ink-2)} .faint{color:var(--ink-3)}
+.small{font-size:13px} .tiny{font-size:11.5px}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}
+
+/* nav */
+nav{position:sticky;top:0;z-index:50;background:rgba(241,232,216,.88);
+  backdrop-filter:blur(10px);border-bottom:1px solid var(--line-soft)}
+.nav-in{display:flex;align-items:center;gap:20px;height:64px}
+.logo{display:flex;align-items:center;gap:11px;font-weight:800;font-size:16px;letter-spacing:.13em}
+.tabs{display:flex;gap:2px;flex:1;justify-content:center}
+.tab{padding:8px 14px;border-radius:9px;color:var(--ink-2);font-weight:600;font-size:14px}
+.tab:hover{color:var(--ink);background:var(--line-soft)}
+.tab.on{color:var(--brick);background:var(--brick-bg)}
+.price{display:flex;align-items:center;gap:7px;padding:6px 12px;border-radius:999px;
+  border:1px solid var(--line);background:var(--surface);font-size:13px}
+.pulse{width:7px;height:7px;border-radius:50%;background:var(--good);animation:pulse 2.4s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+/* cards & controls */
+.view{display:none;padding:34px 0 80px}
+.view.on{display:block}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
+.pad{padding:26px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  padding:12px 22px;border-radius:12px;font-weight:700;font-size:15px;
+  transition:transform .06s, box-shadow .15s}
+.btn:active{transform:translateY(1px)}
+.btn-brick{background:linear-gradient(180deg,var(--brick-hi),var(--brick));color:var(--on-brick);
+  box-shadow:0 2px 12px rgba(166,67,44,.30)}
+.btn-brick:hover{box-shadow:0 4px 18px rgba(166,67,44,.42)}
+.btn-ghost{border:1.5px solid var(--line);background:var(--surface)}
+.btn-ghost:hover{background:var(--surface-2)}
+.btn[disabled]{opacity:.45;cursor:not-allowed;box-shadow:none}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;
+  font-size:12.5px;font-weight:650;border:1px solid transparent}
+.c-good{color:var(--good);background:var(--good-bg);border-color:rgba(15,110,68,.25)}
+.c-warn{color:var(--warn);background:var(--warn-bg);border-color:rgba(143,98,0,.28)}
+.c-info{color:var(--info);background:var(--info-bg);border-color:rgba(59,91,165,.25)}
+.c-mute{color:var(--ink-2);background:var(--surface-2);border-color:var(--line)}
+.dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
+.in{width:100%;background:#FFFDF7;border:1.5px solid var(--line);border-radius:var(--rs);
+  padding:12px 14px;font-size:16px;outline:none;transition:border-color .15s}
+.in:focus{border-color:var(--brick)}
+label{display:block;font-size:13.5px;font-weight:650;color:var(--ink-2);margin-bottom:7px}
+.field{margin-bottom:20px}
+.note{border-left:3px solid var(--info);background:var(--info-bg);border-radius:0 10px 10px 0;
+  padding:11px 14px;font-size:13px;color:var(--ink-2);margin:14px 0}
+.note.warn{border-color:var(--warn);background:var(--warn-bg)}
+details{border:1px dashed var(--line);border-radius:12px;margin-top:14px}
+summary{padding:12px 15px;cursor:pointer;font-weight:650;font-size:13.5px;color:var(--ink-2);list-style:none}
+summary::-webkit-details-marker{display:none}
+details[open] summary{border-bottom:1px solid var(--line-soft)}
+.det-in{padding:14px 15px;font-size:13.5px;color:var(--ink-2)}
+.det-in b{color:var(--ink)}
+
+/* hero */
+.hero h1{font-size:30px;line-height:1.2;letter-spacing:-.02em;margin-bottom:10px}
+.hero .sub{color:var(--ink-2);font-size:16px;max-width:540px;margin-bottom:22px}
+.apyline{display:flex;align-items:baseline;gap:10px;margin-bottom:22px}
+.apyline .v{font-size:40px;font-weight:800;letter-spacing:-.02em;color:var(--good)}
+.in-row{position:relative}
+.suffix{position:absolute;right:13px;top:50%;transform:translateY(-50%);color:var(--ink-3);font-size:14px}
+.tiles{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:22px}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px}
+.tile .t{font-weight:750;font-size:14px;display:flex;gap:8px;align-items:center;margin-bottom:6px}
+.tile .d{font-size:12.8px;color:var(--ink-2);line-height:1.5}
+.ic{width:1em;height:1em;fill:none;stroke:currentColor;stroke-width:1.9;
+  stroke-linecap:round;stroke-linejoin:round;flex:none;vertical-align:-.12em}
+
+/* position */
+.poshead{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap}
+.bignum{font-size:34px;font-weight:800;letter-spacing:-.02em}
+.earned{color:var(--good);font-weight:700}
+.meter{position:relative;height:14px;border-radius:8px;background:var(--surface-2);
+  border:1px solid var(--line);margin:34px 6px 34px}
+.meter .fill{position:absolute;left:0;top:0;bottom:0;border-radius:8px 0 0 8px;
+  background:linear-gradient(90deg,rgba(15,110,68,.22),rgba(15,110,68,.55))}
+.meter .tick{position:absolute;top:-7px;bottom:-7px;width:3px;border-radius:2px;background:var(--crit)}
+.meter .now{position:absolute;top:-9px;bottom:-9px;width:3px;border-radius:2px;background:var(--ink)}
+.meter .lbl{position:absolute;top:-26px;transform:translateX(-50%);font-size:11.5px;font-weight:650;white-space:nowrap}
+.meter .sub{position:absolute;top:18px;transform:translateX(-50%);font-size:11px;color:var(--ink-3);white-space:nowrap}
+.kv{display:grid;grid-template-columns:1fr auto;row-gap:8px;font-size:13.8px;margin-top:6px}
+.kv .k{color:var(--ink-2)} .kv .v{text-align:right;font-weight:650}
+.coin{width:22px;height:22px;border-radius:50%;display:inline-grid;place-items:center;vertical-align:-6px;border:2px solid var(--surface)}
+.coin svg{width:100%;height:100%;display:block;border-radius:50%}
+.coin+.coin{margin-left:-7px}
+
+/* activity */
+.act{display:flex;gap:12px;padding:13px 0;border-bottom:1px solid var(--line-soft);font-size:14px}
+.act:last-child{border-bottom:none}
+.act-ic{width:30px;height:30px;border-radius:10px;display:grid;place-items:center;font-size:13px;flex:none;background:var(--surface-2)}
+.act time{color:var(--ink-3);font-size:12px;display:block;margin-top:2px}
+.txlink{display:inline-flex;align-items:center;gap:4px;font-family:ui-monospace,Menlo,monospace;
+  font-size:11px;color:var(--info);border:1px solid rgba(59,91,165,.25);
+  background:var(--info-bg);border-radius:6px;padding:1px 7px;margin-top:5px;text-decoration:none}
+
+/* faq */
+.faq h3{font-size:15px;margin:22px 0 6px}
+.faq p{color:var(--ink-2);font-size:14px;max-width:620px}
+
+/* modal */
+.overlay{position:fixed;inset:0;background:rgba(46,33,24,.4);backdrop-filter:blur(4px);
+  display:none;place-items:center;z-index:100;padding:20px}
+.overlay.on{display:grid}
+.modal{width:min(470px,100%);max-height:90vh;overflow:auto}
+.modal-h{display:flex;justify-content:space-between;align-items:center;padding:18px 22px;border-bottom:1px solid var(--line-soft)}
+.modal-h h3{font-size:16.5px}
+.x{color:var(--ink-3);font-size:18px;padding:4px 8px;border-radius:8px}
+.x:hover{background:var(--line-soft);color:var(--ink)}
+.bstep{display:flex;gap:13px;position:relative;padding-bottom:18px}
+.bstep:last-child{padding-bottom:0}
+.bstep::before{content:"";position:absolute;left:13px;top:30px;bottom:2px;width:2px;background:var(--line)}
+.bstep:last-child::before{display:none}
+.bstep .bic{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;flex:none;
+  border:2px solid var(--line);background:var(--surface);font-size:12px;z-index:1}
+.bstep.done .bic{border-color:var(--good);color:var(--good);background:var(--good-bg)}
+.bstep.doing .bic{border-color:var(--info);color:var(--info);background:var(--info-bg);animation:pulse 1.6s infinite}
+.bstep .bt{font-weight:650;font-size:14px}
+.bstep .bd{font-size:12.5px;color:var(--ink-2)}
+input[type=range]{width:100%;-webkit-appearance:none;appearance:none;height:6px;border-radius:4px;background:var(--line);outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:20px;height:20px;border-radius:50%;
+  background:var(--brick);border:3px solid var(--surface);cursor:grab;box-shadow:0 1px 6px rgba(166,67,44,.4)}
+#toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(90px);
+  background:var(--ink);color:var(--surface);border-radius:12px;padding:12px 18px;
+  font-size:14px;font-weight:600;box-shadow:var(--shadow);transition:transform .25s;z-index:200}
+#toast.on{transform:translateX(-50%) translateY(0)}
+footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px;font-size:12.5px;color:var(--ink-3)}
+#tip{position:fixed;z-index:300;max-width:280px;background:var(--ink);color:#F6EFE3;
+  border-radius:10px;padding:10px 12px;font-size:12.6px;line-height:1.5;box-shadow:var(--shadow);
+  pointer-events:none;opacity:0;transform:translateY(4px);transition:opacity .12s,transform .12s}
+#tip.on{opacity:1;transform:translateY(0)}
+.tt{border-bottom:1px dotted var(--ink-3);cursor:help;font-style:normal}
+
+@media(max-width:640px){
+  .wrap{padding:0 14px}
+  .nav-in{gap:8px}
+  .tabs{gap:0}
+  .tab{padding:7px 10px;font-size:13px}
+  .logo span{display:none}
+  .tiles{grid-template-columns:1fr}
+  .hero h1{font-size:24px}
+  .apyline .v{font-size:32px}
+  .bignum{font-size:27px}
+  .pad{padding:18px}
+}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="mark" viewBox="0 0 64 64">
+    <rect x="2" y="2" width="60" height="60" rx="14" fill="#A6432C"/>
+    <path d="M10 22 C 22 20, 34 26, 54 46" fill="none" stroke="#FBF6EC" stroke-width="6" stroke-linecap="round"/>
+    <circle cx="30" cy="20.5" r="7.5" fill="#FBF6EC"/>
+  </symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v5.5c0 4.3-2.9 8.2-7 9.5-4.1-1.3-7-5.2-7-9.5V6l7-3z"/><path d="M9.2 12.2l2 2 3.6-3.9"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M4.5 12.5l5 5 10-11"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7"/><path d="M6.5 9.5V20h11V9.5"/></symbol>
+  <symbol id="tk-zec" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#f4b728"/><path d="M11 10.2h10v2.6l-6.2 6.4H21v2.6H11v-2.6l6.2-6.4H11z" fill="#1a1204"/><path d="M14.9 7.5h2.2v3.4h-2.2zM14.9 21.1h2.2v3.4h-2.2z" fill="#1a1204"/></symbol>
+  <symbol id="tk-usdc" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#2775ca"/><path d="M13 20.5c0 1.9 1.2 2.9 3.2 2.9 1.9 0 3.1-1 3.1-2.6 0-1.4-.8-2-2.6-2.4l-1.5-.4c-2.6-.6-3.9-1.8-3.9-3.9 0-2.2 1.6-3.7 4-3.9V8h1.6v2.2c2.3.3 3.7 1.7 3.8 3.8h-2.1c-.1-1.5-1.1-2.4-2.7-2.4-1.7 0-2.8.9-2.8 2.3 0 1.2.8 1.9 2.5 2.3l1.5.4c2.8.6 4 1.7 4 3.9 0 2.4-1.7 3.9-4.2 4.1V27h-1.6v-2.3c-2.5-.3-4.2-1.7-4.3-4.2z" fill="#fff"/><path d="M12.3 26.6a11.1 11.1 0 0 1 0-21.1v1.7a9.5 9.5 0 0 0 0 17.7zM19.7 5.5a11.1 11.1 0 0 1 0 21.1v-1.7a9.5 9.5 0 0 0 0-17.7z" fill="#fff"/></symbol>
+  <symbol id="tk-weth" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#454a75"/><path d="M16 4.5v8.6l7 3.2z" fill="#fff" opacity=".7"/><path d="M16 4.5L9 16.3l7-3.2z" fill="#fff"/><path d="M16 21.3v6.2l7-9.7z" fill="#fff" opacity=".7"/><path d="M16 27.5v-6.2l-7-3.5z" fill="#fff"/><path d="M16 20l7-3.7-7-3.2z" fill="#fff" opacity=".45"/><path d="M9 16.3L16 20v-6.9z" fill="#fff" opacity=".8"/></symbol>
+  <symbol id="tk-cbbtc" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#0052ff"/><path d="M20.8 14.2c.3-1.9-1.1-2.9-3.1-3.6l.6-2.5-1.5-.4-.6 2.5-1.2-.3.6-2.5-1.5-.4-.6 2.5-3.1-.8-.4 1.7s1.1.3 1.1.3c.6.2.8.6.7 1l-1.7 7c-.1.2-.3.5-.8.4 0 0-1.1-.3-1.1-.3l-.8 1.8 3.1.8-.6 2.6 1.5.4.6-2.5 1.2.3-.6 2.5 1.5.4.6-2.6c2.6.5 4.6.3 5.4-2.1.7-1.9 0-3-1.4-3.7 1-.2 1.8-.9 2.1-2.3zm-3.6 5c-.5 1.9-3.7.9-4.7.6l.8-3.4c1 .3 4.4.8 3.9 2.8zm.5-5c-.4 1.8-3.1.9-4 .7l.8-3.1c.9.2 3.7.6 3.2 2.4z" fill="#fff" transform="translate(2.5 1.5) scale(.92)"/></symbol>
+</defs></svg>
+
+<nav><div class="wrap nav-in">
+  <div class="logo"><svg viewBox="0 0 64 64" width="30" height="30"><use href="#mark"/></svg><span>OILSKIN</span></div>
+  <div class="tabs">
+    <button class="tab on" data-view="earn">Earn</button>
+    <button class="tab" data-view="activity">Activity</button>
+    <button class="tab" data-view="faq">FAQ</button>
+  </div>
+  <div class="price num"><span class="pulse"></span>ZEC <b id="px">$487.20</b></div>
+</div></nav>
+
+<!-- ═══ EARN ═══ -->
+<div class="view on" id="view-earn"><div class="wrap">
+
+  <!-- Deposit hero (shown when no position) -->
+  <div id="hero">
+    <div class="hero" style="margin-bottom:24px">
+      <h1>Put your ZEC to work.<br>Never sell it.</h1>
+      <p class="sub">Deposit native Zcash, earn yield from real trading fees — your ZEC is borrowed against, never sold, and comes home whenever you ask.</p>
+      <div class="apyline"><span class="v num" id="apyHero">6.9%</span><span class="muted">net yield right now <span class="tt tiny" title="After every fee. Varies with pool trading fees and borrow rates — this is the live blended rate, not a promise.">ⓘ</span></span></div>
+    </div>
+
+    <div class="card pad">
+      <div class="field">
+        <label>How much ZEC?</label>
+        <div class="in-row">
+          <input class="in num" id="amt" type="number" value="10" min="0.25" max="50" step="any" style="padding-right:60px">
+          <span class="suffix">ZEC</span>
+        </div>
+        <div class="small faint num" style="margin-top:7px">≈ <span id="amtUsd">$4,872</span> · min 0.25 · max 50 ZEC per account while we ramp up <span class="tt" title="Launch guardrail: per-account and protocol-wide caps grow as the system proves itself in public. Power-user features (custom pools, ranges, higher sizes) come later.">ⓘ</span></div>
+      </div>
+      <div class="field" style="margin-bottom:8px">
+        <label>Your Zcash address — where everything returns <span class="tt" title="Locked to your deposit. Withdrawals and earnings can only ever be sent here — even if Oilskin were fully compromised, funds cannot exit anywhere else.">ⓘ</span></label>
+        <input class="in mono" id="homeAddr" placeholder="t1… from your wallet's Receive screen" spellcheck="false">
+        <div class="small" id="addrHint" style="margin-top:7px;color:var(--ink-3)">Open your wallet (Zodl, Ywallet, Zingo…) → Receive → copy the transparent (t1…) address.</div>
+      </div>
+      <details>
+        <summary>Using Zodl? Where to find this address</summary>
+        <div class="det-in">Zodl's Receive screen shows two addresses — the shielded one on top, and a <b>transparent (t1…) address below it</b>. Copy the transparent one. Zodl shields everything it receives automatically, so payouts go private moments after they arrive.</div>
+      </details>
+      <button class="btn btn-brick" id="startBtn" style="width:100%;margin-top:18px">Get my deposit address →</button>
+      <div class="tiny faint" style="margin-top:12px;text-align:center">Fees: 10% of earnings (Oilskin) + 15% of earnings (pool engine) — never a cent of your deposit.</div>
+    </div>
+
+    <div class="tiles">
+      <div class="tile"><div class="t" style="color:var(--good)"><svg class="ic"><use href="#i-check"/></svg>Never sold</div><div class="d">Your ZEC sits as collateral. A conservative 30% loan against it does the earning — selling never happens, which also means no disposal on the way in.</div></div>
+      <div class="tile"><div class="t" style="color:var(--brick)"><svg class="ic"><use href="#i-shield"/></svg>Auto-protected</div><div class="d">Earnings repay the loan first if ZEC falls; below that we automatically de-risk. ZEC would have to drop 57% before liquidation is even possible.</div></div>
+      <div class="tile"><div class="t" style="color:var(--info)"><svg class="ic"><use href="#i-home"/></svg>Always yours</div><div class="d">Withdrawals can never be paused, and funds can only exit to the address you set. One wallet — the one you already have.</div></div>
+    </div>
+    <div style="text-align:center;margin-top:20px"><button class="btn-ghost btn" id="demoBtn" style="font-size:13.5px;padding:9px 16px">See a live example position →</button></div>
+  </div>
+
+  <!-- Position (shown when active) -->
+  <div id="posWrap" style="display:none">
+    <div class="card pad">
+      <div class="poshead">
+        <div>
+          <div class="small muted">Your ZEC, working</div>
+          <div class="bignum num"><span id="pZec">12.0</span> ZEC <span class="muted" style="font-size:17px;font-weight:600" id="pUsd">($5,846)</span></div>
+          <div class="num" style="margin-top:4px"><span class="earned" id="pEarned">+0.128 ZEC earned</span> <span class="faint">(<span id="pEarnedUsd">$62</span>)</span> · <b id="pApy">6.9%</b> <span class="faint">current yield</span></div>
+        </div>
+        <span class="chip c-good" id="protChip"><svg class="ic"><use href="#i-shield"/></svg>Protected</span>
+      </div>
+
+      <div class="meter" id="meter">
+        <div class="fill" id="mFill"></div>
+        <div class="tick" id="mTick"></div><span class="lbl" id="mTickL" style="color:var(--crit)">risk line</span><span class="sub" id="mTickS">$210</span>
+        <div class="now" id="mNow"></div><span class="lbl" id="mNowL">ZEC now</span><span class="sub" id="mNowS">$487</span>
+      </div>
+      <div class="small muted" id="protLine">ZEC would have to fall <b class="num" id="protPct">57%</b> before liquidation is possible — and your earnings automatically repay the loan first, long before that line. <button class="tab tiny" data-goto="faq-crash" style="color:var(--brick);padding:0 2px">how the protection works →</button></div>
+
+      <div style="display:flex;gap:10px;margin-top:22px;flex-wrap:wrap">
+        <button class="btn btn-brick" id="addBtn">Add ZEC</button>
+        <button class="btn btn-ghost" id="wdBtn">Withdraw</button>
+      </div>
+
+      <details style="margin-top:20px">
+        <summary>How your ZEC is earning right now</summary>
+        <div class="det-in">
+          <div class="kv">
+            <span class="k">Collateral on Rhea (NEAR)</span><span class="v num" id="dColl">12.0 ZEC · $5,846</span>
+            <span class="k">Borrowed against it (fixed 30%)</span><span class="v num" id="dBorrow">$1,754 USDC</span>
+            <span class="k">Working in <span class="coin"><svg><use href="#tk-weth"/></svg></span><span class="coin"><svg><use href="#tk-usdc"/></svg></span> WETH/USDC</span><span class="v num" id="dPool1">$1,052</span>
+            <span class="k">Working in <span class="coin"><svg><use href="#tk-cbbtc"/></svg></span><span class="coin"><svg><use href="#tk-usdc"/></svg></span> cbBTC/USDC</span><span class="v num" id="dPool2">$702</span>
+            <span class="k">Earnings auto-compound</span><span class="v">every time they cover costs 3×</span>
+            <span class="k">Fees (only ever on earnings)</span><span class="v num">10% Oilskin + 15% engine</span>
+          </div>
+          <div class="tiny faint" style="margin-top:10px">Pools are chosen and rebalanced for you — deepest blue-chip venues on Base, verified on-chain (engine ids <span class="mono">0x0ea7…72a8</span>, <span class="mono">0xb183…37e6</span>). Every claim in this panel is checkable in the Activity tab.</div>
+        </div>
+      </details>
+      <div class="tiny faint" style="margin-top:14px">Returns to <span class="mono" id="homeShort">t1Py8…pGxy</span> — locked at deposit, the only address funds can ever exit to.</div>
+    </div>
+  </div>
+
+</div></div>
+
+<!-- ═══ ACTIVITY ═══ -->
+<div class="view" id="view-activity"><div class="wrap">
+  <h1 style="font-size:22px;margin-bottom:6px">Activity</h1>
+  <p class="muted small" style="margin-bottom:18px">Every move, with the transaction id to verify it yourself — Zcash, NEAR and Base each link to their own explorer.</p>
+  <div class="card pad" id="actList"></div>
+</div></div>
+
+<!-- ═══ FAQ ═══ -->
+<div class="view" id="view-faq"><div class="wrap faq">
+  <h1 style="font-size:22px;margin-bottom:4px">Questions, answered straight</h1>
+
+  <h3>Is my ZEC ever sold?</h3>
+  <p>No. It sits as collateral on Rhea Finance (NEAR). A fixed, conservative 30% loan is taken against it in USDC, and that borrowed money does the earning in blue-chip liquidity pools on Base. Borrowing against an asset — rather than selling it — is also why entering doesn't dispose of your ZEC (mechanics, not tax advice).</p>
+
+  <h3>Who holds my ZEC while it moves?</h3>
+  <p>For about two minutes on the way in and out, your ZEC rides NEAR Intents — the same rails built into the Zashi/Zodl wallet, which move over $1B a month. During that window the bridge's operator controls the transit address; if anything fails, funds auto-refund to your address. We tell you this because you should know exactly who holds what, when — it's in every deposit screen, not buried here.</p>
+
+  <h3 id="faq-crash">What happens if ZEC crashes?</h3>
+  <p>The loan is 30% of your collateral's value — ZEC has to fall 57% before liquidation is even possible. Before that ever gets close, protection kicks in automatically, in order: your earnings repay the loan first; if that's not enough, we unwind just enough of the working position to restore safety; in an extreme crash, everything unwinds and your ZEC sits safe as plain collateral. You'll see each step in Activity with its transaction id.</p>
+
+  <h3>What are the fees?</h3>
+  <p>10% of earnings to Oilskin, 15% of earnings to the pool engine that manages liquidity. Nothing on deposits, nothing on withdrawals, nothing on your principal, ever. Every yield number you see is already net of all fees.</p>
+
+  <h3>Can I get my ZEC back whenever I want?</h3>
+  <p>Yes — withdrawal can never be paused; it's written into the contract, not a policy. Withdrawals unwind your share (repaying the loan's part automatically) and arrive as native ZEC at your locked address, usually within a few minutes.</p>
+
+  <h3>What about my privacy?</h3>
+  <p>Fund your deposit from your shielded balance — that's the default guidance, and it keeps your history private. The strategy itself lives on public chains (NEAR + Base), and we say so plainly. Payouts land at your transparent address and your wallet shields them (Zodl does it automatically). We generate a fresh deposit address every time so deposits are never linked to each other.</p>
+
+  <h3>Can Oilskin freeze or redirect my funds?</h3>
+  <p>No. Withdrawal is exempt from every pause. Funds can only exit to the address you locked at deposit. The operator can manage yield — it can never touch principal or change your address.</p>
+</div></div>
+
+<footer><div class="wrap" style="display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap">
+  <span>Oilskin v1 — demo data · Withdrawals never pausable · funds exit only to your address</span>
+  <span class="num">Rhea (NEAR) · NEAR Intents · Base</span>
+</div></footer>
+
+<!-- Deposit modal -->
+<div class="overlay" id="depOverlay"><div class="card modal">
+  <div class="modal-h"><h3 id="depTitle">Send your ZEC</h3><button class="x" data-close>✕</button></div>
+  <div class="pad" style="padding-top:18px">
+    <div id="depIntro">
+      <div style="display:flex;gap:16px;align-items:center">
+        <div id="qrBox" style="flex:none"></div>
+        <div class="small muted">Scan with your wallet — address and amount pre-filled (ZIP-321) — or copy below. <b>Send from your shielded balance</b>; only the amount becomes public.</div>
+      </div>
+      <div class="mono" id="depAddr" style="margin-top:14px;padding:11px 13px;background:#FFFDF7;border:1.5px solid var(--line);border-radius:10px;word-break:break-all">t1KfLdWeXcH2wGmVyJk3sQfR7nPmD4uEtPmG</div>
+      <button class="btn btn-ghost" id="copyBtn" style="width:100%;margin-top:10px">Copy address</button>
+      <div class="note small" style="margin-top:14px">While it moves (~2 min), your ZEC rides <b>NEAR Intents</b> — the same rails inside the Zodl wallet. If anything fails, funds auto-return to your address. <b>Amount locked:</b> <span class="num" id="depAmt">10 ZEC</span>.</div>
+      <button class="btn btn-brick" id="sentBtn" style="width:100%;margin-top:6px">I've sent it →</button>
+    </div>
+    <div id="depProg" style="display:none">
+      <div id="depSteps"></div>
+      <button class="btn btn-brick" id="depDone" style="width:100%;margin-top:16px;display:none">See my position →</button>
+    </div>
+  </div>
+</div></div>
+
+<!-- Withdraw modal -->
+<div class="overlay" id="wdOverlay"><div class="card modal">
+  <div class="modal-h"><h3>Withdraw</h3><button class="x" data-close>✕</button></div>
+  <div class="pad" style="padding-top:18px">
+    <label>Amount — <span class="num" id="wdPct">100%</span></label>
+    <input type="range" id="wdSlider" min="10" max="100" value="100" step="10">
+    <div class="small muted num" style="margin:10px 0 4px" id="wdEst">≈ 12.1 ZEC ($5,908) home to t1Py8…pGxy</div>
+    <div class="tiny faint">Your loan's share is repaid automatically as part of the withdrawal — nothing to manage, no leftover debt. Arrives as native ZEC in a few minutes; your wallet shields it on arrival.</div>
+    <button class="btn btn-brick" id="wdConfirm" style="width:100%;margin-top:16px">Withdraw to my wallet</button>
+  </div>
+</div></div>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+/* ═══ Oilskin v1 — one strategy, one address, zero knobs ═══ */
+const S = { zec: 487.20, apy: 6.9, view: "earn" };
+const LTV = 0.30, LIQ_T = 0.70, NET_FEE = 0.85*0.90;
+const pos = { active:false, zec:0, earnedZec:0, home:"", openedAt:0 };
+
+const $=(q,el=document)=>el.querySelector(q);
+const $$=(q,el=document)=>[...el.querySelectorAll(q)];
+const usd=v=>v.toLocaleString("en-US",{style:"currency",currency:"USD",maximumFractionDigits:v<100?2:0});
+function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("on");clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove("on"),3600);}
+
+/* address validation — same probed rules as the full build */
+const RE={t:/^t[13][a-zA-Z0-9]{33}$/,u:/^u1[a-z0-9]{50,}$/,z:/^zs1[a-z0-9]{70,}$/};
+function checkAddr(a){
+  const s=(a||"").trim();
+  if(!s) return {ok:false,msg:"Open your wallet (Zodl, Ywallet, Zingo…) → Receive → copy the transparent (t1…) address.",c:"var(--ink-3)"};
+  if(RE.t.test(s)) return {ok:true,msg:"✓ This is where everything returns — locked to your deposit.",c:"var(--good)"};
+  if(RE.u.test(s)||RE.z.test(s)) return {ok:false,msg:"That's your private address — payouts need the transparent (t1…) one shown just below it in your wallet. Your wallet re-shields arrivals automatically.",c:"var(--warn)"};
+  return {ok:false,msg:"Keep going — that doesn't look like a full Zcash address yet.",c:"var(--warn)"};
+}
+
+/* explorers + demo tx ids */
+const EXPLORER={zcash:{n:"Zcash explorer",u:"https://mainnet.zcashexplorer.app/transactions/"},
+  near:{n:"nearblocks",u:"https://nearblocks.io/txns/"},base:{n:"basescan",u:"https://basescan.org/tx/"}};
+const rnd=(chars,n)=>Array.from({length:n},()=>chars[Math.floor(Math.random()*chars.length)]).join("");
+const mkTx=c=>({c,id:c==="zcash"?rnd("0123456789abcdef",64):c==="near"?rnd("123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz",43):"0x"+rnd("0123456789abcdef",64)});
+const txLink=tx=>`<a class="txlink" href="${EXPLORER[tx.c].u}${tx.id}" target="_blank" rel="noopener">tx ${tx.id.slice(0,6)}…${tx.id.slice(-4)} · ${EXPLORER[tx.c].n} ↗</a>`;
+const activity=[];
+
+/* tooltips (hover + tap) */
+const tip=document.createElement("div");tip.id="tip";document.body.appendChild(tip);
+let tipFor=null,tipAt=0;
+function showTip(el){const t=el.dataset.tip;if(!t)return;tip.textContent=t;tip.classList.add("on");
+  tip.style.left="0px";tip.style.top="0px";
+  const r=el.getBoundingClientRect(),w=tip.offsetWidth,h=tip.offsetHeight;
+  let x=Math.min(Math.max(8,r.left+r.width/2-w/2),innerWidth-w-8),y=r.top-h-9;if(y<8)y=r.bottom+9;
+  tip.style.left=x+"px";tip.style.top=y+"px";tipFor=el;}
+function hideTip(){tip.classList.remove("on");tipFor=null;}
+$$("[title]").forEach(el=>{el.dataset.tip=el.getAttribute("title");el.removeAttribute("title");
+  el.addEventListener("mouseenter",()=>{showTip(el);tipAt=Date.now();});
+  el.addEventListener("mouseleave",hideTip);
+  el.addEventListener("click",e=>{e.stopPropagation();(tipFor===el&&Date.now()-tipAt>600)?hideTip():(showTip(el),tipAt=Date.now());});});
+document.addEventListener("click",hideTip);
+
+/* views */
+function showView(v){S.view=v;
+  $$(".view").forEach(e=>e.classList.remove("on"));$("#view-"+v).classList.add("on");
+  $$(".tab[data-view]").forEach(t=>t.classList.toggle("on",t.dataset.view===v));
+  window.scrollTo({top:0});}
+$$(".tab[data-view]").forEach(t=>t.addEventListener("click",()=>showView(t.dataset.view)));
+document.addEventListener("click",e=>{const b=e.target.closest("[data-goto]");if(b){showView("faq");location.hash=b.dataset.goto;}});
+
+/* deposit flow */
+$("#amt").addEventListener("input",()=>{
+  const a=+$("#amt").value||0;$("#amtUsd").textContent=usd(a*S.zec);gate();});
+$("#homeAddr").addEventListener("input",()=>{
+  const r=checkAddr($("#homeAddr").value);const h=$("#addrHint");h.textContent=r.msg;h.style.color=r.c;gate();});
+function gate(){
+  const a=+$("#amt").value||0, r=checkAddr($("#homeAddr").value);
+  const ok=a>=0.25&&a<=50&&r.ok;
+  const b=$("#startBtn");b.disabled=!ok;
+  b.textContent=!r.ok&&$("#homeAddr").value?"Add your t1… address first":(a>50?"Max 50 ZEC during launch":"Get my deposit address →");
+}
+function qrSvg(seed){
+  let h=0;for(const ch of seed)h=(h*31+ch.charCodeAt(0))>>>0;
+  const n=17,cells=[];
+  for(let y=0;y<n;y++)for(let x=0;x<n;x++){
+    if((x<5&&y<5)||(x>=n-5&&y<5)||(x<5&&y>=n-5))continue;
+    h=(h*1103515245+12345)>>>0;if(h%100<46)cells.push(`<rect x="${x}" y="${y}" width="1" height="1"/>`);}
+  const f=(cx,cy)=>`<rect x="${cx}" y="${cy}" width="5" height="5"/><rect x="${cx+1}" y="${cy+1}" width="3" height="3" fill="#FBF6EC"/><rect x="${cx+2}" y="${cy+2}" width="1" height="1" fill="#2E2118"/>`;
+  return `<svg viewBox="-1 -1 ${n+2} ${n+2}" width="104" height="104" style="background:#FBF6EC;border:1px solid var(--line);border-radius:10px" fill="#2E2118"><g>${f(0,0)}${f(n-5,0)}${f(0,n-5)}</g><g>${cells.join("")}</g></svg>`;
+}
+$("#startBtn").addEventListener("click",()=>{
+  const a=+$("#amt").value;
+  pos.home=$("#homeAddr").value.trim();
+  $("#depAmt").textContent=a+" ZEC";
+  $("#qrBox").innerHTML=qrSvg("oilskin"+a);
+  $("#depIntro").style.display="block";$("#depProg").style.display="none";
+  $("#depTitle").textContent="Send your ZEC";
+  $("#depOverlay").classList.add("on");
+});
+$("#copyBtn").addEventListener("click",()=>{toast("Address copied — fresh for this deposit only");});
+$("#sentBtn").addEventListener("click",()=>{
+  const a=+$("#amt").value;
+  $("#depIntro").style.display="none";$("#depProg").style.display="block";
+  $("#depTitle").textContent="Putting your ZEC to work";
+  const steps=[
+    {t:"ZEC received",d:"Confirmed on Zcash",tx:[mkTx("zcash")]},
+    {t:"Working as collateral",d:"Supplied on Rhea (NEAR) · 30% borrowed as USDC",tx:[mkTx("near")]},
+    {t:"Earning",d:"Deployed to WETH/USDC + cbBTC/USDC on Base",tx:[mkTx("base")]},
+    {t:"Done — protected and earning",d:"Auto-compounding from here",tx:[]}];
+  $("#depSteps").innerHTML=steps.map((s,i)=>`<div class="bstep" data-i="${i}"><div class="bic">${i+1}</div><div style="flex:1"><div class="bt">${s.t}</div><div class="bd">${s.d}</div><div class="btx" style="display:flex;gap:6px;flex-wrap:wrap"></div></div></div>`).join("");
+  let i=0;
+  const tick=()=>{const rows=$$("#depSteps .bstep");
+    if(i>0){const r=rows[i-1];r.classList.remove("doing");r.classList.add("done");r.querySelector(".bic").textContent="✓";
+      r.querySelector(".btx").innerHTML=(steps[i-1].tx||[]).map(txLink).join("");}
+    if(i<rows.length){rows[i].classList.add("doing");i++;setTimeout(tick,i===1?1200:1400);}
+    else{$("#depDone").style.display="block";
+      openPosition(a,steps);
+    }};
+  tick();
+});
+function openPosition(a,steps){
+  if(pos.active){pos.zec+=a;}else{pos.active=true;pos.zec=a;pos.earnedZec=0;pos.openedAt=Date.now();}
+  activity.unshift({t:"Deposited",d:`${a} ZEC → working (collateral on Rhea, earning on Base)`,ic:"＋",when:"just now",tx:steps[0].tx[0]});
+  renderActivity();renderPos();
+}
+$("#depDone").addEventListener("click",()=>{$("#depOverlay").classList.remove("on");renderPos();});
+$("#demoBtn").addEventListener("click",()=>{
+  pos.active=true;pos.zec=12;pos.earnedZec=0.128;pos.home="t1Py8kAoQrfmRRWTbtHkDkGb6JuaXPmpGxy";pos.openedAt=Date.now()-86400000*18;
+  activity.length=0;
+  activity.push(
+    {t:"Auto-compounded",d:"0.041 ZEC of earnings put back to work",ic:"↻",when:"6h ago",tx:mkTx("base")},
+    {t:"Rebalanced",d:"WETH/USDC re-centered — no action needed from you",ic:"⇄",when:"2d ago",tx:mkTx("base")},
+    {t:"Auto-compounded",d:"0.087 ZEC of earnings put back to work",ic:"↻",when:"9d ago",tx:mkTx("base")},
+    {t:"Deposited",d:"12 ZEC → working (collateral on Rhea, earning on Base)",ic:"＋",when:"18d ago",tx:mkTx("zcash")});
+  renderActivity();renderPos();toast("Example position loaded — everything is demo data");
+});
+
+/* position render + protection meter */
+function renderPos(){
+  const on=pos.active;
+  $("#hero").style.display=on?"none":"block";
+  $("#posWrap").style.display=on?"block":"none";
+  if(!on)return;
+  const totZec=pos.zec+pos.earnedZec, v=totZec*S.zec;
+  $("#pZec").textContent=totZec.toFixed(1);
+  $("#pUsd").textContent="("+usd(v)+")";
+  $("#pEarned").textContent="+"+pos.earnedZec.toFixed(3)+" ZEC earned";
+  $("#pEarnedUsd").textContent=usd(pos.earnedZec*S.zec);
+  $("#pApy").textContent=S.apy.toFixed(1)+"%";
+  const borrow=pos.zec*S.zec*LTV;
+  $("#dColl").textContent=totZec.toFixed(1)+" ZEC · "+usd(v);
+  $("#dBorrow").textContent=usd(borrow)+" USDC";
+  $("#dPool1").textContent=usd(borrow*0.6);
+  $("#dPool2").textContent=usd(borrow*0.4);
+  $("#homeShort").textContent=pos.home?pos.home.slice(0,5)+"…"+pos.home.slice(-4):"—";
+  // protection meter: liquidation price vs now, on a runway
+  const liq=(pos.zec*S.zec*LTV)/(LIQ_T*pos.zec); // = S.zec*LTV/LIQ_T
+  const lo=liq*0.55, hi=Math.max(S.zec*1.15, liq*2.4);
+  const X=p=>Math.min(97,Math.max(3,((p-lo)/(hi-lo))*100));
+  $("#mFill").style.width=X(S.zec)+"%";
+  $("#mTick").style.left=X(liq)+"%";$("#mTickL").style.left=X(liq)+"%";$("#mTickS").style.left=X(liq)+"%";
+  $("#mTickS").textContent=usd(liq);
+  $("#mNow").style.left=X(S.zec)+"%";$("#mNowL").style.left=X(S.zec)+"%";$("#mNowS").style.left=X(S.zec)+"%";
+  $("#mNowS").textContent=usd(S.zec);
+  const dropPct=Math.round((1-liq/S.zec)*100);
+  $("#protPct").textContent=dropPct+"%";
+  const chip=$("#protChip");
+  if(dropPct>35){chip.className="chip c-good";chip.innerHTML='<svg class="ic"><use href="#i-shield"/></svg>Protected';}
+  else if(dropPct>15){chip.className="chip c-warn";chip.innerHTML="⚠ De-risking";}
+  else{chip.className="chip c-warn";chip.innerHTML="⚠ Unwinding to safety";}
+}
+
+/* withdraw — always home, loan repaid automatically */
+$("#wdBtn").addEventListener("click",()=>{$("#wdSlider").value=100;wdUpd();$("#wdOverlay").classList.add("on");});
+$("#addBtn").addEventListener("click",()=>{
+  pos.active=true; // keep position; prefill deposit form for top-up
+  $("#hero").style.display="block";$("#posWrap").style.display="none";
+  $("#homeAddr").value=pos.home;$("#homeAddr").dispatchEvent(new Event("input"));
+  toast("Top-ups go to the same position — same locked address");
+  window.scrollTo({top:0});
+});
+function wdUpd(){
+  const p=+$("#wdSlider").value;$("#wdPct").textContent=p+"%";
+  const totZec=(pos.zec+pos.earnedZec)*p/100;
+  $("#wdEst").textContent=`≈ ${totZec.toFixed(2)} ZEC (${usd(totZec*S.zec)}) home to ${pos.home?pos.home.slice(0,5)+"…"+pos.home.slice(-4):"your address"}`;
+}
+$("#wdSlider").addEventListener("input",wdUpd);
+$("#wdConfirm").addEventListener("click",()=>{
+  const p=+$("#wdSlider").value, totZec=(pos.zec+pos.earnedZec)*p/100;
+  $("#wdOverlay").classList.remove("on");
+  activity.unshift({t:"Withdrawn",d:`${totZec.toFixed(2)} ZEC → your wallet (loan share repaid automatically)`,ic:"⌂",when:"just now",tx:mkTx("zcash")});
+  if(p>=100){pos.active=false;pos.zec=0;pos.earnedZec=0;}
+  else{const k=1-p/100;pos.zec*=k;pos.earnedZec*=k;}
+  renderActivity();renderPos();
+  toast(`${totZec.toFixed(2)} ZEC on its way home — shield it on arrival`);
+});
+$$("[data-close]").forEach(b=>b.addEventListener("click",()=>b.closest(".overlay").classList.remove("on")));
+
+/* activity */
+function renderActivity(){
+  $("#actList").innerHTML=activity.length?activity.map(a=>`<div class="act">
+    <div class="act-ic">${a.ic}</div>
+    <div><b>${a.t}</b><div class="muted small">${a.d}</div>${a.tx?txLink(a.tx):""}<time>${a.when}</time></div></div>`).join("")
+    :'<div class="muted small">Nothing yet — your deposits, earnings and withdrawals will appear here, each with its transaction id.</div>';
+}
+
+/* gentle price jitter + earning trickle */
+setInterval(()=>{
+  const d=(Math.random()-0.48)*1.4;S.zec=Math.max(50,S.zec+d);
+  $("#px").textContent=usd(S.zec);
+  if(pos.active){pos.earnedZec+=pos.zec*(S.apy/100)/365/86400*12; renderPos();}
+},12000);
+
+/* boot */
+gate();renderActivity();renderPos();
+</script>
+</body>
+</html>

@@ -165,6 +165,16 @@ lending market accepts. And bridging your ZEC to Base as anything else means
 against ZEC can only happen where ZEC is accepted: that set is exactly
 **{Rhea, Templar}**, plus CeFi we won't touch.
 
+> **RESOLVED 2026-08-13 — Rhea lending is LIVE.** Deep verification (on-chain
+> + protocol API + fee data, see below §5-addendum): lending froze Apr 16–
+> May 8, resumed in phases from May 8–9, fully consistent since May 27.
+> Today: $31.6M lending TVL, live markets (USDC 8.45% supply / 13.20%
+> borrow, $10.8M supplied), transactions on `contract.main.burrow.near`
+> minutes before checking. Margin trading (the exploited sub-feature, which
+> we never use) remains unverified. Watch item: lending TVL fell ~65% over
+> the past 30 days ($90M → $31.6M) — active but shrinking; keep per-venue
+> caps and the Templar conversation.
+
 **The bigger finding — Rhea's lending may still be frozen.** Post-exploit
 status as of today: the DEX resumed April 21, but the **lending/margin
 contracts were frozen and no verifiable relaunch has been published** — no

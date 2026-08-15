@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Oilskin — brand sheet v1</title>
+<style>
+:root{
+  --bg:#F1E8D8; --surface:#FBF6EC; --surface-2:#F1E9DA;
+  --line:#D8CBB4; --line-soft:rgba(60,40,20,.09);
+  --ink:#2E2118; --ink-2:#6B5B4C; --ink-3:#8F8071;
+  --brick:#A6432C; --brick-deep:#8C3521; --brick-hi:#C05A3C;
+  --brick-bg:rgba(166,67,44,.08); --on-brick:#FFF7EF;
+  --good:#0F6E44; --warn:#8F6200; --crit:#C0273D; --info:#3B5BA5;
+  --good-bg:rgba(15,110,68,.10); --warn-bg:rgba(143,98,0,.10);
+  --crit-bg:rgba(192,39,61,.09); --info-bg:rgba(59,91,165,.10);
+  --zec:#f4b728;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);
+  font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Arial,sans-serif;
+  font-size:15px;line-height:1.55;padding:48px 20px 80px}
+.wrap{max-width:920px;margin:0 auto}
+h1{font-size:26px;letter-spacing:-.02em}
+h2{font-size:15px;text-transform:uppercase;letter-spacing:.12em;color:var(--ink-2);
+  margin:44px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+p{color:var(--ink-2);max-width:640px;margin-bottom:10px}
+b{color:var(--ink)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:24px;
+  box-shadow:0 1px 2px rgba(60,40,20,.05), 0 8px 28px rgba(60,40,20,.06)}
+.row{display:flex;gap:16px;flex-wrap:wrap}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--ink-2)}
+
+/* logo block */
+.lock{display:flex;align-items:center;gap:18px}
+.wordmark{font-weight:800;font-size:34px;letter-spacing:.13em;color:var(--ink)}
+.tag{color:var(--ink-3);font-size:14px;margin-top:2px;letter-spacing:.01em}
+.mini{display:flex;gap:14px;align-items:center;margin-top:22px}
+
+/* swatches */
+.sw{flex:1;min-width:150px;border-radius:12px;overflow:hidden;border:1px solid var(--line)}
+.sw .chipc{height:74px}
+.sw .info{background:var(--surface);padding:10px 12px;font-size:12.5px}
+.sw .info b{display:block;font-size:13px}
+.contrast{color:var(--ink-3);font-size:11.5px}
+
+/* components strip */
+.btn{display:inline-flex;align-items:center;gap:8px;padding:11px 20px;border-radius:11px;
+  font-weight:650;font-size:14.5px;border:none;cursor:pointer}
+.btn-brick{background:linear-gradient(180deg,var(--brick-hi),var(--brick));color:var(--on-brick);
+  box-shadow:0 2px 10px rgba(166,67,44,.28)}
+.btn-ghost{background:var(--surface);border:1px solid var(--line);color:var(--ink)}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;
+  font-size:12.5px;font-weight:650;border:1px solid transparent}
+.c-good{color:var(--good);background:var(--good-bg);border-color:rgba(15,110,68,.25)}
+.c-warn{color:var(--warn);background:var(--warn-bg);border-color:rgba(143,98,0,.28)}
+.c-crit{color:var(--crit);background:var(--crit-bg);border-color:rgba(192,39,61,.25)}
+.c-info{color:var(--info);background:var(--info-bg);border-color:rgba(59,91,165,.25)}
+.dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+ul{margin:8px 0 0 18px;color:var(--ink-2)}
+li{margin-bottom:6px;max-width:620px}
+.meter{position:relative;height:14px;border-radius:8px;background:var(--surface-2);
+  border:1px solid var(--line);overflow:visible;margin:26px 8px 30px}
+.meter .fill{position:absolute;left:0;top:0;bottom:0;width:72%;border-radius:8px 0 0 8px;
+  background:linear-gradient(90deg,rgba(15,110,68,.25),rgba(15,110,68,.55))}
+.meter .tick{position:absolute;left:22%;top:-7px;bottom:-7px;width:3px;border-radius:2px;background:var(--crit)}
+.meter .now{position:absolute;left:72%;top:-9px;bottom:-9px;width:3px;border-radius:2px;background:var(--ink)}
+.meter .lbl{position:absolute;top:-26px;transform:translateX(-50%);font-size:11.5px;font-weight:650}
+.meter .sub{position:absolute;top:18px;transform:translateX(-50%);font-size:11px;color:var(--ink-3)}
+</style>
+</head>
+<body><div class="wrap">
+
+  <div class="card">
+    <div class="lock">
+      <svg viewBox="0 0 64 64" width="72" height="72" aria-label="Oilskin mark">
+        <rect x="2" y="2" width="60" height="60" rx="14" fill="#A6432C"/>
+        <path d="M10 22 C 22 20, 34 26, 54 46" fill="none" stroke="#FBF6EC" stroke-width="5" stroke-linecap="round"/>
+        <circle cx="30" cy="20.5" r="6.5" fill="#FBF6EC"/>
+        <circle cx="32.2" cy="18.6" r="1.8" fill="#A6432C" opacity=".35"/>
+        <circle cx="50" cy="51" r="2.6" fill="#FBF6EC" opacity=".85"/>
+        <circle cx="57" cy="57" r="1.7" fill="#FBF6EC" opacity=".6"/>
+      </svg>
+      <div>
+        <div class="wordmark">OILSKIN</div>
+        <div class="tag">Weatherproof yield for Zcash — your ZEC, working under cover.</div>
+      </div>
+    </div>
+    <div class="mini">
+      <svg viewBox="0 0 64 64" width="32" height="32"><rect x="2" y="2" width="60" height="60" rx="14" fill="#A6432C"/><path d="M10 22 C 22 20, 34 26, 54 46" fill="none" stroke="#FBF6EC" stroke-width="6" stroke-linecap="round"/><circle cx="30" cy="20.5" r="7.5" fill="#FBF6EC"/></svg>
+      <svg viewBox="0 0 64 64" width="20" height="20"><rect x="2" y="2" width="60" height="60" rx="16" fill="#A6432C"/><path d="M10 22 C 22 20, 34 26, 54 46" fill="none" stroke="#FBF6EC" stroke-width="7" stroke-linecap="round"/><circle cx="30" cy="20" r="8.5" fill="#FBF6EC"/></svg>
+      <span class="mono">mark scales to favicon — drop the run-off beads below 32px</span>
+    </div>
+  </div>
+
+  <h2>The idea</h2>
+  <p><b>The mark is the shed line.</b> A waxed shoulder in linen, one bead of rain
+  sitting proud, run-off rolling away. It's the product in one picture: the
+  storm is real, the coat holds, and the person underneath keeps working.
+  Never a shield, never a vault door — Oilskin protects by <b>shedding</b>, not
+  by locking away.</p>
+  <p><b>Voice:</b> plain, warm, worked-in. Say what's public, what's protected,
+  and who holds what — before the user asks. Never "military-grade", never
+  "100% safe", never an asterisk.</p>
+
+  <h2>Color — brick &amp; linen</h2>
+  <div class="row">
+    <div class="sw"><div class="chipc" style="background:#A6432C"></div><div class="info"><b>Brick</b><span class="mono">#A6432C</span><div class="contrast">text on linen 5.6:1 · linen text on it 5.7:1</div></div></div>
+    <div class="sw"><div class="chipc" style="background:#FBF6EC"></div><div class="info"><b>Linen (surface)</b><span class="mono">#FBF6EC</span><div class="contrast">cards &amp; controls</div></div></div>
+    <div class="sw"><div class="chipc" style="background:#F1E8D8"></div><div class="info"><b>Linen (ground)</b><span class="mono">#F1E8D8</span><div class="contrast">page background</div></div></div>
+    <div class="sw"><div class="chipc" style="background:#2E2118"></div><div class="info"><b>Espresso ink</b><span class="mono">#2E2118</span><div class="contrast">14.5:1 on surface</div></div></div>
+  </div>
+  <div class="row" style="margin-top:14px">
+    <div class="sw"><div class="chipc" style="background:#0F6E44"></div><div class="info"><b>Good</b><span class="mono">#0F6E44</span><div class="contrast">5.9:1</div></div></div>
+    <div class="sw"><div class="chipc" style="background:#8F6200"></div><div class="info"><b>Warn</b><span class="mono">#8F6200</span><div class="contrast">5.0:1</div></div></div>
+    <div class="sw"><div class="chipc" style="background:#C0273D"></div><div class="info"><b>Critical</b><span class="mono">#C0273D</span><div class="contrast">5.4:1</div></div></div>
+    <div class="sw"><div class="chipc" style="background:#3B5BA5"></div><div class="info"><b>Info</b><span class="mono">#3B5BA5</span><div class="contrast">6.0:1</div></div></div>
+    <div class="sw"><div class="chipc" style="background:#f4b728"></div><div class="info"><b>ZEC gold</b><span class="mono">#f4b728</span><div class="contrast">asset mark ONLY — never a UI accent</div></div></div>
+  </div>
+  <ul>
+    <li><b>Brick is the only brand accent.</b> Status colors are reserved for state and always ship with an icon or label — never color alone (brick and critical share a red family under color-blindness; the label rule is the safeguard, validated).</li>
+    <li>Inks: espresso <span class="mono">#2E2118</span>, secondary <span class="mono">#6B5B4C</span> (6.0:1), tertiary <span class="mono">#8F8071</span> (3.6:1, decorative only). Lines <span class="mono">#D8CBB4</span>.</li>
+    <li>All text contrasts measured with the palette validator — re-run it on any new tint before shipping.</li>
+  </ul>
+
+  <h2>Components in the colorway</h2>
+  <div class="card">
+    <div class="row" style="align-items:center">
+      <button class="btn btn-brick">Get my deposit address →</button>
+      <button class="btn btn-ghost">Withdraw</button>
+      <span class="chip c-good"><span class="dot"></span>Protected</span>
+      <span class="chip c-warn">⚠ De-risking</span>
+      <span class="chip c-crit">⚠ Action needed</span>
+      <span class="chip c-info"><span class="dot"></span>In transit</span>
+    </div>
+    <div class="meter">
+      <div class="fill"></div>
+      <div class="tick"></div><span class="lbl" style="left:22%;color:var(--crit)">risk&nbsp;line</span><span class="sub" style="left:22%">$210</span>
+      <div class="now"></div><span class="lbl" style="left:72%">ZEC&nbsp;now</span><span class="sub" style="left:72%">$487</span>
+    </div>
+    <p style="font-size:13px;margin:0">The v1 protection meter: one green runway, one risk line, one marker.
+    Distance <b>is</b> the message — no three-color traffic bands in v1.</p>
+  </div>
+
+  <h2>Type &amp; texture</h2>
+  <ul>
+    <li>Wordmark: heavy geometric caps, tracked wide (<span class="mono">letter-spacing .13em</span>). App type: the system sans stack, weights 400/650/800. Numerals always tabular.</li>
+    <li>Buy later, if wanted: a slab or grotesk with workwear character for headlines (e.g. Archivo / Roboto Slab class). Never a techno/crypto display face.</li>
+    <li>Texture: linen grain and waxed-canvas photography welcome in marketing; the app itself stays flat linen with soft warm shadows.</li>
+  </ul>
+
+  <h2>Don'ts</h2>
+  <ul>
+    <li>No gold UI accents (gold belongs to the ZEC asset mark alone). No dark-purple DeFi gradients. No shields, locks, or vault doors.</li>
+    <li>Never put brick text on brick tint for emphasis-stacking; never use critical red decoratively.</li>
+    <li>The bead always sits <b>on</b> the line, never falling — the coat works.</li>
+  </ul>
+
+</div></body>
+</html>
