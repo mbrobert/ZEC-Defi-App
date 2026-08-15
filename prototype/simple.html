@@ -46,6 +46,9 @@ nav{position:sticky;top:0;z-index:50;background:rgba(241,232,216,.88);
   border:1px solid var(--line);background:var(--surface);font-size:13px}
 .pulse{width:7px;height:7px;border-radius:50%;background:var(--good);animation:pulse 2.4s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.modetog{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:999px;border:1.5px solid var(--line);
+  background:var(--surface);font-size:12.5px;font-weight:650;color:var(--ink-2);text-decoration:none;white-space:nowrap}
+.modetog:hover{border-color:var(--brick);color:var(--brick)}
 
 /* cards & controls */
 .view{display:none;padding:34px 0 80px}
@@ -184,6 +187,9 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
   .tabs{gap:0}
   .tab{padding:7px 10px;font-size:13px}
   .logo span{display:none}
+  .modetog span{display:none}
+  .modetog{padding:6px 9px}
+  .price{display:none}
   .tiles{grid-template-columns:1fr}
   .hero h1{font-size:24px}
   .apyline .v{font-size:32px}
@@ -218,6 +224,7 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
     <button class="tab" data-view="faq">FAQ</button>
   </div>
   <div class="price num"><span class="pulse"></span>ZEC <b id="px">$487.20</b></div>
+  <a class="modetog" id="modeTog" href="index.html" title="The full-control build — every parameter adjustable"><span>Advanced</span> ⇄</a>
 </div></nav>
 
 <!-- ═══ EARN ═══ -->

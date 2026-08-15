@@ -7,7 +7,7 @@ with everything deliverable straight back to your own Zcash wallet.
 zero connections: `prototype/simple.html` + `docs/V1-SIMPLE.md`. The advanced
 "power user" build (modes, adjustable LTV, pool picker, claim destinations)
 is preserved in `prototype/index.html` and the `power-user` branch for a
-later release. Brand: `brand/` (brick & linen).
+later release — the ⇄ toggle in each prototype's nav switches between them.
 
 **Mode 1 · Simple Lending** — deposit ZEC → supplied as collateral on
 [Rhea Finance](https://www.rhea.finance/) (NEAR) → earn supply APY, optionally
@@ -28,10 +28,9 @@ Simple positions upgrade to Full in place. Withdrawals are never pausable.
 | `contracts/` | Foundry — PositionVault, RewardRouter, LP adapters + mocks | ✅ 57 tests + 9 live-engine fork tests |
 | `agent/` | Zero-dependency Node daemon — monitors, decision engines, 1-Click client, executors | ✅ 62 tests incl. adversarial suite |
 | `web/` | Next.js app — deposit wizard, dashboard, BFF stubs | source ready, `npm i` to run |
-| `prototype/` | `simple.html` = Oilskin v1 · `index.html` = power-user build | ✅ open in a browser |
-| `brand/` | Oilskin brand — mark, brand sheet, validated palette | ✅ |
+| `prototype/` | `simple.html` = Oilskin v1 · `index.html` = power-user build (⇄ toggle switches) | ✅ open in a browser |
 | `packages/shared/` | Types, verified constants, pool registry, presets | ✅ builds |
-| `docs/` | ARCHITECTURE · FLOWS · RISKS · INTEGRATIONS · V1-SIMPLE · GRANTS | ✅ |
+| `docs/` | ARCHITECTURE · FLOWS · RISKS · INTEGRATIONS · V1-SIMPLE | ✅ |
 
 ## Quickstart
 
