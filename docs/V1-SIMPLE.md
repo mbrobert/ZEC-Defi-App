@@ -13,10 +13,18 @@ whenever you want — with one wallet, the one you already have.**
 Under the hood v1 runs exactly one strategy — the Full-strategy pipeline at
 fixed safe parameters — because it's the only mode that delivers the thesis:
 Simple-lending alone pays ~2% (not compelling), Direct-LP sells the user's
-ZEC (off-thesis). So: collateral on the lending venue, a **fixed 30% LTV**
-borrow in USDC, deployed across **two curated blue-chip pools** (WETH/USDC +
-cbBTC/USDC), **auto-compounding always on**, rewards and withdrawals always
-returning to **one pre-committed Zcash address**.
+ZEC (off-thesis). So: collateral on the lending venue, a **bounded 3-stop
+LTV setting — 30/40/50%, default 30% ("Sheltered")** — borrowed in USDC,
+deployed across **two curated blue-chip pools** (WETH/USDC + cbBTC/USDC),
+**auto-compounding always on**, rewards and withdrawals always returning to
+**one pre-committed Zcash address**.
+
+> **Amended 2026-08-15 (Matt's call):** fixed 30% → user-selectable
+> 30/40/50. One honest dial users can handle; the unbounded slider stays
+> cut. Drawdown-to-liquidation is stated at the moment of choice
+> (57% / 43% / 29% at LT 0.70) and the docs say plainly that ~30% ZEC
+> drawdowns happen in ordinary years — "Working hard" leans hardest on the
+> protection ladder. Default remains Sheltered; setting locks at deposit.
 
 Why 30% (not the power build's 35% default / 50% cap): liquidation requires a
 **57% ZEC drawdown**, wide enough that the agent's protection ladder
@@ -26,7 +34,9 @@ true in v1 — the first liquidated user is the last new cohort.
 
 ## The five foot-guns v1 removes
 
-1. **LTV slider** → fixed 30%. Nobody self-liquidates.
+1. **LTV slider** → a bounded 3-stop risk setting (30/40/50, default 30)
+   with the required drawdown shown at the moment of choice. Nobody
+   self-liquidates by typo; choosing thinner buffer is explicit and named.
 2. **Pool choice** → curated allocation, shown transparently ("how your ZEC
    is earning"), never chosen. Nobody picks a degen pool.
 3. **Reward-address entry & destination options** → one address, asked once,
@@ -71,7 +81,8 @@ and labeled live-not-promised; per-step tx ids on every flow.
 
 ## Numbers note
 
-Demo uses ZEC ≈ $487 (Aug 2026 market) and a ~6.9% current net yield —
-computed honestly from: pool gross APR × 0.765 fee factor, minus the live
-USDC borrow rate, on 30% of stack, plus ZEC supply APY. Yield headline must
-always be the computed trailing figure, never a promise.
+Demo uses ZEC ≈ $487 (Aug 2026 market) and a ~6.9–11.0% current net yield
+by setting — computed honestly from: pool gross APR × 0.765 fee factor,
+minus the live USDC borrow rate, on the chosen LTV share of stack, plus ZEC
+supply APY (net ≈ 0.8% + 20.3 × LTV with today's rates). Yield headline
+must always be the computed trailing figure, never a promise.

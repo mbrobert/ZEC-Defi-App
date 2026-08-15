@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Oilskin — five mark directions</title>
+<style>
+:root{
+  --bg:#F1E8D8; --surface:#FBF6EC; --surface-2:#F1E9DA;
+  --line:#D8CBB4; --line-soft:rgba(60,40,20,.09);
+  --ink:#2E2118; --ink-2:#6B5B4C; --ink-3:#8F8071;
+  --brick:#A6432C; --brick-deep:#8C3521; --brick-hi:#C05A3C;
+  --good:#0F6E44; --warn:#8F6200;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);
+  font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Arial,sans-serif;
+  font-size:15px;line-height:1.55;padding:48px 20px 90px}
+.wrap{max-width:960px;margin:0 auto}
+h1{font-size:26px;letter-spacing:-.02em}
+.lede{color:var(--ink-2);max-width:660px;margin-top:8px}
+.opt{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:26px;margin-top:26px;
+  box-shadow:0 1px 2px rgba(60,40,20,.05), 0 8px 28px rgba(60,40,20,.06)}
+.opt h2{font-size:18px;letter-spacing:-.01em}
+.opt .num{color:var(--ink-3);font-weight:800;font-size:13px;letter-spacing:.1em}
+.tiles{display:flex;gap:14px;flex-wrap:wrap;align-items:stretch;margin:16px 0 14px}
+.tile{border:1px solid var(--line);border-radius:14px;display:grid;place-items:center;padding:18px}
+.t-linen{background:var(--surface)}
+.t-ground{background:var(--bg)}
+.t-brick{background:var(--brick)}
+.sizes{display:flex;gap:16px;align-items:center;border:1px dashed var(--line);border-radius:14px;padding:18px}
+.pair{display:flex;gap:12px;align-items:center;margin-top:2px}
+.wordmark{font-weight:800;letter-spacing:.13em;font-size:19px}
+p{color:var(--ink-2);max-width:680px;margin-top:8px}
+p b{color:var(--ink)}
+.verdict{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.chip{font-size:12px;font-weight:650;border-radius:999px;padding:4px 11px;border:1px solid var(--line);background:var(--surface-2);color:var(--ink-2)}
+.chip.g{color:var(--good);border-color:rgba(15,110,68,.3);background:rgba(15,110,68,.08)}
+.chip.w{color:var(--warn);border-color:rgba(143,98,0,.3);background:rgba(143,98,0,.08)}
+.squint{display:flex;gap:26px;align-items:center;justify-content:center;background:var(--surface);
+  border:1px solid var(--line);border-radius:16px;padding:22px;margin-top:30px}
+.rec{border-left:3px solid var(--brick);background:rgba(166,67,44,.07);border-radius:0 12px 12px 0;
+  padding:16px 20px;margin-top:26px}
+.rec b{color:var(--brick)}
+h2.sec{font-size:14px;text-transform:uppercase;letter-spacing:.12em;color:var(--ink-2);margin:40px 0 0}
+</style>
+</head>
+<body><div class="wrap">
+
+<h1>Five marks for Oilskin</h1>
+<p class="lede">Same brief for all five: the storm is real, the coat holds, the person underneath keeps
+working. No shields, no locks, no vault doors — protection by <b>shedding</b>. Each is drawn in the
+brick &amp; linen system, judged at 72px, 32px and favicon size, on both grounds.</p>
+
+<!-- ═══ 1 · SHED LINE ═══ -->
+<svg width="0" height="0" style="position:absolute"><defs>
+  <symbol id="m1" viewBox="0 0 64 64">
+    <rect x="2" y="2" width="60" height="60" rx="14" fill="#A6432C"/>
+    <path d="M10 22 C 22 20, 34 26, 54 46" fill="none" stroke="#FBF6EC" stroke-width="6" stroke-linecap="round"/>
+    <circle cx="30" cy="20.5" r="7.5" fill="#FBF6EC"/>
+    <circle cx="50" cy="51" r="2.6" fill="#FBF6EC" opacity=".85"/>
+    <circle cx="57" cy="57" r="1.7" fill="#FBF6EC" opacity=".6"/>
+  </symbol>
+  <symbol id="m1i" viewBox="0 0 64 64">
+    <rect x="2" y="2" width="60" height="60" rx="14" fill="#FBF6EC"/>
+    <path d="M10 22 C 22 20, 34 26, 54 46" fill="none" stroke="#A6432C" stroke-width="6" stroke-linecap="round"/>
+    <circle cx="30" cy="20.5" r="7.5" fill="#A6432C"/>
+    <circle cx="50" cy="51" r="2.6" fill="#A6432C" opacity=".85"/>
+    <circle cx="57" cy="57" r="1.7" fill="#A6432C" opacity=".6"/>
+  </symbol>
+  <symbol id="m2" viewBox="0 0 64 64">
+    <rect x="2" y="2" width="60" height="60" rx="14" fill="#A6432C"/>
+    <path d="M21 33 C 21 18, 30 13, 33 13 C 41 13, 45 21, 45 31 L 45 32 C 37 29, 28 30, 21 33 Z" fill="#FBF6EC"/>
+    <path d="M9 38 C 18 31, 30 29, 38 29 C 44 29, 48 27, 51 24 C 55 31, 57 41, 56 50 C 48 41, 38 38, 29 38.5 C 21 39, 13 40, 9 38 Z" fill="#FBF6EC"/>
+  </symbol>
+  <symbol id="m2i" viewBox="0 0 64 64">
+    <rect x="2" y="2" width="60" height="60" rx="14" fill="#FBF6EC"/>
+    <path d="M21 33 C 21 18, 30 13, 33 13 C 41 13, 45 21, 45 31 L 45 32 C 37 29, 28 30, 21 33 Z" fill="#A6432C"/>
+    <path d="M9 38 C 18 31, 30 29, 38 29 C 44 29, 48 27, 51 24 C 55 31, 57 41, 56 50 C 48 41, 38 38, 29 38.5 C 21 39, 13 40, 9 38 Z" fill="#A6432C"/>
+  </symbol>
+  <symbol id="m3" viewBox="0 0 64 64">
+    <path d="M13 34 A 19 19 0 0 1 47 22" fill="none" stroke="#C05A3C" stroke-width="10" stroke-linecap="round"/>
+    <path d="M51 32 A 19 19 0 0 1 17 44" fill="none" stroke="#A6432C" stroke-width="10" stroke-linecap="round"/>
+    <line x1="45" y1="17" x2="49" y2="25" stroke="#FBF6EC" stroke-width="2.4" stroke-linecap="round" opacity="0"/>
+  </symbol>
+  <symbol id="m3i" viewBox="0 0 64 64">
+    <rect x="2" y="2" width="60" height="60" rx="14" fill="#A6432C"/>
+    <path d="M13 34 A 19 19 0 0 1 47 22" fill="none" stroke="#FBF6EC" stroke-width="10" stroke-linecap="round"/>
+    <path d="M51 32 A 19 19 0 0 1 17 44" fill="none" stroke="#F1E1C8" stroke-width="10" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="m4" viewBox="0 0 64 64">
+    <circle cx="30" cy="36" r="17" fill="none" stroke="#A6432C" stroke-width="11"/>
+    <path d="M38 26 L 54 10" stroke="#2E2118" stroke-width="6.5" stroke-linecap="round"/>
+    <path d="M22 47 A 14 14 0 0 0 41 44" fill="none" stroke="#8C3521" stroke-width="4" opacity=".55"/>
+  </symbol>
+  <symbol id="m4i" viewBox="0 0 64 64">
+    <rect x="2" y="2" width="60" height="60" rx="14" fill="#A6432C"/>
+    <circle cx="30" cy="36" r="16" fill="none" stroke="#FBF6EC" stroke-width="10"/>
+    <path d="M38 27 L 53 11" stroke="#FBF6EC" stroke-width="6" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="m5" viewBox="0 0 64 64">
+    <rect x="2" y="2" width="60" height="60" rx="14" fill="#A6432C"/>
+    <path d="M12 52 L 52 12" stroke="#FBF6EC" stroke-width="5" stroke-linecap="round"/>
+    <g stroke="#FBF6EC" stroke-width="3.6" stroke-linecap="round" opacity=".9">
+      <path d="M19 8 L 15 16"/><path d="M31 8 L 27 16"/><path d="M43 8 L 39 16"/>
+      <path d="M13 22 L 9 30"/><path d="M25 22 L 21 30"/>
+      <path d="M9 38 L 7 42"/>
+    </g>
+    <circle cx="44" cy="45" r="4.4" fill="#FBF6EC"/>
+  </symbol>
+  <symbol id="m5i" viewBox="0 0 64 64">
+    <rect x="2" y="2" width="60" height="60" rx="14" fill="#FBF6EC"/>
+    <path d="M12 52 L 52 12" stroke="#A6432C" stroke-width="5" stroke-linecap="round"/>
+    <g stroke="#A6432C" stroke-width="3.6" stroke-linecap="round" opacity=".9">
+      <path d="M19 8 L 15 16"/><path d="M31 8 L 27 16"/><path d="M43 8 L 39 16"/>
+      <path d="M13 22 L 9 30"/><path d="M25 22 L 21 30"/>
+      <path d="M9 38 L 7 42"/>
+    </g>
+    <circle cx="44" cy="45" r="4.4" fill="#A6432C"/>
+  </symbol>
+</defs></svg>
+
+<div class="opt">
+  <div class="num">OPTION 1 — the incumbent</div>
+  <h2>Shed Line</h2>
+  <div class="tiles">
+    <div class="tile t-linen"><svg width="120" height="120"><use href="#m1"/></svg></div>
+    <div class="tile t-brick"><svg width="120" height="120"><use href="#m1i"/></svg></div>
+    <div class="sizes">
+      <svg width="32" height="32"><use href="#m1"/></svg>
+      <svg width="20" height="20"><use href="#m1"/></svg>
+      <svg width="16" height="16"><use href="#m1"/></svg>
+      <div class="pair"><svg width="26" height="26"><use href="#m1"/></svg><span class="wordmark">OILSKIN</span></div>
+    </div>
+  </div>
+  <p><b>The idea:</b> a waxed shoulder in profile. One bead of rain sits proud on the line; run-off
+  rolls away at the hem. It is the product in one picture — water lands, water sheds, the surface
+  underneath never gets wet.</p>
+  <p><b>Why it works:</b> ownable (nobody in DeFi has a "shed line"), calm rather than defensive,
+  and the geometry survives every size — at favicon scale it still reads as a mark, not mud.
+  The bead doubles quietly as "your ZEC": intact, sitting on top, never absorbed.</p>
+  <p><b>Watch out:</b> abstract — it needs the brand voice around it to explain itself. First-glance
+  read can be "brushstroke."</p>
+  <div class="verdict"><span class="chip g">scales to 16px</span><span class="chip g">ownable</span><span class="chip g">already shipping in v1</span><span class="chip w">abstract on first glance</span></div>
+</div>
+
+<div class="opt">
+  <div class="num">OPTION 2 — the character</div>
+  <h2>Sou'wester</h2>
+  <div class="tiles">
+    <div class="tile t-linen"><svg width="120" height="120"><use href="#m2"/></svg></div>
+    <div class="tile t-brick"><svg width="120" height="120"><use href="#m2i"/></svg></div>
+    <div class="sizes">
+      <svg width="32" height="32"><use href="#m2"/></svg>
+      <svg width="20" height="20"><use href="#m2"/></svg>
+      <svg width="16" height="16"><use href="#m2"/></svg>
+      <div class="pair"><svg width="26" height="26"><use href="#m2"/></svg><span class="wordmark">OILSKIN</span></div>
+    </div>
+  </div>
+  <p><b>The idea:</b> the fisherman's storm hat — short brim forward, long brim swept down the back.
+  The single most recognizable piece of oilskin gear ever made, reduced to two linen shapes.</p>
+  <p><b>Why it works:</b> instantly literal — it says "oilskin" without a word of copy, and it puts a
+  <b>person</b> in the brand (someone wears a hat), which matches the working-in-the-rain story better
+  than any object. Warm, a little salty, impossible to mistake for a generic fintech glyph.</p>
+  <p><b>Watch out:</b> the most figurative option — it can drift "seafood restaurant" if the drawing
+  gets too cute, and the two-shape silhouette needs care to stay crisp at 16px. Keep it stern.</p>
+  <div class="verdict"><span class="chip g">says the name literally</span><span class="chip g">human, warm</span><span class="chip w">tone risk: nautical kitsch</span><span class="chip w">tight at 16px</span></div>
+</div>
+
+<div class="opt">
+  <div class="num">OPTION 3 — the monogram</div>
+  <h2>Lapped Seam O</h2>
+  <div class="tiles">
+    <div class="tile t-ground"><svg width="120" height="120"><use href="#m3"/></svg></div>
+    <div class="tile t-brick"><svg width="120" height="120"><use href="#m3i"/></svg></div>
+    <div class="sizes">
+      <svg width="32" height="32"><use href="#m3"/></svg>
+      <svg width="20" height="20"><use href="#m3"/></svg>
+      <svg width="16" height="16"><use href="#m3"/></svg>
+      <div class="pair"><svg width="26" height="26"><use href="#m3"/></svg><span class="wordmark">OILSKIN</span></div>
+    </div>
+  </div>
+  <p><b>The idea:</b> an O built from two overlapping arcs — a lapped seam, the construction detail
+  that actually makes an oilskin coat waterproof (each panel overlaps the one below so water can
+  never run <i>into</i> a joint). Two tones of brick make the lap visible.</p>
+  <p><b>Why it works:</b> it is the letterform of the name, so the mark and wordmark reinforce each
+  other; the overlap quietly encodes "layers of protection, correctly ordered" — which is literally
+  the protection ladder. Cleanest of the five in an app icon grid, no container needed.</p>
+  <p><b>Watch out:</b> closest to generic — broken-circle monograms are a crowded field (it must
+  keep the visible lap step and two-tone or it collapses into "another crypto ring").</p>
+  <div class="verdict"><span class="chip g">monogram = name</span><span class="chip g">no container needed</span><span class="chip g">encodes the ladder</span><span class="chip w">crowded field</span></div>
+</div>
+
+<div class="opt">
+  <div class="num">OPTION 4 — the hardware</div>
+  <h2>Grommet</h2>
+  <div class="tiles">
+    <div class="tile t-ground"><svg width="120" height="120"><use href="#m4"/></svg></div>
+    <div class="tile t-brick"><svg width="120" height="120"><use href="#m4i"/></svg></div>
+    <div class="sizes">
+      <svg width="32" height="32"><use href="#m4"/></svg>
+      <svg width="20" height="20"><use href="#m4"/></svg>
+      <svg width="16" height="16"><use href="#m4"/></svg>
+      <div class="pair"><svg width="26" height="26"><use href="#m4"/></svg><span class="wordmark">OILSKIN</span></div>
+    </div>
+  </div>
+  <p><b>The idea:</b> the brass eyelet on a tarp or coat hem, with the lash line running through it —
+  the point where the cover is <b>tied down and holds fast</b> in weather. Drawn as a thick brick ring
+  with an espresso line through the eye.</p>
+  <p><b>Why it works:</b> hardware says durability without saying "security theater." The ring also
+  reads as a coin at small sizes — a useful double meaning for a yield product — and the line-through-
+  the-eye gives it a distinctive asymmetry most ring marks lack.</p>
+  <p><b>Watch out:</b> the coin read cuts both ways (generic token vibes), and the metaphor —
+  "tied down" — is about <i>holding</i>, which is one notch closer to the vault/lock language we
+  banned than shedding is.</p>
+  <div class="verdict"><span class="chip g">durable, physical</span><span class="chip g">strong at every size</span><span class="chip w">coin/token genericity</span><span class="chip w">"holding" ≠ "shedding"</span></div>
+</div>
+
+<div class="opt">
+  <div class="num">OPTION 5 — the story</div>
+  <h2>Dry Wedge</h2>
+  <div class="tiles">
+    <div class="tile t-linen"><svg width="120" height="120"><use href="#m5"/></svg></div>
+    <div class="tile t-brick" style="background:#8C3521"><svg width="120" height="120"><use href="#m5i"/></svg></div>
+    <div class="sizes">
+      <svg width="32" height="32"><use href="#m5"/></svg>
+      <svg width="20" height="20"><use href="#m5"/></svg>
+      <svg width="16" height="16"><use href="#m5"/></svg>
+      <div class="pair"><svg width="26" height="26"><use href="#m5"/></svg><span class="wordmark">OILSKIN</span></div>
+    </div>
+  </div>
+  <p><b>The idea:</b> the whole scene in one square — rain falls hard across the upper left, stops
+  dead at the coat's edge, and the lower right stays clean. The single dot in the dry zone is the
+  position: your ZEC, untouched while weather happens above it.</p>
+  <p><b>Why it works:</b> it is the most honest diagram of what Oilskin does — it doesn't hide the
+  storm, it shows it, and shows exactly where the storm stops. Great as a motif: the diagonal +
+  rain field extends beautifully into headers, empty states and the deck.</p>
+  <p><b>Watch out:</b> six rain strokes at 16px turn to noise — the favicon needs a simplified cut
+  (edge + dot only). Busiest of the five; weakest as a tiny standalone mark.</p>
+  <div class="verdict"><span class="chip g">best story</span><span class="chip g">extends into layouts</span><span class="chip w">busy at favicon size</span></div>
+</div>
+
+<h2 class="sec">The squint test — all five at 22px</h2>
+<div class="squint">
+  <svg width="22" height="22"><use href="#m1"/></svg>
+  <svg width="22" height="22"><use href="#m2"/></svg>
+  <svg width="22" height="22"><use href="#m3"/></svg>
+  <svg width="22" height="22"><use href="#m4"/></svg>
+  <svg width="22" height="22"><use href="#m5"/></svg>
+</div>
+
+<div class="rec">
+  <p style="margin:0"><b>My call:</b> keep <b>Shed Line</b> as the product mark — it's the only one that is
+  simultaneously ownable, calm, scale-proof and already carrying the voice ("protection by shedding").
+  Take <b>Dry Wedge</b> as the brand's <i>second image</i> — hero art, deck covers, empty states — where its
+  storytelling earns its complexity. If you want more personality than Shed Line, <b>Sou'wester</b> is the
+  one worth a second round of drawing; it's the only mark here a person could feel affection for.
+  Lapped Seam O is the safe monogram fallback; Grommet is the one I'd drop first — it pulls toward
+  the vault language we deliberately banned.</p>
+</div>
+
+</div></body>
+</html>

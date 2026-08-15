@@ -74,6 +74,22 @@ nav{position:sticky;top:0;z-index:50;background:rgba(241,232,216,.88);
 .in:focus{border-color:var(--brick)}
 label{display:block;font-size:13.5px;font-weight:650;color:var(--ink-2);margin-bottom:7px}
 .field{margin-bottom:20px}
+.seg{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.segb{border:1.5px solid var(--line);background:var(--surface);border-radius:11px;padding:10px 8px;text-align:center;transition:border-color .12s}
+.segb b{display:block;font-size:13.5px}
+.segb span{display:block;font-size:11px;color:var(--ink-3);margin-top:2px}
+.segb.on{border-color:var(--brick);background:var(--brick-bg);box-shadow:0 0 0 1px var(--brick) inset}
+.segb.on b{color:var(--brick)}
+
+/* docs */
+.docs h3{font-size:15px;margin:24px 0 6px}
+.docs p,.docs li{color:var(--ink-2);font-size:14px;max-width:640px}
+.docs ul{margin:6px 0 0 20px}
+.docs li{margin-bottom:5px}
+.dtable{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:8px;max-width:640px}
+.dtable th{text-align:left;color:var(--ink-3);font-weight:650;font-size:12px;padding:6px 10px 6px 0;border-bottom:1px solid var(--line)}
+.dtable td{padding:8px 10px 8px 0;border-bottom:1px solid var(--line-soft);color:var(--ink-2);vertical-align:top}
+.dtable td b{color:var(--ink)}
 .note{border-left:3px solid var(--info);background:var(--info-bg);border-radius:0 10px 10px 0;
   padding:11px 14px;font-size:13px;color:var(--ink-2);margin:14px 0}
 .note.warn{border-color:var(--warn);background:var(--warn-bg)}
@@ -198,6 +214,7 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
   <div class="tabs">
     <button class="tab on" data-view="earn">Earn</button>
     <button class="tab" data-view="activity">Activity</button>
+    <button class="tab" data-view="docs">Docs</button>
     <button class="tab" data-view="faq">FAQ</button>
   </div>
   <div class="price num"><span class="pulse"></span>ZEC <b id="px">$487.20</b></div>
@@ -223,6 +240,15 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
         </div>
         <div class="small faint num" style="margin-top:7px">≈ <span id="amtUsd">$4,872</span> · min 0.25 · max 50 ZEC per account while we ramp up <span class="tt" title="Launch guardrail: per-account and protocol-wide caps grow as the system proves itself in public. Power-user features (custom pools, ranges, higher sizes) come later.">ⓘ</span></div>
       </div>
+      <div class="field">
+        <label>Risk setting — how hard your ZEC works <span class="tt" title="Sets how much is borrowed against your ZEC to earn. Borrow more and you earn more — and the liquidation line sits closer. The protection ladder runs at every setting.">ⓘ</span></label>
+        <div class="seg" id="riskSeg">
+          <button type="button" class="segb on" data-ltv="30"><b>Sheltered</b><span class="num">borrow 30%</span></button>
+          <button type="button" class="segb" data-ltv="40"><b>Steady</b><span class="num">borrow 40%</span></button>
+          <button type="button" class="segb" data-ltv="50"><b>Working hard</b><span class="num">borrow 50%</span></button>
+        </div>
+        <div class="small" id="riskHint" style="margin-top:7px;color:var(--ink-3)">Earning ≈6.9% — liquidation only possible if ZEC falls 57%. The safest setting, and the default.</div>
+      </div>
       <div class="field" style="margin-bottom:8px">
         <label>Your Zcash address — where everything returns <span class="tt" title="Locked to your deposit. Withdrawals and earnings can only ever be sent here — even if Oilskin were fully compromised, funds cannot exit anywhere else.">ⓘ</span></label>
         <input class="in mono" id="homeAddr" placeholder="t1… from your wallet's Receive screen" spellcheck="false">
@@ -237,8 +263,8 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
     </div>
 
     <div class="tiles">
-      <div class="tile"><div class="t" style="color:var(--good)"><svg class="ic"><use href="#i-check"/></svg>Never sold</div><div class="d">Your ZEC sits as collateral. A conservative 30% loan against it does the earning — selling never happens, which also means no disposal on the way in.</div></div>
-      <div class="tile"><div class="t" style="color:var(--brick)"><svg class="ic"><use href="#i-shield"/></svg>Auto-protected</div><div class="d">Earnings repay the loan first if ZEC falls; below that we automatically de-risk. ZEC would have to drop 57% before liquidation is even possible.</div></div>
+      <div class="tile"><div class="t" style="color:var(--good)"><svg class="ic"><use href="#i-check"/></svg>Never sold</div><div class="d">Your ZEC sits as collateral. A bounded loan against it — 30–50%, your choice — does the earning; selling never happens, which also means no disposal on the way in.</div></div>
+      <div class="tile"><div class="t" style="color:var(--brick)"><svg class="ic"><use href="#i-shield"/></svg>Auto-protected</div><div class="d">Earnings repay the loan first if ZEC falls; below that we automatically de-risk. ZEC would have to drop 29–57% — set by your risk setting — before liquidation is even possible.</div></div>
       <div class="tile"><div class="t" style="color:var(--info)"><svg class="ic"><use href="#i-home"/></svg>Always yours</div><div class="d">Withdrawals can never be paused, and funds can only exit to the address you set. One wallet — the one you already have.</div></div>
     </div>
     <div style="text-align:center;margin-top:20px"><button class="btn-ghost btn" id="demoBtn" style="font-size:13.5px;padding:9px 16px">See a live example position →</button></div>
@@ -273,7 +299,7 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
         <div class="det-in">
           <div class="kv">
             <span class="k">Collateral on Rhea (NEAR)</span><span class="v num" id="dColl">12.0 ZEC · $5,846</span>
-            <span class="k">Borrowed against it (fixed 30%)</span><span class="v num" id="dBorrow">$1,754 USDC</span>
+            <span class="k">Borrowed against it (your <span id="dLtv">30%</span> setting)</span><span class="v num" id="dBorrow">$1,754 USDC</span>
             <span class="k">Working in <span class="coin"><svg><use href="#tk-weth"/></svg></span><span class="coin"><svg><use href="#tk-usdc"/></svg></span> WETH/USDC</span><span class="v num" id="dPool1">$1,052</span>
             <span class="k">Working in <span class="coin"><svg><use href="#tk-cbbtc"/></svg></span><span class="coin"><svg><use href="#tk-usdc"/></svg></span> cbBTC/USDC</span><span class="v num" id="dPool2">$702</span>
             <span class="k">Earnings auto-compound</span><span class="v">every time they cover costs 3×</span>
@@ -300,13 +326,13 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
   <h1 style="font-size:22px;margin-bottom:4px">Questions, answered straight</h1>
 
   <h3>Is my ZEC ever sold?</h3>
-  <p>No. It sits as collateral on Rhea Finance (NEAR). A fixed, conservative 30% loan is taken against it in USDC, and that borrowed money does the earning in blue-chip liquidity pools on Base. Borrowing against an asset — rather than selling it — is also why entering doesn't dispose of your ZEC (mechanics, not tax advice).</p>
+  <p>No. It sits as collateral on Rhea Finance (NEAR). A bounded loan — your 30–50% risk setting — is taken against it in USDC, and that borrowed money does the earning in blue-chip liquidity pools on Base. Borrowing against an asset — rather than selling it — is also why entering doesn't dispose of your ZEC (mechanics, not tax advice).</p>
 
   <h3>Who holds my ZEC while it moves?</h3>
   <p>For about two minutes on the way in and out, your ZEC rides NEAR Intents — the same rails built into the Zashi/Zodl wallet, which move over $1B a month. During that window the bridge's operator controls the transit address; if anything fails, funds auto-refund to your address. We tell you this because you should know exactly who holds what, when — it's in every deposit screen, not buried here.</p>
 
   <h3 id="faq-crash">What happens if ZEC crashes?</h3>
-  <p>The loan is 30% of your collateral's value — ZEC has to fall 57% before liquidation is even possible. Before that ever gets close, protection kicks in automatically, in order: your earnings repay the loan first; if that's not enough, we unwind just enough of the working position to restore safety; in an extreme crash, everything unwinds and your ZEC sits safe as plain collateral. You'll see each step in Activity with its transaction id.</p>
+  <p>The loan is your chosen 30–50% of your collateral's value — at the default Sheltered setting, ZEC has to fall 57% before liquidation is even possible (43% at Steady, 29% at Working hard). Before that ever gets close, protection kicks in automatically, in order: your earnings repay the loan first; if that's not enough, we unwind just enough of the working position to restore safety; in an extreme crash, everything unwinds and your ZEC sits safe as plain collateral. You'll see each step in Activity with its transaction id.</p>
 
   <h3>What are the fees?</h3>
   <p>10% of earnings to Oilskin, 15% of earnings to the pool engine that manages liquidity. Nothing on deposits, nothing on withdrawals, nothing on your principal, ever. Every yield number you see is already net of all fees.</p>
@@ -320,6 +346,80 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
   <h3>Can Oilskin freeze or redirect my funds?</h3>
   <p>No. Withdrawal is exempt from every pause. Funds can only exit to the address you locked at deposit. The operator can manage yield — it can never touch principal or change your address.</p>
 </div></div>
+
+<!-- ═══ DOCS ═══ -->
+<div class="view" id="view-docs"><div class="wrap docs">
+  <h1 style="font-size:22px;margin-bottom:4px">How Oilskin works</h1>
+  <p style="margin-top:6px">The whole system in plain language. Every claim on this page is checkable — every action in Activity carries its transaction id, and the code is public.</p>
+
+  <h3>The strategy, end to end</h3>
+  <ul>
+    <li><b>1 · Deposit.</b> Send ZEC from any Zcash wallet to a fresh deposit address (QR / ZIP-321). Fund it from your shielded balance — that's the default guidance.</li>
+    <li><b>2 · Collateral.</b> Your ZEC is supplied as collateral on Rhea Finance (NEAR) and starts earning supply interest. It is never sold.</li>
+    <li><b>3 · Borrow.</b> USDC is borrowed against it at your risk setting — 30–50% of collateral value.</li>
+    <li><b>4 · Earn.</b> That USDC works in two curated blue-chip pools on Base (WETH/USDC + cbBTC/USDC), rebalanced automatically. Earnings compound whenever they cover costs 3×.</li>
+    <li><b>5 · Home.</b> Withdrawals unwind your share, repay the loan's part automatically, and arrive as native ZEC at your locked address.</li>
+  </ul>
+
+  <h3>Who holds what, when</h3>
+  <table class="dtable">
+    <tr><th>Leg</th><th>How long</th><th>Who controls it</th></tr>
+    <tr><td><b>Your wallet</b></td><td>always</td><td>You. Oilskin never sees your keys and cannot spend from your wallet.</td></tr>
+    <tr><td><b>Bridge transit</b></td><td>~2 min each way</td><td>NEAR Intents' operator — the same rails inside the Zashi and Zodl wallets. Failed transfers auto-refund to your address.</td></tr>
+    <tr><td><b>Working position</b></td><td>while deposited</td><td>Protocol contracts on NEAR + Base. The operator can manage yield; it cannot redirect principal, and withdrawal is exempt from every pause.</td></tr>
+    <tr><td><b>Exit</b></td><td>—</td><td>Funds can only ever leave to the Zcash address you locked at deposit. Under any compromise, there is nowhere else for them to go.</td></tr>
+  </table>
+
+  <h3>Your risk setting</h3>
+  <p>One dial, three positions. It sets how much is borrowed against your ZEC — which sets both your yield and your distance to the liquidation line (liquidation threshold 70%):</p>
+  <table class="dtable">
+    <tr><th>Setting</th><th>Borrowed</th><th>ZEC must fall</th><th>Net yield now</th></tr>
+    <tr><td><b>Sheltered</b> (default)</td><td class="num">30%</td><td class="num">57%</td><td class="num">≈ 6.9%</td></tr>
+    <tr><td><b>Steady</b></td><td class="num">40%</td><td class="num">43%</td><td class="num">≈ 8.9%</td></tr>
+    <tr><td><b>Working hard</b></td><td class="num">50%</td><td class="num">29%</td><td class="num">≈ 11.0%</td></tr>
+  </table>
+  <p style="margin-top:8px">Straight talk: ZEC is volatile — drawdowns around 30% happen in ordinary years, so <b>Working hard leaves far less room</b> and leans hardest on the protection ladder. Sheltered is the setting where "protected" is close to unconditional. Your setting locks at deposit; to change it, withdraw and redeposit.</p>
+
+  <h3>The protection ladder</h3>
+  <ul>
+    <li><b>1 · Earnings repay first.</b> If ZEC falls, your earnings pay the loan down before anything else moves.</li>
+    <li><b>2 · Partial unwind.</b> Not enough? Just enough of the working position unwinds to restore a safe distance.</li>
+    <li><b>3 · Full unwind.</b> In a severe crash, everything unwinds and your ZEC sits as plain collateral until you say otherwise.</li>
+  </ul>
+  <p>Every step is automatic, around the clock, and logged in Activity with its transaction id.</p>
+
+  <h3>Fees</h3>
+  <p>10% of earnings to Oilskin + 15% of earnings to the pool engine. Nothing on deposits, withdrawals, or principal — ever. Example: your position earns $100 → $75 stays in your position. Every yield number shown is already net of all fees.</p>
+
+  <h3>What can actually go wrong</h3>
+  <ul>
+    <li><b>A crash beyond your buffer.</b> If ZEC falls past your setting's line faster than the ladder can act, the loan's share of collateral can be liquidated. This is the core risk — it's why the buffers are wide and the ladder exists.</li>
+    <li><b>Venue risk.</b> Rhea's margin sub-system — which Oilskin does not use — was exploited in April 2026; lending resumed in May and has run consistently since. You should hear that from us, not find it later: exposure is capped per venue and monitored independently.</li>
+    <li><b>Bridge transit.</b> For ~2 minutes each way, funds ride NEAR Intents under its operator's control. Failed transfers auto-refund; that window is the exposure.</li>
+    <li><b>Smart-contract risk.</b> Code can have bugs. Independent audit before mainnet, caps keep early exposure small, and withdrawal can never be paused — a contract invariant, not a policy.</li>
+  </ul>
+
+  <h3>Privacy</h3>
+  <p>Fund deposits from your shielded balance and your history stays private — deposit addresses are fresh every time and never linked to each other. The strategy legs (NEAR, Base) are public chains and we say so plainly. Payouts arrive at your transparent address; your wallet shields them on arrival (Zodl does this automatically).</p>
+
+  <h3>Verify everything</h3>
+  <p>Pool engine ids <span class="mono">0x0ea7…72a8</span> and <span class="mono">0xb183…37e6</span> on Base. Every deposit, compound, rebalance, protection step and withdrawal appears in Activity with its transaction id, linked to the right explorer — Zcash, NEAR or Base.</p>
+
+  <h3>Limits while we ramp</h3>
+  <p>0.25–50 ZEC per account, one position per account (new deposits top it up), plus a protocol-wide cap. Caps rise as the system proves itself in public.</p>
+</div></div>
+
+<div class="wrap" id="trust" style="margin-top:4px">
+  <div class="card" style="padding:16px 26px">
+    <div class="small" style="display:flex;gap:8px 18px;flex-wrap:wrap;align-items:center">
+      <span class="faint" style="letter-spacing:.09em;font-size:11px;font-weight:700">BUILT ON</span>
+      <b>Rhea Finance</b><b>NEAR Intents</b><b>Base</b>
+      <span class="faint">·</span>
+      <span class="muted">Fork-tested against the live venues — every action ships with its transaction id.</span>
+      <span class="muted">Independent audit scheduled before mainnet; the report will live here.</span>
+    </div>
+  </div>
+</div>
 
 <footer><div class="wrap" style="display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap">
   <span>Oilskin v1 — demo data · Withdrawals never pausable · funds exit only to your address</span>
@@ -364,9 +464,13 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
 <script>
 "use strict";
 /* ═══ Oilskin v1 — one strategy, one address, zero knobs ═══ */
-const S = { zec: 487.20, apy: 6.9, view: "earn" };
-const LTV = 0.30, LIQ_T = 0.70, NET_FEE = 0.85*0.90;
-const pos = { active:false, zec:0, earnedZec:0, home:"", openedAt:0 };
+const S = { zec: 487.20, view: "earn" };
+const LIQ_T = 0.70, NET_FEE = 0.85*0.90;
+const APY_BASE = 0.8, APY_SPREAD = 20.33; // net yield ≈ supply base + spread × LTV, from live pool/borrow rates
+const apyFor = l => APY_BASE + APY_SPREAD*l;
+const DROP = l => Math.round((1 - l/LIQ_T)*100);
+let selLtv = 0.30;
+const pos = { active:false, zec:0, earnedZec:0, home:"", openedAt:0, ltv:0.30 };
 
 const $=(q,el=document)=>el.querySelector(q);
 const $$=(q,el=document)=>[...el.querySelectorAll(q)];
@@ -425,6 +529,16 @@ function gate(){
   const b=$("#startBtn");b.disabled=!ok;
   b.textContent=!r.ok&&$("#homeAddr").value?"Add your t1… address first":(a>50?"Max 50 ZEC during launch":"Get my deposit address →");
 }
+
+/* risk setting */
+$$("#riskSeg .segb").forEach(b=>b.addEventListener("click",()=>{
+  $$("#riskSeg .segb").forEach(x=>x.classList.remove("on"));b.classList.add("on");
+  selLtv=(+b.dataset.ltv)/100;riskUpd();}));
+function riskUpd(){
+  const note={30:"The safest setting, and the default.",40:"The middle path — solid buffer, better pay.",50:"Highest yield, thinnest buffer — leans hardest on the protection ladder."};
+  $("#apyHero").textContent=apyFor(selLtv).toFixed(1)+"%";
+  $("#riskHint").textContent="Earning ≈"+apyFor(selLtv).toFixed(1)+"% — liquidation only possible if ZEC falls "+DROP(selLtv)+"%. "+note[Math.round(selLtv*100)];
+}
 function qrSvg(seed){
   let h=0;for(const ch of seed)h=(h*31+ch.charCodeAt(0))>>>0;
   const n=17,cells=[];
@@ -450,7 +564,7 @@ $("#sentBtn").addEventListener("click",()=>{
   $("#depTitle").textContent="Putting your ZEC to work";
   const steps=[
     {t:"ZEC received",d:"Confirmed on Zcash",tx:[mkTx("zcash")]},
-    {t:"Working as collateral",d:"Supplied on Rhea (NEAR) · 30% borrowed as USDC",tx:[mkTx("near")]},
+    {t:"Working as collateral",d:`Supplied on Rhea (NEAR) · ${Math.round((pos.active?pos.ltv:selLtv)*100)}% borrowed as USDC`,tx:[mkTx("near")]},
     {t:"Earning",d:"Deployed to WETH/USDC + cbBTC/USDC on Base",tx:[mkTx("base")]},
     {t:"Done — protected and earning",d:"Auto-compounding from here",tx:[]}];
   $("#depSteps").innerHTML=steps.map((s,i)=>`<div class="bstep" data-i="${i}"><div class="bic">${i+1}</div><div style="flex:1"><div class="bt">${s.t}</div><div class="bd">${s.d}</div><div class="btx" style="display:flex;gap:6px;flex-wrap:wrap"></div></div></div>`).join("");
@@ -465,13 +579,13 @@ $("#sentBtn").addEventListener("click",()=>{
   tick();
 });
 function openPosition(a,steps){
-  if(pos.active){pos.zec+=a;}else{pos.active=true;pos.zec=a;pos.earnedZec=0;pos.openedAt=Date.now();}
+  if(pos.active){pos.zec+=a;}else{pos.active=true;pos.zec=a;pos.earnedZec=0;pos.openedAt=Date.now();pos.ltv=selLtv;}
   activity.unshift({t:"Deposited",d:`${a} ZEC → working (collateral on Rhea, earning on Base)`,ic:"＋",when:"just now",tx:steps[0].tx[0]});
   renderActivity();renderPos();
 }
 $("#depDone").addEventListener("click",()=>{$("#depOverlay").classList.remove("on");renderPos();});
 $("#demoBtn").addEventListener("click",()=>{
-  pos.active=true;pos.zec=12;pos.earnedZec=0.128;pos.home="t1Py8kAoQrfmRRWTbtHkDkGb6JuaXPmpGxy";pos.openedAt=Date.now()-86400000*18;
+  pos.active=true;pos.zec=12;pos.earnedZec=0.128;pos.home="t1Py8kAoQrfmRRWTbtHkDkGb6JuaXPmpGxy";pos.openedAt=Date.now()-86400000*18;pos.ltv=0.30;
   activity.length=0;
   activity.push(
     {t:"Auto-compounded",d:"0.041 ZEC of earnings put back to work",ic:"↻",when:"6h ago",tx:mkTx("base")},
@@ -492,15 +606,16 @@ function renderPos(){
   $("#pUsd").textContent="("+usd(v)+")";
   $("#pEarned").textContent="+"+pos.earnedZec.toFixed(3)+" ZEC earned";
   $("#pEarnedUsd").textContent=usd(pos.earnedZec*S.zec);
-  $("#pApy").textContent=S.apy.toFixed(1)+"%";
-  const borrow=pos.zec*S.zec*LTV;
+  $("#pApy").textContent=apyFor(pos.ltv).toFixed(1)+"%";
+  const borrow=pos.zec*S.zec*pos.ltv;
   $("#dColl").textContent=totZec.toFixed(1)+" ZEC · "+usd(v);
   $("#dBorrow").textContent=usd(borrow)+" USDC";
+  $("#dLtv").textContent=Math.round(pos.ltv*100)+"%";
   $("#dPool1").textContent=usd(borrow*0.6);
   $("#dPool2").textContent=usd(borrow*0.4);
   $("#homeShort").textContent=pos.home?pos.home.slice(0,5)+"…"+pos.home.slice(-4):"—";
   // protection meter: liquidation price vs now, on a runway
-  const liq=(pos.zec*S.zec*LTV)/(LIQ_T*pos.zec); // = S.zec*LTV/LIQ_T
+  const liq=(pos.zec*S.zec*pos.ltv)/(LIQ_T*pos.zec); // = S.zec*ltv/LIQ_T
   const lo=liq*0.55, hi=Math.max(S.zec*1.15, liq*2.4);
   const X=p=>Math.min(97,Math.max(3,((p-lo)/(hi-lo))*100));
   $("#mFill").style.width=X(S.zec)+"%";
@@ -511,8 +626,8 @@ function renderPos(){
   const dropPct=Math.round((1-liq/S.zec)*100);
   $("#protPct").textContent=dropPct+"%";
   const chip=$("#protChip");
-  if(dropPct>35){chip.className="chip c-good";chip.innerHTML='<svg class="ic"><use href="#i-shield"/></svg>Protected';}
-  else if(dropPct>15){chip.className="chip c-warn";chip.innerHTML="⚠ De-risking";}
+  if(dropPct>=20){chip.className="chip c-good";chip.innerHTML='<svg class="ic"><use href="#i-shield"/></svg>Protected';}
+  else if(dropPct>=10){chip.className="chip c-warn";chip.innerHTML="⚠ De-risking";}
   else{chip.className="chip c-warn";chip.innerHTML="⚠ Unwinding to safety";}
 }
 
@@ -554,11 +669,11 @@ function renderActivity(){
 setInterval(()=>{
   const d=(Math.random()-0.48)*1.4;S.zec=Math.max(50,S.zec+d);
   $("#px").textContent=usd(S.zec);
-  if(pos.active){pos.earnedZec+=pos.zec*(S.apy/100)/365/86400*12; renderPos();}
+  if(pos.active){pos.earnedZec+=pos.zec*(apyFor(pos.ltv)/100)/365/86400*12; renderPos();}
 },12000);
 
 /* boot */
-gate();renderActivity();renderPos();
+gate();riskUpd();renderActivity();renderPos();
 </script>
 </body>
 </html>
