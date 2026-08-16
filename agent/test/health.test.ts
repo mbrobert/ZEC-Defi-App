@@ -14,6 +14,15 @@ describe("assessHealth", () => {
     assert.equal(assessHealth("s1", Infinity, t).band, "HEALTHY");
   });
 
+  it("suspect data does NOT read as healthy (NaN → CRITICAL/NOTIFY, fail-closed)", () => {
+    const nan = assessHealth("s1", NaN, t);
+    assert.equal(nan.band, "CRITICAL");
+    assert.equal(nan.suggestedAction, "NOTIFY");
+    const neg = assessHealth("s1", -1, t);
+    assert.equal(neg.band, "CRITICAL");
+    assert.equal(neg.suggestedAction, "NOTIFY");
+  });
+
   it("warning band notifies", () => {
     const a = assessHealth("s1", 1.35, t);
     assert.equal(a.band, "WARNING");

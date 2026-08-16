@@ -211,6 +211,70 @@ contract SnuggleAdapter is ILPAdapter {
         (tokens[0], tokens[1], amounts[0], amounts[1]) = (token0, token1, out0, out1);
     }
 
+    // ----------------------------------------------------------- consolidate
+
+    /// @inheritdoc ILPAdapter
+    /// @dev Closes every engine tokenId and re-deposits 100% of the proceeds as
+    ///      a single fresh position with the original parameters. Pays nothing
+    ///      out — principal is unchanged (only the engine-position COUNT drops).
+    ///      Mirrors withdraw()'s re-deposit branch with out0 = out1 = 0, and is
+    ///      subject to the same fork-verified single/dual-sided nuance.
+    function consolidate(uint256 positionId) external onlyVault returns (uint256 count) {
+        uint256[] storage ids = tokenIdsOf[positionId];
+        if (ids.length == 0) revert UnknownPosition(positionId);
+        // Nothing to collapse; leave the single position untouched.
+        if (ids.length == 1) return 1;
+        Meta storage m = metaOf[positionId];
+        (address token0, address token1) = _poolTokens(m.poolKey);
+
+        uint256 bal0Before = IERC20(token0).balanceOf(address(this));
+        uint256 bal1Before = IERC20(token1).balanceOf(address(this));
+        for (uint256 i = 0; i < ids.length; i++) {
+            engine.withdraw(ids[i], false);
+        }
+        delete tokenIdsOf[positionId];
+        uint256 keep0 = IERC20(token0).balanceOf(address(this)) - bal0Before;
+        uint256 keep1 = IERC20(token1).balanceOf(address(this)) - bal1Before;
+
+        if (keep0 > 0 && keep1 > 0) {
+            IERC20(token0).forceApprove(address(engine), keep0);
+            IERC20(token1).forceApprove(address(engine), keep1);
+            uint256 newId = engine.deposit(
+                m.poolKey,
+                keep0,
+                keep1,
+                m.params.rangeWidthBps,
+                m.params.rebalanceDelay,
+                true,
+                m.params.autoCompound,
+                block.timestamp + DEADLINE_WINDOW,
+                referral
+            );
+            IERC20(token0).forceApprove(address(engine), 0);
+            IERC20(token1).forceApprove(address(engine), 0);
+            tokenIdsOf[positionId].push(newId);
+        } else if (keep0 > 0 || keep1 > 0) {
+            (address tok, uint256 amt) = keep0 > 0 ? (token0, keep0) : (token1, keep1);
+            IERC20(tok).forceApprove(address(engine), amt);
+            uint256 newId = engine.depositSingleSided(
+                m.poolKey,
+                tok,
+                amt,
+                m.params.rangeWidthBps,
+                m.params.rebalanceDelay,
+                true,
+                m.params.autoCompound,
+                block.timestamp + DEADLINE_WINDOW,
+                referral
+            );
+            IERC20(tok).forceApprove(address(engine), 0);
+            tokenIdsOf[positionId].push(newId);
+        }
+        // principal (m.principal) is deliberately unchanged: consolidation moves
+        // no value, it only re-shapes engine bookkeeping.
+        return tokenIdsOf[positionId].length;
+    }
+
     // ----------------------------------------------------------------- claim
 
     /// @inheritdoc ILPAdapter
@@ -296,16 +360,38 @@ contract SnuggleAdapter is ILPAdapter {
         if (token != t0 && token != t1) revert TokenNotInPool(token, poolKey);
     }
 
+    /// @dev token0/token1 always occupy slots 0/1; reward tokens are appended
+    ///      ONLY if distinct from the pool tokens and from each other. Without
+    ///      this dedupe, a reward token that equals a pool token would appear
+    ///      twice in the watch list and the second balance-diff in `claim`
+    ///      would underflow (the first occurrence already transferred the gain
+    ///      out), reverting every claim for that position until reconfigured.
     function _watchList(address token0, address token1)
         internal
         view
         returns (address[] memory watch)
     {
-        watch = new address[](2 + rewardTokens.length);
-        watch[0] = token0;
-        watch[1] = token1;
+        address[] memory tmp = new address[](2 + rewardTokens.length);
+        tmp[0] = token0;
+        tmp[1] = token1;
+        uint256 n = 2;
         for (uint256 i = 0; i < rewardTokens.length; i++) {
-            watch[2 + i] = rewardTokens[i];
+            address rt = rewardTokens[i];
+            bool seen = false;
+            for (uint256 j = 0; j < n; j++) {
+                if (tmp[j] == rt) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (!seen) {
+                tmp[n] = rt;
+                n++;
+            }
+        }
+        watch = new address[](n);
+        for (uint256 i = 0; i < n; i++) {
+            watch[i] = tmp[i];
         }
     }
 }

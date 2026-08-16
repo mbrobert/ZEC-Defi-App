@@ -64,7 +64,13 @@ function makeOneClick(mutate?: (req: QuoteRequest) => QuoteRequest) {
     const echoed = mutate ? mutate(structuredClone(req)) : req;
     return {
       quoteRequest: echoed,
-      quote: { depositAddress: DEPOSIT, amountIn: req.amount, amountOut: "512345678" },
+      quote: {
+        depositAddress: DEPOSIT,
+        amountIn: req.amount,
+        amountOut: "512345678",
+        minAmountOut: "500000000",
+        amountOutUsd: "99.5",
+      },
     };
   });
   const submitDepositTx = spy(async (_dep: string, _tx: string) => undefined);
@@ -139,6 +145,46 @@ describe("RewardExecutor", () => {
     const exec = new RewardExecutor(chain.service, evil.client, policy);
 
     await assert.rejects(exec.execute(makeCtx(1)), /recipient/);
+    assert.equal(chain.routeToZcash.calls.length, 0);
+  });
+
+  it("REFUSES to route when the quote output value is far below what we send in", async () => {
+    // A tampered/mispriced quote that would route ~$100 of USDC for ~$1 of ZEC.
+    const chain = makeChain();
+    const evil = makeOneClick();
+    (evil.getQuote as unknown as { impl?: unknown }); // keep type shape
+    const raw = evil.getQuote;
+    const wrapped = spy(async (req: QuoteRequest) => {
+      const q = await raw(req);
+      q.quote.amountOutUsd = "1.00"; // floor is 95 → reject
+      q.quote.minAmountOut = "5000000";
+      return q;
+    });
+    const exec = new RewardExecutor(
+      chain.service,
+      { getQuote: wrapped, submitDepositTx: spy(async () => undefined) } as unknown as OneClickClient,
+      policy
+    );
+
+    await assert.rejects(exec.execute(makeCtx(1)), /below floor/);
+    assert.equal(chain.routeToZcash.calls.length, 0);
+  });
+
+  it("REFUSES to route when the quote has no positive minAmountOut floor", async () => {
+    const chain = makeChain();
+    const raw = makeOneClick().getQuote;
+    const wrapped = spy(async (req: QuoteRequest) => {
+      const q = await raw(req);
+      q.quote.minAmountOut = "0";
+      return q;
+    });
+    const exec = new RewardExecutor(
+      chain.service,
+      { getQuote: wrapped, submitDepositTx: spy(async () => undefined) } as unknown as OneClickClient,
+      policy
+    );
+
+    await assert.rejects(exec.execute(makeCtx(1)), /minAmountOut/);
     assert.equal(chain.routeToZcash.calls.length, 0);
   });
 

@@ -89,6 +89,7 @@ contract PositionVault is Ownable2Step, Pausable, ReentrancyGuard {
         uint256 indexed positionId, uint256 shareBps, address recipient, bool closed
     );
     event RewardsClaimed(uint256 indexed positionId, address recipient);
+    event PositionConsolidated(uint256 indexed positionId, uint256 enginePositions);
     event RewardPreferenceSet(
         uint256 indexed positionId, RewardPreference rewardPref, string zcashAddress
     );
@@ -327,6 +328,30 @@ contract PositionVault is Ownable2Step, Pausable, ReentrancyGuard {
         if (closed) p.active = false;
 
         emit PositionWithdrawn(positionId, shareBps, recipient, closed);
+    }
+
+    /// @notice Collapse a position's accumulated engine positions into one.
+    /// @dev Each increase/compound mints a fresh engine position; left to grow
+    ///      they hit the adapter's per-position cap and further increases and
+    ///      compounds revert. The operator calls this to restore headroom. It
+    ///      moves no value and cannot change ownership, principal, or payout
+    ///      routing — so it is safe for the semi-trusted operator to trigger and
+    ///      needs no reward-router / owner gating. Exit stays open: even if this
+    ///      were never called, the owner can always withdraw (which itself
+    ///      consolidates to one position).
+    function consolidate(uint256 positionId)
+        external
+        onlyOperator
+        whenNotPaused
+        nonReentrant
+        returns (uint256 count)
+    {
+        Position storage p = positions[positionId];
+        if (!p.active) revert PositionNotActive(positionId);
+        count = ILPAdapter(p.adapter).consolidate(positionId);
+        // Keep vault share bookkeeping in lockstep with the adapter's principal.
+        p.shares = ILPAdapter(p.adapter).shares(positionId);
+        emit PositionConsolidated(positionId, count);
     }
 
     /// @notice RewardRouter pulls accrued rewards; adapter pays the router.

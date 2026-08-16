@@ -169,4 +169,99 @@ contract SnuggleAdapterTest is Test {
         vm.expectRevert(SnuggleAdapter.OnlyOwner.selector);
         adapter.setRewardTokens(rts);
     }
+
+    // ---- F1: consolidate collapses accumulated engine positions ------------
+
+    function test_consolidate_collapsesManyIntoOnePreservingPrincipal() public {
+        _open(1, 1_000e6);
+        for (uint256 i = 0; i < 3; i++) {
+            _fundVaultAndApprove(200e6);
+            vm.prank(vault);
+            adapter.increase(1, address(usdc), 200e6);
+        }
+        assertEq(adapter.tokenCount(1), 4);
+        assertEq(adapter.shares(1), 1_600e6);
+        uint256 engineBalBefore = usdc.balanceOf(address(engine));
+
+        vm.prank(vault);
+        uint256 count = adapter.consolidate(1);
+
+        assertEq(count, 1);
+        assertEq(adapter.tokenCount(1), 1); // four → one
+        assertEq(adapter.shares(1), 1_600e6); // principal untouched
+        assertEq(usdc.balanceOf(address(engine)), engineBalBefore); // no value moved
+        assertEq(usdc.balanceOf(address(adapter)), 0); // holds nothing idle
+    }
+
+    function test_consolidate_onlyVault() public {
+        _open(1, 1_000e6);
+        vm.expectRevert(SnuggleAdapter.OnlyVault.selector);
+        adapter.consolidate(1);
+    }
+
+    function test_consolidate_noopOnSinglePosition() public {
+        _open(1, 1_000e6);
+        vm.prank(vault);
+        uint256 count = adapter.consolidate(1);
+        assertEq(count, 1);
+        assertEq(adapter.tokenCount(1), 1);
+        assertEq(adapter.shares(1), 1_000e6);
+    }
+
+    function test_consolidate_restoresHeadroomAfterCap() public {
+        // Fill to the engine-position cap, prove the next increase reverts,
+        // consolidate, then prove increase works again — the DoS is lifted.
+        _open(1, 1_000e6);
+        for (uint256 i = 1; i < 16; i++) {
+            _fundVaultAndApprove(10e6);
+            vm.prank(vault);
+            adapter.increase(1, address(usdc), 10e6);
+        }
+        assertEq(adapter.tokenCount(1), 16);
+
+        _fundVaultAndApprove(10e6);
+        vm.prank(vault);
+        vm.expectRevert(
+            abi.encodeWithSelector(SnuggleAdapter.TooManyEnginePositions.selector, uint256(1))
+        );
+        adapter.increase(1, address(usdc), 10e6);
+
+        vm.prank(vault);
+        adapter.consolidate(1);
+        assertEq(adapter.tokenCount(1), 1);
+
+        // headroom restored
+        _fundVaultAndApprove(10e6);
+        vm.prank(vault);
+        adapter.increase(1, address(usdc), 10e6);
+        assertEq(adapter.tokenCount(1), 2);
+    }
+
+    // ---- F2: claim dedupes a reward token that equals a pool token ---------
+
+    function test_claim_dedupesRewardTokenOverlappingPoolToken() public {
+        // Misconfigure rewardTokens to include a pool token (usdc). Old code
+        // double-listed it and the second balance-diff underflowed, reverting
+        // every claim. Dedupe must keep claim working.
+        address[] memory rts = new address[](2);
+        rts[0] = address(usdc); // overlaps token0
+        rts[1] = address(weth); // overlaps token1
+        vm.prank(admin);
+        adapter.setRewardTokens(rts);
+
+        _open(1, 1_000e6);
+        uint256 engineId = adapter.tokenIdsOf(1, 0);
+        usdc.mint(address(engine), 5e6);
+        engine.setPendingFee(engineId, address(usdc), 5e6);
+
+        vm.prank(vault);
+        (address[] memory tokens, uint256[] memory amounts) = adapter.claim(1, recipient);
+
+        // Only two distinct watch tokens (usdc, weth) — no duplicates, no revert.
+        assertEq(tokens.length, 2);
+        assertEq(tokens[0], address(usdc));
+        assertEq(tokens[1], address(weth));
+        assertEq(amounts[0], 5e6);
+        assertEq(usdc.balanceOf(recipient), 5e6);
+    }
 }

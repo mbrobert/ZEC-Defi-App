@@ -178,6 +178,39 @@ contract PositionVaultTest is Test {
         vault.increase(id, 1e6);
     }
 
+    function test_consolidate_operatorCollapsesAndKeepsShares() public {
+        uint256 id = _openAlice(1_000e6);
+        usdc.mint(address(vault), 500e6);
+        vm.prank(operator);
+        vault.increase(id, 500e6);
+        assertEq(adapter.tokenCount(id), 2);
+
+        vm.prank(operator);
+        uint256 count = vault.consolidate(id);
+
+        assertEq(count, 1);
+        assertEq(adapter.tokenCount(id), 1);
+        // Vault share bookkeeping stays in lockstep with the adapter principal.
+        assertEq(vault.getPosition(id).shares, 1_500e6);
+        assertEq(adapter.shares(id), 1_500e6);
+    }
+
+    function test_consolidate_onlyOperator() public {
+        uint256 id = _openAlice(1_000e6);
+        vm.prank(bob);
+        vm.expectRevert(PositionVault.NotOperator.selector);
+        vault.consolidate(id);
+    }
+
+    function test_consolidate_revertsOnInactivePosition() public {
+        uint256 id = _openAlice(1_000e6);
+        vm.prank(alice);
+        vault.withdraw(id, 10_000, alice, 0, 0); // fully close
+        vm.prank(operator);
+        vm.expectRevert(abi.encodeWithSelector(PositionVault.PositionNotActive.selector, id));
+        vault.consolidate(id);
+    }
+
     function test_withdraw_partialThenFull() public {
         uint256 id = _openAlice(1_000e6);
 

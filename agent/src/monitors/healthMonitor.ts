@@ -12,7 +12,11 @@ export type HealthActionHandler = (a: HealthAssessment) => Promise<void>;
  * not re-alert every tick.
  */
 export class HealthMonitor {
-  private lastBand = new Map<string, string>();
+  /** Last dispatched state per strategy, keyed as `band:action` so an escalation
+   *  WITHIN a band (REDUCE_LEVERAGE → EMERGENCY_UNWIND, both CRITICAL) still
+   *  dispatches. Deduping on band alone let the emergency-unwind step be
+   *  swallowed when a position was already CRITICAL. */
+  private lastState = new Map<string, string>();
 
   constructor(
     private readonly rhea: RheaService,
@@ -38,12 +42,17 @@ export class HealthMonitor {
           lending: { ...s.lending, healthFactor: state.healthFactor },
         });
 
-        const prev = this.lastBand.get(s.id);
-        this.lastBand.set(s.id, assessment.band);
-        const worsened = assessment.band !== "HEALTHY" && assessment.band !== prev;
-        const escalated =
-          prev === "WARNING" && assessment.band === "CRITICAL";
-        if (worsened || escalated) await this.onAction(assessment);
+        const stateKey = `${assessment.band}:${assessment.suggestedAction ?? ""}`;
+        const prev = this.lastState.get(s.id);
+        // Dispatch on any non-healthy state we have not already acted on —
+        // including a same-band action escalation (partial deleverage →
+        // emergency unwind). Advance the marker only AFTER a successful
+        // dispatch so a throwing handler is retried next tick rather than
+        // being permanently deduped.
+        if (assessment.band !== "HEALTHY" && stateKey !== prev) {
+          await this.onAction(assessment);
+        }
+        this.lastState.set(s.id, stateKey);
       } catch (err) {
         // Log-and-continue: one bad account must not stall the loop.
         console.error(`[health] ${s.id}:`, (err as Error).message);

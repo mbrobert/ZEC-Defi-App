@@ -34,6 +34,19 @@ interface ILPAdapter {
         external
         returns (uint256 sharesAdded);
 
+    /// @notice Collapse a position's accumulated engine positions into one,
+    ///         paying nothing out. Each increase/compound mints a new engine
+    ///         position (the engine has no in-place increase); left unbounded
+    ///         they hit the adapter's per-position cap and further
+    ///         increases/compounds revert. Consolidation restores headroom
+    ///         without touching principal or user funds.
+    /// @return count Engine positions remaining after consolidation (0 or 1).
+    function consolidate(uint256 positionId) external returns (uint256 count);
+
+    /// @notice Number of underlying engine positions backing `positionId`.
+    ///         Lets the operator consolidate before hitting the cap.
+    function tokenCount(uint256 positionId) external view returns (uint256);
+
     /// @notice Remove `shareBps` (1..10_000) of the position; tokens go to `recipient`.
     /// @dev The engine only supports full closes; partial withdrawals close the
     ///      whole position, pay out the share, and re-deposit the remainder.

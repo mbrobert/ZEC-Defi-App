@@ -16,6 +16,14 @@ export interface RewardPolicy {
   slippageToleranceBps: number;
   /** Quote deadline horizon, minutes. */
   quoteDeadlineMinutes: number;
+  /**
+   * Max acceptable shortfall between the USD we send in and the USD value the
+   * quote says we get out, in bps. Guards against a tampered/MITM'd or
+   * mispriced quote that would route real rewards for near-zero ZEC out. Must
+   * comfortably exceed slippage + bridge fee + honest price wobble. Default 500
+   * (5%). If exceeded the route is refused; rewards stay put and retry.
+   */
+  maxQuoteValueLossBps?: number;
 }
 
 export interface RewardContext {
@@ -143,6 +151,27 @@ export class RewardExecutor {
     const depositAddress = quote.quote.depositAddress;
     if (!depositAddress || !/^0x[0-9a-fA-F]{40}$/.test(depositAddress)) {
       throw new QuoteSafetyError(`quote deposit address invalid: ${depositAddress}`);
+    }
+
+    // ---- safety invariant #3: the quote must return roughly the value we put
+    // in. A tampered or mispriced quote could otherwise route real USDC rewards
+    // for a dust amount of ZEC. Require a positive on-chain settlement floor
+    // (minAmountOut) AND, when the API gives a USD figure, that the output value
+    // is within maxQuoteValueLossBps of what we send in.
+    const minOut = quote.quote.minAmountOut;
+    if (minOut === undefined || minOut === null || BigInt(minOut) <= 0n) {
+      throw new QuoteSafetyError(`quote has no positive minAmountOut floor: ${minOut}`);
+    }
+    const maxLossBps = this.policy.maxQuoteValueLossBps ?? 500;
+    const outUsd = quote.quote.amountOutUsd ? Number(quote.quote.amountOutUsd) : undefined;
+    if (outUsd !== undefined && Number.isFinite(outUsd) && ctx.accruedUsd > 0) {
+      const floorUsd = ctx.accruedUsd * (1 - maxLossBps / 10_000);
+      if (outUsd < floorUsd) {
+        throw new QuoteSafetyError(
+          `quote output $${outUsd.toFixed(2)} below floor $${floorUsd.toFixed(2)} ` +
+            `(in $${ctx.accruedUsd.toFixed(2)}, max loss ${maxLossBps}bps)`
+        );
+      }
     }
 
     const quoteHash = computeQuoteHash(quote);

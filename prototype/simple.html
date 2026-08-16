@@ -5,22 +5,23 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Oilskin — weatherproof yield for Zcash</title>
 <style>
-/* ─── Oilskin v1 tokens: brick & linen (validated palette) ───────────── */
+/* ─── Oilskin v1 tokens: Oilcloth — waxed green & brass (validated) ───── */
 :root{
-  --bg:#F1E8D8; --bg-2:#EBE0CC; --surface:#FBF6EC; --surface-2:#F1E9DA;
-  --line:#D8CBB4; --line-soft:rgba(60,40,20,.09);
-  --ink:#2E2118; --ink-2:#6B5B4C; --ink-3:#8F8071;
-  --brick:#A6432C; --brick-deep:#8C3521; --brick-hi:#C05A3C;
-  --brick-bg:rgba(166,67,44,.08); --on-brick:#FFF7EF;
-  --good:#0F6E44; --warn:#8F6200; --crit:#C0273D; --info:#3B5BA5;
-  --good-bg:rgba(15,110,68,.10); --warn-bg:rgba(143,98,0,.10);
-  --crit-bg:rgba(192,39,61,.09); --info-bg:rgba(59,91,165,.10);
+  --bg:#12170F; --bg-2:#171E12; --surface:#1A2116; --surface-2:#232B1D;
+  --line:#333C2A; --line-soft:rgba(236,234,223,.10);
+  --ink:#ECEADF; --ink-2:#B4B29F; --ink-3:#8C8A77;
+  --brass:#CDA355; --brass-deep:#B0863A; --brass-hi:#DDB56A;
+  --brass-bg:rgba(205,163,85,.13); --on-brass:#171204;
+  --good:#52C98A; --warn:#E3B84A; --crit:#F06D80; --info:#6FA9F2;
+  --good-bg:rgba(82,201,138,.13); --warn-bg:rgba(227,184,74,.13);
+  --crit-bg:rgba(240,109,128,.13); --info-bg:rgba(111,169,242,.13);
+  --field:#141A10;
   --r:16px; --rs:11px;
-  --shadow:0 1px 2px rgba(60,40,20,.05), 0 10px 30px rgba(60,40,20,.07);
+  --shadow:0 1px 2px rgba(0,0,0,.3), 0 12px 34px rgba(0,0,0,.4);
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:
-  radial-gradient(900px 420px at 90% -8%, rgba(166,67,44,.05), transparent 60%),
+  radial-gradient(920px 440px at 88% -10%, rgba(205,163,85,.08), transparent 62%),
   var(--bg);
   color:var(--ink);font-size:15.5px;line-height:1.55;min-height:100vh;
   font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Arial,sans-serif;
@@ -34,21 +35,21 @@ input{font:inherit;color:inherit}
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}
 
 /* nav */
-nav{position:sticky;top:0;z-index:50;background:rgba(241,232,216,.88);
+nav{position:sticky;top:0;z-index:50;background:rgba(18,23,15,.86);
   backdrop-filter:blur(10px);border-bottom:1px solid var(--line-soft)}
 .nav-in{display:flex;align-items:center;gap:20px;height:64px}
 .logo{display:flex;align-items:center;gap:11px;font-weight:800;font-size:16px;letter-spacing:.13em}
 .tabs{display:flex;gap:2px;flex:1;justify-content:center}
 .tab{padding:8px 14px;border-radius:9px;color:var(--ink-2);font-weight:600;font-size:14px}
 .tab:hover{color:var(--ink);background:var(--line-soft)}
-.tab.on{color:var(--brick);background:var(--brick-bg)}
+.tab.on{color:var(--brass);background:var(--brass-bg)}
 .price{display:flex;align-items:center;gap:7px;padding:6px 12px;border-radius:999px;
   border:1px solid var(--line);background:var(--surface);font-size:13px}
 .pulse{width:7px;height:7px;border-radius:50%;background:var(--good);animation:pulse 2.4s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 .modetog{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:999px;border:1.5px solid var(--line);
   background:var(--surface);font-size:12.5px;font-weight:650;color:var(--ink-2);text-decoration:none;white-space:nowrap}
-.modetog:hover{border-color:var(--brick);color:var(--brick)}
+.modetog:hover{border-color:var(--brass);color:var(--brass)}
 
 /* cards & controls */
 .view{display:none;padding:34px 0 80px}
@@ -59,30 +60,30 @@ nav{position:sticky;top:0;z-index:50;background:rgba(241,232,216,.88);
   padding:12px 22px;border-radius:12px;font-weight:700;font-size:15px;
   transition:transform .06s, box-shadow .15s}
 .btn:active{transform:translateY(1px)}
-.btn-brick{background:linear-gradient(180deg,var(--brick-hi),var(--brick));color:var(--on-brick);
-  box-shadow:0 2px 12px rgba(166,67,44,.30)}
-.btn-brick:hover{box-shadow:0 4px 18px rgba(166,67,44,.42)}
+.btn-cta{background:linear-gradient(180deg,var(--brass-hi),var(--brass));color:var(--on-brass);
+  box-shadow:0 2px 12px rgba(205,163,85,.30)}
+.btn-cta:hover{box-shadow:0 4px 18px rgba(205,163,85,.45)}
 .btn-ghost{border:1.5px solid var(--line);background:var(--surface)}
 .btn-ghost:hover{background:var(--surface-2)}
 .btn[disabled]{opacity:.45;cursor:not-allowed;box-shadow:none}
 .chip{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;
   font-size:12.5px;font-weight:650;border:1px solid transparent}
-.c-good{color:var(--good);background:var(--good-bg);border-color:rgba(15,110,68,.25)}
-.c-warn{color:var(--warn);background:var(--warn-bg);border-color:rgba(143,98,0,.28)}
-.c-info{color:var(--info);background:var(--info-bg);border-color:rgba(59,91,165,.25)}
+.c-good{color:var(--good);background:var(--good-bg);border-color:rgba(82,201,138,.30)}
+.c-warn{color:var(--warn);background:var(--warn-bg);border-color:rgba(227,184,74,.32)}
+.c-info{color:var(--info);background:var(--info-bg);border-color:rgba(111,169,242,.30)}
 .c-mute{color:var(--ink-2);background:var(--surface-2);border-color:var(--line)}
 .dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
-.in{width:100%;background:#FFFDF7;border:1.5px solid var(--line);border-radius:var(--rs);
+.in{width:100%;background:var(--field);border:1.5px solid var(--line);border-radius:var(--rs);
   padding:12px 14px;font-size:16px;outline:none;transition:border-color .15s}
-.in:focus{border-color:var(--brick)}
+.in:focus{border-color:var(--brass)}
 label{display:block;font-size:13.5px;font-weight:650;color:var(--ink-2);margin-bottom:7px}
 .field{margin-bottom:20px}
 .seg{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
 .segb{border:1.5px solid var(--line);background:var(--surface);border-radius:11px;padding:10px 8px;text-align:center;transition:border-color .12s}
 .segb b{display:block;font-size:13.5px}
 .segb span{display:block;font-size:11px;color:var(--ink-3);margin-top:2px}
-.segb.on{border-color:var(--brick);background:var(--brick-bg);box-shadow:0 0 0 1px var(--brick) inset}
-.segb.on b{color:var(--brick)}
+.segb.on{border-color:var(--brass);background:var(--brass-bg);box-shadow:0 0 0 1px var(--brass) inset}
+.segb.on b{color:var(--brass)}
 
 /* docs */
 .docs h3{font-size:15px;margin:24px 0 6px}
@@ -124,7 +125,7 @@ details[open] summary{border-bottom:1px solid var(--line-soft)}
 .meter{position:relative;height:14px;border-radius:8px;background:var(--surface-2);
   border:1px solid var(--line);margin:34px 6px 34px}
 .meter .fill{position:absolute;left:0;top:0;bottom:0;border-radius:8px 0 0 8px;
-  background:linear-gradient(90deg,rgba(15,110,68,.22),rgba(15,110,68,.55))}
+  background:linear-gradient(90deg,rgba(82,201,138,.22),rgba(82,201,138,.55))}
 .meter .tick{position:absolute;top:-7px;bottom:-7px;width:3px;border-radius:2px;background:var(--crit)}
 .meter .now{position:absolute;top:-9px;bottom:-9px;width:3px;border-radius:2px;background:var(--ink)}
 .meter .lbl{position:absolute;top:-26px;transform:translateX(-50%);font-size:11.5px;font-weight:650;white-space:nowrap}
@@ -141,7 +142,7 @@ details[open] summary{border-bottom:1px solid var(--line-soft)}
 .act-ic{width:30px;height:30px;border-radius:10px;display:grid;place-items:center;font-size:13px;flex:none;background:var(--surface-2)}
 .act time{color:var(--ink-3);font-size:12px;display:block;margin-top:2px}
 .txlink{display:inline-flex;align-items:center;gap:4px;font-family:ui-monospace,Menlo,monospace;
-  font-size:11px;color:var(--info);border:1px solid rgba(59,91,165,.25);
+  font-size:11px;color:var(--info);border:1px solid rgba(111,169,242,.30);
   background:var(--info-bg);border-radius:6px;padding:1px 7px;margin-top:5px;text-decoration:none}
 
 /* faq */
@@ -149,7 +150,7 @@ details[open] summary{border-bottom:1px solid var(--line-soft)}
 .faq p{color:var(--ink-2);font-size:14px;max-width:620px}
 
 /* modal */
-.overlay{position:fixed;inset:0;background:rgba(46,33,24,.4);backdrop-filter:blur(4px);
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);
   display:none;place-items:center;z-index:100;padding:20px}
 .overlay.on{display:grid}
 .modal{width:min(470px,100%);max-height:90vh;overflow:auto}
@@ -169,17 +170,35 @@ details[open] summary{border-bottom:1px solid var(--line-soft)}
 .bstep .bd{font-size:12.5px;color:var(--ink-2)}
 input[type=range]{width:100%;-webkit-appearance:none;appearance:none;height:6px;border-radius:4px;background:var(--line);outline:none}
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:20px;height:20px;border-radius:50%;
-  background:var(--brick);border:3px solid var(--surface);cursor:grab;box-shadow:0 1px 6px rgba(166,67,44,.4)}
+  background:var(--brass);border:3px solid var(--surface);cursor:grab;box-shadow:0 1px 6px rgba(205,163,85,.45)}
 #toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(90px);
   background:var(--ink);color:var(--surface);border-radius:12px;padding:12px 18px;
   font-size:14px;font-weight:600;box-shadow:var(--shadow);transition:transform .25s;z-index:200}
 #toast.on{transform:translateX(-50%) translateY(0)}
 footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px;font-size:12.5px;color:var(--ink-3)}
-#tip{position:fixed;z-index:300;max-width:280px;background:var(--ink);color:#F6EFE3;
+#tip{position:fixed;z-index:300;max-width:280px;background:#0C1009;color:var(--ink);border:1px solid var(--line);
   border-radius:10px;padding:10px 12px;font-size:12.6px;line-height:1.5;box-shadow:var(--shadow);
   pointer-events:none;opacity:0;transform:translateY(4px);transition:opacity .12s,transform .12s}
 #tip.on{opacity:1;transform:translateY(0)}
 .tt{border-bottom:1px dotted var(--ink-3);cursor:help;font-style:normal}
+
+/* tester's kit (demo build only) */
+.tk-fab{position:fixed;right:18px;bottom:20px;z-index:150;display:inline-flex;align-items:center;gap:7px;
+  padding:10px 15px;border-radius:999px;font-size:13px;font-weight:700;
+  background:linear-gradient(180deg,var(--brass-hi),var(--brass));color:var(--on-brass);
+  box-shadow:0 4px 16px rgba(0,0,0,.4)}
+.tk-modal{width:min(460px,100%)}
+.tk-modal h4{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3);margin:18px 0 8px}
+.tk-grid{display:flex;flex-wrap:wrap;gap:7px}
+.tk-b{border:1.5px solid var(--line);background:var(--surface-2);border-radius:9px;padding:7px 11px;
+  font-size:12.5px;font-weight:600;color:var(--ink);text-align:left}
+.tk-b:hover{border-color:var(--brass);color:var(--brass)}
+.tk-b .mono{font-size:10.5px;color:var(--ink-3);display:block;margin-top:2px}
+.tk-b.ok{border-left:3px solid var(--good)}
+.tk-b.warnb{border-left:3px solid var(--warn)}
+.tk-b.badb{border-left:3px solid var(--crit)}
+.tk-list{margin:6px 0 0 18px;font-size:13px;color:var(--ink-2)}
+.tk-list li{margin-bottom:5px}
 
 @media(max-width:640px){
   .wrap{padding:0 14px}
@@ -202,9 +221,9 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
   <symbol id="mark" viewBox="0 0 64 64">
-    <rect x="2" y="2" width="60" height="60" rx="14" fill="#A6432C"/>
-    <path d="M10 22 C 22 20, 34 26, 54 46" fill="none" stroke="#FBF6EC" stroke-width="6" stroke-linecap="round"/>
-    <circle cx="30" cy="20.5" r="7.5" fill="#FBF6EC"/>
+    <rect x="2" y="2" width="60" height="60" rx="14" fill="#CDA355"/>
+    <path d="M10 22 C 22 20, 34 26, 54 46" fill="none" stroke="#171204" stroke-width="6" stroke-linecap="round"/>
+    <circle cx="30" cy="20.5" r="7.5" fill="#171204"/>
   </symbol>
   <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v5.5c0 4.3-2.9 8.2-7 9.5-4.1-1.3-7-5.2-7-9.5V6l7-3z"/><path d="M9.2 12.2l2 2 3.6-3.9"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="M4.5 12.5l5 5 10-11"/></symbol>
@@ -265,13 +284,13 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
         <summary>Using Zodl? Where to find this address</summary>
         <div class="det-in">Zodl's Receive screen shows two addresses — the shielded one on top, and a <b>transparent (t1…) address below it</b>. Copy the transparent one. Zodl shields everything it receives automatically, so payouts go private moments after they arrive.</div>
       </details>
-      <button class="btn btn-brick" id="startBtn" style="width:100%;margin-top:18px">Get my deposit address →</button>
+      <button class="btn btn-cta" id="startBtn" style="width:100%;margin-top:18px">Get my deposit address →</button>
       <div class="tiny faint" style="margin-top:12px;text-align:center">Fees: 10% of earnings (Oilskin) + 15% of earnings (pool engine) — never a cent of your deposit.</div>
     </div>
 
     <div class="tiles">
       <div class="tile"><div class="t" style="color:var(--good)"><svg class="ic"><use href="#i-check"/></svg>Never sold</div><div class="d">Your ZEC sits as collateral. A bounded loan against it — 30–50%, your choice — does the earning; selling never happens, which also means no disposal on the way in.</div></div>
-      <div class="tile"><div class="t" style="color:var(--brick)"><svg class="ic"><use href="#i-shield"/></svg>Auto-protected</div><div class="d">Earnings repay the loan first if ZEC falls; below that we automatically de-risk. ZEC would have to drop 29–57% — set by your risk setting — before liquidation is even possible.</div></div>
+      <div class="tile"><div class="t" style="color:var(--brass)"><svg class="ic"><use href="#i-shield"/></svg>Auto-protected</div><div class="d">Earnings repay the loan first if ZEC falls; below that we automatically de-risk. ZEC would have to drop 29–57% — set by your risk setting — before liquidation is even possible.</div></div>
       <div class="tile"><div class="t" style="color:var(--info)"><svg class="ic"><use href="#i-home"/></svg>Always yours</div><div class="d">Withdrawals can never be paused, and funds can only exit to the address you set. One wallet — the one you already have.</div></div>
     </div>
     <div style="text-align:center;margin-top:20px"><button class="btn-ghost btn" id="demoBtn" style="font-size:13.5px;padding:9px 16px">See a live example position →</button></div>
@@ -294,10 +313,10 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
         <div class="tick" id="mTick"></div><span class="lbl" id="mTickL" style="color:var(--crit)">risk line</span><span class="sub" id="mTickS">$210</span>
         <div class="now" id="mNow"></div><span class="lbl" id="mNowL">ZEC now</span><span class="sub" id="mNowS">$487</span>
       </div>
-      <div class="small muted" id="protLine">ZEC would have to fall <b class="num" id="protPct">57%</b> before liquidation is possible — and your earnings automatically repay the loan first, long before that line. <button class="tab tiny" data-goto="faq-crash" style="color:var(--brick);padding:0 2px">how the protection works →</button></div>
+      <div class="small muted" id="protLine">ZEC would have to fall <b class="num" id="protPct">57%</b> before liquidation is possible — and your earnings automatically repay the loan first, long before that line. <button class="tab tiny" data-goto="faq-crash" style="color:var(--brass);padding:0 2px">how the protection works →</button></div>
 
       <div style="display:flex;gap:10px;margin-top:22px;flex-wrap:wrap">
-        <button class="btn btn-brick" id="addBtn">Add ZEC</button>
+        <button class="btn btn-cta" id="addBtn">Add ZEC</button>
         <button class="btn btn-ghost" id="wdBtn">Withdraw</button>
       </div>
 
@@ -442,14 +461,14 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
         <div id="qrBox" style="flex:none"></div>
         <div class="small muted">Scan with your wallet — address and amount pre-filled (ZIP-321) — or copy below. <b>Send from your shielded balance</b>; only the amount becomes public.</div>
       </div>
-      <div class="mono" id="depAddr" style="margin-top:14px;padding:11px 13px;background:#FFFDF7;border:1.5px solid var(--line);border-radius:10px;word-break:break-all">t1KfLdWeXcH2wGmVyJk3sQfR7nPmD4uEtPmG</div>
+      <div class="mono" id="depAddr" style="margin-top:14px;padding:11px 13px;background:var(--field);border:1.5px solid var(--line);border-radius:10px;word-break:break-all">t1KfLdWeXcH2wGmVyJk3sQfR7nPmD4uEtPmG</div>
       <button class="btn btn-ghost" id="copyBtn" style="width:100%;margin-top:10px">Copy address</button>
       <div class="note small" style="margin-top:14px">While it moves (~2 min), your ZEC rides <b>NEAR Intents</b> — the same rails inside the Zodl wallet. If anything fails, funds auto-return to your address. <b>Amount locked:</b> <span class="num" id="depAmt">10 ZEC</span>.</div>
-      <button class="btn btn-brick" id="sentBtn" style="width:100%;margin-top:6px">I've sent it →</button>
+      <button class="btn btn-cta" id="sentBtn" style="width:100%;margin-top:6px">I've sent it →</button>
     </div>
     <div id="depProg" style="display:none">
       <div id="depSteps"></div>
-      <button class="btn btn-brick" id="depDone" style="width:100%;margin-top:16px;display:none">See my position →</button>
+      <button class="btn btn-cta" id="depDone" style="width:100%;margin-top:16px;display:none">See my position →</button>
     </div>
   </div>
 </div></div>
@@ -462,7 +481,48 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
     <input type="range" id="wdSlider" min="10" max="100" value="100" step="10">
     <div class="small muted num" style="margin:10px 0 4px" id="wdEst">≈ 12.1 ZEC ($5,908) home to t1Py8…pGxy</div>
     <div class="tiny faint">Your loan's share is repaid automatically as part of the withdrawal — nothing to manage, no leftover debt. Arrives as native ZEC in a few minutes; your wallet shields it on arrival.</div>
-    <button class="btn btn-brick" id="wdConfirm" style="width:100%;margin-top:16px">Withdraw to my wallet</button>
+    <button class="btn btn-cta" id="wdConfirm" style="width:100%;margin-top:16px">Withdraw to my wallet</button>
+  </div>
+</div></div>
+
+<!-- Tester's kit (demo build) -->
+<button class="tk-fab" id="tkBtn" title="Demo inputs &amp; a feature checklist">🧪 Test kit</button>
+<div class="overlay" id="tkOverlay"><div class="card modal tk-modal">
+  <div class="modal-h"><h3>Tester's kit</h3><button class="x" data-close>✕</button></div>
+  <div class="pad" style="padding-top:16px">
+    <div class="note warn" style="margin-top:0">Demo build — every address, amount and transaction is <b>fake</b>. No real funds, no real keys, nothing leaves your browser. The addresses below are <b>format-valid but not real or spendable</b>, so the app's validation behaves exactly as it will in production.</div>
+
+    <h4>Zcash addresses — tap to drop into the home field</h4>
+    <div class="tk-grid">
+      <button class="tk-b ok" data-fill="t1Py8kAoQrfmRRWTbtHkDkGb6JuaXPmpGxy">Transparent t1 — accepted ✓<span class="mono">t1Py8…pGxy</span></button>
+      <button class="tk-b ok" data-fill="t1TEsT2aZxCvBnM4qWeRtY7uIoP9sDfG1hK">Transparent t1 (alt) ✓<span class="mono">t1TEs…G1hK</span></button>
+      <button class="tk-b warnb" data-fill="u1demo0testonly0notreal0zaddr0qp7r9s2t4v6x8y0a2c4e6g8j0l2n4q6s8u0w2">Unified u1 — should guide to t-addr<span class="mono">u1demo…u0w2</span></button>
+      <button class="tk-b warnb" data-fill="zs1demo0testonly0notreal0sapling0zaddr0qp7r9s2t4v6x8y0a2c4e6g8j0l2n4q6s8u0w2x4z6a8c0e2">Sapling zs1 — should guide to t-addr<span class="mono">zs1demo…c0e2</span></button>
+      <button class="tk-b badb" data-fill="t1short">Malformed — should stay blocked<span class="mono">t1short</span></button>
+    </div>
+
+    <h4>Amounts — tap to drop into the amount field</h4>
+    <div class="tk-grid">
+      <button class="tk-b ok" data-amt="0.25">0.25 · min ✓</button>
+      <button class="tk-b ok" data-amt="12.5">12.5 · typical ✓</button>
+      <button class="tk-b ok" data-amt="50">50 · cap ✓</button>
+      <button class="tk-b badb" data-amt="0.1">0.1 · below min</button>
+      <button class="tk-b badb" data-amt="80">80 · over cap</button>
+    </div>
+
+    <h4>Try every path</h4>
+    <ul class="tk-list">
+      <li>Pick each risk setting — watch the yield and the "falls X%" line move (57 / 43 / 29%).</li>
+      <li>Deposit with a t1 address, step through the progress, open the position.</li>
+      <li>Hit <b>Add ZEC</b> — the risk selector locks and the button shows your remaining room to 50.</li>
+      <li>Try to top a ~40-ZEC position past 50 — it should block with "room left".</li>
+      <li>Withdraw part (slider), then all — a full withdraw returns you to the start and unlocks the selector.</li>
+      <li>Open <b>Activity</b> and click a tx link (Zcash / NEAR / Base explorers).</li>
+      <li>Read <b>Docs</b> — custody table, risk table, "what can go wrong", fees.</li>
+      <li>Toggle <b>Advanced</b> (top-right) to jump to the power-user build and back.</li>
+      <li>Shrink the window to phone width — nav, cards and this kit stay clean.</li>
+    </ul>
+    <div class="tiny faint" style="margin-top:12px">This panel ships only in the demo; it is stripped from any production build.</div>
   </div>
 </div></div>
 
@@ -530,21 +590,49 @@ $("#amt").addEventListener("input",()=>{
   const a=+$("#amt").value||0;$("#amtUsd").textContent=usd(a*S.zec);gate();});
 $("#homeAddr").addEventListener("input",()=>{
   const r=checkAddr($("#homeAddr").value);const h=$("#addrHint");h.textContent=r.msg;h.style.color=r.c;gate();});
+/* Pure gate decision — the single source of truth used by both the live UI
+   and the fuzz harness (window.__oil), so tests exercise the real logic. */
+function gateDecision(a, addrOk, addrTyped, existing){
+  const total = existing + a;
+  const ok = a>=0.25 && total<=50 && addrOk;
+  const label = (!addrOk && addrTyped) ? "Add your t1… address first"
+    : total>50 ? (existing>0 ? `Max 50 ZEC/account — ${(Math.max(0,50-existing)).toFixed(2)} ZEC room left` : "Max 50 ZEC during launch")
+    : existing>0 ? "Add to my position →" : "Get my deposit address →";
+  return {ok, label};
+}
 function gate(){
   const a=+$("#amt").value||0, r=checkAddr($("#homeAddr").value);
-  const ok=a>=0.25&&a<=50&&r.ok;
-  const b=$("#startBtn");b.disabled=!ok;
-  b.textContent=!r.ok&&$("#homeAddr").value?"Add your t1… address first":(a>50?"Max 50 ZEC during launch":"Get my deposit address →");
+  // Account cap applies to the WHOLE position: a top-up must keep
+  // (existing + new) ≤ 50, not just the new amount.
+  const existing = pos.active ? pos.zec : 0;
+  const {ok,label} = gateDecision(a, r.ok, !!$("#homeAddr").value, existing);
+  const b=$("#startBtn");b.disabled=!ok;b.textContent=label;
 }
 
-/* risk setting */
+/* risk setting — free to choose on a fresh deposit; locked to the position's
+   setting on a top-up (changing it would silently re-risk existing funds). */
 $$("#riskSeg .segb").forEach(b=>b.addEventListener("click",()=>{
+  if(b.disabled) return;
   $$("#riskSeg .segb").forEach(x=>x.classList.remove("on"));b.classList.add("on");
-  selLtv=(+b.dataset.ltv)/100;riskUpd();}));
-function riskUpd(){
+  selLtv=(+b.dataset.ltv)/100;riskUpd(false);}));
+function syncRiskLock(){
+  const locked = pos.active; // top-up mode
+  if(locked) selLtv = pos.ltv;
+  const sel = Math.round(selLtv*100);
+  $$("#riskSeg .segb").forEach(x=>{
+    const on = Math.round(+x.dataset.ltv) === sel;
+    x.disabled = locked;
+    x.classList.toggle("on", on);
+    x.style.opacity = (locked && !on) ? ".4" : "1";
+  });
+  riskUpd(locked);
+}
+function riskUpd(locked){
   const note={30:"The safest setting, and the default.",40:"The middle path — solid buffer, better pay.",50:"Highest yield, thinnest buffer — leans hardest on the protection ladder."};
   $("#apyHero").textContent=apyFor(selLtv).toFixed(1)+"%";
-  $("#riskHint").textContent="Earning ≈"+apyFor(selLtv).toFixed(1)+"% — liquidation only possible if ZEC falls "+DROP(selLtv)+"%. "+note[Math.round(selLtv*100)];
+  $("#riskHint").textContent = locked
+    ? `Locked at your ${Math.round(selLtv*100)}% setting for this position — withdraw and redeposit to change. Earning ≈${apyFor(selLtv).toFixed(1)}%.`
+    : "Earning ≈"+apyFor(selLtv).toFixed(1)+"% — liquidation only possible if ZEC falls "+DROP(selLtv)+"%. "+note[Math.round(selLtv*100)];
 }
 function qrSvg(seed){
   let h=0;for(const ch of seed)h=(h*31+ch.charCodeAt(0))>>>0;
@@ -607,7 +695,7 @@ function renderPos(){
   const on=pos.active;
   $("#hero").style.display=on?"none":"block";
   $("#posWrap").style.display=on?"block":"none";
-  if(!on)return;
+  if(!on){syncRiskLock();return;} // fresh hero → selector unlocked
   const totZec=pos.zec+pos.earnedZec, v=totZec*S.zec;
   $("#pZec").textContent=totZec.toFixed(1);
   $("#pUsd").textContent="("+usd(v)+")";
@@ -644,7 +732,10 @@ $("#addBtn").addEventListener("click",()=>{
   pos.active=true; // keep position; prefill deposit form for top-up
   $("#hero").style.display="block";$("#posWrap").style.display="none";
   $("#homeAddr").value=pos.home;$("#homeAddr").dispatchEvent(new Event("input"));
-  toast("Top-ups go to the same position — same locked address");
+  $("#amt").value="";                 // start blank so the room-left hint reads cleanly
+  syncRiskLock();                     // lock the risk selector to this position
+  gate();
+  toast(`Top-ups keep your ${Math.round(pos.ltv*100)}% setting and locked address · ${(Math.max(0,50-pos.zec)).toFixed(2)} ZEC room left`);
   window.scrollTo({top:0});
 });
 function wdUpd(){
@@ -679,8 +770,29 @@ setInterval(()=>{
   if(pos.active){pos.earnedZec+=pos.zec*(apyFor(pos.ltv)/100)/365/86400*12; renderPos();}
 },12000);
 
+/* tester's kit */
+$("#tkBtn").addEventListener("click",()=>$("#tkOverlay").classList.add("on"));
+$$("#tkOverlay [data-fill]").forEach(b=>b.addEventListener("click",()=>{
+  $("#tkOverlay").classList.remove("on"); // always close the panel first
+  if(pos.active){ // top-up mode reuses the locked home address — nothing to fill
+    toast("Home address is locked while topping up — withdraw fully to test address inputs");
+    return;
+  }
+  $("#homeAddr").value=b.dataset.fill;$("#homeAddr").dispatchEvent(new Event("input"));
+  $("#homeAddr").scrollIntoView({block:"center",behavior:"smooth"});
+}));
+$$("#tkOverlay [data-amt]").forEach(b=>b.addEventListener("click",()=>{
+  $("#tkOverlay").classList.remove("on");
+  $("#amt").value=b.dataset.amt;$("#amt").dispatchEvent(new Event("input"));
+  $("#amt").scrollIntoView({block:"center",behavior:"smooth"});
+}));
+
+/* Demo-only test seam (stripped in production, like the tester's kit): lets the
+   fuzz harness exercise the REAL pure logic instead of a reimplementation. */
+window.__oil = { apyFor, DROP, checkAddr, gateDecision, liqPrice:(zec,ltv)=>zec*ltv/LIQ_T, LTV_STOPS:[0.30,0.40,0.50], LIQ_T, S };
+
 /* boot */
-gate();riskUpd();renderActivity();renderPos();
+gate();syncRiskLock();renderActivity();renderPos();
 </script>
 </body>
 </html>

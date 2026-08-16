@@ -188,7 +188,7 @@ describe("RewardExecutor — MEV / malicious-quote resistance", () => {
   const oc = (mutate?: (r: QuoteRequest) => QuoteRequest, deposit = DEPOSIT) => ({
     getQuote: spy(async (r: QuoteRequest) => ({
       quoteRequest: mutate ? mutate(structuredClone(r)) : r,
-      quote: { depositAddress: deposit, amountIn: r.amount, amountOut: "5" },
+      quote: { depositAddress: deposit, amountIn: r.amount, amountOut: "5", minAmountOut: "5" },
     })),
     submitDepositTx: spy(async () => undefined),
   });
