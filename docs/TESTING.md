@@ -54,6 +54,11 @@ forge test --match-test Fork    # live-engine fork suite (needs a Base archive R
 
 # Agent (zero deps; Node ≥ 20)
 cd agent && npm test            # 72 tests incl. adversarial / MEV-resistance suite
+
+# Yield service (zero deps; Node ≥ 20)
+npm run test -w @zyo/yield      # 41 tests — decoders pinned against REAL captured
+                                # on-chain logs/receipts, rebalance re-key chains,
+                                # cohort/band math, RPC chunk-splitting, API integration
 ```
 
 ### Prototype fuzz (Playwright)
@@ -78,8 +83,12 @@ shipped logic rather than a re-implementation.
 
 Both are deterministic (seeded) and reproducible. Latest run: **2,493 + 90
 combinations, 0 failures.** The two scripts live alongside the verification suites
-(`verify-simple.mjs` — 21 end-to-end checks; `verify-toggle.mjs` — the Simple⇄Advanced
-round-trip).
+(`verify-simple.mjs` — 24 end-to-end checks incl. a live-mode pass that intercepts
+the yield API and asserts banded headlines + per-card band bars render from
+empirical percentiles; `verify-toggle.mjs` — the Simple⇄Advanced round-trip).
+Console-error assertions tolerate exactly one message class: the boot-time
+`ERR_CONNECTION_REFUSED` from probing the local yield service — that is the
+designed static-fallback path, not a page bug.
 
 ## Security review
 

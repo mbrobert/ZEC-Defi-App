@@ -98,3 +98,13 @@ be the computed trailing figure, never a promise.
 > blue-chip mix computes 13.2 / 17.4 / 21.5% at 30/40/50% LTV — the old
 > 6.9% headline came from a stale calm-week sample, not a different
 > strategy.
+
+> **Amended 2026-08-27 (Matt's call): empirical bands + live backend.**
+> "Run with empirical. Start making all the backend now." `services/yield`
+> ships: live pool/rate sampling plus realized-return bands backtested from
+> the engine's own on-chain position history (closed-position USD flows,
+> principal-weighted p25–p75 — docs/YIELD-SERVICE.md). The demo probes the
+> service at boot: connected → live rates + banded headline + per-card band
+> bars; not running → the static dated sample stands. Bands render only
+> from real backfilled history — "pending backfill" is shown rather than
+> any invented range.

@@ -92,6 +92,13 @@ label{display:block;font-size:13.5px;font-weight:650;color:var(--ink-2);margin-b
 .poolb .pa{font-size:11.5px;margin-top:3px;color:var(--ink-2)}
 .poolb .pa b{color:var(--good)}
 .poolb.on{border-color:var(--brass);background:var(--brass-bg);box-shadow:0 0 0 1px var(--brass) inset}
+.pband{font-size:10.5px;color:var(--ink-3);margin-top:4px}
+.pbtrack{position:relative;height:4px;border-radius:2px;background:var(--field);margin-top:3px}
+.pbfill{position:absolute;top:0;bottom:0;background:var(--brass);opacity:.8;border-radius:2px}
+.pbtick{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--ink);border-radius:1px}
+.pbzero{position:absolute;top:0;bottom:0;width:1px;background:var(--line)}
+.livechip{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:800;letter-spacing:.08em;color:var(--good);border:1px solid rgba(82,201,138,.45);border-radius:999px;padding:1.5px 8px;margin-left:8px;vertical-align:3px}
+.livechip .dot{width:6px;height:6px;border-radius:50%;background:var(--good)}
 .ptag{font-size:9px;font-weight:800;letter-spacing:.07em;border-radius:5px;padding:2px 6px;border:1px solid}
 .ptag.bc{color:var(--info);border-color:rgba(111,169,242,.4)}
 .ptag.st{color:var(--good);border-color:rgba(82,201,138,.4)}
@@ -437,6 +444,9 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
   </table>
   <p style="margin-top:8px"><b>Read the volatile row carefully:</b> sampled fee rates on non-correlated pairs are not what you keep — impermanent loss (the pool constantly selling the winner for the loser) eats a large, variable share, and the engine realizes it at each rebalance. Correlated pairs (WETH/cbBTC, cbETH/WETH) and stables barely suffer IL but earn less. Aerodrome pays staked positions AERO emissions in lieu of trading fees; at equilibrium emissions track fees, so fee rates are the honest proxy. A mix that earns less than the 13.2% borrow cost loses money at these rates — the app warns you the moment you build one.</p>
 
+  <h3>Live mode &amp; the realized-return band</h3>
+  <p>This page ships with a dated sample baked in. Run the Oilskin yield service beside it (<code>npm run yield</code> in the repo, then reload the page) and the numbers go live: current pool fee rates, the live Rhea borrow and ZEC supply rates, and — once the service has backfilled the engine's on-chain history — a <b>realized-return band</b> per pool instead of a single number. The band is the middle half (p25–p75, weighted by position size) of what real, closed positions in that pool actually kept over the trailing 30 days — impermanent loss, rebalances, and all fees included, measured from on-chain deposit and withdrawal flows. It is history, not a model, and never a promise. Until the backfill has run, cards say <i>"pending backfill"</i> rather than inventing a range; volatile pairs will show wide bands that can dip negative — that is the point.</p>
+
   <h3>The protection ladder</h3>
   <ul>
     <li><b>1 · Earnings repay first.</b> If ZEC falls, your earnings pay the loan down before anything else moves.</li>
@@ -588,11 +598,75 @@ const POOLS = [
 let mixSel = new Set(["aweth","acbbtc"]); // default: the two blue-chip flagships
 const mixGross = ids => { const a=[...ids].map(i=>POOLS.find(p=>p.id===i).gross); return a.reduce((s,x)=>s+x,0)/a.length; };
 const mixNet   = ids => mixGross(ids) * NET_FEE;                 // after both fees
-const apyModel = (l, grossAvg) => APY_BASE + l * (grossAvg*NET_FEE - BORROW_APR); // whole-position %
+const apyModel = (l, grossAvg) => liveSupply() + l * (grossAvg*NET_FEE - liveBorrow()); // whole-position % (live rates when connected; static sample otherwise)
 const apyFor   = l => apyModel(l, mixGross(pos.active ? pos.mix : mixSel));
 const DROP = l => Math.round((1 - l/LIQ_T)*100);
 let selLtv = 0.30;
 const pos = { active:false, zec:0, earnedZec:0, home:"", openedAt:0, ltv:0.30, mix:["aweth","acbbtc"] };
+
+/* ── Live mode ─────────────────────────────────────────────────────────
+   The Oilskin yield service (services/yield in the repo — `npm run yield`)
+   serves live pool samples, live Rhea borrow/ZEC-supply rates, and
+   EMPIRICAL realized-APR bands computed from the engine's own on-chain
+   position history (closed positions, USD flows, principal-weighted
+   p25–p75 — methodology in docs/YIELD-SERVICE.md). When it's reachable the
+   demo switches to live numbers and band displays; without it, the static
+   dated sample below stands. No fabricated bands, ever: bands render only
+   from real backfilled history. */
+const YIELD_API = "http://127.0.0.1:8787";
+let LIVE = null; // /v1/pools payload once the service has answered
+const DEMO2API = {aweth:"aero-usdc-weth-5",acbbtc:"aero-cbbtc-usdc",uweth:"uni-weth-usdc-5",ubtc:"uni-cbbtc-weth-30",lst:"cbeth-weth",stab:"aero-usdt-usdc",aero:"aero-aero-weth",abtc:"aero-aero-cbbtc"};
+const OILSKIN_KEEP = 0.90; // empirical engine-net already nets the engine's 15%
+const liveBorrow = () => LIVE?.rates?.borrowAprPct ?? BORROW_APR;
+const liveSupply = () => LIVE?.rates?.zecSupplyAprPct ?? APY_BASE;
+const liveBand30 = id => { const p = LIVE?.pools?.find(x=>x.id===DEMO2API[id]); const b = p?.bands?.bands?.find(w=>w.windowDays===30); return b && b.n>0 ? b : null; };
+const userNet = (engineNetPct,l) => liveSupply() + l*(engineNetPct*OILSKIN_KEEP - liveBorrow());
+/* Equal-split mix band: average percentile points across selected pools
+   with data, then apply the user transform (percentile-mean-v1 — the same
+   rule the API's /v1/band uses, so both surfaces always agree). */
+function mixBand(ids,l){
+  const bs=[...ids].map(liveBand30).filter(Boolean);
+  if(!bs.length) return null;
+  const m=k=>bs.reduce((s,b)=>s+b[k],0)/bs.length;
+  return {p25:userNet(m("p25"),l), p50:userNet(m("p50"),l), p75:userNet(m("p75"),l),
+          n:bs.reduce((s,b)=>s+b.n,0), pools:bs.length};
+}
+async function tryLive(){
+  if(location.protocol==="https:") return; // hosted demo: browsers block localhost fetches from https
+  try{
+    const r = await fetch(YIELD_API+"/v1/pools",{signal:AbortSignal.timeout(2500)});
+    if(!r.ok) return;
+    LIVE = await r.json();
+    for(const p of POOLS){
+      const lp = LIVE.pools?.find(x=>x.id===DEMO2API[p.id]);
+      if(lp?.live){ p.gross = lp.live.grossFeeAprPct; p.est = false; }
+    }
+    syncRiskLock(); renderPos();
+    toast("Live data connected — current rates, bands from real engine history");
+  }catch(e){ /* service not running — the static dated sample stands */ }
+}
+function liveChipUpd(band){
+  const line = $("#apyHero")?.parentElement; if(!line) return;
+  if(LIVE && !$("#liveChip")){
+    const chip=document.createElement("span"); chip.id="liveChip"; chip.className="livechip";
+    chip.innerHTML='<span class="dot"></span>LIVE'; line.appendChild(chip);
+  }
+  const tt = line.querySelector(".tt");
+  if(tt && LIVE){
+    tt.title = band
+      ? `Realized range from ${band.n} closed engine positions across ${band.pools} of your pools (trailing 30 days, principal-weighted p25–p75; typical ${band.p50.toFixed(1)}%). Live borrow ${liveBorrow().toFixed(1)}%, ZEC supply ${liveSupply().toFixed(2)}%. History, never a promise.`
+      : `Live rates connected (borrow ${liveBorrow().toFixed(1)}%, ZEC supply ${liveSupply().toFixed(2)}%). Realized-range bands appear once the yield service has backfilled engine history. Trailing math, never a promise.`;
+  }
+}
+function bandCard(id){
+  const b = liveBand30(id);
+  if(!b) return LIVE ? '<div class="pband">realized range: pending backfill</div>' : "";
+  const lo = Math.min(b.p10, 0), hi = Math.max(b.p90, 10), span = (hi-lo) || 1;
+  const X = v => Math.max(0, Math.min(100, (v-lo)/span*100));
+  const zero = (0>=lo && 0<=hi) ? `<span class="pbzero" style="left:${X(0).toFixed(2)}%"></span>` : "";
+  return `<div class="pband num">realized ${b.p25.toFixed(0)}–${b.p75.toFixed(0)}% <span style="color:var(--ink-3)">(typical ${b.p50.toFixed(0)}%, n=${b.n}, 30d)</span>
+    <div class="pbtrack">${zero}<span class="pbfill" style="left:${X(b.p25).toFixed(2)}%;right:${(100-X(b.p75)).toFixed(2)}%"></span><span class="pbtick" style="left:${X(b.p50).toFixed(2)}%"></span></div></div>`;
+}
 
 const $=(q,el=document)=>el.querySelector(q);
 const $$=(q,el=document)=>[...el.querySelectorAll(q)];
@@ -686,11 +760,21 @@ function syncRiskLock(){
 function riskUpd(locked){
   const note={30:"The safest setting, and the default.",40:"The middle path — solid buffer, better pay.",50:"Highest yield, thinnest buffer — leans hardest on the protection ladder."};
   const apy = apyFor(selLtv);
-  $("#apyHero").textContent=apy.toFixed(1)+"%";
-  $("#apyHero").style.color = apy < APY_BASE ? "var(--warn)" : "var(--good)";
+  const band = mixBand(pos.active ? pos.mix : mixSel, selLtv);
+  if(band){
+    $("#apyHero").textContent = band.p25.toFixed(1)+"–"+band.p75.toFixed(1)+"%";
+    $("#apyHero").style.color = band.p50 < liveSupply() ? "var(--warn)" : "var(--good)";
+  } else {
+    $("#apyHero").textContent = apy.toFixed(1)+"%";
+    $("#apyHero").style.color = apy < liveSupply() ? "var(--warn)" : "var(--good)";
+  }
+  liveChipUpd(band);
+  const earnTxt = band
+    ? `Typically ${band.p50.toFixed(1)}% (realized range ${band.p25.toFixed(1)}–${band.p75.toFixed(1)}%, ${band.n} positions, 30d)`
+    : `Earning ≈${apy.toFixed(1)}%`;
   $("#riskHint").textContent = locked
-    ? `Locked at your ${Math.round(selLtv*100)}% setting for this position — withdraw and redeposit to change. Earning ≈${apy.toFixed(1)}%.`
-    : "Earning ≈"+apy.toFixed(1)+"% — liquidation only possible if ZEC falls "+DROP(selLtv)+"%. "+note[Math.round(selLtv*100)];
+    ? `Locked at your ${Math.round(selLtv*100)}% setting for this position — withdraw and redeposit to change. ${earnTxt}.`
+    : earnTxt+" — liquidation only possible if ZEC falls "+DROP(selLtv)+"%. "+note[Math.round(selLtv*100)];
 }
 
 /* pool mix — curated menu, equal split across selection, locked at deposit */
@@ -705,6 +789,7 @@ function renderPools(){
       <div class="pn"><span>${p.name}</span><span class="ptag ${tagCls}">${p.tag}</span></div>
       <div class="pv">${p.venue}</div>
       <div class="pa num"><b>${p.gross>=100?Math.round(p.gross):p.gross.toFixed(1)}%</b> fees sampled${p.est?" (est.)":""} · ≈${netSlice}% after fees</div>
+      ${bandCard(p.id)}
     </button>`;
   }).join("");
   $$("#poolSeg .poolb").forEach(b=>b.addEventListener("click",()=>{
@@ -721,8 +806,9 @@ function poolHintUpd(locked){
   const names = cur.map(i=>POOLS.find(p=>p.id===i).name).join(" + ");
   const hasVol = cur.some(i=>POOLS.find(p=>p.id===i).tag==="VOLATILE");
   const net = mixNet(locked ? new Set(pos.mix) : mixSel);
-  let msg = `${cur.length} pool${cur.length>1?"s":""}, split evenly (${names}) — mix earns ≈${net.toFixed(0)}% on the working slice after all fees, sampled 2026-08-27.`;
-  if(net < BORROW_APR) msg += " ⚠ This mix currently earns less than the "+BORROW_APR+"% borrow cost — at these rates the strategy loses money.";
+  const when = LIVE ? "sampled live "+new Date(LIVE.generatedAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : "sampled 2026-08-27";
+  let msg = `${cur.length} pool${cur.length>1?"s":""}, split evenly (${names}) — mix earns ≈${net.toFixed(0)}% on the working slice after all fees, ${when}.`;
+  if(net < liveBorrow()) msg += " ⚠ This mix currently earns less than the "+liveBorrow().toFixed(1)+"% borrow cost — at these rates the strategy loses money.";
   else if(hasVol) msg += " ⚠ Volatile pairs: impermanent loss makes realized returns run well below sampled fee rates.";
   if(locked) msg = `Locked for this position: ${names}. Withdraw and redeposit to change the mix.`;
   $("#poolHint").textContent = msg;
@@ -794,7 +880,8 @@ function renderPos(){
   $("#pUsd").textContent="("+usd(v)+")";
   $("#pEarned").textContent="+"+pos.earnedZec.toFixed(3)+" ZEC earned";
   $("#pEarnedUsd").textContent=usd(pos.earnedZec*S.zec);
-  $("#pApy").textContent=apyFor(pos.ltv).toFixed(1)+"%";
+  const pBand = mixBand(pos.mix, pos.ltv);
+  $("#pApy").textContent = pBand ? pBand.p25.toFixed(1)+"–"+pBand.p75.toFixed(1)+"%" : apyFor(pos.ltv).toFixed(1)+"%";
   const borrow=pos.zec*S.zec*pos.ltv;
   $("#dColl").textContent=totZec.toFixed(1)+" ZEC · "+usd(v);
   $("#dBorrow").textContent=usd(borrow)+" USDC";
@@ -895,10 +982,10 @@ $("#modeTog").addEventListener("click",(e)=>{
 
 /* Demo-only test seam (stripped in production, like the tester's kit): lets the
    fuzz harness exercise the REAL pure logic instead of a reimplementation. */
-window.__oil = { apyFor, apyModel, mixGross, mixNet, POOLS, mixSel, DROP, checkAddr, gateDecision, liqPrice:(zec,ltv)=>zec*ltv/LIQ_T, LTV_STOPS:[0.30,0.40,0.50], LIQ_T, S, BORROW_APR, NET_FEE, APY_BASE };
+window.__oil = { apyFor, apyModel, mixGross, mixNet, POOLS, mixSel, DROP, checkAddr, gateDecision, liqPrice:(zec,ltv)=>zec*ltv/LIQ_T, LTV_STOPS:[0.30,0.40,0.50], LIQ_T, S, BORROW_APR, NET_FEE, APY_BASE, OILSKIN_KEEP, mixBand, userNet, liveBand30, tryLive, get LIVE(){return LIVE} };
 
 /* boot */
-gate();syncRiskLock();renderActivity();renderPos();
+gate();syncRiskLock();renderActivity();renderPos();tryLive();
 </script>
 </body>
 </html>

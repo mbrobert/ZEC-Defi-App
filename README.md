@@ -28,6 +28,7 @@ Simple positions upgrade to Full in place. Withdrawals are never pausable.
 | `contracts/` | Foundry — PositionVault, RewardRouter, LP adapters + mocks | ✅ 57 tests + 9 live-engine fork tests |
 | `agent/` | Zero-dependency Node daemon — monitors, decision engines, 1-Click client, executors | ✅ 62 tests incl. adversarial suite |
 | `web/` | Next.js app — deposit wizard, dashboard, BFF stubs | source ready, `npm i` to run |
+| `services/yield/` | Live rates + EMPIRICAL realized-APR bands from the engine's on-chain history — HTTP API + backfill CLI | ✅ 41 tests on real captured fixtures |
 | `prototype/` | `simple.html` = Oilskin v1 · `index.html` = power-user build (⇄ toggle switches) | ✅ open in a browser |
 | `packages/shared/` | Types, verified constants, pool registry, presets | ✅ builds |
 | `docs/` | ARCHITECTURE · FLOWS · RISKS · INTEGRATIONS · V1-SIMPLE | ✅ |

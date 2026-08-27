@@ -1,0 +1,24 @@
+{
+  "name": "@zyo/yield",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Oilskin yield service: empirical realized-APR bands from the live Snuggle engine's on-chain position history, live pool fee-APR sampling, and Rhea borrow/supply rates — served over a small HTTP API. Zero runtime dependencies by design.",
+  "main": "./dist/src/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/src/index.js",
+    "backfill": "tsx src/backfill.ts",
+    "test": "tsc -p tsconfig.json && node --test \"dist/test/*.test.js\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@zyo/shared": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

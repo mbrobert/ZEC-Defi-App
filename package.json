@@ -6,13 +6,16 @@
   "workspaces": [
     "packages/shared",
     "agent",
+    "services/yield",
     "web"
   ],
   "scripts": {
-    "build": "npm run build -w @zyo/shared && npm run build -w @zyo/agent && npm run build -w @zyo/web",
-    "test": "npm run test -w @zyo/agent && npm run test:contracts",
+    "build": "npm run build -w @zyo/shared && npm run build -w @zyo/agent && npm run build -w @zyo/yield && npm run build -w @zyo/web",
+    "test": "npm run test -w @zyo/agent && npm run test -w @zyo/yield && npm run test:contracts",
     "test:contracts": "cd contracts && forge test -vv",
     "agent": "npm run dev -w @zyo/agent",
+    "yield": "npm run dev -w @zyo/yield",
+    "backfill": "npm run backfill -w @zyo/yield --",
     "web": "npm run dev -w @zyo/web"
   },
   "engines": {
