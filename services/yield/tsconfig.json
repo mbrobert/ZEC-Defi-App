@@ -10,7 +10,6 @@
     "skipLibCheck": true,
     "declaration": false,
     "forceConsistentCasingInFileNames": true,
-    "typeRoots": ["./node_modules/@types"],
     "types": ["node"]
   },
   "include": ["src", "test"],

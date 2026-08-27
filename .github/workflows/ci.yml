@@ -28,7 +28,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Install (agent + shared workspaces only)
-        run: npm install -w @zyo/agent -w @zyo/shared
+      - name: Install (shared + agent + yield workspaces)
+        run: npm install -w @zyo/shared -w @zyo/agent -w @zyo/yield
+      # agent and yield import @zyo/shared's compiled dist/ — a fresh runner
+      # has none, so build it first (this missing step failed every run
+      # 2026-08-14 → 2026-08-27).
+      - name: Build shared
+        run: npm run build -w @zyo/shared
       - name: Agent suite (tsc + node:test)
         run: npm test -w @zyo/agent
+      - name: Yield service suite (tsc + node:test, offline fixtures)
+        run: npm test -w @zyo/yield
