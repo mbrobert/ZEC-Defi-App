@@ -266,7 +266,7 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
     <div class="hero" style="margin-bottom:24px">
       <h1>Put your ZEC to work.<br>Never sell it.</h1>
       <p class="sub">Deposit native Zcash, earn yield from real trading fees — your ZEC is borrowed against, never sold, and comes home whenever you ask.</p>
-      <div class="apyline"><span class="v num" id="apyHero">6.9%</span><span class="muted">net yield right now <span class="tt tiny" title="Computed from pool fee rates sampled 2026-08-16 — after the 25% total fees on earnings and the 13.2% borrow cost, on your chosen LTV and pool mix. Fee markets swing hard, and volatile pairs lose part of this to impermanent loss. Trailing math, never a promise.">ⓘ</span></span></div>
+      <div class="apyline"><span class="v num" id="apyHero">6.9%</span><span class="muted">net yield right now <span class="tt tiny" title="Computed from pool fee rates sampled 2026-08-27 — after the 25% total fees on earnings and the 13.2% borrow cost, on your chosen LTV and pool mix. Fee markets swing hard, and volatile pairs lose part of this to impermanent loss. Trailing math, never a promise.">ⓘ</span></span></div>
     </div>
 
     <div class="card pad">
@@ -413,7 +413,7 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
   </table>
 
   <h3>Your risk setting</h3>
-  <p>One dial, three positions. It sets how much is borrowed against your ZEC — which sets both your yield and your distance to the liquidation line (liquidation threshold 70%). With the default blue-chip mix at rates sampled 2026-08-16:</p>
+  <p>One dial, three positions. It sets how much is borrowed against your ZEC — which sets both your yield and your distance to the liquidation line (liquidation threshold 70%). With the default blue-chip mix at rates sampled 2026-08-27:</p>
   <table class="dtable">
     <tr><th>Setting</th><th>Borrowed</th><th>ZEC must fall</th><th>Net yield at sampled rates</th></tr>
     <tr><td><b>Sheltered</b> (default)</td><td class="num">30%</td><td class="num">57%</td><td class="num">≈ 13.2%</td></tr>
@@ -423,7 +423,7 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
   <p style="margin-top:8px">Straight talk: ZEC is volatile — drawdowns around 30% happen in ordinary years, so <b>Working hard leaves far less room</b> and leans hardest on the protection ladder. Sheltered is the setting where "protected" is close to unconditional. Your setting locks at deposit; to change it, withdraw and redeposit. Yield figures move with the pool mix you choose and with fee markets — they are trailing samples, not promises.</p>
 
   <h3>The pool menu</h3>
-  <p>Your borrowed USDC is split evenly across the curated pools you select — engine-approved venues only, each with its own exposure cap. Fee rates below were sampled 2026-08-16 from live volume and TVL (volume × fee tier ÷ TVL × 365); they swing constantly:</p>
+  <p>Your borrowed USDC is split evenly across the curated pools you select — engine-approved venues only, each with its own exposure cap. Fee rates below were sampled 2026-08-27 from live volume and TVL (volume × fee tier ÷ TVL × 365); they swing constantly:</p>
   <table class="dtable">
     <tr><th>Pool</th><th>Venue</th><th>Class</th><th>Fees sampled</th><th>After our fees</th></tr>
     <tr><td><b>WETH/USDC</b></td><td>Aerodrome 0.05%</td><td>Blue chip</td><td class="num">65.7%</td><td class="num">≈ 50%</td></tr>
@@ -567,7 +567,7 @@ const LIQ_T = 0.70, NET_FEE = 0.85*0.90; // ×0.765 after engine 15% + Oilskin 1
 const APY_BASE = 0.8;      // ZEC supply APY on 100% of collateral
 const BORROW_APR = 13.2;   // USDC borrow rate on the borrowed slice (Rhea, sampled)
 /* Curated pool menu — engine-approved pools only. `gross` = pool-level fee APR
-   sampled 2026-08-16 from live TVL + 24h volume (vol × feeTier / TVL × 365);
+   sampled 2026-08-27 from live TVL + 24h volume (vol × feeTier / TVL × 365);
    `est:true` marks pools estimated from their class, not sampled that day.
    Fee markets swing hard — these are trailing samples, never promises. On
    volatile (non-correlated) pairs, impermanent loss makes realized returns run
@@ -719,7 +719,7 @@ function poolHintUpd(locked){
   const names = cur.map(i=>POOLS.find(p=>p.id===i).name).join(" + ");
   const hasVol = cur.some(i=>POOLS.find(p=>p.id===i).tag==="VOLATILE");
   const net = mixNet(locked ? new Set(pos.mix) : mixSel);
-  let msg = `${cur.length} pool${cur.length>1?"s":""}, split evenly (${names}) — mix earns ≈${net.toFixed(0)}% on the working slice after all fees, sampled 2026-08-16.`;
+  let msg = `${cur.length} pool${cur.length>1?"s":""}, split evenly (${names}) — mix earns ≈${net.toFixed(0)}% on the working slice after all fees, sampled 2026-08-27.`;
   if(net < BORROW_APR) msg += " ⚠ This mix currently earns less than the "+BORROW_APR+"% borrow cost — at these rates the strategy loses money.";
   else if(hasVol) msg += " ⚠ Volatile pairs: impermanent loss makes realized returns run well below sampled fee rates.";
   if(locked) msg = `Locked for this position: ${names}. Withdraw and redeposit to change the mix.`;

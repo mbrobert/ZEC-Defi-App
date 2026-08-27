@@ -24,7 +24,7 @@ Amounts worth trying: `0.25` (min ✓), `12.5` (typical ✓), `50` (cap ✓), `0
 ## What to click (every path)
 
 1. **Risk setting** — pick each of Sheltered / Steady / Working hard; the headline
-   yield (13.2 / 17.4 / 21.5% with the default mix, at rates sampled 2026-08-16) and
+   yield (13.2 / 17.4 / 21.5% with the default mix, at rates sampled 2026-08-27) and
    the "ZEC would have to fall X%" line (57 / 43 / 29%) move together.
 2. **Pool mix** — toggle the seven curated pools; the yield recomputes live. Build a
    stables-only mix and read the negative-carry warning ("earns less than the borrow

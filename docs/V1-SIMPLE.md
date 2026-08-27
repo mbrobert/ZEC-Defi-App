@@ -87,14 +87,14 @@ fee factor − 13.2% USDC borrow rate). Pool fee APRs are sampled from live
 volume/TVL and labeled with their sample date. Yield headline must always
 be the computed trailing figure, never a promise.
 
-> **Amended 2026-08-16 (Matt's call): curated pool menu.** "More blue-chip
+> **Amended 2026-08-27 (Matt's call): curated pool menu.** "More blue-chip
 > and stable pool choices, higher-yield options." v1 now offers a 7-pool
 > curated menu (4 blue-chip incl. correlated WETH/cbBTC, 2 stable/LST,
 > 1 volatile) — engine-approved venues only, equal-split allocation, mix
 > locked at deposit like the LTV setting. Guardrails kept: minimum one
 > pool; a mix earning less than the borrow cost warns "loses money at
 > these rates"; volatile pools carry an explicit impermanent-loss warning
-> and tight per-pool caps. At rates sampled 2026-08-16 the default
+> and tight per-pool caps. At rates sampled 2026-08-27 the default
 > blue-chip mix computes 13.2 / 17.4 / 21.5% at 30/40/50% LTV — the old
 > 6.9% headline came from a stale calm-week sample, not a different
 > strategy.
