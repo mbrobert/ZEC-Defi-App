@@ -88,9 +88,9 @@ volume/TVL and labeled with their sample date. Yield headline must always
 be the computed trailing figure, never a promise.
 
 > **Amended 2026-08-27 (Matt's call): curated pool menu.** "More blue-chip
-> and stable pool choices, higher-yield options." v1 now offers a 7-pool
+> and stable pool choices, higher-yield options." v1 now offers an 8-pool
 > curated menu (4 blue-chip incl. correlated WETH/cbBTC, 2 stable/LST,
-> 1 volatile) — engine-approved venues only, equal-split allocation, mix
+> 2 volatile incl. AERO/cbBTC) — engine-approved venues only, equal-split allocation, mix
 > locked at deposit like the LTV setting. Guardrails kept: minimum one
 > pool; a mix earning less than the borrow cost warns "loses money at
 > these rates"; volatile pools carry an explicit impermanent-loss warning

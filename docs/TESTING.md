@@ -26,7 +26,7 @@ Amounts worth trying: `0.25` (min ✓), `12.5` (typical ✓), `50` (cap ✓), `0
 1. **Risk setting** — pick each of Sheltered / Steady / Working hard; the headline
    yield (13.2 / 17.4 / 21.5% with the default mix, at rates sampled 2026-08-27) and
    the "ZEC would have to fall X%" line (57 / 43 / 29%) move together.
-2. **Pool mix** — toggle the seven curated pools; the yield recomputes live. Build a
+2. **Pool mix** — toggle the eight curated pools; the yield recomputes live. Build a
    stables-only mix and read the negative-carry warning ("earns less than the borrow
    cost"); add AERO/WETH and read the impermanent-loss warning; try to remove the
    last pool (blocked).
@@ -62,9 +62,9 @@ The demo carries a **demo-only test seam** (`window.__oil`, stripped in producti
 like the Test kit) exposing the *real* pure functions, so the fuzz exercises the
 shipped logic rather than a re-implementation.
 
-- **Part A — logic grid (2,109 combinations):** every combination of
+- **Part A — logic grid (2,493 combinations):** every combination of
   {6 addresses × 16 amounts × 6 existing-position sizes × 3 risk stops} for the gate,
-  PLUS every non-empty pool subset (127) × 3 risk stops for the yield model —
+  PLUS every non-empty pool subset (255) × 3 risk stops for the yield model —
   asserting the real invariants: account-cap-and-minimum gating (a top-up can never
   exceed 50), apy = supply + LTV × (mix × 0.765 − borrow), carry-sign correctness
   (a mix earning less than the borrow cost goes below the supply-only baseline),
@@ -76,7 +76,7 @@ shipped logic rather than a re-implementation.
   position, top-ups lock the selector and cannot exceed the cap, and a full withdraw
   returns to the start and unlocks the selector.
 
-Both are deterministic (seeded) and reproducible. Latest run: **2,109 + 90
+Both are deterministic (seeded) and reproducible. Latest run: **2,493 + 90
 combinations, 0 failures.** The two scripts live alongside the verification suites
 (`verify-simple.mjs` — 21 end-to-end checks; `verify-toggle.mjs` — the Simple⇄Advanced
 round-trip).

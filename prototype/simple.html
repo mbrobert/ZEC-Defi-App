@@ -433,6 +433,7 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
     <tr><td><b>cbETH/WETH</b></td><td>Aerodrome</td><td>Stable · LST</td><td class="num">≈4% (est.)</td><td class="num">≈ 3%</td></tr>
     <tr><td><b>USDT/USDC</b></td><td>0.01% stable</td><td>Stable</td><td class="num">1.0%</td><td class="num">≈ 0.8%</td></tr>
     <tr><td><b>AERO/WETH</b></td><td>Aerodrome 1%</td><td>Volatile</td><td class="num">316%</td><td class="num">≈ 242%</td></tr>
+    <tr><td><b>AERO/cbBTC</b></td><td>Aerodrome 0.6%</td><td>Volatile</td><td class="num">723%</td><td class="num">≈ 553%</td></tr>
   </table>
   <p style="margin-top:8px"><b>Read the volatile row carefully:</b> sampled fee rates on non-correlated pairs are not what you keep — impermanent loss (the pool constantly selling the winner for the loser) eats a large, variable share, and the engine realizes it at each rebalance. Correlated pairs (WETH/cbBTC, cbETH/WETH) and stables barely suffer IL but earn less. Aerodrome pays staked positions AERO emissions in lieu of trading fees; at equilibrium emissions track fees, so fee rates are the honest proxy. A mix that earns less than the 13.2% borrow cost loses money at these rates — the app warns you the moment you build one.</p>
 
@@ -582,6 +583,7 @@ const POOLS = [
   {id:"lst",    name:"cbETH/WETH", venue:"Aerodrome",       tag:"STABLE",    gross:4.0, est:true, note:"correlated LST pair — near-zero IL (class estimate)"},
   {id:"stab",   name:"USDT/USDC",  venue:"0.01% stable",    tag:"STABLE",    gross:1.0,  note:"parking tier — near-zero IL, thin fees"},
   {id:"aero",   name:"AERO/WETH",  venue:"Aerodrome 1%",    tag:"VOLATILE",  gross:316,  note:"incentive pair — huge sampled fees, brutal IL, tight per-pool cap"},
+  {id:"abtc",   name:"AERO/cbBTC", venue:"Aerodrome 0.6%",  tag:"VOLATILE",  gross:723,  note:"AERO against BTC — extreme sampled fees on thin TVL ($4.1M/day on $1.2M), brutal IL, tight per-pool cap"},
 ];
 let mixSel = new Set(["aweth","acbbtc"]); // default: the two blue-chip flagships
 const mixGross = ids => { const a=[...ids].map(i=>POOLS.find(p=>p.id===i).gross); return a.reduce((s,x)=>s+x,0)/a.length; };
