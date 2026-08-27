@@ -84,6 +84,18 @@ label{display:block;font-size:13.5px;font-weight:650;color:var(--ink-2);margin-b
 .segb span{display:block;font-size:11px;color:var(--ink-3);margin-top:2px}
 .segb.on{border-color:var(--brass);background:var(--brass-bg);box-shadow:0 0 0 1px var(--brass) inset}
 .segb.on b{color:var(--brass)}
+.pools{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.poolb{border:1.5px solid var(--line);background:var(--surface);border-radius:11px;padding:9px 11px;
+  text-align:left;transition:border-color .12s;display:block}
+.poolb .pn{font-weight:700;font-size:13px;display:flex;align-items:center;gap:7px;justify-content:space-between}
+.poolb .pv{font-size:11px;color:var(--ink-3)}
+.poolb .pa{font-size:11.5px;margin-top:3px;color:var(--ink-2)}
+.poolb .pa b{color:var(--good)}
+.poolb.on{border-color:var(--brass);background:var(--brass-bg);box-shadow:0 0 0 1px var(--brass) inset}
+.ptag{font-size:9px;font-weight:800;letter-spacing:.07em;border-radius:5px;padding:2px 6px;border:1px solid}
+.ptag.bc{color:var(--info);border-color:rgba(111,169,242,.4)}
+.ptag.st{color:var(--good);border-color:rgba(82,201,138,.4)}
+.ptag.vo{color:var(--warn);border-color:rgba(227,184,74,.45)}
 
 /* docs */
 .docs h3{font-size:15px;margin:24px 0 6px}
@@ -254,7 +266,7 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
     <div class="hero" style="margin-bottom:24px">
       <h1>Put your ZEC to work.<br>Never sell it.</h1>
       <p class="sub">Deposit native Zcash, earn yield from real trading fees — your ZEC is borrowed against, never sold, and comes home whenever you ask.</p>
-      <div class="apyline"><span class="v num" id="apyHero">6.9%</span><span class="muted">net yield right now <span class="tt tiny" title="After every fee. Varies with pool trading fees and borrow rates — this is the live blended rate, not a promise.">ⓘ</span></span></div>
+      <div class="apyline"><span class="v num" id="apyHero">6.9%</span><span class="muted">net yield right now <span class="tt tiny" title="Computed from pool fee rates sampled 2026-08-16 — after the 25% total fees on earnings and the 13.2% borrow cost, on your chosen LTV and pool mix. Fee markets swing hard, and volatile pairs lose part of this to impermanent loss. Trailing math, never a promise.">ⓘ</span></span></div>
     </div>
 
     <div class="card pad">
@@ -274,6 +286,11 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
           <button type="button" class="segb" data-ltv="50"><b>Working hard</b><span class="num">borrow 50%</span></button>
         </div>
         <div class="small" id="riskHint" style="margin-top:7px;color:var(--ink-3)">Earning ≈6.9% — liquidation only possible if ZEC falls 57%. The safest setting, and the default.</div>
+      </div>
+      <div class="field">
+        <label>Pool mix — curated venues only <span class="tt" title="Your borrowed USDC works in the pools you pick here, split evenly. Every pool is engine-approved and capped. Fee rates are sampled from live volume and swing constantly — trailing numbers, never promises. Volatile pairs earn more in fees and lose more to impermanent loss.">ⓘ</span></label>
+        <div class="pools" id="poolSeg"></div>
+        <div class="small" id="poolHint" style="margin-top:7px;color:var(--ink-3)"></div>
       </div>
       <div class="field" style="margin-bottom:8px">
         <label>Your Zcash address — where everything returns <span class="tt" title="Locked to your deposit. Withdrawals and earnings can only ever be sent here — even if Oilskin were fully compromised, funds cannot exit anywhere else.">ⓘ</span></label>
@@ -326,8 +343,7 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
           <div class="kv">
             <span class="k">Collateral on Rhea (NEAR)</span><span class="v num" id="dColl">12.0 ZEC · $5,846</span>
             <span class="k">Borrowed against it (your <span id="dLtv">30%</span> setting)</span><span class="v num" id="dBorrow">$1,754 USDC</span>
-            <span class="k">Working in <span class="coin"><svg><use href="#tk-weth"/></svg></span><span class="coin"><svg><use href="#tk-usdc"/></svg></span> WETH/USDC</span><span class="v num" id="dPool1">$1,052</span>
-            <span class="k">Working in <span class="coin"><svg><use href="#tk-cbbtc"/></svg></span><span class="coin"><svg><use href="#tk-usdc"/></svg></span> cbBTC/USDC</span><span class="v num" id="dPool2">$702</span>
+            <span style="display:contents" id="dPools"></span>
             <span class="k">Earnings auto-compound</span><span class="v">every time they cover costs 3×</span>
             <span class="k">Fees (only ever on earnings)</span><span class="v num">10% Oilskin + 15% engine</span>
           </div>
@@ -383,7 +399,7 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
     <li><b>1 · Deposit.</b> Send ZEC from any Zcash wallet to a fresh deposit address (QR / ZIP-321). Fund it from your shielded balance — that's the default guidance.</li>
     <li><b>2 · Collateral.</b> Your ZEC is supplied as collateral on Rhea Finance (NEAR) and starts earning supply interest. It is never sold.</li>
     <li><b>3 · Borrow.</b> USDC is borrowed against it at your risk setting — 30–50% of collateral value.</li>
-    <li><b>4 · Earn.</b> That USDC works in two curated blue-chip pools on Base (WETH/USDC + cbBTC/USDC), rebalanced automatically. Earnings compound whenever they cover costs 3×.</li>
+    <li><b>4 · Earn.</b> That USDC works in the curated pools you picked (default: the two blue-chip flagships, WETH/USDC + cbBTC/USDC on Aerodrome), rebalanced automatically. Earnings compound whenever they cover costs 3×.</li>
     <li><b>5 · Home.</b> Withdrawals unwind your share, repay the loan's part automatically, and arrive as native ZEC at your locked address.</li>
   </ul>
 
@@ -397,14 +413,28 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
   </table>
 
   <h3>Your risk setting</h3>
-  <p>One dial, three positions. It sets how much is borrowed against your ZEC — which sets both your yield and your distance to the liquidation line (liquidation threshold 70%):</p>
+  <p>One dial, three positions. It sets how much is borrowed against your ZEC — which sets both your yield and your distance to the liquidation line (liquidation threshold 70%). With the default blue-chip mix at rates sampled 2026-08-16:</p>
   <table class="dtable">
-    <tr><th>Setting</th><th>Borrowed</th><th>ZEC must fall</th><th>Net yield now</th></tr>
-    <tr><td><b>Sheltered</b> (default)</td><td class="num">30%</td><td class="num">57%</td><td class="num">≈ 6.9%</td></tr>
-    <tr><td><b>Steady</b></td><td class="num">40%</td><td class="num">43%</td><td class="num">≈ 8.9%</td></tr>
-    <tr><td><b>Working hard</b></td><td class="num">50%</td><td class="num">29%</td><td class="num">≈ 11.0%</td></tr>
+    <tr><th>Setting</th><th>Borrowed</th><th>ZEC must fall</th><th>Net yield at sampled rates</th></tr>
+    <tr><td><b>Sheltered</b> (default)</td><td class="num">30%</td><td class="num">57%</td><td class="num">≈ 13.2%</td></tr>
+    <tr><td><b>Steady</b></td><td class="num">40%</td><td class="num">43%</td><td class="num">≈ 17.4%</td></tr>
+    <tr><td><b>Working hard</b></td><td class="num">50%</td><td class="num">29%</td><td class="num">≈ 21.5%</td></tr>
   </table>
-  <p style="margin-top:8px">Straight talk: ZEC is volatile — drawdowns around 30% happen in ordinary years, so <b>Working hard leaves far less room</b> and leans hardest on the protection ladder. Sheltered is the setting where "protected" is close to unconditional. Your setting locks at deposit; to change it, withdraw and redeposit.</p>
+  <p style="margin-top:8px">Straight talk: ZEC is volatile — drawdowns around 30% happen in ordinary years, so <b>Working hard leaves far less room</b> and leans hardest on the protection ladder. Sheltered is the setting where "protected" is close to unconditional. Your setting locks at deposit; to change it, withdraw and redeposit. Yield figures move with the pool mix you choose and with fee markets — they are trailing samples, not promises.</p>
+
+  <h3>The pool menu</h3>
+  <p>Your borrowed USDC is split evenly across the curated pools you select — engine-approved venues only, each with its own exposure cap. Fee rates below were sampled 2026-08-16 from live volume and TVL (volume × fee tier ÷ TVL × 365); they swing constantly:</p>
+  <table class="dtable">
+    <tr><th>Pool</th><th>Venue</th><th>Class</th><th>Fees sampled</th><th>After our fees</th></tr>
+    <tr><td><b>WETH/USDC</b></td><td>Aerodrome 0.05%</td><td>Blue chip</td><td class="num">65.7%</td><td class="num">≈ 50%</td></tr>
+    <tr><td><b>cbBTC/USDC</b></td><td>Aerodrome 0.05%</td><td>Blue chip</td><td class="num">77.1%</td><td class="num">≈ 59%</td></tr>
+    <tr><td><b>WETH/USDC</b></td><td>Uniswap 0.05%</td><td>Blue chip</td><td class="num">43.5%</td><td class="num">≈ 33%</td></tr>
+    <tr><td><b>WETH/cbBTC</b></td><td>Uniswap 0.30%</td><td>Blue chip · correlated</td><td class="num">9.3%</td><td class="num">≈ 7%</td></tr>
+    <tr><td><b>cbETH/WETH</b></td><td>Aerodrome</td><td>Stable · LST</td><td class="num">≈4% (est.)</td><td class="num">≈ 3%</td></tr>
+    <tr><td><b>USDT/USDC</b></td><td>0.01% stable</td><td>Stable</td><td class="num">1.0%</td><td class="num">≈ 0.8%</td></tr>
+    <tr><td><b>AERO/WETH</b></td><td>Aerodrome 1%</td><td>Volatile</td><td class="num">316%</td><td class="num">≈ 242%</td></tr>
+  </table>
+  <p style="margin-top:8px"><b>Read the volatile row carefully:</b> sampled fee rates on non-correlated pairs are not what you keep — impermanent loss (the pool constantly selling the winner for the loser) eats a large, variable share, and the engine realizes it at each rebalance. Correlated pairs (WETH/cbBTC, cbETH/WETH) and stables barely suffer IL but earn less. Aerodrome pays staked positions AERO emissions in lieu of trading fees; at equilibrium emissions track fees, so fee rates are the honest proxy. A mix that earns less than the 13.2% borrow cost loses money at these rates — the app warns you the moment you build one.</p>
 
   <h3>The protection ladder</h3>
   <ul>
@@ -513,6 +543,7 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
     <h4>Try every path</h4>
     <ul class="tk-list">
       <li>Pick each risk setting — watch the yield and the "falls X%" line move (57 / 43 / 29%).</li>
+      <li>Build a pool mix — toggle pools on/off, watch the yield recompute; try a stables-only mix and read the negative-carry warning; try adding AERO/WETH and read the IL warning.</li>
       <li>Deposit with a t1 address, step through the progress, open the position.</li>
       <li>Hit <b>Add ZEC</b> — the risk selector locks and the button shows your remaining room to 50.</li>
       <li>Try to top a ~40-ZEC position past 50 — it should block with "room left".</li>
@@ -532,12 +563,34 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
 "use strict";
 /* ═══ Oilskin v1 — one strategy, one address, zero knobs ═══ */
 const S = { zec: 487.20, view: "earn" };
-const LIQ_T = 0.70, NET_FEE = 0.85*0.90;
-const APY_BASE = 0.8, APY_SPREAD = 20.33; // net yield ≈ supply base + spread × LTV, from live pool/borrow rates
-const apyFor = l => APY_BASE + APY_SPREAD*l;
+const LIQ_T = 0.70, NET_FEE = 0.85*0.90; // ×0.765 after engine 15% + Oilskin 10%
+const APY_BASE = 0.8;      // ZEC supply APY on 100% of collateral
+const BORROW_APR = 13.2;   // USDC borrow rate on the borrowed slice (Rhea, sampled)
+/* Curated pool menu — engine-approved pools only. `gross` = pool-level fee APR
+   sampled 2026-08-16 from live TVL + 24h volume (vol × feeTier / TVL × 365);
+   `est:true` marks pools estimated from their class, not sampled that day.
+   Fee markets swing hard — these are trailing samples, never promises. On
+   volatile (non-correlated) pairs, impermanent loss makes realized returns run
+   well below sampled fee rates. Aerodrome staked positions earn AERO emissions
+   in lieu of fees; at equilibrium emissions track pool fees, so the fee APR is
+   the honest proxy. */
+const POOLS = [
+  {id:"aweth",  name:"WETH/USDC",  venue:"Aerodrome 0.05%", tag:"BLUE CHIP", gross:65.7, note:"deepest ETH flow on Base — $35M/day on $9.8M TVL"},
+  {id:"acbbtc", name:"cbBTC/USDC", venue:"Aerodrome 0.05%", tag:"BLUE CHIP", gross:77.1, note:"hardest-working BTC pool — $24M/day on $5.7M TVL"},
+  {id:"uweth",  name:"WETH/USDC",  venue:"Uniswap 0.05%",   tag:"BLUE CHIP", gross:43.5, note:"the Uni workhorse — $20M/day on $8.5M TVL"},
+  {id:"ubtc",   name:"WETH/cbBTC", venue:"Uniswap 0.30%",   tag:"BLUE CHIP", gross:9.3,  note:"ETH↔BTC ratio pair — correlated majors, gentle IL"},
+  {id:"lst",    name:"cbETH/WETH", venue:"Aerodrome",       tag:"STABLE",    gross:4.0, est:true, note:"correlated LST pair — near-zero IL (class estimate)"},
+  {id:"stab",   name:"USDT/USDC",  venue:"0.01% stable",    tag:"STABLE",    gross:1.0,  note:"parking tier — near-zero IL, thin fees"},
+  {id:"aero",   name:"AERO/WETH",  venue:"Aerodrome 1%",    tag:"VOLATILE",  gross:316,  note:"incentive pair — huge sampled fees, brutal IL, tight per-pool cap"},
+];
+let mixSel = new Set(["aweth","acbbtc"]); // default: the two blue-chip flagships
+const mixGross = ids => { const a=[...ids].map(i=>POOLS.find(p=>p.id===i).gross); return a.reduce((s,x)=>s+x,0)/a.length; };
+const mixNet   = ids => mixGross(ids) * NET_FEE;                 // after both fees
+const apyModel = (l, grossAvg) => APY_BASE + l * (grossAvg*NET_FEE - BORROW_APR); // whole-position %
+const apyFor   = l => apyModel(l, mixGross(pos.active ? pos.mix : mixSel));
 const DROP = l => Math.round((1 - l/LIQ_T)*100);
 let selLtv = 0.30;
-const pos = { active:false, zec:0, earnedZec:0, home:"", openedAt:0, ltv:0.30 };
+const pos = { active:false, zec:0, earnedZec:0, home:"", openedAt:0, ltv:0.30, mix:["aweth","acbbtc"] };
 
 const $=(q,el=document)=>el.querySelector(q);
 const $$=(q,el=document)=>[...el.querySelectorAll(q)];
@@ -625,14 +678,52 @@ function syncRiskLock(){
     x.classList.toggle("on", on);
     x.style.opacity = (locked && !on) ? ".4" : "1";
   });
+  renderPools();       // pool cards share the same lock state
   riskUpd(locked);
 }
 function riskUpd(locked){
   const note={30:"The safest setting, and the default.",40:"The middle path — solid buffer, better pay.",50:"Highest yield, thinnest buffer — leans hardest on the protection ladder."};
-  $("#apyHero").textContent=apyFor(selLtv).toFixed(1)+"%";
+  const apy = apyFor(selLtv);
+  $("#apyHero").textContent=apy.toFixed(1)+"%";
+  $("#apyHero").style.color = apy < APY_BASE ? "var(--warn)" : "var(--good)";
   $("#riskHint").textContent = locked
-    ? `Locked at your ${Math.round(selLtv*100)}% setting for this position — withdraw and redeposit to change. Earning ≈${apyFor(selLtv).toFixed(1)}%.`
-    : "Earning ≈"+apyFor(selLtv).toFixed(1)+"% — liquidation only possible if ZEC falls "+DROP(selLtv)+"%. "+note[Math.round(selLtv*100)];
+    ? `Locked at your ${Math.round(selLtv*100)}% setting for this position — withdraw and redeposit to change. Earning ≈${apy.toFixed(1)}%.`
+    : "Earning ≈"+apy.toFixed(1)+"% — liquidation only possible if ZEC falls "+DROP(selLtv)+"%. "+note[Math.round(selLtv*100)];
+}
+
+/* pool mix — curated menu, equal split across selection, locked at deposit */
+function renderPools(){
+  const locked = pos.active;
+  const cur = locked ? new Set(pos.mix) : mixSel;
+  $("#poolSeg").innerHTML = POOLS.map(p=>{
+    const on = cur.has(p.id);
+    const tagCls = p.tag==="BLUE CHIP"?"bc":p.tag==="STABLE"?"st":"vo";
+    const netSlice = (p.gross*NET_FEE).toFixed(0);
+    return `<button type="button" class="poolb${on?" on":""}" data-pool="${p.id}" ${locked?"disabled":""} style="${locked&&!on?"opacity:.4":""}">
+      <div class="pn"><span>${p.name}</span><span class="ptag ${tagCls}">${p.tag}</span></div>
+      <div class="pv">${p.venue}</div>
+      <div class="pa num"><b>${p.gross>=100?Math.round(p.gross):p.gross.toFixed(1)}%</b> fees sampled${p.est?" (est.)":""} · ≈${netSlice}% after fees</div>
+    </button>`;
+  }).join("");
+  $$("#poolSeg .poolb").forEach(b=>b.addEventListener("click",()=>{
+    if(b.disabled) return;
+    const id=b.dataset.pool;
+    if(mixSel.has(id)){ if(mixSel.size===1){toast("Keep at least one pool in the mix");return;} mixSel.delete(id); }
+    else mixSel.add(id);
+    renderPools(); riskUpd(false);
+  }));
+  poolHintUpd(locked);
+}
+function poolHintUpd(locked){
+  const cur = locked ? pos.mix : [...mixSel];
+  const names = cur.map(i=>POOLS.find(p=>p.id===i).name).join(" + ");
+  const hasVol = cur.some(i=>POOLS.find(p=>p.id===i).tag==="VOLATILE");
+  const net = mixNet(locked ? new Set(pos.mix) : mixSel);
+  let msg = `${cur.length} pool${cur.length>1?"s":""}, split evenly (${names}) — mix earns ≈${net.toFixed(0)}% on the working slice after all fees, sampled 2026-08-16.`;
+  if(net < BORROW_APR) msg += " ⚠ This mix currently earns less than the "+BORROW_APR+"% borrow cost — at these rates the strategy loses money.";
+  else if(hasVol) msg += " ⚠ Volatile pairs: impermanent loss makes realized returns run well below sampled fee rates.";
+  if(locked) msg = `Locked for this position: ${names}. Withdraw and redeposit to change the mix.`;
+  $("#poolHint").textContent = msg;
 }
 function qrSvg(seed){
   let h=0;for(const ch of seed)h=(h*31+ch.charCodeAt(0))>>>0;
@@ -660,7 +751,7 @@ $("#sentBtn").addEventListener("click",()=>{
   const steps=[
     {t:"ZEC received",d:"Confirmed on Zcash",tx:[mkTx("zcash")]},
     {t:"Working as collateral",d:`Supplied on Rhea (NEAR) · ${Math.round((pos.active?pos.ltv:selLtv)*100)}% borrowed as USDC`,tx:[mkTx("near")]},
-    {t:"Earning",d:"Deployed to WETH/USDC + cbBTC/USDC on Base",tx:[mkTx("base")]},
+    {t:"Earning",d:`Deployed to ${(pos.active?pos.mix:[...mixSel]).map(i=>POOLS.find(p=>p.id===i).name).join(" + ")} on Base`,tx:[mkTx("base")]},
     {t:"Done — protected and earning",d:"Auto-compounding from here",tx:[]}];
   $("#depSteps").innerHTML=steps.map((s,i)=>`<div class="bstep" data-i="${i}"><div class="bic">${i+1}</div><div style="flex:1"><div class="bt">${s.t}</div><div class="bd">${s.d}</div><div class="btx" style="display:flex;gap:6px;flex-wrap:wrap"></div></div></div>`).join("");
   let i=0;
@@ -674,13 +765,13 @@ $("#sentBtn").addEventListener("click",()=>{
   tick();
 });
 function openPosition(a,steps){
-  if(pos.active){pos.zec+=a;}else{pos.active=true;pos.zec=a;pos.earnedZec=0;pos.openedAt=Date.now();pos.ltv=selLtv;}
+  if(pos.active){pos.zec+=a;}else{pos.active=true;pos.zec=a;pos.earnedZec=0;pos.openedAt=Date.now();pos.ltv=selLtv;pos.mix=[...mixSel];}
   activity.unshift({t:"Deposited",d:`${a} ZEC → working (collateral on Rhea, earning on Base)`,ic:"＋",when:"just now",tx:steps[0].tx[0]});
   renderActivity();renderPos();
 }
 $("#depDone").addEventListener("click",()=>{$("#depOverlay").classList.remove("on");renderPos();});
 $("#demoBtn").addEventListener("click",()=>{
-  pos.active=true;pos.zec=12;pos.earnedZec=0.128;pos.home="t1Py8kAoQrfmRRWTbtHkDkGb6JuaXPmpGxy";pos.openedAt=Date.now()-86400000*18;pos.ltv=0.30;
+  pos.active=true;pos.zec=12;pos.earnedZec=0.128;pos.home="t1Py8kAoQrfmRRWTbtHkDkGb6JuaXPmpGxy";pos.openedAt=Date.now()-86400000*18;pos.ltv=0.30;pos.mix=["aweth","acbbtc"];
   activity.length=0;
   activity.push(
     {t:"Auto-compounded",d:"0.041 ZEC of earnings put back to work",ic:"↻",when:"6h ago",tx:mkTx("base")},
@@ -706,8 +797,10 @@ function renderPos(){
   $("#dColl").textContent=totZec.toFixed(1)+" ZEC · "+usd(v);
   $("#dBorrow").textContent=usd(borrow)+" USDC";
   $("#dLtv").textContent=Math.round(pos.ltv*100)+"%";
-  $("#dPool1").textContent=usd(borrow*0.6);
-  $("#dPool2").textContent=usd(borrow*0.4);
+  $("#dPools").innerHTML = pos.mix.map(i=>{
+    const p=POOLS.find(x=>x.id===i);
+    return `<span class="k">Working in ${p.name} <span class="faint tiny">(${p.venue})</span></span><span class="v num">${usd(borrow/pos.mix.length)}</span>`;
+  }).join("");
   $("#homeShort").textContent=pos.home?pos.home.slice(0,5)+"…"+pos.home.slice(-4):"—";
   // protection meter: liquidation price vs now, on a runway
   const liq=(pos.zec*S.zec*pos.ltv)/(LIQ_T*pos.zec); // = S.zec*ltv/LIQ_T
@@ -787,9 +880,20 @@ $$("#tkOverlay [data-amt]").forEach(b=>b.addEventListener("click",()=>{
   $("#amt").scrollIntoView({block:"center",behavior:"smooth"});
 }));
 
+/* Advanced toggle: the power build is a separate file (prototype/index.html).
+   From the repo folder (file://) the relative link just works. On a web host
+   where index.html isn't deployed alongside (e.g. the hosted artifact), check
+   first and explain instead of dead-clicking. */
+$("#modeTog").addEventListener("click",(e)=>{
+  if(location.protocol==="file:") return; // both files sit together on disk
+  e.preventDefault();
+  fetch("index.html",{method:"HEAD"}).then(r=>{ if(r.ok) location.href="index.html"; else throw 0; })
+    .catch(()=>toast("The Advanced build is a separate file — open prototype/simple.html from your ZEC Defi App folder (index.html sits right beside it)."));
+});
+
 /* Demo-only test seam (stripped in production, like the tester's kit): lets the
    fuzz harness exercise the REAL pure logic instead of a reimplementation. */
-window.__oil = { apyFor, DROP, checkAddr, gateDecision, liqPrice:(zec,ltv)=>zec*ltv/LIQ_T, LTV_STOPS:[0.30,0.40,0.50], LIQ_T, S };
+window.__oil = { apyFor, apyModel, mixGross, mixNet, POOLS, mixSel, DROP, checkAddr, gateDecision, liqPrice:(zec,ltv)=>zec*ltv/LIQ_T, LTV_STOPS:[0.30,0.40,0.50], LIQ_T, S, BORROW_APR, NET_FEE, APY_BASE };
 
 /* boot */
 gate();syncRiskLock();renderActivity();renderPos();

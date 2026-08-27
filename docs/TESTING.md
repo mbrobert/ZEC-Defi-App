@@ -24,19 +24,23 @@ Amounts worth trying: `0.25` (min ✓), `12.5` (typical ✓), `50` (cap ✓), `0
 ## What to click (every path)
 
 1. **Risk setting** — pick each of Sheltered / Steady / Working hard; the headline
-   yield (6.9 / 8.9 / 11.0%) and the "ZEC would have to fall X%" line (57 / 43 / 29%)
-   move together.
-2. **Deposit** — valid `t1` + an in-range amount → *Get my deposit address* → walk
+   yield (13.2 / 17.4 / 21.5% with the default mix, at rates sampled 2026-08-16) and
+   the "ZEC would have to fall X%" line (57 / 43 / 29%) move together.
+2. **Pool mix** — toggle the seven curated pools; the yield recomputes live. Build a
+   stables-only mix and read the negative-carry warning ("earns less than the borrow
+   cost"); add AERO/WETH and read the impermanent-loss warning; try to remove the
+   last pool (blocked).
+3. **Deposit** — valid `t1` + an in-range amount → *Get my deposit address* → walk
    the QR/progress steps → land on the position.
-3. **Add ZEC** — the risk selector **locks** to the position's setting and the button
+4. **Add ZEC** — the risk selector **locks** to the position's setting and the button
    shows your remaining room to the 50-ZEC cap. Try to push a ~40-ZEC position past
    50 → it blocks with "room left".
-4. **Withdraw** — drag the slider for a partial exit; a **full** withdraw returns you
+5. **Withdraw** — drag the slider for a partial exit; a **full** withdraw returns you
    to the start and **unlocks** the selector.
-5. **Activity** — every row links to the right explorer (Zcash / NEAR / Base).
-6. **Docs** — custody table, risk table, "what can actually go wrong", fees.
-7. **Advanced toggle** (top-right) — jumps to the power-user build and back.
-8. **Mobile** — shrink to phone width; nav, cards, and the Test kit stay clean.
+6. **Activity** — every row links to the right explorer (Zcash / NEAR / Base).
+7. **Docs** — custody table, risk table, "what can actually go wrong", fees.
+8. **Advanced toggle** (top-right) — jumps to the power-user build and back.
+9. **Mobile** — shrink to phone width; nav, cards, and the Test kit stay clean.
 
 ## Automated suites
 
@@ -58,20 +62,23 @@ The demo carries a **demo-only test seam** (`window.__oil`, stripped in producti
 like the Test kit) exposing the *real* pure functions, so the fuzz exercises the
 shipped logic rather than a re-implementation.
 
-- **Part A — logic grid (1,728 combinations):** every combination of
-  {6 addresses × 16 amounts × 6 existing-position sizes × 3 risk stops} asserting the
-  real invariants — account-cap-and-minimum gating (a top-up can never exceed 50),
-  APY band + monotonicity (locking 6.9 / 8.9 / 11.0%), the liquidation-drop formula
-  (57 / 43 / 29%), price↔drop consistency, and address classification.
+- **Part A — logic grid (2,109 combinations):** every combination of
+  {6 addresses × 16 amounts × 6 existing-position sizes × 3 risk stops} for the gate,
+  PLUS every non-empty pool subset (127) × 3 risk stops for the yield model —
+  asserting the real invariants: account-cap-and-minimum gating (a top-up can never
+  exceed 50), apy = supply + LTV × (mix × 0.765 − borrow), carry-sign correctness
+  (a mix earning less than the borrow cost goes below the supply-only baseline),
+  LTV monotonicity, the liquidation-drop formula (57 / 43 / 29%), and address
+  classification. Default-mix headline locks 13.2 / 17.4 / 21.5%.
 - **Part B — UI state-machine fuzz (16 seeded sessions, ~90 real actions):**
   randomized clicks through deposit / top-up / withdraw / tab / Test-kit flows on
   desktop and phone viewports, asserting **zero console errors** plus: deposits open a
   position, top-ups lock the selector and cannot exceed the cap, and a full withdraw
   returns to the start and unlocks the selector.
 
-Both are deterministic (seeded) and reproducible. Latest run: **1,728 + 90
+Both are deterministic (seeded) and reproducible. Latest run: **2,109 + 90
 combinations, 0 failures.** The two scripts live alongside the verification suites
-(`verify-simple.mjs` — 18 end-to-end checks; `verify-toggle.mjs` — the Simple⇄Advanced
+(`verify-simple.mjs` — 21 end-to-end checks; `verify-toggle.mjs` — the Simple⇄Advanced
 round-trip).
 
 ## Security review

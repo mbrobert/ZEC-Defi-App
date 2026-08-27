@@ -81,8 +81,20 @@ and labeled live-not-promised; per-step tx ids on every flow.
 
 ## Numbers note
 
-Demo uses ZEC ≈ $487 (Aug 2026 market) and a ~6.9–11.0% current net yield
-by setting — computed honestly from: pool gross APR × 0.765 fee factor,
-minus the live USDC borrow rate, on the chosen LTV share of stack, plus ZEC
-supply APY (net ≈ 0.8% + 20.3 × LTV with today's rates). Yield headline
-must always be the computed trailing figure, never a promise.
+Demo uses ZEC ≈ $487 (Aug 2026 market). Yield is computed honestly per
+position: apy = ZEC supply (~0.8%) + LTV × (pool-mix gross fee APR × 0.765
+fee factor − 13.2% USDC borrow rate). Pool fee APRs are sampled from live
+volume/TVL and labeled with their sample date. Yield headline must always
+be the computed trailing figure, never a promise.
+
+> **Amended 2026-08-16 (Matt's call): curated pool menu.** "More blue-chip
+> and stable pool choices, higher-yield options." v1 now offers a 7-pool
+> curated menu (4 blue-chip incl. correlated WETH/cbBTC, 2 stable/LST,
+> 1 volatile) — engine-approved venues only, equal-split allocation, mix
+> locked at deposit like the LTV setting. Guardrails kept: minimum one
+> pool; a mix earning less than the borrow cost warns "loses money at
+> these rates"; volatile pools carry an explicit impermanent-loss warning
+> and tight per-pool caps. At rates sampled 2026-08-16 the default
+> blue-chip mix computes 13.2 / 17.4 / 21.5% at 30/40/50% LTV — the old
+> 6.9% headline came from a stale calm-week sample, not a different
+> strategy.
