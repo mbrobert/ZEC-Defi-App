@@ -99,6 +99,23 @@ be the computed trailing figure, never a promise.
 > 6.9% headline came from a stale calm-week sample, not a different
 > strategy.
 
+> **Amended 2026-08-27, second pass (Matt's review feedback): one pool, no
+> cap, Aerodrome-only.** (1) **Single pool** — "Simple just uses one pool at
+> a time, not mixing." The 8-pool menu stays but becomes single-select;
+> multi-pool mixes move to Advanced. (2) **No Oilskin deposit cap** — "allow
+> uncapped application deposits"; only external constraints (chiefly USDC
+> liquidity on Rhea) bound size, and the 0.25 floor stays. The per-account
+> 50 ZEC cap above is retired. (3) **Aerodrome × Snuggle only** — every menu
+> pool is an Aerodrome pool the Snuggle engine supports; positions are
+> staked in the pool's gauge and earn AERO incentives in lieu of trading
+> fees (pool research: docs/POOLS.md). Aerodrome fees are dynamic — menus
+> show each pool's on-chain fee() at sampling. (4) Both prototypes carry a
+> footer risk disclaimer, a clickable BUILT-ON rail (Rhea, NEAR Intents,
+> Base, Aerodrome, SnuggleFi), and the sequential fee math stated exactly
+> (15% engine, then 10% Oilskin = 23.5% all-in on earnings). At rates
+> sampled 2026-08-27 the default pool (WETH/USDC, 73.6% gross) computes
+> 12.9 / 17.2 / 21.5% at 30/40/50% LTV.
+
 > **Amended 2026-08-27 (Matt's call): empirical bands + live backend.**
 > "Run with empirical. Start making all the backend now." `services/yield`
 > ships: live pool/rate sampling plus realized-return bands backtested from

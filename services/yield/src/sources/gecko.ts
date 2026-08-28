@@ -70,6 +70,13 @@ export class GeckoSource {
     };
   }
 
+  /**
+   * TODO(dynamic fees): Aerodrome Slipstream fees move with volatility —
+   * pool.fee() (selector 0xddca3f43) is the truth, and the curated list's
+   * feeTierBps is only that value at its last sampling (2026-08-27). The
+   * honest upgrade is an eth_call to fee() per sample instead of trusting
+   * the static bps. Uniswap tiers are static; only AERODROME entries drift.
+   */
   async liveSample(
     curatedId: string,
     address: Address,

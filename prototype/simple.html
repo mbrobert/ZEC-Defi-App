@@ -272,8 +272,8 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
   <div id="hero">
     <div class="hero" style="margin-bottom:24px">
       <h1>Put your ZEC to work.<br>Never sell it.</h1>
-      <p class="sub">Deposit native Zcash, earn yield from real trading fees — your ZEC is borrowed against, never sold, and comes home whenever you ask.</p>
-      <div class="apyline"><span class="v num" id="apyHero">6.9%</span><span class="muted">net yield right now <span class="tt tiny" title="Computed from pool fee rates sampled 2026-08-27 — after the 25% total fees on earnings and the 13.2% borrow cost, on your chosen LTV and pool mix. Fee markets swing hard, and volatile pairs lose part of this to impermanent loss. Trailing math, never a promise.">ⓘ</span></span></div>
+      <p class="sub">Deposit native Zcash, earn real DeFi yield — your ZEC is borrowed against, never sold, and comes home whenever you ask.</p>
+      <div class="apyline"><span class="v num" id="apyHero">12.9%</span><span class="muted">net yield right now <span class="tt tiny" title="Computed from your chosen pool's fee rate sampled 2026-08-27 — after the 23.5% total fees on earnings (engine 15%, then Oilskin 10% of the rest) and the 13.47% borrow cost, at your risk setting. Positions are staked in the pool's Aerodrome gauge and earn AERO incentives in lieu of trading fees; fee rates are the honest proxy, they swing hard, and volatile pairs lose part of this to impermanent loss. Trailing math, never a promise.">ⓘ</span></span></div>
     </div>
 
     <div class="card pad">
@@ -283,7 +283,7 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
           <input class="in num" id="amt" type="number" value="10" min="0.25" max="50" step="any" style="padding-right:60px">
           <span class="suffix">ZEC</span>
         </div>
-        <div class="small faint num" style="margin-top:7px">≈ <span id="amtUsd">$4,872</span> · min 0.25 · max 50 ZEC per account while we ramp up <span class="tt" title="Launch guardrail: per-account and protocol-wide caps grow as the system proves itself in public. Power-user features (custom pools, ranges, higher sizes) come later.">ⓘ</span></div>
+        <div class="small faint num" style="margin-top:7px">≈ <span id="amtUsd">$4,872</span> · min 0.25 ZEC · no deposit cap <span class="tt" title="The 0.25 floor is ours: below it, bridge fees eat the deposit. There is no Oilskin cap — deposit size is bounded only by constraints outside our control, chiefly how much USDC is actually available to borrow on Rhea at that moment.">ⓘ</span></div>
       </div>
       <div class="field">
         <label>Risk setting — how hard your ZEC works <span class="tt" title="Sets how much is borrowed against your ZEC to earn. Borrow more and you earn more — and the liquidation line sits closer. The protection ladder runs at every setting.">ⓘ</span></label>
@@ -292,10 +292,10 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
           <button type="button" class="segb" data-ltv="40"><b>Steady</b><span class="num">borrow 40%</span></button>
           <button type="button" class="segb" data-ltv="50"><b>Working hard</b><span class="num">borrow 50%</span></button>
         </div>
-        <div class="small" id="riskHint" style="margin-top:7px;color:var(--ink-3)">Earning ≈6.9% — liquidation only possible if ZEC falls 57%. The safest setting, and the default.</div>
+        <div class="small" id="riskHint" style="margin-top:7px;color:var(--ink-3)">Earning ≈12.9% — liquidation only possible if ZEC falls 57%. The safest setting, and the default.</div>
       </div>
       <div class="field">
-        <label>Pool mix — curated venues only <span class="tt" title="Your borrowed USDC works in the pools you pick here, split evenly. Every pool is engine-approved and capped. Fee rates are sampled from live volume and swing constantly — trailing numbers, never promises. Volatile pairs earn more in fees and lose more to impermanent loss.">ⓘ</span></label>
+        <label>Your pool — one at a time, curated <span class="tt" title="Your borrowed USDC works in the single Aerodrome pool you pick here, staked in its gauge (earnings arrive as AERO incentives in lieu of trading fees). Every pool is engine-approved. Fee rates are sampled from live volume with each pool's on-chain dynamic fee — trailing numbers, never promises. Volatile pairs earn more and lose more to impermanent loss. Multi-pool mixes live in Advanced.">ⓘ</span></label>
         <div class="pools" id="poolSeg"></div>
         <div class="small" id="poolHint" style="margin-top:7px;color:var(--ink-3)"></div>
       </div>
@@ -309,7 +309,7 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
         <div class="det-in">Zodl's Receive screen shows two addresses — the shielded one on top, and a <b>transparent (t1…) address below it</b>. Copy the transparent one. Zodl shields everything it receives automatically, so payouts go private moments after they arrive.</div>
       </details>
       <button class="btn btn-cta" id="startBtn" style="width:100%;margin-top:18px">Get my deposit address →</button>
-      <div class="tiny faint" style="margin-top:12px;text-align:center">Fees: 10% of earnings (Oilskin) + 15% of earnings (pool engine) — never a cent of your deposit.</div>
+      <div class="tiny faint" style="margin-top:12px;text-align:center">Fees: 15% of earnings (pool engine), then 10% of the rest (Oilskin) — never a cent of your deposit.</div>
     </div>
 
     <div class="tiles">
@@ -327,7 +327,7 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
         <div>
           <div class="small muted">Your ZEC, working</div>
           <div class="bignum num"><span id="pZec">12.0</span> ZEC <span class="muted" style="font-size:17px;font-weight:600" id="pUsd">($5,846)</span></div>
-          <div class="num" style="margin-top:4px"><span class="earned" id="pEarned">+0.128 ZEC earned</span> <span class="faint">(<span id="pEarnedUsd">$62</span>)</span> · <b id="pApy">6.9%</b> <span class="faint">current yield</span></div>
+          <div class="num" style="margin-top:4px"><span class="earned" id="pEarned">+0.128 ZEC earned</span> <span class="faint">(<span id="pEarnedUsd">$62</span>)</span> · <b id="pApy">12.9%</b> <span class="faint">current yield</span></div>
         </div>
         <span class="chip c-good" id="protChip"><svg class="ic"><use href="#i-shield"/></svg>Protected</span>
       </div>
@@ -352,9 +352,9 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
             <span class="k">Borrowed against it (your <span id="dLtv">30%</span> setting)</span><span class="v num" id="dBorrow">$1,754 USDC</span>
             <span style="display:contents" id="dPools"></span>
             <span class="k">Earnings auto-compound</span><span class="v">every time they cover costs 3×</span>
-            <span class="k">Fees (only ever on earnings)</span><span class="v num">10% Oilskin + 15% engine</span>
+            <span class="k">Fees (only ever on earnings)</span><span class="v num">15% engine, then 10% Oilskin — 23.5% all-in</span>
           </div>
-          <div class="tiny faint" style="margin-top:10px">Pools are chosen and rebalanced for you — deepest blue-chip venues on Base, verified on-chain (engine ids <span class="mono">0x0ea7…72a8</span>, <span class="mono">0xb183…37e6</span>). Every claim in this panel is checkable in the Activity tab.</div>
+          <div class="tiny faint" style="margin-top:10px">Your pool is rebalanced and compounded for you inside its engine-verified Aerodrome venue — the on-chain registry id for every menu pool is listed in Advanced → Pools. Every claim in this panel is checkable in the Activity tab.</div>
         </div>
       </details>
       <div class="tiny faint" style="margin-top:14px">Returns to <span class="mono" id="homeShort">t1Py8…pGxy</span> — locked at deposit, the only address funds can ever exit to.</div>
@@ -375,16 +375,16 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
   <h1 style="font-size:22px;margin-bottom:4px">Questions, answered straight</h1>
 
   <h3>Is my ZEC ever sold?</h3>
-  <p>No. It sits as collateral on Rhea Finance (NEAR). A bounded loan — your 30–50% risk setting — is taken against it in USDC, and that borrowed money does the earning in blue-chip liquidity pools on Base. Borrowing against an asset — rather than selling it — is also why entering doesn't dispose of your ZEC (mechanics, not tax advice).</p>
+  <p>No. It sits as collateral on Rhea Finance (NEAR). A bounded loan — your 30–50% risk setting — is taken against it in USDC, and that borrowed money does the earning in the curated Aerodrome pool you chose on Base. Borrowing against an asset — rather than selling it — is also why entering doesn't dispose of your ZEC (mechanics, not tax advice).</p>
 
   <h3>Who holds my ZEC while it moves?</h3>
-  <p>For about two minutes on the way in and out, your ZEC rides NEAR Intents — the same rails built into the Zashi/Zodl wallet, which move over $1B a month. During that window the bridge's operator controls the transit address; if anything fails, funds auto-refund to your address. We tell you this because you should know exactly who holds what, when — it's in every deposit screen, not buried here.</p>
+  <p>For about two minutes on the way in and out, your ZEC rides NEAR Intents — the same rails built into the Zashi and Zodl wallets, which move over $1B a month. During that window the bridge's operator controls the transit address; if anything fails, funds auto-refund to your address. We tell you this because you should know exactly who holds what, when — it's in every deposit screen, not buried here.</p>
 
   <h3 id="faq-crash">What happens if ZEC crashes?</h3>
   <p>The loan is your chosen 30–50% of your collateral's value — at the default Sheltered setting, ZEC has to fall 57% before liquidation is even possible (43% at Steady, 29% at Working hard). Before that ever gets close, protection kicks in automatically, in order: your earnings repay the loan first; if that's not enough, we unwind just enough of the working position to restore safety; in an extreme crash, everything unwinds and your ZEC sits safe as plain collateral. You'll see each step in Activity with its transaction id.</p>
 
   <h3>What are the fees?</h3>
-  <p>10% of earnings to Oilskin, 15% of earnings to the pool engine that manages liquidity. Nothing on deposits, nothing on withdrawals, nothing on your principal, ever. Every yield number you see is already net of all fees.</p>
+  <p>15% of earnings to the pool engine that manages liquidity, then 10% of the remainder to Oilskin — 23.5% all-in, only ever on earnings. Nothing on deposits, nothing on withdrawals, nothing on your principal, ever. Every yield number you see is already net of all fees.</p>
 
   <h3>Can I get my ZEC back whenever I want?</h3>
   <p>Yes — withdrawal can never be paused; it's written into the contract, not a policy. Withdrawals unwind your share (repaying the loan's part automatically) and arrive as native ZEC at your locked address, usually within a few minutes.</p>
@@ -406,7 +406,7 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
     <li><b>1 · Deposit.</b> Send ZEC from any Zcash wallet to a fresh deposit address (QR / ZIP-321). Fund it from your shielded balance — that's the default guidance.</li>
     <li><b>2 · Collateral.</b> Your ZEC is supplied as collateral on Rhea Finance (NEAR) and starts earning supply interest. It is never sold.</li>
     <li><b>3 · Borrow.</b> USDC is borrowed against it at your risk setting — 30–50% of collateral value.</li>
-    <li><b>4 · Earn.</b> That USDC works in the curated pools you picked (default: the two blue-chip flagships, WETH/USDC + cbBTC/USDC on Aerodrome), rebalanced automatically. Earnings compound whenever they cover costs 3×.</li>
+    <li><b>4 · Earn.</b> That USDC works in the single curated pool you picked (default: WETH/USDC on Aerodrome), staked in the pool's Aerodrome gauge and rebalanced automatically. Earnings arrive as AERO incentives and compound whenever they cover costs 3×.</li>
     <li><b>5 · Home.</b> Withdrawals unwind your share, repay the loan's part automatically, and arrive as native ZEC at your locked address.</li>
   </ul>
 
@@ -420,29 +420,29 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
   </table>
 
   <h3>Your risk setting</h3>
-  <p>One dial, three positions. It sets how much is borrowed against your ZEC — which sets both your yield and your distance to the liquidation line (liquidation threshold 70%). With the default blue-chip mix at rates sampled 2026-08-27:</p>
+  <p>One dial, three positions. It sets how much is borrowed against your ZEC — which sets both your yield and your distance to the liquidation line (liquidation threshold 70%). With the default pool (WETH/USDC) at rates sampled 2026-08-27:</p>
   <table class="dtable">
     <tr><th>Setting</th><th>Borrowed</th><th>ZEC must fall</th><th>Net yield at sampled rates</th></tr>
-    <tr><td><b>Sheltered</b> (default)</td><td class="num">30%</td><td class="num">57%</td><td class="num">≈ 13.2%</td></tr>
-    <tr><td><b>Steady</b></td><td class="num">40%</td><td class="num">43%</td><td class="num">≈ 17.4%</td></tr>
+    <tr><td><b>Sheltered</b> (default)</td><td class="num">30%</td><td class="num">57%</td><td class="num">≈ 12.9%</td></tr>
+    <tr><td><b>Steady</b></td><td class="num">40%</td><td class="num">43%</td><td class="num">≈ 17.2%</td></tr>
     <tr><td><b>Working hard</b></td><td class="num">50%</td><td class="num">29%</td><td class="num">≈ 21.5%</td></tr>
   </table>
-  <p style="margin-top:8px">Straight talk: ZEC is volatile — drawdowns around 30% happen in ordinary years, so <b>Working hard leaves far less room</b> and leans hardest on the protection ladder. Sheltered is the setting where "protected" is close to unconditional. Your setting locks at deposit; to change it, withdraw and redeposit. Yield figures move with the pool mix you choose and with fee markets — they are trailing samples, not promises.</p>
+  <p style="margin-top:8px">Straight talk: ZEC is volatile — drawdowns around 30% happen in ordinary years, so <b>Working hard leaves far less room</b> and leans hardest on the protection ladder. Sheltered is the setting where "protected" is close to unconditional. Your setting locks at deposit; to change it, withdraw and redeposit. Yield figures move with the pool you choose and with fee markets — they are trailing samples, not promises.</p>
 
   <h3>The pool menu</h3>
-  <p>Your borrowed USDC is split evenly across the curated pools you select — engine-approved venues only, each with its own exposure cap. Fee rates below were sampled 2026-08-27 from live volume and TVL (volume × fee tier ÷ TVL × 365); they swing constantly:</p>
+  <p>Your borrowed USDC works in <b>one pool at a time</b> — Aerodrome pools supported by the Snuggle engine only (multi-pool mixes live in Advanced). Every position is <b>staked in its pool's Aerodrome gauge</b>: staked positions earn AERO incentives <i>in lieu of</i> trading fees, so the fee rate below is the honest proxy for what the gauge pays. Aerodrome fee tiers are <b>dynamic</b> — they move with volatility — so rates below use each pool's on-chain fee at sampling (2026-08-27), volume × fee ÷ TVL × 365:</p>
   <table class="dtable">
-    <tr><th>Pool</th><th>Venue</th><th>Class</th><th>Fees sampled</th><th>After our fees</th></tr>
-    <tr><td><b>WETH/USDC</b></td><td>Aerodrome 0.05%</td><td>Blue chip</td><td class="num">65.7%</td><td class="num">≈ 50%</td></tr>
-    <tr><td><b>cbBTC/USDC</b></td><td>Aerodrome 0.05%</td><td>Blue chip</td><td class="num">77.1%</td><td class="num">≈ 59%</td></tr>
-    <tr><td><b>WETH/USDC</b></td><td>Uniswap 0.05%</td><td>Blue chip</td><td class="num">43.5%</td><td class="num">≈ 33%</td></tr>
-    <tr><td><b>WETH/cbBTC</b></td><td>Uniswap 0.30%</td><td>Blue chip · correlated</td><td class="num">9.3%</td><td class="num">≈ 7%</td></tr>
-    <tr><td><b>cbETH/WETH</b></td><td>Aerodrome</td><td>Stable · LST</td><td class="num">≈4% (est.)</td><td class="num">≈ 3%</td></tr>
-    <tr><td><b>USDT/USDC</b></td><td>0.01% stable</td><td>Stable</td><td class="num">1.0%</td><td class="num">≈ 0.8%</td></tr>
-    <tr><td><b>AERO/WETH</b></td><td>Aerodrome 1%</td><td>Volatile</td><td class="num">316%</td><td class="num">≈ 242%</td></tr>
-    <tr><td><b>AERO/cbBTC</b></td><td>Aerodrome 0.6%</td><td>Volatile</td><td class="num">723%</td><td class="num">≈ 553%</td></tr>
+    <tr><th>Pool</th><th>Fee today</th><th>Class</th><th>Fees sampled</th><th>After our fees</th></tr>
+    <tr><td><b>WETH/USDC</b></td><td class="num">0.056%</td><td>Blue chip</td><td class="num">73.6%</td><td class="num">≈ 56%</td></tr>
+    <tr><td><b>cbBTC/USDC</b></td><td class="num">0.044%</td><td>Blue chip</td><td class="num">59.6%</td><td class="num">≈ 46%</td></tr>
+    <tr><td><b>WETH/cbBTC</b></td><td class="num">0.253%</td><td>Blue chip · correlated</td><td class="num">33.0%</td><td class="num">≈ 25%</td></tr>
+    <tr><td><b>WETH/LINK</b></td><td class="num">0.25%</td><td>Blue chip</td><td class="num">35.5%</td><td class="num">≈ 27%</td></tr>
+    <tr><td><b>cbETH/WETH</b></td><td class="num">0.007%</td><td>Stable · LST</td><td class="num">3.7%</td><td class="num">≈ 3%</td></tr>
+    <tr><td><b>USDT/USDC</b></td><td class="num">0.001%</td><td>Stable</td><td class="num">0.9%</td><td class="num">≈ 0.7%</td></tr>
+    <tr><td><b>AERO/WETH</b></td><td class="num">0.30%</td><td>Volatile</td><td class="num">86.9%</td><td class="num">≈ 66%</td></tr>
+    <tr><td><b>AERO/cbBTC</b></td><td class="num">0.075%</td><td>Volatile</td><td class="num">82.4%</td><td class="num">≈ 63%</td></tr>
   </table>
-  <p style="margin-top:8px"><b>Read the volatile row carefully:</b> sampled fee rates on non-correlated pairs are not what you keep — impermanent loss (the pool constantly selling the winner for the loser) eats a large, variable share, and the engine realizes it at each rebalance. Correlated pairs (WETH/cbBTC, cbETH/WETH) and stables barely suffer IL but earn less. Aerodrome pays staked positions AERO emissions in lieu of trading fees; at equilibrium emissions track fees, so fee rates are the honest proxy. A mix that earns less than the 13.2% borrow cost loses money at these rates — the app warns you the moment you build one.</p>
+  <p style="margin-top:8px"><b>Read the volatile rows carefully:</b> sampled fee rates on non-correlated pairs are not what you keep — impermanent loss (the pool constantly selling the winner for the loser) eats a large, variable share, and the engine realizes it at each rebalance. Correlated pairs (WETH/cbBTC, cbETH/WETH) and stables barely suffer IL but earn less. A pool that earns less than the 13.47% borrow cost loses money at these rates — the app warns you the moment you select one.</p>
 
   <h3>Live mode &amp; the realized-return band</h3>
   <p>This page ships with a dated sample baked in. Run the Oilskin yield service beside it (<code>npm run yield</code> in the repo, then reload the page) and the numbers go live: current pool fee rates, the live Rhea borrow and ZEC supply rates, and — once the service has backfilled the engine's on-chain history — a <b>realized-return band</b> per pool instead of a single number. The band is the middle half (p25–p75, weighted by position size) of what real, closed positions in that pool actually kept over the trailing 30 days — impermanent loss, rebalances, and all fees included, measured from on-chain deposit and withdrawal flows. It is history, not a model, and never a promise. Until the backfill has run, cards say <i>"pending backfill"</i> rather than inventing a range; volatile pairs will show wide bands that can dip negative — that is the point.</p>
@@ -456,31 +456,35 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
   <p>Every step is automatic, around the clock, and logged in Activity with its transaction id.</p>
 
   <h3>Fees</h3>
-  <p>10% of earnings to Oilskin + 15% of earnings to the pool engine. Nothing on deposits, withdrawals, or principal — ever. Example: your position earns $100 → $75 stays in your position. Every yield number shown is already net of all fees.</p>
+  <p>15% of earnings to the pool engine at harvest, then 10% of what remains to Oilskin — 23.5% total, only ever on earnings. Nothing on deposits, withdrawals, or principal — ever. Example: your position earns $100 → the engine takes $15, Oilskin takes $8.50, and $76.50 stays in your position. Every yield number shown is already net of all fees.</p>
 
   <h3>What can actually go wrong</h3>
   <ul>
     <li><b>A crash beyond your buffer.</b> If ZEC falls past your setting's line faster than the ladder can act, the loan's share of collateral can be liquidated. This is the core risk — it's why the buffers are wide and the ladder exists.</li>
     <li><b>Venue risk.</b> Rhea's margin sub-system — which Oilskin does not use — was exploited in April 2026; lending resumed in May and has run consistently since. You should hear that from us, not find it later: exposure is capped per venue and monitored independently.</li>
     <li><b>Bridge transit.</b> For ~2 minutes each way, funds ride NEAR Intents under its operator's control. Failed transfers auto-refund; that window is the exposure.</li>
-    <li><b>Smart-contract risk.</b> Code can have bugs. Independent audit before mainnet, caps keep early exposure small, and withdrawal can never be paused — a contract invariant, not a policy.</li>
+    <li><b>Smart-contract risk.</b> Code can have bugs. Independent audit before mainnet, and withdrawal can never be paused — a contract invariant, not a policy.</li>
   </ul>
 
   <h3>Privacy</h3>
   <p>Fund deposits from your shielded balance and your history stays private — deposit addresses are fresh every time and never linked to each other. The strategy legs (NEAR, Base) are public chains and we say so plainly. Payouts arrive at your transparent address; your wallet shields them on arrival (Zodl does this automatically).</p>
 
   <h3>Verify everything</h3>
-  <p>Pool engine ids <span class="mono">0x0ea7…72a8</span> and <span class="mono">0xb183…37e6</span> on Base. Every deposit, compound, rebalance, protection step and withdrawal appears in Activity with its transaction id, linked to the right explorer — Zcash, NEAR or Base.</p>
+  <p>Every menu pool's engine registry id — the exact bytes32 key deposits pass on-chain — is listed in Advanced → Pools (same pools, same ids). Every deposit, compound, rebalance, protection step and withdrawal appears in Activity with its transaction id, linked to the right explorer — Zcash, NEAR or Base.</p>
 
-  <h3>Limits while we ramp</h3>
-  <p>0.25–50 ZEC per account, one position per account (new deposits top it up), plus a protocol-wide cap. Caps rise as the system proves itself in public.</p>
+  <h3>Deposit size</h3>
+  <p>No Oilskin cap. One position per account (new deposits top it up), floor 0.25 ZEC — below that, bridge fees eat the deposit. Very large deposits are bounded only by constraints outside our control: chiefly the USDC actually available to borrow on Rhea at that moment, and the pool's own depth. Once live, the app shows that headroom before you send anything.</p>
 </div></div>
 
 <div class="wrap" id="trust" style="margin-top:4px">
   <div class="card" style="padding:16px 26px">
     <div class="small" style="display:flex;gap:8px 18px;flex-wrap:wrap;align-items:center">
       <span class="faint" style="letter-spacing:.09em;font-size:11px;font-weight:700">BUILT ON</span>
-      <b>Rhea Finance</b><b>NEAR Intents</b><b>Base</b>
+      <a href="https://www.rhea.finance/" target="_blank" rel="noopener" style="color:var(--ink);font-weight:700">Rhea Finance ↗</a>
+      <a href="https://intents.near.org/" target="_blank" rel="noopener" style="color:var(--ink);font-weight:700">NEAR Intents ↗</a>
+      <a href="https://base.org" target="_blank" rel="noopener" style="color:var(--ink);font-weight:700">Base ↗</a>
+      <a href="https://aerodrome.finance" target="_blank" rel="noopener" style="color:var(--ink);font-weight:700">Aerodrome ↗</a>
+      <a href="https://www.snuggle.fi/" target="_blank" rel="noopener" style="color:var(--ink);font-weight:700">SnuggleFi ↗</a>
       <span class="faint">·</span>
       <span class="muted">Fork-tested against the live venues — every action ships with its transaction id.</span>
       <span class="muted">Independent audit scheduled before mainnet; the report will live here.</span>
@@ -488,9 +492,15 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
   </div>
 </div>
 
-<footer><div class="wrap" style="display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap">
-  <span>Oilskin v1 — demo data · Withdrawals never pausable · funds exit only to your address</span>
-  <span class="num">Rhea (NEAR) · NEAR Intents · Base</span>
+<footer><div class="wrap">
+  <p style="margin:0 0 10px;max-width:88ch">DeFi carries real risk — smart-contract bugs, venue failures or exploits, bridge
+  failures, and market moves, up to the total loss of funds. Nothing here is financial advice. Every
+  setting and every deposit is your decision alone, and Oilskin accepts no responsibility or liability
+  for any loss. Only deposit what you can afford to lose.</p>
+  <div style="display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap">
+    <span>Oilskin v1 — demo data · Withdrawals never pausable · funds exit only to your address</span>
+    <span class="num">Rhea (NEAR) · NEAR Intents · Base · Aerodrome</span>
+  </div>
 </div></footer>
 
 <!-- Deposit modal -->
@@ -546,18 +556,18 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
     <div class="tk-grid">
       <button class="tk-b ok" data-amt="0.25">0.25 · min ✓</button>
       <button class="tk-b ok" data-amt="12.5">12.5 · typical ✓</button>
-      <button class="tk-b ok" data-amt="50">50 · cap ✓</button>
+      <button class="tk-b ok" data-amt="50">50 ✓</button>
       <button class="tk-b badb" data-amt="0.1">0.1 · below min</button>
-      <button class="tk-b badb" data-amt="80">80 · over cap</button>
+      <button class="tk-b ok" data-amt="250">250 · large ✓</button>
     </div>
 
     <h4>Try every path</h4>
     <ul class="tk-list">
       <li>Pick each risk setting — watch the yield and the "falls X%" line move (57 / 43 / 29%).</li>
-      <li>Build a pool mix — toggle pools on/off, watch the yield recompute; try a stables-only mix and read the negative-carry warning; try adding AERO/WETH and read the IL warning.</li>
+      <li>Pick each pool one at a time — the yield recomputes; select USDT/USDC and read the negative-carry warning; select AERO/WETH and read the IL warning.</li>
       <li>Deposit with a t1 address, step through the progress, open the position.</li>
       <li>Hit <b>Add ZEC</b> — the risk selector locks and the button shows your remaining room to 50.</li>
-      <li>Try to top a ~40-ZEC position past 50 — it should block with "room left".</li>
+      <li>Top up any amount — there is no cap; the button reads "Add to my position".</li>
       <li>Withdraw part (slider), then all — a full withdraw returns you to the start and unlocks the selector.</li>
       <li>Open <b>Activity</b> and click a tx link (Zcash / NEAR / Base explorers).</li>
       <li>Read <b>Docs</b> — custody table, risk table, "what can go wrong", fees.</li>
@@ -575,34 +585,34 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
 /* ═══ Oilskin v1 — one strategy, one address, zero knobs ═══ */
 const S = { zec: 487.20, view: "earn" };
 const LIQ_T = 0.70, NET_FEE = 0.85*0.90; // ×0.765 after engine 15% + Oilskin 10%
-const APY_BASE = 0.8;      // ZEC supply APY on 100% of collateral
-const BORROW_APR = 13.2;   // USDC borrow rate on the borrowed slice (Rhea, sampled)
-/* Curated pool menu — engine-approved pools only. `gross` = pool-level fee APR
-   sampled 2026-08-27 from live TVL + 24h volume (vol × feeTier / TVL × 365);
-   `est:true` marks pools estimated from their class, not sampled that day.
-   Fee markets swing hard — these are trailing samples, never promises. On
-   volatile (non-correlated) pairs, impermanent loss makes realized returns run
-   well below sampled fee rates. Aerodrome staked positions earn AERO emissions
-   in lieu of fees; at equilibrium emissions track pool fees, so the fee APR is
-   the honest proxy. */
+const APY_BASE = 0.04;     // ZEC supply APR on Rhea (sampled live 2026-08-27)
+const BORROW_APR = 13.47;  // USDC borrow rate on the borrowed slice (Rhea, sampled 2026-08-27)
+/* Curated pool menu — Aerodrome pools supported by the Snuggle engine ONLY
+   (Matt's call 2026-08-27; multi-pool mixes moved to Advanced). ONE pool at a
+   time. `gross` = pool fee APR sampled 2026-08-27 from live TVL + 24h volume
+   using each pool's ON-CHAIN fee() — Aerodrome fees are dynamic and move with
+   volatility. Positions are STAKED in the pool's Aerodrome gauge: they earn
+   AERO incentives in lieu of trading fees, and at equilibrium emissions track
+   fees, so the fee APR is the honest proxy for what the gauge pays. Trailing
+   samples, never promises; volatile pairs lose a large share to IL. */
 const POOLS = [
-  {id:"aweth",  name:"WETH/USDC",  venue:"Aerodrome 0.05%", tag:"BLUE CHIP", gross:65.7, note:"deepest ETH flow on Base — $35M/day on $9.8M TVL"},
-  {id:"acbbtc", name:"cbBTC/USDC", venue:"Aerodrome 0.05%", tag:"BLUE CHIP", gross:77.1, note:"hardest-working BTC pool — $24M/day on $5.7M TVL"},
-  {id:"uweth",  name:"WETH/USDC",  venue:"Uniswap 0.05%",   tag:"BLUE CHIP", gross:43.5, note:"the Uni workhorse — $20M/day on $8.5M TVL"},
-  {id:"ubtc",   name:"WETH/cbBTC", venue:"Uniswap 0.30%",   tag:"BLUE CHIP", gross:9.3,  note:"ETH↔BTC ratio pair — correlated majors, gentle IL"},
-  {id:"lst",    name:"cbETH/WETH", venue:"Aerodrome",       tag:"STABLE",    gross:4.0, est:true, note:"correlated LST pair — near-zero IL (class estimate)"},
-  {id:"stab",   name:"USDT/USDC",  venue:"0.01% stable",    tag:"STABLE",    gross:1.0,  note:"parking tier — near-zero IL, thin fees"},
-  {id:"aero",   name:"AERO/WETH",  venue:"Aerodrome 1%",    tag:"VOLATILE",  gross:316,  note:"incentive pair — huge sampled fees, brutal IL, tight per-pool cap"},
-  {id:"abtc",   name:"AERO/cbBTC", venue:"Aerodrome 0.6%",  tag:"VOLATILE",  gross:723,  note:"AERO against BTC — extreme sampled fees on thin TVL ($4.1M/day on $1.2M), brutal IL, tight per-pool cap"},
+  {id:"aweth",  name:"WETH/USDC",  venue:"Aerodrome · fee 0.056% today", tag:"BLUE CHIP", gross:73.6, note:"the flagship — $31.8M/day on $8.8M TVL"},
+  {id:"acbbtc", name:"cbBTC/USDC", venue:"Aerodrome · fee 0.044% today", tag:"BLUE CHIP", gross:59.6, note:"the BTC workhorse — $21.1M/day on $5.7M TVL"},
+  {id:"wbtc",   name:"WETH/cbBTC", venue:"Aerodrome · fee 0.253% today", tag:"BLUE CHIP", gross:33.0, note:"correlated majors, gentle IL — $5.5M/day on $15.4M TVL"},
+  {id:"link",   name:"WETH/LINK",  venue:"Aerodrome · fee 0.25% today",  tag:"BLUE CHIP", gross:35.5, note:"ETH against LINK (top-15 asset) — $0.6M/day on $1.6M TVL"},
+  {id:"lst",    name:"cbETH/WETH", venue:"Aerodrome · fee 0.007% today", tag:"STABLE",    gross:3.7,  note:"correlated LST pair — near-zero IL"},
+  {id:"stab",   name:"USDT/USDC",  venue:"Aerodrome · fee 0.001% today", tag:"STABLE",    gross:0.9,  note:"parking tier — near-zero IL, thin fees"},
+  {id:"aero",   name:"AERO/WETH",  venue:"Aerodrome · fee 0.30% today",  tag:"VOLATILE",  gross:86.9, note:"the venue's own token — big fees, brutal IL"},
+  {id:"abtc",   name:"AERO/cbBTC", venue:"Aerodrome · fee 0.075% today", tag:"VOLATILE",  gross:82.4, note:"AERO against BTC — big fees on thin TVL, brutal IL"},
 ];
-let mixSel = new Set(["aweth","acbbtc"]); // default: the two blue-chip flagships
-const mixGross = ids => { const a=[...ids].map(i=>POOLS.find(p=>p.id===i).gross); return a.reduce((s,x)=>s+x,0)/a.length; };
-const mixNet   = ids => mixGross(ids) * NET_FEE;                 // after both fees
-const apyModel = (l, grossAvg) => liveSupply() + l * (grossAvg*NET_FEE - liveBorrow()); // whole-position % (live rates when connected; static sample otherwise)
-const apyFor   = l => apyModel(l, mixGross(pos.active ? pos.mix : mixSel));
+let selPool = "aweth";                        // ONE pool at a time (mixes live in Advanced)
+const poolGross = id => POOLS.find(p=>p.id===id).gross;
+const poolNet   = id => poolGross(id) * NET_FEE;                 // after both fees
+const apyModel = (l, gross) => liveSupply() + l * (gross*NET_FEE - liveBorrow()); // whole-position % (live rates when connected; static sample otherwise)
+const apyFor   = l => apyModel(l, poolGross(pos.active ? pos.pool : selPool));
 const DROP = l => Math.round((1 - l/LIQ_T)*100);
 let selLtv = 0.30;
-const pos = { active:false, zec:0, earnedZec:0, home:"", openedAt:0, ltv:0.30, mix:["aweth","acbbtc"] };
+const pos = { active:false, zec:0, earnedZec:0, home:"", openedAt:0, ltv:0.30, pool:"aweth" };
 
 /* ── Live mode ─────────────────────────────────────────────────────────
    The Oilskin yield service (services/yield in the repo — `npm run yield`)
@@ -615,21 +625,18 @@ const pos = { active:false, zec:0, earnedZec:0, home:"", openedAt:0, ltv:0.30, m
    from real backfilled history. */
 const YIELD_API = "http://127.0.0.1:8787";
 let LIVE = null; // /v1/pools payload once the service has answered
-const DEMO2API = {aweth:"aero-usdc-weth-5",acbbtc:"aero-cbbtc-usdc",uweth:"uni-weth-usdc-5",ubtc:"uni-cbbtc-weth-30",lst:"cbeth-weth",stab:"aero-usdt-usdc",aero:"aero-aero-weth",abtc:"aero-aero-cbbtc"};
+const DEMO2API = {aweth:"aero-usdc-weth-5",acbbtc:"aero-cbbtc-usdc",wbtc:"aero-weth-cbbtc",link:"aero-weth-link",lst:"cbeth-weth",stab:"aero-usdt-usdc",aero:"aero-aero-weth",abtc:"aero-aero-cbbtc"};
 const OILSKIN_KEEP = 0.90; // empirical engine-net already nets the engine's 15%
 const liveBorrow = () => LIVE?.rates?.borrowAprPct ?? BORROW_APR;
 const liveSupply = () => LIVE?.rates?.zecSupplyAprPct ?? APY_BASE;
 const liveBand30 = id => { const p = LIVE?.pools?.find(x=>x.id===DEMO2API[id]); const b = p?.bands?.bands?.find(w=>w.windowDays===30); return b && b.n>0 ? b : null; };
 const userNet = (engineNetPct,l) => liveSupply() + l*(engineNetPct*OILSKIN_KEEP - liveBorrow());
-/* Equal-split mix band: average percentile points across selected pools
-   with data, then apply the user transform (percentile-mean-v1 — the same
-   rule the API's /v1/band uses, so both surfaces always agree). */
-function mixBand(ids,l){
-  const bs=[...ids].map(liveBand30).filter(Boolean);
-  if(!bs.length) return null;
-  const m=k=>bs.reduce((s,b)=>s+b[k],0)/bs.length;
-  return {p25:userNet(m("p25"),l), p50:userNet(m("p50"),l), p75:userNet(m("p75"),l),
-          n:bs.reduce((s,b)=>s+b.n,0), pools:bs.length};
+/* Band for the selected pool, passed through the user transform — the
+   same rule the API's /v1/band uses, so both surfaces always agree. */
+function poolBand(id,l){
+  const b=liveBand30(id);
+  if(!b) return null;
+  return {p25:userNet(b.p25,l), p50:userNet(b.p50,l), p75:userNet(b.p75,l), n:b.n, pools:1};
 }
 async function tryLive(){
   if(location.protocol==="https:") return; // hosted demo: browsers block localhost fetches from https
@@ -654,7 +661,7 @@ function liveChipUpd(band){
   const tt = line.querySelector(".tt");
   if(tt && LIVE){
     tt.title = band
-      ? `Realized range from ${band.n} closed engine positions across ${band.pools} of your pools (trailing 30 days, principal-weighted p25–p75; typical ${band.p50.toFixed(1)}%). Live borrow ${liveBorrow().toFixed(1)}%, ZEC supply ${liveSupply().toFixed(2)}%. History, never a promise.`
+      ? `Realized range from ${band.n} closed engine positions in this pool (trailing 30 days, principal-weighted p25–p75; typical ${band.p50.toFixed(1)}%). Live borrow ${liveBorrow().toFixed(1)}%, ZEC supply ${liveSupply().toFixed(2)}%. History, never a promise.`
       : `Live rates connected (borrow ${liveBorrow().toFixed(1)}%, ZEC supply ${liveSupply().toFixed(2)}%). Realized-range bands appear once the yield service has backfilled engine history. Trailing math, never a promise.`;
   }
 }
@@ -722,17 +729,17 @@ $("#homeAddr").addEventListener("input",()=>{
 /* Pure gate decision — the single source of truth used by both the live UI
    and the fuzz harness (window.__oil), so tests exercise the real logic. */
 function gateDecision(a, addrOk, addrTyped, existing){
-  const total = existing + a;
-  const ok = a>=0.25 && total<=50 && addrOk;
+  // No Oilskin deposit cap (Matt's call 2026-08-27): size is bounded only by
+  // constraints outside our control — chiefly the USDC actually available to
+  // borrow on Rhea at that moment. The 0.25 floor stays: below it, bridge
+  // fees eat the deposit.
+  const ok = a>=0.25 && addrOk;
   const label = (!addrOk && addrTyped) ? "Add your t1… address first"
-    : total>50 ? (existing>0 ? `Max 50 ZEC/account — ${(Math.max(0,50-existing)).toFixed(2)} ZEC room left` : "Max 50 ZEC during launch")
     : existing>0 ? "Add to my position →" : "Get my deposit address →";
   return {ok, label};
 }
 function gate(){
   const a=+$("#amt").value||0, r=checkAddr($("#homeAddr").value);
-  // Account cap applies to the WHOLE position: a top-up must keep
-  // (existing + new) ≤ 50, not just the new amount.
   const existing = pos.active ? pos.zec : 0;
   const {ok,label} = gateDecision(a, r.ok, !!$("#homeAddr").value, existing);
   const b=$("#startBtn");b.disabled=!ok;b.textContent=label;
@@ -760,7 +767,7 @@ function syncRiskLock(){
 function riskUpd(locked){
   const note={30:"The safest setting, and the default.",40:"The middle path — solid buffer, better pay.",50:"Highest yield, thinnest buffer — leans hardest on the protection ladder."};
   const apy = apyFor(selLtv);
-  const band = mixBand(pos.active ? pos.mix : mixSel, selLtv);
+  const band = poolBand(pos.active ? pos.pool : selPool, selLtv);
   if(band){
     $("#apyHero").textContent = band.p25.toFixed(1)+"–"+band.p75.toFixed(1)+"%";
     $("#apyHero").style.color = band.p50 < liveSupply() ? "var(--warn)" : "var(--good)";
@@ -777,40 +784,37 @@ function riskUpd(locked){
     : earnTxt+" — liquidation only possible if ZEC falls "+DROP(selLtv)+"%. "+note[Math.round(selLtv*100)];
 }
 
-/* pool mix — curated menu, equal split across selection, locked at deposit */
+/* pool — ONE curated Aerodrome pool at a time, locked at deposit */
 function renderPools(){
   const locked = pos.active;
-  const cur = locked ? new Set(pos.mix) : mixSel;
+  const cur = locked ? pos.pool : selPool;
   $("#poolSeg").innerHTML = POOLS.map(p=>{
-    const on = cur.has(p.id);
+    const on = cur===p.id;
     const tagCls = p.tag==="BLUE CHIP"?"bc":p.tag==="STABLE"?"st":"vo";
     const netSlice = (p.gross*NET_FEE).toFixed(0);
-    return `<button type="button" class="poolb${on?" on":""}" data-pool="${p.id}" ${locked?"disabled":""} style="${locked&&!on?"opacity:.4":""}">
+    return `<button type="button" class="poolb${on?" on":""}" data-pool="${p.id}" role="radio" aria-checked="${on}" ${locked?"disabled":""} style="${locked&&!on?"opacity:.4":""}">
       <div class="pn"><span>${p.name}</span><span class="ptag ${tagCls}">${p.tag}</span></div>
       <div class="pv">${p.venue}</div>
-      <div class="pa num"><b>${p.gross>=100?Math.round(p.gross):p.gross.toFixed(1)}%</b> fees sampled${p.est?" (est.)":""} · ≈${netSlice}% after fees</div>
+      <div class="pa num"><b>${p.gross>=100?Math.round(p.gross):p.gross.toFixed(1)}%</b> fees sampled · ≈${netSlice}% after fees</div>
       ${bandCard(p.id)}
     </button>`;
   }).join("");
   $$("#poolSeg .poolb").forEach(b=>b.addEventListener("click",()=>{
     if(b.disabled) return;
-    const id=b.dataset.pool;
-    if(mixSel.has(id)){ if(mixSel.size===1){toast("Keep at least one pool in the mix");return;} mixSel.delete(id); }
-    else mixSel.add(id);
+    selPool = b.dataset.pool;
     renderPools(); riskUpd(false);
   }));
   poolHintUpd(locked);
 }
 function poolHintUpd(locked){
-  const cur = locked ? pos.mix : [...mixSel];
-  const names = cur.map(i=>POOLS.find(p=>p.id===i).name).join(" + ");
-  const hasVol = cur.some(i=>POOLS.find(p=>p.id===i).tag==="VOLATILE");
-  const net = mixNet(locked ? new Set(pos.mix) : mixSel);
+  const id = locked ? pos.pool : selPool;
+  const p = POOLS.find(x=>x.id===id);
+  const net = poolNet(id);
   const when = LIVE ? "sampled live "+new Date(LIVE.generatedAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : "sampled 2026-08-27";
-  let msg = `${cur.length} pool${cur.length>1?"s":""}, split evenly (${names}) — mix earns ≈${net.toFixed(0)}% on the working slice after all fees, ${when}.`;
-  if(net < liveBorrow()) msg += " ⚠ This mix currently earns less than the "+liveBorrow().toFixed(1)+"% borrow cost — at these rates the strategy loses money.";
-  else if(hasVol) msg += " ⚠ Volatile pairs: impermanent loss makes realized returns run well below sampled fee rates.";
-  if(locked) msg = `Locked for this position: ${names}. Withdraw and redeposit to change the mix.`;
+  let msg = `${p.name} on ${p.venue.split(" ·")[0]} — earns ≈${net.toFixed(0)}% on the working slice after all fees, ${when}. Staked in its Aerodrome gauge: earnings arrive as AERO incentives in lieu of trading fees.`;
+  if(net < liveBorrow()) msg += " ⚠ This pool currently earns less than the "+liveBorrow().toFixed(1)+"% borrow cost — at these rates the strategy loses money.";
+  else if(p.tag==="VOLATILE") msg += " ⚠ Volatile pair: impermanent loss makes realized returns run well below sampled fee rates.";
+  if(locked) msg = `Locked for this position: ${p.name}. Withdraw and redeposit to change pools.`;
   $("#poolHint").textContent = msg;
 }
 function qrSvg(seed){
@@ -839,9 +843,11 @@ $("#sentBtn").addEventListener("click",()=>{
   const steps=[
     {t:"ZEC received",d:"Confirmed on Zcash",tx:[mkTx("zcash")]},
     {t:"Working as collateral",d:`Supplied on Rhea (NEAR) · ${Math.round((pos.active?pos.ltv:selLtv)*100)}% borrowed as USDC`,tx:[mkTx("near")]},
-    {t:"Earning",d:`Deployed to ${(pos.active?pos.mix:[...mixSel]).map(i=>POOLS.find(p=>p.id===i).name).join(" + ")} on Base`,tx:[mkTx("base")]},
+    {t:"Earning",d:`Deployed to ${POOLS.find(p=>p.id===(pos.active?pos.pool:selPool)).name} on Base · staked in its Aerodrome gauge`,tx:[mkTx("base")]},
     {t:"Done — protected and earning",d:"Auto-compounding from here",tx:[]}];
-  $("#depSteps").innerHTML=steps.map((s,i)=>`<div class="bstep" data-i="${i}"><div class="bic">${i+1}</div><div style="flex:1"><div class="bt">${s.t}</div><div class="bd">${s.d}</div><div class="btx" style="display:flex;gap:6px;flex-wrap:wrap"></div></div></div>`).join("");
+  $("#depNote")?.remove();
+  $("#depSteps").innerHTML=steps.map((s,i)=>`<div class="bstep" data-i="${i}"><div class="bic">${i+1}</div><div style="flex:1"><div class="bt">${s.t}</div><div class="bd">${s.d}</div><div class="btx" style="display:flex;gap:6px;flex-wrap:wrap"></div></div></div>`).join("")
+    + `<div id="depNote" class="tiny faint" style="margin-top:8px">Each step turns green only when its transaction is confirmed on-chain — never on a timer. (Demo simulates the timing.)</div>`;
   let i=0;
   const tick=()=>{const rows=$$("#depSteps .bstep");
     if(i>0){const r=rows[i-1];r.classList.remove("doing");r.classList.add("done");r.querySelector(".bic").textContent="✓";
@@ -853,13 +859,13 @@ $("#sentBtn").addEventListener("click",()=>{
   tick();
 });
 function openPosition(a,steps){
-  if(pos.active){pos.zec+=a;}else{pos.active=true;pos.zec=a;pos.earnedZec=0;pos.openedAt=Date.now();pos.ltv=selLtv;pos.mix=[...mixSel];}
+  if(pos.active){pos.zec+=a;}else{pos.active=true;pos.zec=a;pos.earnedZec=0;pos.openedAt=Date.now();pos.ltv=selLtv;pos.pool=selPool;}
   activity.unshift({t:"Deposited",d:`${a} ZEC → working (collateral on Rhea, earning on Base)`,ic:"＋",when:"just now",tx:steps[0].tx[0]});
   renderActivity();renderPos();
 }
 $("#depDone").addEventListener("click",()=>{$("#depOverlay").classList.remove("on");renderPos();});
 $("#demoBtn").addEventListener("click",()=>{
-  pos.active=true;pos.zec=12;pos.earnedZec=0.128;pos.home="t1Py8kAoQrfmRRWTbtHkDkGb6JuaXPmpGxy";pos.openedAt=Date.now()-86400000*18;pos.ltv=0.30;pos.mix=["aweth","acbbtc"];
+  pos.active=true;pos.zec=12;pos.earnedZec=0.128;pos.home="t1Py8kAoQrfmRRWTbtHkDkGb6JuaXPmpGxy";pos.openedAt=Date.now()-86400000*18;pos.ltv=0.30;pos.pool="aweth";
   activity.length=0;
   activity.push(
     {t:"Auto-compounded",d:"0.041 ZEC of earnings put back to work",ic:"↻",when:"6h ago",tx:mkTx("base")},
@@ -880,16 +886,14 @@ function renderPos(){
   $("#pUsd").textContent="("+usd(v)+")";
   $("#pEarned").textContent="+"+pos.earnedZec.toFixed(3)+" ZEC earned";
   $("#pEarnedUsd").textContent=usd(pos.earnedZec*S.zec);
-  const pBand = mixBand(pos.mix, pos.ltv);
+  const pBand = poolBand(pos.pool, pos.ltv);
   $("#pApy").textContent = pBand ? pBand.p25.toFixed(1)+"–"+pBand.p75.toFixed(1)+"%" : apyFor(pos.ltv).toFixed(1)+"%";
   const borrow=pos.zec*S.zec*pos.ltv;
   $("#dColl").textContent=totZec.toFixed(1)+" ZEC · "+usd(v);
   $("#dBorrow").textContent=usd(borrow)+" USDC";
   $("#dLtv").textContent=Math.round(pos.ltv*100)+"%";
-  $("#dPools").innerHTML = pos.mix.map(i=>{
-    const p=POOLS.find(x=>x.id===i);
-    return `<span class="k">Working in ${p.name} <span class="faint tiny">(${p.venue})</span></span><span class="v num">${usd(borrow/pos.mix.length)}</span>`;
-  }).join("");
+  { const p=POOLS.find(x=>x.id===pos.pool);
+    $("#dPools").innerHTML = `<span class="k">Working in ${p.name} <span class="faint tiny">(${p.venue.split(" ·")[0]} · staked for AERO)</span></span><span class="v num">${usd(borrow)}</span>`; }
   $("#homeShort").textContent=pos.home?pos.home.slice(0,5)+"…"+pos.home.slice(-4):"—";
   // protection meter: liquidation price vs now, on a runway
   const liq=(pos.zec*S.zec*pos.ltv)/(LIQ_T*pos.zec); // = S.zec*ltv/LIQ_T
@@ -917,7 +921,7 @@ $("#addBtn").addEventListener("click",()=>{
   $("#amt").value="";                 // start blank so the room-left hint reads cleanly
   syncRiskLock();                     // lock the risk selector to this position
   gate();
-  toast(`Top-ups keep your ${Math.round(pos.ltv*100)}% setting and locked address · ${(Math.max(0,50-pos.zec)).toFixed(2)} ZEC room left`);
+  toast(`Top-ups keep your ${Math.round(pos.ltv*100)}% setting, pool and locked address`);
   window.scrollTo({top:0});
 });
 function wdUpd(){
@@ -982,7 +986,7 @@ $("#modeTog").addEventListener("click",(e)=>{
 
 /* Demo-only test seam (stripped in production, like the tester's kit): lets the
    fuzz harness exercise the REAL pure logic instead of a reimplementation. */
-window.__oil = { apyFor, apyModel, mixGross, mixNet, POOLS, mixSel, DROP, checkAddr, gateDecision, liqPrice:(zec,ltv)=>zec*ltv/LIQ_T, LTV_STOPS:[0.30,0.40,0.50], LIQ_T, S, BORROW_APR, NET_FEE, APY_BASE, OILSKIN_KEEP, mixBand, userNet, liveBand30, tryLive, get LIVE(){return LIVE} };
+window.__oil = { apyFor, apyModel, poolGross, poolNet, POOLS, get selPool(){return selPool}, set selPool(v){selPool=v}, DROP, checkAddr, gateDecision, liqPrice:(zec,ltv)=>zec*ltv/LIQ_T, LTV_STOPS:[0.30,0.40,0.50], LIQ_T, S, BORROW_APR, NET_FEE, APY_BASE, OILSKIN_KEEP, poolBand, userNet, liveBand30, tryLive, get LIVE(){return LIVE} };
 
 /* boot */
 gate();syncRiskLock();renderActivity();renderPos();tryLive();

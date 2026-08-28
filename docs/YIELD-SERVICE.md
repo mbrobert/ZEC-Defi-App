@@ -6,6 +6,13 @@ jobs, both stamped with sample timestamps and both refusing to invent data:
 1. **Live sampling** — current pool fee APRs (volume × feeTier ÷ TVL × 365,
    GeckoTerminal), live Rhea borrow + supply rates (bare NEAR JSON-RPC view
    calls on the Burrow contract), refreshed continuously.
+   ⚠️ **Aerodrome Slipstream fees are DYNAMIC** (pool.fee(), selector
+   `0xddca3f43`, moves with volatility — verified on-chain 2026-08-27:
+   WETH/USDC read 0.056%, AERO/WETH 0.30% where the old label said 1%).
+   The curated list's `feeTierBps` now carries each Aerodrome pool's
+   sampled fee() and must be refreshed on re-sampling; the honest upgrade
+   is reading fee() live per sample — tracked as a TODO in
+   `src/sources/gecko.ts`. Uniswap tiers are static.
 2. **Empirical bands** — the flagship: instead of quoting one modeled APY,
    backtest the engine's OWN on-chain position history and serve the
    distribution of what real positions actually kept. Matt's call

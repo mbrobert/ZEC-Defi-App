@@ -31,10 +31,11 @@ import type {
 
 /** Demo-prototype pool ids ↔ curated registry ids (the demo abbreviates). */
 export const DEMO_ID_MAP: Record<string, string> = {
+  // v1 menu (2026-08-27): 8 Aerodrome pools, single-select in the simple app.
   aweth: "aero-usdc-weth-5",
   acbbtc: "aero-cbbtc-usdc",
-  uweth: "uni-weth-usdc-5",
-  ubtc: "uni-cbbtc-weth-30",
+  wbtc: "aero-weth-cbbtc",
+  link: "aero-weth-link",
   lst: "cbeth-weth",
   stab: "aero-usdt-usdc",
   aero: "aero-aero-weth",

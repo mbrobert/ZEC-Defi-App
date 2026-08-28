@@ -67,25 +67,32 @@ The demo carries a **demo-only test seam** (`window.__oil`, stripped in producti
 like the Test kit) exposing the *real* pure functions, so the fuzz exercises the
 shipped logic rather than a re-implementation.
 
-- **Part A — logic grid (2,493 combinations):** every combination of
-  {6 addresses × 16 amounts × 6 existing-position sizes × 3 risk stops} for the gate,
-  PLUS every non-empty pool subset (255) × 3 risk stops for the yield model —
-  asserting the real invariants: account-cap-and-minimum gating (a top-up can never
-  exceed 50), apy = supply + LTV × (mix × 0.765 − borrow), carry-sign correctness
-  (a mix earning less than the borrow cost goes below the supply-only baseline),
-  LTV monotonicity, the liquidation-drop formula (57 / 43 / 29%), and address
-  classification. Default-mix headline locks 13.2 / 17.4 / 21.5%.
+- **Part A — logic grid (2,418 combinations):** every combination of
+  {6 addresses × 19 amounts (up to 10,000 ZEC) × 7 existing-position sizes × 3 risk
+  stops} for the gate, PLUS every menu pool (8, single-select) × 3 risk stops for
+  the yield model — asserting the real invariants: **uncapped** gating (floor 0.25
+  and address validity are the only gates — Matt's call 2026-08-27; a "cap ghost"
+  blocking any larger amount is a failure), apy = supply + LTV × (pool × 0.765 −
+  borrow), carry-sign correctness (a pool earning less than the borrow cost goes
+  below the supply-only baseline), LTV monotonicity, the liquidation-drop formula
+  (57 / 43 / 29%), selPool setter round-trip, and address classification.
+  Default-pool headline locks 12.9 / 17.2 / 21.5% (WETH/USDC, sampled 2026-08-27).
 - **Part B — UI state-machine fuzz (16 seeded sessions, ~90 real actions):**
-  randomized clicks through deposit / top-up / withdraw / tab / Test-kit flows on
-  desktop and phone viewports, asserting **zero console errors** plus: deposits open a
-  position, top-ups lock the selector and cannot exceed the cap, and a full withdraw
-  returns to the start and unlocks the selector.
+  randomized clicks through deposit / pool-select / top-up / withdraw / tab /
+  Test-kit flows on desktop and phone viewports, asserting **zero console errors**
+  plus: exactly ONE pool selected after any click sequence, deposits (incl. 80 and
+  250 ZEC — uncapped) open a position, top-ups lock risk AND pool selectors and
+  accept any amount, and a full withdraw returns to the start and unlocks both.
 
-Both are deterministic (seeded) and reproducible. Latest run: **2,493 + 90
-combinations, 0 failures.** The two scripts live alongside the verification suites
-(`verify-simple.mjs` — 24 end-to-end checks incl. a live-mode pass that intercepts
+Both are deterministic (seeded) and reproducible. Latest run: **2,418 + 90
+combinations, 0 failures.** The scripts live alongside the verification suites
+(`verify-simple.mjs` — 25 end-to-end checks incl. a live-mode pass that intercepts
 the yield API and asserts banded headlines + per-card band bars render from
-empirical percentiles; `verify-toggle.mjs` — the Simple⇄Advanced round-trip).
+empirical percentiles; `verify-advanced.mjs` — 12 checks on the advanced build:
+logo-home, incentives-only claimable, 8-pool Aerodrome catalog with real engine
+ids, per-asset borrow model, footer disclaimer + BUILT-ON rail, internally
+consistent demo account at $487.20; `verify-toggle.mjs` — the Simple⇄Advanced
+round-trip).
 Console-error assertions tolerate exactly one message class: the boot-time
 `ERR_CONNECTION_REFUSED` from probing the local yield service — that is the
 designed static-fallback path, not a page bug.

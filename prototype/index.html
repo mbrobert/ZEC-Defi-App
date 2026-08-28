@@ -76,7 +76,7 @@ nav{
 
 /* ─── Chips & badges ─────────────────────────────────────────────────── */
 .chip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;
-  font-size:12px;font-weight:600;border:1px solid transparent}
+  font-size:12px;font-weight:600;border:1px solid transparent;white-space:nowrap;flex:none}
 .chip-good{color:var(--good);background:var(--good-bg);border-color:rgba(82,201,138,.25)}
 .chip-warn{color:var(--warn);background:var(--warn-bg);border-color:rgba(227,184,74,.28)}
 .chip-crit{color:var(--crit);background:var(--crit-bg);border-color:rgba(240,109,128,.28)}
@@ -177,7 +177,7 @@ nav{
   background:var(--bg-2);transition:border-color .12s, background .12s}
 .opt:hover{border-color:var(--ink-3)}
 .opt.sel{border-color:var(--gold);background:var(--gold-bg)}
-.opt .t{font-weight:650;display:flex;align-items:center;gap:8px;justify-content:space-between}
+.opt .t{font-weight:650;display:flex;align-items:center;gap:8px;justify-content:space-between;flex-wrap:wrap}
 .opt .d{font-size:12.8px;color:var(--ink-2);margin-top:5px;line-height:1.45}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:11px;padding:3px;background:var(--bg-2);gap:3px}
 .seg button{padding:8px 16px;border-radius:8px;font-weight:600;font-size:13.5px;color:var(--ink-2)}
@@ -422,8 +422,20 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
     <path d="M16 26v-5.4l-6-3z" fill="#fff"/>
   </symbol>
   <symbol id="tk-aero" viewBox="0 0 32 32">
-    <circle cx="16" cy="16" r="16" fill="#1652f0"/>
-    <path d="M5.5 20.5c7-1 14.5-5.5 21-12-1.5 5.5-4.5 10-8.5 12.5l1.5 4.5-4-2.5c-3.2 1-6.8 0-10-2.5z" fill="#fff"/>
+    <!-- Hand-drawn stand-in for the AERO mark; production pulls the official
+         icon from Aerodrome's token list, never this approximation. -->
+    <circle cx="16" cy="16" r="16" fill="#2151f0"/>
+    <path d="M27.2 8.6c-8.2-.9-15.9 2-21.7 7.9 3.9.8 7.7.6 11.3-.5l-2.6 6.2 5.6-4.3c3.5-2.4 6-5.6 7.4-9.3z" fill="#fff"/>
+    <path d="M9.8 23.9c2.8.3 5.5 0 8.1-.9l-4.9 3.6c-1.4-.6-2.5-1.5-3.2-2.7z" fill="#fff" opacity=".75"/>
+  </symbol>
+  <symbol id="mark" viewBox="0 0 64 64">
+    <rect x="2" y="2" width="60" height="60" rx="14" fill="#CDA355"/>
+    <path d="M10 22 C 22 20, 34 26, 54 46" fill="none" stroke="#171204" stroke-width="6" stroke-linecap="round"/>
+    <circle cx="30" cy="20.5" r="7.5" fill="#171204"/>
+  </symbol>
+  <symbol id="tk-link" viewBox="0 0 32 32">
+    <circle cx="16" cy="16" r="16" fill="#2a5ada"/>
+    <path d="M16 6.4l-8.3 4.8v9.6l8.3 4.8 8.3-4.8v-9.6L16 6.4zm4.8 12.4L16 21.6l-4.8-2.8v-5.6L16 10.4l4.8 2.8v5.6z" fill="#fff"/>
   </symbol>
   <symbol id="tk-near" viewBox="0 0 32 32">
     <circle cx="16" cy="16" r="16" fill="#f2f1e9"/>
@@ -432,7 +444,7 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
 </defs></svg>
 
 <nav><div class="wrap nav-in">
-  <div class="logo"><div class="logo-mark">Z</div>Oilskin <span class="small" style="color:var(--ink-2);font-weight:550;margin-left:2px">Advanced</span></div>
+  <div class="logo" id="homeBtn" role="button" tabindex="0" title="Back to dashboard" style="cursor:pointer"><svg viewBox="0 0 64 64" width="30" height="30"><use href="#mark"/></svg>Oilskin <span class="small" style="color:var(--ink-2);font-weight:550;margin-left:2px">Advanced</span></div>
   <div class="tabs">
     <button class="tab on" data-view="dash">Dashboard</button>
     <button class="tab" data-view="wiz">New deposit</button>
@@ -440,7 +452,7 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
     <button class="tab" data-view="privacy">Privacy</button>
     <button class="tab" data-view="docs">Docs</button>
   </div>
-  <div class="price-chip num"><span class="pulse"></span>ZEC <b id="zecPrice">$46.18</b><span id="zecDelta" class="small" style="color:var(--good)">+2.1%</span></div>
+  <div class="price-chip num"><span class="pulse"></span>ZEC <b id="zecPrice">$487.20</b><span id="zecDelta" class="small" style="color:var(--good)">+2.1%</span></div>
   <a class="btn btn-ghost" href="simple.html" style="font-size:13px;text-decoration:none" title="Switch to the simple app — one strategy, guardrails on">⇄ Simple</a>
   <button class="btn btn-ghost" id="connectBtn">Connect wallet</button>
 </div></nav>
@@ -457,10 +469,10 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
   </div>
 
   <div class="grid-stats">
-    <div class="card stat"><div class="lbl">Your net value <span class="tt tiny" title="Collateral + LP value − debt. What you'd hold after a full unwind, before exit costs.">ⓘ</span></div><div class="val num" id="stTotal">$21,847</div><div class="sub num"><span id="stZec">395</span> ZEC collateral · <span class="fresh" data-fresh>updated 3s ago</span></div></div>
-    <div class="card stat"><div class="lbl">Net APY <span class="tt tiny" title="Blended yield across lending + LP positions, after the engine's 15% performance fee, our 10% platform fee, and borrow costs.">ⓘ</span></div><div class="val num" style="color:var(--good)" id="stApy">14.6%</div><div class="sub">after all fees</div></div>
-    <div class="card stat"><div class="lbl">ZEC collateral on Rhea</div><div class="val num"><span id="stColl">395</span> ZEC</div><div class="sub num" id="stCollUsd">$18,241 · supply APY 2.4%</div></div>
-    <div class="card stat"><div class="lbl">Claimable rewards <span class="tt tiny" title="Accrued LP fees + incentives, net of fees. Claim to your Zcash wallet, your Rhea position (repays debt first), or your Base wallet — per position, or all at once.">ⓘ</span></div><div class="val num" id="stClaim">$96.40</div><div class="sub"><button class="btn-quiet small" id="claimAll" style="color:var(--gold);font-weight:650;padding:0">Claim all →</button></div></div>
+    <div class="card stat"><div class="lbl">Your net value <span class="tt tiny" title="Collateral + LP value − debt. What you'd hold after a full unwind, before exit costs.">ⓘ</span></div><div class="val num" id="stTotal">$304,348</div><div class="sub num"><span id="stZec">590</span> ZEC collateral · <span class="fresh" data-fresh>updated 3s ago</span></div></div>
+    <div class="card stat"><div class="lbl">Net APY <span class="tt tiny" title="Blended yield across lending + LP positions, after the engine's 15% performance fee, our 10% platform fee, and borrow costs.">ⓘ</span></div><div class="val num" style="color:var(--good)" id="stApy">8.0%</div><div class="sub">after all fees</div></div>
+    <div class="card stat"><div class="lbl">ZEC collateral on Rhea</div><div class="val num"><span id="stColl">590</span> ZEC</div><div class="sub num" id="stCollUsd">$287,448 · supply APY 0.04%</div></div>
+    <div class="card stat"><div class="lbl">Claimable rewards <span class="tt tiny" title="Accrued AERO incentives across your staked positions, net of fees. While a position is staked in its Aerodrome gauge, the pool's trading fees go to veAERO voters — the position earns AERO emissions instead, so fees are never part of this number. Claim to your Zcash wallet, your Rhea position (repays debt first), or your Base wallet — per position, or all at once.">ⓘ</span></div><div class="val num" id="stClaim">$298</div><div class="sub"><button class="btn-quiet small" id="claimAll" style="color:var(--gold);font-weight:650;padding:0">Claim all →</button></div></div>
   </div>
 
   <div class="cols">
@@ -473,8 +485,8 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
         </div>
         <div class="band" id="band"><div class="band-track" id="bandTrack"></div></div>
         <div class="small muted" style="display:flex;justify-content:space-between;margin-top:10px;flex-wrap:wrap;gap:6px">
-          <span id="hfBorrowLine">Borrowed <b class="num">$10,027 USDC</b> against <b class="num">590 ZEC</b> · 36.8% LTV</span>
-          <span id="hfLiqLine">Liquidation at <b class="num" style="color:var(--crit)" id="liqPx">$24.28</b> · ZEC now <b class="num" id="nowPx">$46.18</b></span>
+          <span id="hfBorrowLine">Borrowed <b class="num">$105,400 USDC</b> against <b class="num">590 ZEC</b> · 36.7% LTV</span>
+          <span id="hfLiqLine">Liquidation at <b class="num" style="color:var(--crit)" id="liqPx">$255.21</b> · ZEC now <b class="num" id="nowPx">$487.20</b></span>
         </div>
         <div class="tiny faint" style="margin-top:7px">Agent ladder: warn ≤ 1.5 · rewards repay debt ≤ 1.35 · minimal unwind ≤ 1.2 · emergency ≤ 1.05 — <button class="btn-quiet tiny" data-doc="health" style="color:var(--gold);padding:0">how liquidation works →</button></div>
       </div>
@@ -516,9 +528,9 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
           <label>Amount to deposit</label>
           <div class="in-row">
             <input class="in num" id="amt" type="number" value="100" min="0" step="any" style="padding-right:130px">
-            <div class="in-suffix"><span>ZEC</span><button class="maxb" id="maxBtn">MAX 450</button></div>
+            <div class="in-suffix"><span>ZEC</span><button class="maxb" id="maxBtn" title="Demo wallet balance — NOT a protocol cap. Oilskin has no deposit limit; deposit size is bounded only by constraints outside our control (chiefly USDC liquidity on Rhea). Zcash wallets expose no balance API, so the demo invents 450.">MAX 450</button></div>
           </div>
-          <div class="small faint num" style="margin-top:6px">≈ <span id="amtUsd">$4,618</span> · arrives from your Zcash wallet via NEAR Intents <span class="tt" title="Why no live balance? No Zcash wallet exposes a web connection, and shielded balances are unreadable by anyone but you — by design. You type the amount; the deposit QR pre-fills it in your wallet (ZIP-321). MAX here is demo data.">ⓘ</span></div>
+          <div class="small faint num" style="margin-top:6px">≈ <span id="amtUsd">$48,720</span> · arrives from your Zcash wallet via NEAR Intents <span class="tt" title="Why no live balance? No Zcash wallet exposes a web connection, and shielded balances are unreadable by anyone but you — by design. You type the amount; the deposit QR pre-fills it in your wallet (ZIP-321). MAX here is demo data.">ⓘ</span></div>
         </div>
         <div class="field">
           <label>Funding this from <span class="tt" title="Zcash lets you spend shielded funds to a transparent address. The bridge only ever sees the deposit — never where your funds came from.">ⓘ</span></label>
@@ -540,17 +552,17 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
             <div class="opt sel" data-mode="SIMPLE">
               <div class="t">Simple lending <span class="chip chip-mute">Lower risk</span></div>
               <div class="d">Supply ZEC as collateral on Rhea Finance (NEAR). Earn supply APY — interest accrues in-protocol, nothing to manage. Upgrade any time.</div>
-              <div class="small num" style="margin-top:8px;color:var(--good);font-weight:650">≈ 2.4% APY</div>
+              <div class="small num" style="margin-top:8px;color:var(--good);font-weight:650">≈ 0.04% APY <span class="faint" style="font-weight:500">(sampled 27 Aug — ZEC supply pays almost nothing on its own)</span></div>
             </div>
             <div class="opt" data-mode="FULL">
               <div class="t">Full strategy <span class="chip chip-gold">Keep your ZEC</span></div>
-              <div class="d">Borrow against your ZEC — without selling it — and deploy into a managed concentrated-liquidity position on Base. You set every parameter.</div>
-              <div class="small num" style="margin-top:8px;color:var(--good);font-weight:650">≈ 8–31% APY · borrow risk applies</div>
+              <div class="d">Borrow against your ZEC — without selling it — and deploy into a managed concentrated-liquidity position on Base. You set every parameter, including the borrow asset: the pool's own asset (cbBTC/WETH) borrows far cheaper than USDC and halves price exposure, at the cost of a short if it rips.</div>
+              <div class="small num" style="margin-top:8px;color:var(--good);font-weight:650">≈ 5–30% APY on today's samples · borrow risk applies</div>
             </div>
             <div class="opt" data-mode="DIRECT">
               <div class="t">Direct LP <span class="chip chip-info">No loan</span></div>
               <div class="d">Swap ZEC straight into the pool assets and LP. No borrowing, no liquidation risk. Note: swapping ZEC is a disposal — borrowing exists so holders can earn without selling.</div>
-              <div class="small num" style="margin-top:8px;color:var(--good);font-weight:650">≈ 4–26% APY · IL risk only</div>
+              <div class="small num" style="margin-top:8px;color:var(--good);font-weight:650">pool-dependent, ≈ 1–66% on today's samples · IL risk only</div>
             </div>
           </div>
         </div>
@@ -575,14 +587,14 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
           </div>
           <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
             <span class="chip chip-good" id="ltvHf"><span class="dot"></span>HF 2.00</span>
-            <span class="chip chip-mute num" id="ltvLiq">Liquidation at $23.09 (−50%)</span>
-            <span class="chip chip-mute num" id="ltvBorrow">Borrows $1,616 USDC against $4,618 ZEC</span>
+            <span class="chip chip-mute num" id="ltvLiq">Liquidation at $243.60 (−50%)</span>
+            <span class="chip chip-mute num" id="ltvBorrow">Borrows $17,052 USDC against $48,720 ZEC</span>
           </div>
         </div>
         <div class="field">
           <label>Pool — <span id="poolCount" class="faint">6 engine-verified pools containing USDC</span> <span class="tt" title="Every curated pool containing your chosen asset on either side. The engine id shown is the exact bytes32 registry key our deposit passes on-chain — verify it yourself against the engine's approvedPools registry.">ⓘ</span></label>
           <div class="pool-list" id="poolList"></div>
-          <div class="tiny faint" style="margin-top:8px">5 more engine-verified pairs (EURC/USDC ×2, EURC/cbBTC, cbETH/cbBTC, WETH/wstETH) ship once their registry ids are pinned at the next enumeration.</div>
+          <div class="tiny faint" style="margin-top:8px">More engine-verified blue-chip pairs (cbETH/cbBTC, cbADA/cbBTC, WETH/cbADA, cbLTC/cbBTC) exist in the registry but sit on very thin TVL today — they join the menu when their liquidity can absorb real positions.</div>
         </div>
       </div>
 
@@ -655,9 +667,9 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
     <!-- Projection rail -->
     <div class="card card-pad proj">
       <div class="small muted" style="font-weight:600">Projected net APY <span class="tt" title="Estimate from pool base APR × range-width factor, minus the engine's 15% performance fee on yield. Not a promise — live yields drift.">ⓘ</span></div>
-      <div class="proj-apy num" id="pApy">2.4%</div>
+      <div class="proj-apy num" id="pApy">0.04%</div>
       <div class="small faint num" id="pYear" style="margin-bottom:10px">≈ $110 / year on this deposit</div>
-      <div class="row"><span class="l">Deposit</span><span class="v num" id="pDep">100 ZEC · $4,618</span></div>
+      <div class="row"><span class="l">Deposit</span><span class="v num" id="pDep">100 ZEC · $48,720</span></div>
       <div class="row" data-borrow style="display:none"><span class="l">Borrow</span><span class="v num" id="pBor">—</span></div>
       <div class="row" data-borrow style="display:none"><span class="l">Health factor <span class="tt" title="Account-level: your collateral and debt pool together on Rhea, so this number includes any existing borrow.">ⓘ</span></span><span class="v num" id="pHf">—</span></div>
       <div class="row" data-borrow style="display:none"><span class="l">Liquidation price</span><span class="v num" id="pLiq">—</span></div>
@@ -685,10 +697,10 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
 <!-- ═══ POOLS ═══ -->
 <div class="view" id="view-pools"><div class="wrap">
   <div class="section-h" style="margin-top:26px"><h2 style="font-size:20px">Curated pools</h2>
-    <span class="small muted num">Engine registry: 206 approved · 47 major-pair · enumerated 2026-08-06</span></div>
-  <p class="muted small" style="margin-bottom:16px;max-width:720px">Every pool below is verified against the live MaxFi/SnuggleFi engine registry on Base — the id shown is the exact on-chain key deposits use. Curation favors depth and real volume; per-pool caps keep any position a small share of liquidity so exits stay clean.</p>
+    <span class="small muted num">Engine registry: 209 approved · 63 active Aerodrome · enumerated 2026-08-27</span></div>
+  <p class="muted small" style="margin-bottom:16px;max-width:720px">Aerodrome pools supported by the Snuggle engine only, verified against the live registry on Base — the id shown is the exact on-chain key deposits use. Positions are staked in each pool's gauge and earn AERO incentives in lieu of trading fees. Aerodrome fees are dynamic; the fee and the sampled rate below are that day's on-chain readings, not promises. Curation favors depth and real volume; per-pool caps keep any position a small share of liquidity so exits stay clean.</p>
   <div class="card" style="overflow:auto"><table class="ptable" id="poolTable">
-    <thead><tr><th>Pool</th><th>Venue</th><th>Fee tier</th><th>Entry asset</th><th>Risk</th><th style="text-align:right">Est. APY</th><th>Engine id</th></tr></thead>
+    <thead><tr><th>Pool</th><th>Venue</th><th>Fee (on-chain, 27 Aug)</th><th>Entry asset</th><th>Risk</th><th style="text-align:right">Fees sampled 27 Aug</th><th>Engine id</th></tr></thead>
     <tbody></tbody>
   </table></div>
 </div></div>
@@ -849,12 +861,12 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
 
       <div class="doc-sec" data-doc="rewards">
         <h2>Rewards &amp; claiming</h2>
-        <p>LP positions earn trading fees plus incentives. <b>Claimable</b> is what's accrued, net of fees. Every position has <b>Compound now</b> (re-deposit into the position, works whether or not auto-compound is on) and <b>Claim</b>, with three destinations:</p>
+        <p>Every position sits <b>staked in its pool's Aerodrome gauge</b>. While staked, the pool's trading fees go to veAERO voters — your position earns <b>AERO incentives</b> instead (at equilibrium, emissions track fees; that's the deal that makes gauges work). <b>Claimable</b> is the AERO accrued, net of fees — trading fees are never part of it. Every position has <b>Compound now</b> (re-deposit into the position, works whether or not auto-compound is on) and <b>Claim</b>, with three destinations:</p>
         <p>1 · <b>Your Zcash wallet</b> — converted via NEAR Intents, arrives as native ZEC. The quote is hard-verified before send: recipient must equal your stored address, asset must be native ZEC, quote hash emitted on-chain.<br>2 · <b>Your Rhea position</b> — repays debt first (raises your health factor; usually the smartest choice while borrowing), surplus tops up collateral.<br>3 · <b>Your Base wallet</b> — raw reward tokens, no conversion.</p>
         <h3>Claim economics — why we don't claim constantly</h3>
         <p>Claiming costs gas (+ bridge cost for ZEC routing). The agent claims when rewards ≥ <b>3× the cost</b>, with a <b>$5 floor</b> and a <b>30-day max hold</b>. Example: costs $1.80 → trigger is $5.40. The $5 floor doubles as privacy hygiene: payouts always land big enough that your wallet shields them rather than stranding dust in the open.</p>
         <h3>What triggers auto-compound</h3>
-        <p>Not a timer: the same economics gate, checked every agent cycle — plus a free ride on every rebalance, since fees get collected then anyway.</p>
+        <p>Not a timer: the same economics gate, checked every agent cycle — plus a free ride on every rebalance, since rewards get collected then anyway.</p>
       </div>
 
       <div class="doc-sec" data-doc="withdraw">
@@ -870,7 +882,7 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
       <div class="doc-sec" data-doc="fees">
         <h2>Fees</h2>
         <table class="dtable"><thead><tr><th>Fee</th><th>Rate</th><th>Charged on</th></tr></thead><tbody>
-          <tr><td>Engine performance fee</td><td class="num">15%</td><td>LP earnings only, at harvest — MaxFi/SnuggleFi's fee for running positions</td></tr>
+          <tr><td>Engine performance fee</td><td class="num">15%</td><td>Realized rewards (AERO incentives) at harvest — MaxFi/SnuggleFi's fee for running positions</td></tr>
           <tr><td>Platform fee</td><td class="num">10%</td><td>Realized rewards, netted at each harvest. Never on deposits or principal</td></tr>
           <tr><td>Simple lending</td><td class="num">0%</td><td>Free at launch</td></tr>
           <tr><td>Bridge (1-Click)</td><td class="num">0%</td><td>Partner integration — no integrator fee on quotes</td></tr>
@@ -912,9 +924,31 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
   </div>
 </div></div>
 
-<footer><div class="wrap foot-in">
-  <span>ZEC Yield Orchestrator — prototype with demo data. Withdrawals are never pausable · principal never routes through the reward path.</span>
-  <span class="num">Engine 0x7d27…d55 (Base) · Rhea Finance (NEAR) · NEAR Intents 1-Click</span>
+<div class="wrap" style="margin-top:4px">
+  <div class="card" style="padding:16px 26px">
+    <div class="small" style="display:flex;gap:8px 18px;flex-wrap:wrap;align-items:center">
+      <span class="faint" style="letter-spacing:.09em;font-size:11px;font-weight:700">BUILT ON</span>
+      <a href="https://www.rhea.finance/" target="_blank" rel="noopener" style="color:var(--ink);font-weight:700">Rhea Finance ↗</a>
+      <a href="https://intents.near.org/" target="_blank" rel="noopener" style="color:var(--ink);font-weight:700">NEAR Intents ↗</a>
+      <a href="https://base.org" target="_blank" rel="noopener" style="color:var(--ink);font-weight:700">Base ↗</a>
+      <a href="https://aerodrome.finance" target="_blank" rel="noopener" style="color:var(--ink);font-weight:700">Aerodrome ↗</a>
+      <a href="https://www.snuggle.fi/" target="_blank" rel="noopener" style="color:var(--ink);font-weight:700">SnuggleFi ↗</a>
+      <span class="faint">·</span>
+      <span class="muted">Fork-tested against the live venues — every action ships with its transaction id.</span>
+      <span class="muted">Independent audit scheduled before mainnet; the report will live here.</span>
+    </div>
+  </div>
+</div>
+
+<footer><div class="wrap">
+  <p style="margin:0 0 10px;max-width:88ch">DeFi carries real risk — smart-contract bugs, venue failures or exploits, bridge
+  failures, and market moves, up to the total loss of funds. Nothing here is financial advice. Every
+  setting and every deposit is your decision alone, and Oilskin accepts no responsibility or liability
+  for any loss. Only deposit what you can afford to lose.</p>
+  <div class="foot-in">
+    <span>Oilskin Advanced — prototype with demo data. Withdrawals are never pausable · principal never routes through the reward path.</span>
+    <span class="num">Engine 0x7d27…d55 (Base) · Rhea Finance (NEAR) · NEAR Intents 1-Click</span>
+  </div>
 </div></footer>
 
 <!-- Withdraw modal -->
@@ -924,7 +958,7 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
     <div class="field">
       <label>Amount — <span class="num" id="wdPct">50%</span> <span id="wdOf">of position</span></label>
       <input type="range" id="wdSlider" min="5" max="100" value="50" step="5">
-      <div class="small muted num" style="margin-top:8px" id="wdEst">≈ $2,610 back to you</div>
+      <div class="small muted num" style="margin-top:8px" id="wdEst">≈ $27,350 back to you</div>
       <div class="note warn small" id="wdCap" style="display:none"></div>
     </div>
     <div class="field" id="wdDestWrap">
@@ -993,6 +1027,7 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
   <div class="modal-h"><h3 id="goTitle">Placing your deposit</h3><button class="x" id="goX" style="display:none">✕</button></div>
   <div class="card-pad">
     <div class="bridge" id="bridgeSteps"></div>
+    <div class="small muted" style="margin-top:10px">In production each step turns green only when its transaction is confirmed on-chain — never on a timer. (This demo simulates the timing; the tx ids are fake.)</div>
     <button class="btn btn-gold btn-lg" id="goDone" style="width:100%;margin-top:16px;display:none">View position →</button>
   </div>
 </div></div>
@@ -1003,7 +1038,7 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 34px;margin-top:30px
 "use strict";
 /* ═══ Demo state ═══ */
 const S = {
-  zec: 46.18,
+  zec: 487.20,
   connected: false,
   mode: "SIMPLE", asset: "USDC", ltv: 35, poolId: null,
   preset: "MODERATE", rw: 800, rd: 12, rew: "COMPOUND", econ: true,
@@ -1013,7 +1048,7 @@ const S = {
 };
 
 /* Demo token prices (production: on-chain oracles / indexer) */
-const PRICES = {usdc:1, usdt:1, weth:3720, cbbtc:98400, cbeth:4020, aero:1.18};
+const PRICES = {usdc:1, usdt:1, weth:3720, cbbtc:98400, cbeth:4020, aero:1.18, link:28.40};
 const fmtTok = v => v>=1000 ? v.toLocaleString("en-US",{maximumFractionDigits:0})
                 : v>=1 ? v.toFixed(2) : v.toFixed(4);
 
@@ -1064,17 +1099,22 @@ function addressReused(a){
   return positions.some(p=>p.zaddr && p.zaddr.toLowerCase()===s.toLowerCase());
 }
 const LIQ_T = 0.7; // Rhea liquidation threshold for ZEC
+/* Aerodrome pools supported by the Snuggle engine ONLY (Matt's call
+   2026-08-27). Aerodrome Slipstream fees are DYNAMIC — `fee` is each pool's
+   on-chain fee() at sampling; `base` is the gross fee APR from live TVL +
+   24h volume that day (vol × fee ÷ TVL × 365). Positions are STAKED in each
+   pool's gauge: trading fees go to veAERO voters, the position earns AERO
+   emissions instead — at equilibrium emissions track fees, so fee APR is the
+   honest proxy. Trailing samples, never promises. */
 const POOLS = [
-  {id:"uni-weth-usdc-5",  name:"WETH / USDC", dex:"Uniswap v3", fee:"0.05%", entry:"USDC",  risk:"BLUE_CHIP", base:22.4, c:["weth","usdc"],  eid:"0x12fc…1796", desc:"The deepest pool on Base (~$114M TVL, ~$46M/day). Workhorse ETH exposure with maximum depth."},
-  {id:"aero-cbbtc-usdc",  name:"USDC / cbBTC", dex:"Aerodrome", fee:"0.05%", entry:"USDC",  risk:"BLUE_CHIP", base:26.8, c:["usdc","cbbtc"], eid:"0xb183…37e6", desc:"Highest-volume BTC pool on Base (~$72M/day) — outstanding fee capture per dollar."},
-  {id:"aero-usdc-weth-5", name:"WETH / USDC", dex:"Aerodrome", fee:"0.05%", entry:"USDC",  risk:"BLUE_CHIP", base:24.1, c:["weth","usdc"],  eid:"0x0ea7…72a8", desc:"Aerodrome's flagship ETH pool (~$10M TVL, ~$42M/day). High volume-to-TVL ratio."},
-  {id:"uni-cbbtc-weth-30",name:"WETH / cbBTC", dex:"Uniswap v3", fee:"0.30%", entry:"cbBTC", risk:"BLUE_CHIP", base:14.2, c:["weth","cbbtc"], eid:"0xd000…95e1", desc:"ETH/BTC ratio pair (~$5M TVL, ~$13M/day) — correlated majors, softer IL profile."},
-  {id:"uni-usdc-weth-30", name:"WETH / USDC", dex:"Uniswap v3", fee:"0.30%", entry:"USDC",  risk:"BLUE_CHIP", base:17.6, c:["weth","usdc"],  eid:"0x0223…c5b6", desc:"Secondary Uni ETH pool (~$10M TVL, ~$9M/day) at the 0.30% tier — higher fee per trade."},
-  {id:"uni-usdc-cbbtc-30",name:"USDC / cbBTC", dex:"Uniswap v3", fee:"0.30%", entry:"USDC",  risk:"BLUE_CHIP", base:15.9, c:["usdc","cbbtc"], eid:"0xdf08…cfce", desc:"0.30% BTC pool — wider effective ranges, calmer companion to the tight cbBTC venue."},
-  {id:"aero-usdt-usdc",   name:"USDT / USDC", dex:"Aerodrome", fee:"0.01%", entry:"USDC",  risk:"STABLE",    base:5.8,  c:["usdt","usdc"],  eid:"0x3404…8f48", desc:"Stable/stable (~$6.5M/day) — minimal IL, single-tick ranges viable."},
-  {id:"cbeth-weth",       name:"cbETH / WETH", dex:"Aerodrome", fee:"0.01%", entry:"WETH",  risk:"STABLE",    base:4.9,  c:["cbeth","weth"], eid:"0x8136…4e71", desc:"Correlated LST pair — tracks the staking rate, near-zero IL. Conservative WETH entry."},
-  {id:"aero-aero-weth",   name:"WETH / AERO", dex:"Aerodrome", fee:"0.30%", entry:"WETH",  risk:"VOLATILE",  base:41.7, c:["weth","aero"],  eid:"0x6d94…c1d1", desc:"Incentivized AERO pair (~$2.6M/day) — higher APR, real volatility."},
-  {id:"aero-aero-cbbtc",  name:"AERO / cbBTC", dex:"Aerodrome", fee:"0.30%", entry:"cbBTC", risk:"VOLATILE",  base:38.2, c:["aero","cbbtc"], eid:"0xa893…9bfc", desc:"AERO against BTC (~$2.4M/day) — for cbBTC borrowers chasing incentives."},
+  {id:"aero-usdc-weth-5", name:"WETH / USDC",  dex:"Aerodrome", fee:"0.056% today", entry:"USDC",  risk:"BLUE_CHIP", base:73.6, c:["weth","usdc"],  eid:"0x0ea7…72a8", desc:"Aerodrome's flagship ETH pool ($8.8M TVL, $31.8M/day) — the venue's deepest ETH flow on Base."},
+  {id:"aero-cbbtc-usdc",  name:"USDC / cbBTC", dex:"Aerodrome", fee:"0.044% today", entry:"USDC",  risk:"BLUE_CHIP", base:59.6, c:["usdc","cbbtc"], eid:"0xb183…37e6", desc:"Hardest-working BTC pool ($5.7M TVL, $21.1M/day) — outstanding fee capture per dollar."},
+  {id:"aero-weth-cbbtc",  name:"WETH / cbBTC", dex:"Aerodrome", fee:"0.253% today", entry:"cbBTC", risk:"BLUE_CHIP", base:33.0, c:["weth","cbbtc"], eid:"0xc97c…c35f", desc:"ETH/BTC ratio pair ($15.4M TVL, $5.5M/day) — correlated majors, softer IL profile."},
+  {id:"aero-weth-link",   name:"WETH / LINK",  dex:"Aerodrome", fee:"0.25% today",  entry:"WETH",  risk:"BLUE_CHIP", base:35.5, c:["weth","link"],  eid:"0x477c…ab24", desc:"Top-15 LINK against ETH ($1.7M TVL, $0.6M/day) — the only blue-chip LINK venue the engine supports."},
+  {id:"cbeth-weth",       name:"cbETH / WETH", dex:"Aerodrome", fee:"0.007% today", entry:"WETH",  risk:"STABLE",    base:3.7,  c:["cbeth","weth"], eid:"0xcfde…d419", desc:"Correlated LST pair ($3.7M TVL, $5.9M/day) — tracks the staking rate, near-zero IL."},
+  {id:"aero-usdt-usdc",   name:"USDT / USDC",  dex:"Aerodrome", fee:"0.001% today", entry:"USDC",  risk:"STABLE",    base:0.9,  c:["usdt","usdc"],  eid:"0x0ff8…abd7", desc:"Stable/stable ($1.3M TVL, $3.7M/day) — minimal IL, thin fees; loses money vs today's USDC borrow rate."},
+  {id:"aero-aero-weth",   name:"WETH / AERO",  dex:"Aerodrome", fee:"0.30% today",  entry:"WETH",  risk:"VOLATILE",  base:86.9, c:["weth","aero"],  eid:"0x6d94…c1d1", desc:"The venue's own token ($1.4M TVL, $1.1M/day) — big sampled fees, brutal IL."},
+  {id:"aero-aero-cbbtc",  name:"AERO / cbBTC", dex:"Aerodrome", fee:"0.075% today", entry:"cbBTC", risk:"VOLATILE",  base:82.4, c:["aero","cbbtc"], eid:"0xa893…9bfc", desc:"AERO against BTC ($1.3M TVL, $3.9M/day) — extreme sampled fees on thin TVL, brutal IL."},
 ];
 const PRESETS = [
   {k:"CONSERVATIVE", label:"Conservative", band:"15–50% range", d:"Rides out big moves. Fewer rebalances, lower fee APR.", rw:2500, min:1500, max:5000, rd:48, mult:0.55},
@@ -1084,17 +1124,19 @@ const PRESETS = [
 const RISK_CHIP = {BLUE_CHIP:'<span class="chip chip-info">Blue chip</span>', STABLE:'<span class="chip chip-good">Stable</span>', VOLATILE:'<span class="chip chip-warn">Volatile</span>'};
 
 /* Demo positions — internally consistent account model:
-   collateral 590 ZEC ($27,246 @ $46.18) · debt $10,027 → LTV 36.8%, HF 1.90 */
+   collateral 590 ZEC ($287,448 @ $487.20) · debt $105,400 → LTV 36.7%, HF 1.90.
+   fees = trading fees the gauge took while staked (shown for honesty, never
+   claimable); inc = AERO incentives accrued (the claimable part). */
 let PID = 4;
 const positions = [
-  {id:1, kind:"FULL", pool:POOLS[2], value:5230, zecIn:160, borrowUsd:4300, borrowAsset:"USDC",
-   apy:20.5, range:"in", rew:"COMPOUND", preset:"Moderate 8%", rw:800, rd:12,
-   fees:41.2, inc:31.8, cooldown:0, opened:"12d ago", src:"SHIELDED"},
-  {id:2, kind:"FULL", pool:POOLS[0], value:6410, zecIn:210, borrowUsd:5727, borrowAsset:"USDC",
-   apy:11.9, range:"out", outFor:"3h", rebalIn:"~9h", rew:"ZEC", preset:"Conservative 25%", rw:2500, rd:48,
-   fees:18.3, inc:5.1, cooldown:0, opened:"31d ago", src:"SHIELDED",
+  {id:1, kind:"FULL", pool:POOLS[0], value:54700, zecIn:160, borrowUsd:45000, borrowAsset:"USDC",
+   apy:24.8, range:"in", rew:"COMPOUND", preset:"Moderate 8%", rw:800, rd:12,
+   fees:435, inc:335, cooldown:0, opened:"12d ago", src:"SHIELDED"},
+  {id:2, kind:"FULL", pool:POOLS[1], value:67600, zecIn:210, borrowUsd:60400, borrowAsset:"USDC",
+   apy:6.9, range:"out", outFor:"3h", rebalIn:"~9h", rew:"ZEC", preset:"Conservative 25%", rw:2500, rd:48,
+   fees:193, inc:54, cooldown:0, opened:"31d ago", src:"SHIELDED",
    zaddr:"t1Py8kAoQrfmRRWTbtHkDkGb6JuaXPmpGxy"},
-  {id:3, kind:"SIMPLE", zecIn:220, apy:2.4, opened:"45d ago", src:"TRANSPARENT"},
+  {id:3, kind:"SIMPLE", zecIn:220, apy:0.04, opened:"45d ago", src:"TRANSPARENT"},
 ];
 /* Account-level model: Rhea pools all collateral + debt per user (one MCA). */
 const collZec = () => positions.filter(p=>p.kind!=="DIRECT").reduce((a,p)=>a+(p.zecIn||0),0);
@@ -1104,7 +1146,10 @@ const acctHf  = (dColl=0,dDebt=0) => {
   return (collZec()+dColl)*S.zec*LIQ_T/d;
 };
 const posValue = p => p.kind==="SIMPLE" ? p.zecIn*S.zec : p.value;
-const grossRewards = p => (p.fees||0)+(p.inc||0);
+/* Staked-in-gauge model: while a position is staked in its Aerodrome gauge,
+   the pool's trading fees go to veAERO voters — the position earns AERO
+   emissions instead. Claimable is therefore incentives ONLY, never fees. */
+const grossRewards = p => (p.inc||0);
 /* Position ≈ half each side while in range (demo simplification). */
 function tokAmounts(p){
   if(!p.pool) return "";
@@ -1113,7 +1158,7 @@ function tokAmounts(p){
 }
 const activity = [
   {t:"Rewards routed home", d:"$38.90 → 0.84 ZEC to t1MZ…kd2w · quote hash emitted", ic:"⚡", cls:"chip-gold", when:"2h ago", tx:mkTx("zcash")},
-  {t:"Auto-compounded", d:"$27.14 fees re-deposited · WETH/USDC (Aero)", ic:"↻", cls:"chip-good", when:"9h ago", tx:mkTx("base")},
+  {t:"Auto-compounded", d:"$27.14 of AERO rewards re-deposited · WETH/USDC (Aero)", ic:"↻", cls:"chip-good", when:"9h ago", tx:mkTx("base")},
   {t:"Range rebalanced", d:"WETH/USDC re-centered after 12h out of range", ic:"⇄", cls:"chip-info", when:"1d ago", tx:mkTx("base")},
   {t:"Health check", d:"HF 1.90 · no action needed (warns at 1.5)", ic:"♥", cls:"chip-good", when:"1d ago"},
 ];
@@ -1122,7 +1167,7 @@ const activity = [
 const $ = (q,el=document)=>el.querySelector(q);
 const $$ = (q,el=document)=>[...el.querySelectorAll(q)];
 const usd = v=>v.toLocaleString("en-US",{style:"currency",currency:"USD",maximumFractionDigits:v<100?2:0});
-const pct = v=>(v).toFixed(1)+"%";
+const pct = v=>v.toFixed(v!==0&&Math.abs(v)<0.1?2:1)+"%"; // 0.04% shows as 0.04, not 0.0
 const hfFor = ltv=>LIQ_T/(ltv/100);
 const liqPx = ltv=>S.zec*(ltv/100)/LIQ_T;
 function hfMeta(hf){
@@ -1245,8 +1290,7 @@ function posCard(p){
     body=`
       <div style="display:flex;gap:34px;flex-wrap:wrap">
         <div class="ybreak" style="flex:1;min-width:260px">
-          <span class="r">LP trading fees</span><span class="v num">${usd(p.fees)}</span>
-          <span class="r">Incentives (${p.pool.dex==="Aerodrome"?"AERO":"engine"})</span><span class="v num">${usd(p.inc)}</span>
+          <span class="r">AERO incentives (staked in gauge)</span><span class="v num">${usd(p.inc)}</span>
           <span class="r">Engine performance fee (15%)</span><span class="v num" style="color:var(--ink-3)">−${usd(feeE)}</span>
           <span class="r">Platform fee (10%)</span><span class="v num" style="color:var(--ink-3)">−${usd(feeP)}</span>
           <span class="r net">Net claimable</span><span class="v num net">${usd(net)}</span>
@@ -1258,10 +1302,11 @@ function posCard(p){
             ? `Funded by swapping <b class="num">${p.zecIn} ZEC</b> — no loan, no liquidation risk.`
             : `Backed by <b class="num">${p.zecIn} ZEC</b> collateral · borrowed <b class="num">${usd(p.borrowUsd)} ${p.borrowAsset}</b>`}</div>
           ${p.rew==="ZEC"&&p.zaddr?`<div style="margin-top:6px">Rewards route to <span class="mono">${p.zaddr.slice(0,14)}…</span> as native ZEC — shield on arrival.</div>`:""}
+          <div style="margin-top:6px">While staked, this pool's trading fees${p.fees>0?` (≈${usd(p.fees)} so far)`:""} go to its veAERO voters — the AERO incentives above are what your position earns instead.</div>
         </div>
       </div>
       <div class="pos-actions">
-        <button class="btn btn-gold" data-act="compound" ${p.cooldown>0||gross<=0?"disabled":""} title="Collects accrued fees + incentives and re-deposits them into this position. Works whether or not auto-compound is on. Restarts the 60s hold.">Compound now</button>
+        <button class="btn btn-gold" data-act="compound" ${p.cooldown>0||gross<=0?"disabled":""} title="Collects accrued AERO incentives and re-deposits them into this position. Works whether or not auto-compound is on. Restarts the 60s hold.">Compound now</button>
         <button class="btn btn-ghost" data-act="claim" ${gross<=0?"disabled":""} title="Send accrued rewards to your Zcash wallet, your Rhea position (repays debt first), or your Base wallet.">Claim rewards</button>
         <button class="btn btn-ghost" data-act="withdraw" ${p.cooldown>0?"disabled":""}>Withdraw</button>
         <button class="btn btn-quiet" data-act="settings">Adjust parameters</button>
@@ -1568,7 +1613,7 @@ $("#wdConfirm").addEventListener("click",()=>{
       if(p.kind==="FULL"&&p.zecIn>0){
         const sp=positions.find(q=>q.kind==="SIMPLE");
         if(sp) sp.zecIn+=p.zecIn;
-        else positions.push({id:++PID,kind:"SIMPLE",zecIn:p.zecIn,apy:2.4,opened:"just now",src:p.src});
+        else positions.push({id:++PID,kind:"SIMPLE",zecIn:p.zecIn,apy:0.04,opened:"just now",src:p.src});
         msg+=` · your ${p.zecIn} ZEC collateral stays on Rhea${p.borrowUsd>0?" (debt outstanding)":""}`;
       }
       toast(`Position closed — ${msg}`);
@@ -1610,6 +1655,9 @@ function showView(v){
   window.scrollTo({top:0});
 }
 $$(".tab").forEach(t=>t.addEventListener("click",()=>showView(t.dataset.view)));
+/* Logo → home (dashboard), like every site on earth */
+$("#homeBtn").addEventListener("click",()=>showView("dash"));
+$("#homeBtn").addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();showView("dash");}});
 
 function setStep(n){
   S.step=n;
@@ -1763,7 +1811,7 @@ function renderPoolList(){
     const el=document.createElement("div");el.className="pool-row"+(S.poolId===p.id?" sel":"");
     el.innerHTML=`${coins2(p.c)}<div class="info"><div class="nm">${p.name} <span class="faint tiny num">${p.fee}</span> ${RISK_CHIP[p.risk]}</div>
       <div class="ds">${p.desc}</div></div>
-      <div class="apy"><div class="v num">${pct(p.base)}</div><div class="l">base APR</div></div>`;
+      <div class="apy"><div class="v num">${pct(p.base)}</div><div class="l">fees sampled</div></div>`;
     el.addEventListener("click",()=>{S.poolId=p.id;renderPoolList();proj();});
     $("#poolList").appendChild(el);
   });
@@ -1790,15 +1838,22 @@ $("#rw").addEventListener("input",e=>{S.rw=+e.target.value;rwUi();proj();});
 $("#rd").addEventListener("input",e=>{S.rd=+e.target.value;rwUi();});
 
 /* projection */
+/* Live Rhea borrow APRs, sampled 2026-08-27 — borrowing the pool's own asset
+   (cbBTC/WETH) costs far less than USDC and halves price exposure, at the
+   price of a short on that asset if it rips. Production reads these live. */
+const BORROW_APR = {USDC:13.47, cbBTC:2.76, WETH:0.49};
+const ZEC_SUPPLY_APR = 0.04; // Rhea ZEC supply, sampled 2026-08-27
 function estApy(){
-  if(S.mode==="SIMPLE")return 2.4;
+  if(S.mode==="SIMPLE")return ZEC_SUPPLY_APR;
   const pool=POOLS.find(p=>p.id===S.poolId)||POOLS[0];
   const pr=PRESETS.find(p=>p.k===S.preset);
   const widthMult=pr.mult*(pr.rw/S.rw)**0.35;          // tighter than default → more fees
   const lpApy=pool.base*widthMult*NET;                  // engine 15% + platform 10%
   if(S.mode==="DIRECT") return Math.max(lpApy,0);       // whole deposit in the LP, no borrow cost
-  const borrowCost=3.1*(S.ltv/35);                      // demo borrow rate scaling
-  return Math.max(2.4+ (lpApy-borrowCost)*(S.ltv/100), 2.4);
+  const borrowCost=BORROW_APR[S.asset]??BORROW_APR.USDC;
+  // Whole-position math — no floor: a thin pool CAN earn less than the
+  // borrow costs at today's rates, and we show that rather than hide it.
+  return ZEC_SUPPLY_APR + (lpApy-borrowCost)*(S.ltv/100);
 }
 function proj(){
   const amt=+$("#amt").value||0, usdIn=amt*S.zec;
@@ -2005,7 +2060,7 @@ function launch(){
           apy:estApy(),range:"in",rew:S.rew==="ZEC"?"ZEC":"COMPOUND",
           preset:PRESETS.find(p=>p.k===S.preset).label+" "+(S.rw/100).toFixed(1)+"%",rw:S.rw,rd:S.rd,
           fees:0,inc:0,cooldown:60,opened:"just now",src:S.src,zaddr:$("#zaddr").value.trim()||undefined}
-        :{id:++PID,kind:"SIMPLE",zecIn:amt,apy:2.4,opened:"just now",src:S.src};
+        :{id:++PID,kind:"SIMPLE",zecIn:amt,apy:0.04,opened:"just now",src:S.src};
       positions.unshift(np);
       if(full||direct)startCooldown(np);
       activity.unshift({t:"Deposited",d:`${amt} ZEC → ${S.mode==="SIMPLE"?"Rhea lending":pool.name+" ("+pool.dex+")"}${direct?" · swapped, no loan":""}`,ic:"＋",cls:"chip-gold",when:"just now",tx:steps[1]&&steps[1].tx&&steps[1].tx[0]?steps[1].tx[0]:mkTx("zcash")});
@@ -2031,7 +2086,7 @@ function refreshStats(){
   $("#stApy").textContent=pct(wApy);
   $("#stZec").textContent=C.toLocaleString();
   $("#stColl").textContent=C.toLocaleString();
-  $("#stCollUsd").textContent=`${usd(C*S.zec)} · supply APY 2.4%`;
+  $("#stCollUsd").textContent=`${usd(C*S.zec)} · supply APY 0.04%`;
 }
 $("#claimAll").addEventListener("click",()=>{
   let routed=0,compounded=0;
