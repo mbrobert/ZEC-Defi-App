@@ -13,3 +13,4 @@ contracts/cache/
 agent/data/*.json
 coverage/
 *.tar.gz
+.demo/
