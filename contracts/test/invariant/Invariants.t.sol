@@ -15,7 +15,9 @@ import {Handler} from "./Handler.sol";
 /// Foundry drives Handler with random action sequences (runs × depth state
 /// transitions, configured in foundry.toml). After each sequence, every
 /// invariant_* here is asserted. A single violation across the whole search
-/// space fails the suite.
+/// space fails the suite. The engine double re-keys positions on keeper
+/// rebalance, refunds deposits, and pays rewards on close — the live
+/// behaviours whose absence let C-1 survive the previous suite.
 contract InvariantsTest is Test {
     PositionVault vault;
     RewardRouter router;
@@ -64,7 +66,7 @@ contract InvariantsTest is Test {
         router.setOperator(address(handler), true);
 
         targetContract(address(handler));
-        bytes4[] memory sel = new bytes4[](9);
+        bytes4[] memory sel = new bytes4[](11);
         sel[0] = Handler.deposit.selector;
         sel[1] = Handler.increase.selector;
         sel[2] = Handler.withdraw.selector;
@@ -74,24 +76,37 @@ contract InvariantsTest is Test {
         sel[6] = Handler.changePref.selector;
         sel[7] = Handler.goOutOfRange.selector;
         sel[8] = Handler.warp.selector;
+        sel[9] = Handler.keeperRebalance.selector;
+        sel[10] = Handler.consolidate.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: sel}));
     }
 
     /// MASTER CONSERVATION: no USDC is created or destroyed. Every unit is
-    /// either held somewhere in the system or was paid out to a user/intents.
+    /// either held somewhere in the system — engine, router, vault, adapter,
+    /// or a position's holder (idle refunds) — or was paid out to a
+    /// user/intents.
     function invariant_usdcConservation() public view {
         uint256 held = usdc.balanceOf(address(engine)) + usdc.balanceOf(address(router))
-            + usdc.balanceOf(address(vault)) + usdc.balanceOf(address(adapter));
+            + usdc.balanceOf(address(vault)) + usdc.balanceOf(address(adapter))
+            + handler.sumHolderUsdc();
         uint256 lhs = held + handler.g_paidToUsers() + handler.g_paidToIntents();
         uint256 rhs = handler.g_depositedExternal() + handler.g_feesMintedUsdc();
         assertEq(lhs, rhs, "USDC conservation broken");
     }
 
-    /// The adapter is a pass-through: it must never hold idle funds between txs.
+    /// The adapter is a pass-through: it must never hold funds itself. All
+    /// per-position value outside the engine lives on that position's holder.
     function invariant_adapterHoldsNothing() public view {
         assertEq(usdc.balanceOf(address(adapter)), 0, "adapter holds USDC");
         assertEq(weth.balanceOf(address(adapter)), 0, "adapter holds WETH");
         assertEq(aero.balanceOf(address(adapter)), 0, "adapter holds AERO");
+    }
+
+    /// Every unit on a holder is attributed: Σ holder balances == Σ idleOf —
+    /// nothing sits on a holder that idleOf does not report to the vault/UI,
+    /// and idleOf never reports money that is not really there.
+    function invariant_holderBalancesFullyAttributed() public view {
+        assertEq(handler.sumHolderUsdc(), handler.sumIdleOf(), "holder balance != idleOf");
     }
 
     /// The vault never holds idle principal between actions (funds go straight
@@ -102,10 +117,20 @@ contract InvariantsTest is Test {
     }
 
     /// The matched (position) token is never stranded in the RewardRouter —
-    /// compound re-deposits it, route sends it. Only non-matching incentive
-    /// tokens (AERO) may accumulate pending a sweep.
+    /// compound re-deposits it, route sends it (this suite's route cap is
+    /// unlimited, so no matched remainder is ever held). Only non-matching
+    /// incentive tokens (AERO) may accumulate, and those are user-claimable.
     function invariant_routerNoMatchedToken() public view {
         assertEq(usdc.balanceOf(address(router)), 0, "USDC stuck in router");
+    }
+
+    /// Held incentive tokens in the router are exactly accounted: balance ==
+    /// totalHeld (every AERO unit is claimable by some position owner).
+    function invariant_routerHeldFullyAttributed() public view {
+        assertEq(
+            aero.balanceOf(address(router)), router.totalHeld(address(aero)),
+            "unattributed AERO in router"
+        );
     }
 
     /// active == (shares > 0) for every position ever opened.
@@ -127,6 +152,27 @@ contract InvariantsTest is Test {
     /// from routed rewards, never from principal (bounded by fees minted).
     function invariant_intentsBoundedByFees() public view {
         assertLe(handler.g_paidToIntents(), handler.g_feesMintedUsdc(), "intents paid from principal");
+    }
+
+    /// EXIT LIVENESS (the invariant whose absence let C-1 ship): once the
+    /// engine's 60s hold has elapsed, EVERY active position's owner can fully
+    /// exit — through keeper re-keys, refunds, consolidations, compounds and
+    /// partial withdrawals alike. Snapshot/revert so probing one position
+    /// cannot mask another.
+    function invariant_exitLiveness() public {
+        vm.warp(block.timestamp + 61);
+        for (uint256 i = 0; i < handler.positionCount(); i++) {
+            uint256 id = handler.idAt(i);
+            if (!vault.getPosition(id).active) continue;
+            address user = handler.ownerOf(id);
+            uint256 snap = vm.snapshotState();
+            vm.prank(user);
+            (bool ok,) = address(vault).call(
+                abi.encodeCall(PositionVault.withdraw, (id, 10_000, user, 0, 0, 0))
+            );
+            vm.revertToState(snap);
+            assertTrue(ok, "active position cannot exit");
+        }
     }
 
     function invariant_callSummary() public view {

@@ -42,18 +42,18 @@ function keccakF(state: bigint[]): void {
     // θ
     const c: bigint[] = new Array(5);
     for (let x = 0; x < 5; x++) {
-      c[x] = state[x] ^ state[x + 5] ^ state[x + 10] ^ state[x + 15] ^ state[x + 20];
+      c[x] = state[x]! ^ state[x + 5]! ^ state[x + 10]! ^ state[x + 15]! ^ state[x + 20]!;
     }
     for (let x = 0; x < 5; x++) {
-      const d = c[(x + 4) % 5] ^ rotl(c[(x + 1) % 5], 1);
-      for (let y = 0; y < 5; y++) state[x + 5 * y] ^= d;
+      const d = c[(x + 4) % 5]! ^ rotl(c[(x + 1) % 5]!, 1);
+      for (let y = 0; y < 5; y++) state[x + 5 * y] = state[x + 5 * y]! ^ d;
     }
 
     // ρ and π
     const b: bigint[] = new Array(25).fill(0n);
     for (let x = 0; x < 5; x++) {
       for (let y = 0; y < 5; y++) {
-        b[y + 5 * ((2 * x + 3 * y) % 5)] = rotl(state[x + 5 * y], ROT[x][y]);
+        b[y + 5 * ((2 * x + 3 * y) % 5)] = rotl(state[x + 5 * y]!, ROT[x]![y]!);
       }
     }
 
@@ -61,12 +61,12 @@ function keccakF(state: bigint[]): void {
     for (let x = 0; x < 5; x++) {
       for (let y = 0; y < 5; y++) {
         state[x + 5 * y] =
-          b[x + 5 * y] ^ (~b[((x + 1) % 5) + 5 * y] & MASK64 & b[((x + 2) % 5) + 5 * y]);
+          b[x + 5 * y]! ^ (~b[((x + 1) % 5) + 5 * y]! & MASK64 & b[((x + 2) % 5) + 5 * y]!);
       }
     }
 
     // ι
-    state[0] ^= RC[round];
+    state[0] = state[0]! ^ RC[round]!;
   }
 }
 
@@ -80,22 +80,22 @@ export function keccak256Bytes(input: Uint8Array): Uint8Array {
   const padded = new Uint8Array(input.length + padLen);
   padded.set(input);
   padded[input.length] = 0x01;
-  padded[padded.length - 1] |= 0x80;
+  padded[padded.length - 1] = padded[padded.length - 1]! | 0x80;
 
   for (let off = 0; off < padded.length; off += rate) {
     for (let i = 0; i < rate / 8; i++) {
       let lane = 0n;
       for (let byte = 7; byte >= 0; byte--) {
-        lane = (lane << 8n) | BigInt(padded[off + i * 8 + byte]);
+        lane = (lane << 8n) | BigInt(padded[off + i * 8 + byte]!);
       }
-      state[i] ^= lane;
+      state[i] = state[i]! ^ lane;
     }
     keccakF(state);
   }
 
   const out = new Uint8Array(32);
   for (let i = 0; i < 4; i++) {
-    let lane = state[i];
+    let lane = state[i]!;
     for (let byte = 0; byte < 8; byte++) {
       out[i * 8 + byte] = Number(lane & 0xffn);
       lane >>= 8n;

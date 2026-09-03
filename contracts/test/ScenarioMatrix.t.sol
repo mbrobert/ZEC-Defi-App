@@ -139,22 +139,22 @@ contract ScenarioMatrixTest is Test {
         uint256 before = usdc.balanceOf(user);
         if (wp == 0) {
             vm.prank(user);
-            vault.withdraw(id, 10_000, user, 0, 0);
+            vault.withdraw(id, 10_000, user, 0, 0, 0);
         } else if (wp == 1) {
             vm.prank(user);
-            vault.withdraw(id, 5_000, user, 0, 0);
+            vault.withdraw(id, 5_000, user, 0, 0, 0);
             vm.warp(tW + 122);
             vm.prank(user);
-            vault.withdraw(id, 10_000, user, 0, 0);
+            vault.withdraw(id, 10_000, user, 0, 0, 0);
         } else {
             vm.prank(user);
-            vault.withdraw(id, 2_500, user, 0, 0);
+            vault.withdraw(id, 2_500, user, 0, 0, 0);
             vm.warp(tW + 122);
             vm.prank(user);
-            vault.withdraw(id, 3_333, user, 0, 0);
+            vault.withdraw(id, 3_333, user, 0, 0, 0);
             vm.warp(tW + 183);
             vm.prank(user);
-            vault.withdraw(id, 10_000, user, 0, 0);
+            vault.withdraw(id, 10_000, user, 0, 0, 0);
         }
         gUsers += usdc.balanceOf(user) - before;
 

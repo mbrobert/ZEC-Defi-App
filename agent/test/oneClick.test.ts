@@ -18,7 +18,7 @@ const quoteReq: QuoteRequest = {
   amount: "250000000",
   refundTo: "0x1111111111111111111111111111111111111111",
   refundType: "ORIGIN_CHAIN",
-  recipient: "t1KrbA8XLcmZUsSdcXhkpKUWX5rMctSH5dP",
+  recipient: "t1Le9mTDaqQUX1ANKaeDchpJsxEY4h5LQCX",
   recipientType: "DESTINATION_CHAIN",
   deadline: "2026-08-05T20:00:00.000Z",
 };

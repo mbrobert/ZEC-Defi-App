@@ -155,16 +155,35 @@ contract RewardRouterTest is Test {
         router.routeToZcash(id, intentsDeposit, bytes32(0));
     }
 
-    function test_routeToZcash_respectsPerTxCap() public {
+    function test_routeToZcash_respectsPerTxCap_holdsRemainder() public {
+        // Accrual above the per-tx cap must not deadlock the position (the
+        // claim used to be rolled back atomically, forever): route the cap,
+        // hold the remainder, route it on the next call.
         uint256 id = _open(PositionVault.RewardPreference.SEND_TO_ZCASH);
         _accrueFees(id, 5_000e6, 0);
         vm.prank(operator);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                RewardRouter.RouteCapExceeded.selector, address(usdc), 5_000e6, 1_000e6
-            )
-        );
-        router.routeToZcash(id, intentsDeposit, bytes32(0));
+        uint256 routed = router.routeToZcash(id, intentsDeposit, bytes32(0));
+        assertEq(routed, 1_000e6); // capped
+        assertEq(usdc.balanceOf(intentsDeposit), 1_000e6);
+        assertEq(router.unmatchedOf(id, address(usdc)), 4_000e6); // held for next tx
+        assertEq(usdc.balanceOf(address(router)), 4_000e6);
+
+        // Next route moves another cap's worth from the held remainder even
+        // with nothing newly accrued...
+        vm.prank(operator);
+        routed = router.routeToZcash(id, intentsDeposit, bytes32(0));
+        assertEq(routed, 1_000e6);
+        assertEq(router.unmatchedOf(id, address(usdc)), 3_000e6);
+
+        // ...and a raised cap clears the rest in one go.
+        vm.prank(admin);
+        router.setMaxRoutePerTx(address(usdc), 10_000e6);
+        vm.prank(operator);
+        routed = router.routeToZcash(id, intentsDeposit, bytes32(0));
+        assertEq(routed, 3_000e6);
+        assertEq(router.unmatchedOf(id, address(usdc)), 0);
+        assertEq(usdc.balanceOf(intentsDeposit), 5_000e6);
+        assertEq(usdc.balanceOf(address(router)), 0);
     }
 
     function test_routeToZcash_disabledTokenReverts() public {
@@ -187,17 +206,59 @@ contract RewardRouterTest is Test {
         router.routeToZcash(id, address(0), bytes32(0));
     }
 
-    // ---------------------------------------------------------------- rescue
+    // ------------------------------------------------- unmatched-reward claim
 
-    function test_rescueUnmatchedToken() public {
+    function test_claimUnmatched_positionOwnerRecoversHeldRewards() public {
         uint256 id = _open(PositionVault.RewardPreference.COMPOUND);
         _accrueFees(id, 50e6, 7e18);
         vm.prank(operator);
         router.compound(id);
+        assertEq(router.unmatchedOf(id, address(aero)), 7e18);
 
+        // Only the POSITION owner may claim, and only to a real recipient.
+        vm.prank(operator);
+        vm.expectRevert(RewardRouter.NotPositionOwner.selector);
+        router.claimUnmatched(id, address(aero), operator);
+        vm.prank(alice);
+        vm.expectRevert(RewardRouter.ZeroAddress.selector);
+        router.claimUnmatched(id, address(aero), address(0));
+
+        vm.prank(alice);
+        uint256 amount = router.claimUnmatched(id, address(aero), alice);
+        assertEq(amount, 7e18);
+        assertEq(aero.balanceOf(alice), 7e18);
+        assertEq(router.unmatchedOf(id, address(aero)), 0);
+
+        vm.prank(alice);
+        vm.expectRevert(
+            abi.encodeWithSelector(RewardRouter.NothingHeld.selector, id, address(aero))
+        );
+        router.claimUnmatched(id, address(aero), alice);
+    }
+
+    // ---------------------------------------------------------------- rescue
+
+    function test_rescue_cannotTouchHeldUserRewards() public {
+        uint256 id = _open(PositionVault.RewardPreference.COMPOUND);
+        _accrueFees(id, 50e6, 7e18);
+        vm.prank(operator);
+        router.compound(id); // 7e18 AERO now held for alice
+
+        // Held user rewards are out of the admin's reach...
         vm.prank(admin);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                RewardRouter.RescueExceedsUserHeld.selector, address(aero), 7e18, 0
+            )
+        );
         router.rescueToken(address(aero), admin, 7e18);
-        assertEq(aero.balanceOf(admin), 7e18);
+
+        // ...but a mistaken direct transfer (outside the accounting) is.
+        aero.mint(address(router), 3e18);
+        vm.prank(admin);
+        router.rescueToken(address(aero), admin, 3e18);
+        assertEq(aero.balanceOf(admin), 3e18);
+        assertEq(router.unmatchedOf(id, address(aero)), 7e18); // untouched
     }
 
     function test_rescue_onlyOwner() public {

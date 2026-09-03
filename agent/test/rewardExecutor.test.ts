@@ -6,7 +6,9 @@ import type { ChainService, OnchainPosition } from "../src/services/chain.js";
 import type { OneClickClient, QuoteRequest, QuoteResponse } from "../src/services/oneClick.js";
 import { spy } from "./helpers.js";
 
-const ZADDR = "t1KrbA8XLcmZUsSdcXhkpKUWX5rMctSH5dP";
+// GENERATED TEST VECTOR (not a real wallet): hash160 = sha256("oilskin-test-vector-1")[0..20],
+// prefix 0x1CB8 (t1), valid Base58Check checksum — passes the real validation in @zyo/shared.
+const ZADDR = "t1Le9mTDaqQUX1ANKaeDchpJsxEY4h5LQCX";
 const DEPOSIT = "0x2222222222222222222222222222222222222222";
 
 const policy = {
@@ -125,7 +127,7 @@ describe("RewardExecutor", () => {
     assert.equal(out.expectedZecOut, "512345678");
 
     // Quote request was built correctly.
-    const req = oneClick.getQuote.calls[0][0];
+    const req = oneClick.getQuote.calls[0]![0];
     assert.equal(req.destinationAsset, INTENTS_ASSET_IDS.ZEC);
     assert.equal(req.recipient, ZADDR);
     assert.equal(req.recipientType, "DESTINATION_CHAIN");
@@ -269,5 +271,99 @@ describe("RewardExecutor", () => {
 
     const out = await exec.execute(makeCtx(1));
     assert.equal(out.kind, "ROUTED_TO_ZCASH");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A-17 + S-01 caller fixes: quote-value floor hardening and address
+// normalization.
+// ---------------------------------------------------------------------------
+
+describe("RewardExecutor quote-value floor hardening (A-17)", () => {
+  it("REFUSES a quote with missing/empty amountOutUsd instead of skipping the value check", async () => {
+    for (const bad of [undefined, "", "   ", "not-a-number"]) {
+      const chain = makeChain();
+      const getQuote = spy(async (req: QuoteRequest) => ({
+        quoteRequest: req,
+        quote: {
+          depositAddress: DEPOSIT,
+          amountIn: req.amount,
+          amountOut: "512345678",
+          minAmountOut: "500000000",
+          ...(bad === undefined ? {} : { amountOutUsd: bad }),
+        },
+      }));
+      const exec = new RewardExecutor(
+        chain.service,
+        { getQuote, submitDepositTx: spy(async () => undefined) } as unknown as OneClickClient,
+        policy
+      );
+      await assert.rejects(exec.execute(makeCtx(1)), /amountOutUsd/);
+      assert.equal(chain.routeToZcash.calls.length, 0);
+    }
+  });
+
+  it("clamps maxQuoteValueLossBps: 20000 bps used to yield a NEGATIVE floor (check bypassed)", async () => {
+    const chain = makeChain();
+    const raw = makeOneClick().getQuote;
+    const wrapped = spy(async (req: QuoteRequest) => {
+      const q = await raw(req);
+      q.quote.amountOutUsd = "1.00"; // ~99% value loss
+      return q;
+    });
+    const exec = new RewardExecutor(
+      chain.service,
+      { getQuote: wrapped, submitDepositTx: spy(async () => undefined) } as unknown as OneClickClient,
+      { ...policy, maxQuoteValueLossBps: 20_000 } // misconfigured → clamped to 5000
+    );
+    await assert.rejects(exec.execute(makeCtx(1)), /below floor/);
+    assert.equal(chain.routeToZcash.calls.length, 0);
+  });
+
+  it("clamps a negative maxQuoteValueLossBps to 0 (any loss refused)", async () => {
+    const chain = makeChain();
+    const raw = makeOneClick().getQuote;
+    const wrapped = spy(async (req: QuoteRequest) => {
+      const q = await raw(req);
+      q.quote.amountOutUsd = "99.5"; // 0.5% below the $100 in
+      return q;
+    });
+    const exec = new RewardExecutor(
+      chain.service,
+      { getQuote: wrapped, submitDepositTx: spy(async () => undefined) } as unknown as OneClickClient,
+      { ...policy, maxQuoteValueLossBps: -100 }
+    );
+    await assert.rejects(exec.execute(makeCtx(1)), /below floor/);
+  });
+});
+
+describe("RewardExecutor address normalization (S-01)", () => {
+  it("a stored address with stray whitespace is trimmed ONCE and the same string is quoted + compared", async () => {
+    const chain = makeChain();
+    const oneClick = makeOneClick();
+    const exec = new RewardExecutor(chain.service, oneClick.client, policy);
+    const ctx = makeCtx(1);
+    ctx.position = { ...ctx.position, zcashAddress: `  ${ZADDR}\n` };
+
+    const out = await exec.execute(ctx);
+    assert.equal(out.kind, "ROUTED_TO_ZCASH");
+    // The REQUEST carried the trimmed form — invariant #1 compares the echo
+    // against the same normalized string, so an API that normalizes
+    // whitespace can never wedge the route in a refuse-forever loop.
+    const req = oneClick.getQuote.calls[0]![0];
+    assert.equal(req.recipient, ZADDR);
+  });
+
+  it("REFUSES a checksum-invalid transparent address before burning a quote", async () => {
+    const chain = makeChain();
+    const oneClick = makeOneClick();
+    const exec = new RewardExecutor(chain.service, oneClick.client, policy);
+    const ctx = makeCtx(1);
+    // The pre-2026-09 fixture: correct shape, broken Base58Check checksum.
+    ctx.position = { ...ctx.position, zcashAddress: "t1KrbA8XLcmZUsSdcXhkpKUWX5rMctSH5dP" };
+
+    await assert.rejects(() => exec.execute(ctx), /cannot settle to/);
+    assert.equal(oneClick.getQuote.calls.length, 0);
+    assert.equal(chain.routeToZcash.calls.length, 0);
   });
 });

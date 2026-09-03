@@ -3,7 +3,8 @@ import type { OneClickStatus } from "@zyo/shared";
 import { keccak256 } from "../vendor/keccak.js";
 
 /**
- * Client for the NEAR Intents 1-Click API.
+ * Client for the NEAR Intents 1-Click API. Every request carries a 15s
+ * AbortSignal timeout — a hung solver socket must never wedge a reward tick.
  * Endpoints + schema verified against https://docs.near-intents.org (2026-08-05):
  *   GET  /v0/tokens
  *   POST /v0/quote            (Bearer JWT optional; omitting → 0.2% fee)
@@ -99,6 +100,7 @@ export class OneClickClient {
   async getTokens(): Promise<OneClickToken[]> {
     const res = await this.fetchImpl(`${this.baseUrl}${ONE_CLICK_ENDPOINTS.tokens}`, {
       headers: this.headers(),
+      signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) throw new OneClickError(`tokens failed: ${res.status}`, res.status);
     return (await res.json()) as OneClickToken[];
@@ -109,6 +111,7 @@ export class OneClickClient {
       method: "POST",
       headers: this.headers(true),
       body: JSON.stringify(req),
+      signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) {
       const body = await res.text().catch(() => "");
@@ -122,13 +125,14 @@ export class OneClickClient {
       method: "POST",
       headers: this.headers(true),
       body: JSON.stringify({ depositAddress, txHash }),
+      signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) throw new OneClickError(`deposit/submit failed: ${res.status}`, res.status);
   }
 
   async getStatus(depositAddress: string): Promise<StatusResponse> {
     const url = `${this.baseUrl}${ONE_CLICK_ENDPOINTS.status}?depositAddress=${encodeURIComponent(depositAddress)}`;
-    const res = await this.fetchImpl(url, { headers: this.headers() });
+    const res = await this.fetchImpl(url, { headers: this.headers(), signal: AbortSignal.timeout(15_000) });
     if (!res.ok) throw new OneClickError(`status failed: ${res.status}`, res.status);
     return (await res.json()) as StatusResponse;
   }

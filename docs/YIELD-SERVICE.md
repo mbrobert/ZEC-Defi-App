@@ -126,3 +126,24 @@ immediately with a key message; 402 (credits) stops cleanly;
 URLs may embed provider keys — they are never printed either. Keep `.env`
 gitignored (it is), and rotate any key that has ever appeared in a chat,
 log, or screenshot.
+
+## 2026-09-02 addendum — gauge emissions + hardening
+
+`/v1/pools` entries now carry `emissions` for Aerodrome pools: whole-pool APR
+from the gauge's on-chain `rewardRate` × AERO price ÷ TVL, plus
+`aprByWidthPct` — the marginal in-range APR for a position of width ±w given
+the pool's **staked in-range liquidity** (rolling-averaged across refreshes;
+`samples` says how many readings) — and `epochActive` (false = the gauge's
+reward epoch has ended; APRs are 0, as AERO/WETH was when sampled
+2026-08-31). `live` gains the pool's token addresses + USD prices;
+`/v1/rates` gains `stale`; cohort windows with n < 5 return null percentiles
+with `reason:"insufficient_sample"` instead of a 1-position "band". The
+performance fee in user transforms applies to gains only. Hardening from the
+pre-audit sweep (docs/PRE-AUDIT-2026-09-02.md): malformed request paths
+return 400 instead of killing the process; the backfill store writes
+atomically (tmp+fsync+rename), tolerates a torn final line, and refuses to
+scan past lost data; the indexer stops 64 blocks behind head; rate-limit
+errors back off instead of bisecting into request storms. **Interpretation
+warning:** whole-pool emissions APR is NOT what a position earns — a ±25%
+position earns roughly an eighth of it (see docs/YIELD-REALITY-2026-08-31.md
+before quoting any number from this API).

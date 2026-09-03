@@ -59,44 +59,54 @@ contract GuardsTest is Test {
         uint256 id = _open(1_000e6);
         engine.setWithdrawSlippageBps(300); // 3% price impact on exit
 
-        // Full exit expects ~1000 USDC; a 990 floor (1% tolerance) must revert
-        // because the engine only returns 970.
+        // Deposit refunded 8.8e6 (88bps) as the position's idle; the engine
+        // holds 991.2e6 and pays 3% less on close:
+        // 991.2e6 * 0.97 + 8.8e6 = 970.264e6. A 990 floor must revert.
         vm.prank(alice);
-        vm.expectRevert();
-        vault.withdraw(id, 10_000, alice, 990e6, 0);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                SnuggleAdapter.SlippageExceeded.selector, 970_264_000, 0, 990e6, 0
+            )
+        );
+        vault.withdraw(id, 10_000, alice, 990e6, 0, 0);
 
-        // A realistic floor (≤ 970) passes.
+        // A realistic floor (≤ 970.264) passes.
         vm.prank(alice);
-        vault.withdraw(id, 10_000, alice, 970e6, 0);
-        assertEq(usdc.balanceOf(alice), 970e6);
+        vault.withdraw(id, 10_000, alice, 970e6, 0, 0);
+        assertEq(usdc.balanceOf(alice), 970_264_000);
     }
 
     function test_withdraw_zeroFloorAlwaysPasses() public {
         uint256 id = _open(1_000e6);
         engine.setWithdrawSlippageBps(500);
         vm.prank(alice);
-        vault.withdraw(id, 10_000, alice, 0, 0); // no floor
-        assertEq(usdc.balanceOf(alice), 950e6);
+        vault.withdraw(id, 10_000, alice, 0, 0, 0); // no floor
+        // 991.2e6 * 0.95 + 8.8e6 idle refund
+        assertEq(usdc.balanceOf(alice), 950_440_000);
     }
 
     function test_withdraw_floorProtectsPartial() public {
         uint256 id = _open(1_000e6);
         engine.setWithdrawSlippageBps(200); // 2%
-        // 40% of 1000 = 400 nominal; engine returns 392. Floor of 400 reverts.
+        // got = 991.2e6 * 0.98 + 8.8e6 = 980.176e6; 40% = 392.07e6 < 400e6 floor.
         vm.prank(alice);
-        vm.expectRevert();
-        vault.withdraw(id, 4_000, alice, 400e6, 0);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                SnuggleAdapter.SlippageExceeded.selector, 392_070_400, 0, 400e6, 0
+            )
+        );
+        vault.withdraw(id, 4_000, alice, 400e6, 0, 0);
     }
 
     // ------------------------------------------------------- exposure cap
 
     function test_exposureCap_blocksOversizedOpen() public {
-        vault.setMaxDepositPerPool(POOL, 10_000e6);
+        vault.setMaxDepositPerPool(POOL, address(usdc), 10_000e6);
         usdc.mint(address(vault), 15_000e6);
         vm.prank(operator);
         vm.expectRevert(
             abi.encodeWithSelector(
-                PositionVault.PoolExposureCapExceeded.selector, POOL, 15_000e6, 10_000e6
+                PositionVault.PoolExposureCapExceeded.selector, POOL, address(usdc), 15_000e6, 10_000e6
             )
         );
         vault.openFor(
@@ -106,16 +116,16 @@ contract GuardsTest is Test {
     }
 
     function test_exposureCap_accumulatesAcrossPositionsAndFrees() public {
-        vault.setMaxDepositPerPool(POOL, 10_000e6);
+        vault.setMaxDepositPerPool(POOL, address(usdc), 10_000e6);
         uint256 a = _open(6_000e6);
-        assertEq(vault.poolExposure(POOL), 6_000e6);
+        assertEq(vault.poolExposure(POOL, address(usdc)), 6_000e6);
 
         // Second open of 5k would breach the 10k cap.
         usdc.mint(address(vault), 5_000e6);
         vm.prank(operator);
         vm.expectRevert(
             abi.encodeWithSelector(
-                PositionVault.PoolExposureCapExceeded.selector, POOL, 11_000e6, 10_000e6
+                PositionVault.PoolExposureCapExceeded.selector, POOL, address(usdc), 11_000e6, 10_000e6
             )
         );
         vault.openFor(
@@ -125,21 +135,21 @@ contract GuardsTest is Test {
 
         // Withdraw frees the budget; the same second open now fits.
         vm.prank(alice);
-        vault.withdraw(a, 10_000, alice, 0, 0);
-        assertEq(vault.poolExposure(POOL), 0);
+        vault.withdraw(a, 10_000, alice, 0, 0, 0);
+        assertEq(vault.poolExposure(POOL, address(usdc)), 0);
 
         vm.prank(operator);
         vault.openFor(
             alice, address(adapter), POOL, address(usdc), 5_000e6, params,
             PositionVault.RewardPreference.COMPOUND, ""
         );
-        assertEq(vault.poolExposure(POOL), 5_000e6);
+        assertEq(vault.poolExposure(POOL, address(usdc)), 5_000e6);
     }
 
     function test_exposureCap_zeroMeansUnlimited() public {
         // default 0 → no cap
         uint256 id = _open(10_000_000e6);
-        assertEq(vault.poolExposure(POOL), 10_000_000e6);
+        assertEq(vault.poolExposure(POOL, address(usdc)), 10_000_000e6);
         assertTrue(vault.getPosition(id).active);
     }
 

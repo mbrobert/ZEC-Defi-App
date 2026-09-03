@@ -1,0 +1,252 @@
+{
+ "assumptions": {
+  "paths": 3000,
+  "stepHours": 1,
+  "horizonDays": 365,
+  "annualVol": {
+   "aero-usdc-weth-5": 0.55,
+   "aero-cbbtc-usdc": 0.4,
+   "aero-weth-cbbtc": 0.33
+  },
+  "drift": 0,
+  "rebalance": "re-center at current price with the same width after the position has been out of range for the full rebalance delay; cost = (pool fee + 5 bps slippage) on the swapped half",
+  "emissions": "in-range emissions APR at the position's width from the on-chain sample; paid only while in range; AERO sold on claim (no compounding assumed)",
+  "fees": "15% engine performance fee then 10% Oilskin fee on emissions only (keep 76.5%)",
+  "supplyAprPct": 4.0,
+  "borrowAprPct": 13.47
+ },
+ "sampledAt": "2026-08-31T01:34:32Z",
+ "results": {
+  "aero-usdc-weth-5": {
+   "sheltered": {
+    "timeInRange": 0.9692206240487062,
+    "rebalancesPerYear": 3.1136666666666666,
+    "dragPct": {
+     "mean": -27.076939996710465,
+     "p10": -40.54641056265296,
+     "p90": -13.106818667560361
+    },
+    "principalVsDebtPct": {
+     "mean": -27.64171747568149,
+     "p10": -52.83677774189791,
+     "p90": 2.0649539759576907
+    },
+    "emissionsGrossPct": 6.538723724781603,
+    "widthPct": 25.0,
+    "rebalanceDelayH": 48,
+    "aprInRangePct": 7.69,
+    "emissionsNetPct": 5.002123649457927,
+    "lpNetPct": -22.074816347252536,
+    "userNetPct": {
+     "30": -6.66344490417576,
+     "40": -10.217926538901015,
+     "50": -13.772408173626268
+    }
+   },
+   "steady": {
+    "timeInRange": 0.9370387747336378,
+    "rebalancesPerYear": 28.238,
+    "dragPct": {
+     "mean": -60.181009995725766,
+     "p10": -67.6359987135293,
+     "p90": -52.37480642947473
+    },
+    "principalVsDebtPct": {
+     "mean": -60.20176531164688,
+     "p10": -74.68382895165304,
+     "p90": -43.93862100871569
+    },
+    "emissionsGrossPct": 14.42785608917945,
+    "widthPct": 8.0,
+    "rebalanceDelayH": 12,
+    "aprInRangePct": 23.45,
+    "emissionsNetPct": 11.03730990822228,
+    "lpNetPct": -49.14370008750349,
+    "userNetPct": {
+     "30": -14.784110026251046,
+     "40": -21.045480035001397,
+     "50": -27.306850043751744
+    }
+   },
+   "working": {
+    "timeInRange": 0.8304646118721462,
+    "rebalancesPerYear": 610.743,
+    "dragPct": {
+     "mean": -99.02888345279143,
+     "p10": -99.2236904139052,
+     "p90": -98.81886965781166
+    },
+    "principalVsDebtPct": {
+     "mean": -99.03250766477413,
+     "p10": -99.3837247032889,
+     "p90": -98.61781447703667
+    },
+    "emissionsGrossPct": 21.959108928248703,
+    "widthPct": 1.5,
+    "rebalanceDelayH": 2,
+    "aprInRangePct": 123.32,
+    "emissionsNetPct": 16.79871833011026,
+    "lpNetPct": -82.23016512268117,
+    "userNetPct": {
+     "30": -24.710049536804352,
+     "40": -34.28006604907247,
+     "50": -43.850082561340585
+    }
+   }
+  },
+  "aero-cbbtc-usdc": {
+   "sheltered": {
+    "timeInRange": 0.9827937214611872,
+    "rebalancesPerYear": 1.7263333333333333,
+    "dragPct": {
+     "mean": -15.46592777111058,
+     "p10": -26.142015822712516,
+     "p90": -4.353150793566733
+    },
+    "principalVsDebtPct": {
+     "mean": -15.44212176829852,
+     "p10": -38.46347741154138,
+     "p90": 8.115512288655328
+    },
+    "emissionsGrossPct": 13.240016885902978,
+    "widthPct": 25.0,
+    "rebalanceDelayH": 48,
+    "aprInRangePct": 14.26,
+    "emissionsNetPct": 10.12861291771578,
+    "lpNetPct": -5.337314853394801,
+    "userNetPct": {
+     "30": -1.6421944560184398,
+     "40": -3.5229259413579204,
+     "50": -5.4036574266974
+    }
+   },
+   "steady": {
+    "timeInRange": 0.9621041476407914,
+    "rebalancesPerYear": 17.015333333333334,
+    "dragPct": {
+     "mean": -39.42967496904007,
+     "p10": -47.35765921238146,
+     "p90": -31.20584496179133
+    },
+    "principalVsDebtPct": {
+     "mean": -39.29328408880393,
+     "p10": -55.47308796545284,
+     "p90": -21.717351835755856
+    },
+    "emissionsGrossPct": 33.14063043606531,
+    "widthPct": 8.0,
+    "rebalanceDelayH": 12,
+    "aprInRangePct": 43.46,
+    "emissionsNetPct": 25.35258228358996,
+    "lpNetPct": -14.077092685450111,
+    "userNetPct": {
+     "30": -4.264127805635033,
+     "40": -7.018837074180045,
+     "50": -9.773546342725055
+    }
+   },
+   "working": {
+    "timeInRange": 0.891161796042618,
+    "rebalancesPerYear": 392.18533333333335,
+    "dragPct": {
+     "mean": -92.49007227502833,
+     "p10": -93.56162150766949,
+     "p90": -91.4142728335323
+    },
+    "principalVsDebtPct": {
+     "mean": -92.53237506746082,
+     "p10": -94.56632085933124,
+     "p90": -90.26025322184096
+    },
+    "emissionsGrossPct": 72.77949497023722,
+    "widthPct": 1.5,
+    "rebalanceDelayH": 2,
+    "aprInRangePct": 228.54,
+    "emissionsNetPct": 55.67631365223148,
+    "lpNetPct": -36.81375862279685,
+    "userNetPct": {
+     "30": -11.085127586839054,
+     "40": -16.11350344911874,
+     "50": -21.141879311398423
+    }
+   }
+  },
+  "aero-weth-cbbtc": {
+   "sheltered": {
+    "timeInRange": 0.9568115677321156,
+    "rebalancesPerYear": 4.355666666666667,
+    "dragPct": {
+     "mean": -19.958794028790948,
+     "p10": -29.281910418516016,
+     "p90": -10.742169075212136
+    },
+    "principalVsDebtPct": {
+     "mean": -19.95478325096083,
+     "p10": -38.31645821424882,
+     "p90": -0.5069324728756555
+    },
+    "emissionsGrossPct": 2.34338855634165,
+    "widthPct": 12.5,
+    "rebalanceDelayH": 48,
+    "aprInRangePct": 2.7,
+    "emissionsNetPct": 1.7926922456013623,
+    "lpNetPct": -18.166101783189585,
+    "userNetPct": {
+     "30": -5.490830534956876,
+     "40": -8.654440713275836,
+     "50": -11.818050891594794
+    }
+   },
+   "steady": {
+    "timeInRange": 0.9164906012176559,
+    "rebalancesPerYear": 37.468666666666664,
+    "dragPct": {
+     "mean": -49.8775912233986,
+     "p10": -55.95738068158453,
+     "p90": -43.52882989156659
+    },
+    "principalVsDebtPct": {
+     "mean": -49.71405136541743,
+     "p10": -61.49741428273279,
+     "p90": -37.24038022144344
+    },
+    "emissionsGrossPct": 5.5215338904448705,
+    "widthPct": 4.0,
+    "rebalanceDelayH": 12,
+    "aprInRangePct": 8.31,
+    "emissionsNetPct": 4.223973426190326,
+    "lpNetPct": -45.65361779720828,
+    "userNetPct": {
+     "30": -13.737085339162483,
+     "40": -19.649447118883312,
+     "50": -25.561808898604138
+    }
+   },
+   "working": {
+    "timeInRange": 0.7863369863013698,
+    "rebalancesPerYear": 769.806,
+    "dragPct": {
+     "mean": -98.43974326655486,
+     "p10": -98.68050204479893,
+     "p90": -98.18910499674821
+    },
+    "principalVsDebtPct": {
+     "mean": -98.43319937453529,
+     "p10": -98.81742783080108,
+     "p90": -98.01615527970893
+    },
+    "emissionsGrossPct": 8.196743213507824,
+    "widthPct": 0.75,
+    "rebalanceDelayH": 2,
+    "aprInRangePct": 43.99,
+    "emissionsNetPct": 6.270508558333486,
+    "lpNetPct": -92.16923470822137,
+    "userNetPct": {
+     "30": -27.691770412466408,
+     "40": -38.25569388328855,
+     "50": -48.81961735411068
+    }
+   }
+  }
+ }
+}

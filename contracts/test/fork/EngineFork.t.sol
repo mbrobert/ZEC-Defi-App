@@ -59,7 +59,9 @@ contract EngineForkTest is Test {
 
     modifier onlyForked() {
         if (!forked) {
-            console2.log("SKIP: FORK_URL not set");
+            // Report SKIPPED, not PASS — a green fork suite must mean the fork
+            // actually ran (M-9: silently-passing skipped tests hid gaps).
+            vm.skip(true);
             return;
         }
         _;
@@ -114,7 +116,7 @@ contract EngineForkTest is Test {
 
         // Partial 40% out — engine full-close + re-deposit path.
         vm.prank(alice);
-        vault.withdraw(id, 4_000, alice, 0, 0);
+        vault.withdraw(id, 4_000, alice, 0, 0, 0);
         uint256 aliceUsdc = IERC20(USDC).balanceOf(alice);
         uint256 aliceWeth = IERC20(WETH).balanceOf(alice);
         console2.log("after 40%: USDC", aliceUsdc, "WETH", aliceWeth);
@@ -126,7 +128,7 @@ contract EngineForkTest is Test {
 
         // Full exit.
         vm.prank(alice);
-        vault.withdraw(id, 10_000, alice, 0, 0);
+        vault.withdraw(id, 10_000, alice, 0, 0, 0);
         assertEq(adapter.tokenCount(id), 0);
         assertEq(vault.getPosition(id).shares, 0);
         console2.log(
@@ -150,12 +152,15 @@ contract EngineForkTest is Test {
         );
 
         vm.prank(alice);
-        vm.expectRevert(); // MinimumHoldTimeNotMet from the live engine
-        vault.withdraw(id, 10_000, alice, 0, 0);
+        // MinimumHoldTimeNotMet() from the LIVE engine, selector-pinned so an
+        // unrelated revert (e.g. a bricked exit path) cannot masquerade as the
+        // hold guard.
+        vm.expectRevert(bytes4(0xb586467e));
+        vault.withdraw(id, 10_000, alice, 0, 0, 0);
 
         vm.warp(block.timestamp + 61 seconds);
         vm.prank(alice);
-        vault.withdraw(id, 10_000, alice, 0, 0);
+        vault.withdraw(id, 10_000, alice, 0, 0, 0);
         assertEq(adapter.tokenCount(id), 0);
         assertGt(IERC20(USDC).balanceOf(alice), 490e6);
     }
@@ -173,7 +178,7 @@ contract EngineForkTest is Test {
         );
         vm.warp(block.timestamp + 2 minutes);
         vm.prank(alice);
-        vault.withdraw(id, 10_000, alice, 0, 0);
+        vault.withdraw(id, 10_000, alice, 0, 0, 0);
         assertGt(IERC20(USDC).balanceOf(alice), 950e6, "second-pool loss too high");
     }
 
@@ -191,10 +196,10 @@ contract EngineForkTest is Test {
         uint256 t0 = block.timestamp; // single read — see CSE note in openWithdrawRoundTrip
         vm.warp(t0 + 2 minutes);
         vm.prank(alice);
-        vault.withdraw(id, 5_000, alice, 0, 0); // 50% partial → close + re-deposit
+        vault.withdraw(id, 5_000, alice, 0, 0, 0); // 50% partial → close + re-deposit
         vm.warp(t0 + 4 minutes); // clears the re-deposit's fresh 60s hold
         vm.prank(alice);
-        vault.withdraw(id, 10_000, alice, 0, 0);
+        vault.withdraw(id, 10_000, alice, 0, 0, 0);
         assertGt(IERC20(USDC).balanceOf(alice), 49_500e6, "moderate round-trip lost >1%");
     }
 
@@ -204,7 +209,7 @@ contract EngineForkTest is Test {
     /// from taking a position too large to exit cleanly.
     function test_fork_exposureCapBlocksOversizedDeposit() public onlyForked {
         vm.prank(admin);
-        vault.setMaxDepositPerPool(POOL_AERO_WETH_USDC, 100_000e6);
+        vault.setMaxDepositPerPool(POOL_AERO_WETH_USDC, USDC, 100_000e6);
         deal(USDC, address(vault), 250_000e6);
         LpParams memory p =
             LpParams({rangeWidthBps: 2000, rebalanceDelay: 12 hours, autoCompound: true});
@@ -213,6 +218,7 @@ contract EngineForkTest is Test {
             abi.encodeWithSelector(
                 PositionVault.PoolExposureCapExceeded.selector,
                 POOL_AERO_WETH_USDC,
+                USDC,
                 250_000e6,
                 100_000e6
             )
@@ -235,9 +241,10 @@ contract EngineForkTest is Test {
             PositionVault.RewardPreference.COMPOUND, ""
         );
         vm.warp(block.timestamp + 2 minutes);
-        // Demand strictly more USDC than deposited — impossible, must revert.
+        // Demand strictly more USDC than deposited — impossible, must revert
+        // with OUR slippage floor specifically (selector-pinned per M-9).
         vm.prank(alice);
-        vm.expectRevert();
-        vault.withdraw(id, 10_000, alice, 1_100e6, type(uint256).max);
+        vm.expectRevert(SnuggleAdapter.SlippageExceeded.selector);
+        vault.withdraw(id, 10_000, alice, 1_100e6, type(uint256).max, 0);
     }
 }

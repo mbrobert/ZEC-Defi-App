@@ -31,15 +31,17 @@ body{background:
 button{font:inherit;color:inherit;cursor:pointer;border:none;background:none}
 input{font:inherit;color:inherit}
 .wrap{max-width:760px;margin:0 auto;padding:0 20px}
+.wrap.wide{max-width:1040px}
 .muted{color:var(--ink-2)} .faint{color:var(--ink-3)}
 .small{font-size:13px} .tiny{font-size:11.5px}
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}
+.good{color:var(--good)} .warn{color:var(--warn)} .crit{color:var(--crit)}
 
 /* nav */
 nav{position:sticky;top:0;z-index:50;background:rgba(18,23,15,.86);
   backdrop-filter:blur(10px);border-bottom:1px solid var(--line-soft)}
 .nav-in{display:flex;align-items:center;gap:20px;height:64px}
-.logo{display:flex;align-items:center;gap:11px;font-weight:800;font-size:16px;letter-spacing:.13em}
+.logo{display:flex;align-items:center;gap:11px;font-weight:800;font-size:16px;letter-spacing:.13em;cursor:pointer}
 .tabs{display:flex;gap:2px;flex:1;justify-content:center}
 .tab{padding:8px 14px;border-radius:9px;color:var(--ink-2);font-weight:600;font-size:14px}
 .tab:hover{color:var(--ink);background:var(--line-soft)}
@@ -55,8 +57,9 @@ nav{position:sticky;top:0;z-index:50;background:rgba(18,23,15,.86);
 /* cards & controls */
 .view{display:none;padding:34px 0 80px}
 .view.on{display:block}
-.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
+.card{background:linear-gradient(180deg,rgba(255,255,255,.022),transparent 32%),var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
 .pad{padding:26px}
+.card-pad{padding:20px}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
   padding:12px 22px;border-radius:12px;font-weight:700;font-size:15px;
   transition:transform .06s, box-shadow .15s}
@@ -66,12 +69,16 @@ nav{position:sticky;top:0;z-index:50;background:rgba(18,23,15,.86);
 .btn-cta:hover{box-shadow:0 4px 18px rgba(205,163,85,.45)}
 .btn-ghost{border:1.5px solid var(--line);background:var(--surface)}
 .btn-ghost:hover{background:var(--surface-2)}
+.btn-sm{padding:8px 14px;font-size:13.5px;border-radius:10px}
 .btn[disabled]{opacity:.45;cursor:not-allowed;box-shadow:none}
+.btn-quiet{color:var(--brass);font-weight:650;padding:0}
 .chip{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;
   font-size:12.5px;font-weight:650;border:1px solid transparent}
 .c-good{color:var(--good);background:var(--good-bg);border-color:rgba(82,201,138,.30)}
 .c-warn{color:var(--warn);background:var(--warn-bg);border-color:rgba(227,184,74,.32)}
+.c-crit{color:var(--crit);background:var(--crit-bg);border-color:rgba(240,109,128,.32)}
 .c-info{color:var(--info);background:var(--info-bg);border-color:rgba(111,169,242,.30)}
+.c-brass{color:var(--brass);background:var(--brass-bg);border-color:rgba(205,163,85,.35)}
 .c-mute{color:var(--ink-2);background:var(--surface-2);border-color:var(--line)}
 .dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
 .in{width:100%;background:var(--field);border:1.5px solid var(--line);border-radius:var(--rs);
@@ -86,13 +93,17 @@ label{display:block;font-size:13.5px;font-weight:650;color:var(--ink-2);margin-b
 .segb.on{border-color:var(--brass);background:var(--brass-bg);box-shadow:0 0 0 1px var(--brass) inset}
 .segb.on b{color:var(--brass)}
 .pools{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.poolb{border:1.5px solid var(--line);background:var(--surface);border-radius:11px;padding:9px 11px;
-  text-align:left;transition:border-color .12s;display:block}
+.poolb{border:1.5px solid var(--line);background:var(--surface);border-radius:11px;padding:10px 12px;
+  text-align:left;transition:border-color .12s;display:block;position:relative}
 .poolb .pn{font-weight:700;font-size:13px;display:flex;align-items:center;gap:7px;justify-content:space-between}
 .poolb .pv{font-size:11px;color:var(--ink-3)}
-.poolb .pa{font-size:11.5px;margin-top:3px;color:var(--ink-2)}
+.poolb .pa{font-size:11.5px;margin-top:4px;color:var(--ink-2);line-height:1.45}
 .poolb .pa b{color:var(--good)}
+.poolb .pa b.neg{color:var(--warn)}
+.poolb .pr{font-size:11px;margin-top:5px;color:var(--ink-3);line-height:1.45}
 .poolb.on{border-color:var(--brass);background:var(--brass-bg);box-shadow:0 0 0 1px var(--brass) inset}
+.poolb.off{opacity:.55;cursor:not-allowed}
+.poolb.off .pn{color:var(--ink-2)}
 .pband{font-size:10.5px;color:var(--ink-3);margin-top:4px}
 .pbtrack{position:relative;height:4px;border-radius:2px;background:var(--field);margin-top:3px}
 .pbfill{position:absolute;top:0;bottom:0;background:var(--brass);opacity:.8;border-radius:2px}
@@ -100,23 +111,69 @@ label{display:block;font-size:13.5px;font-weight:650;color:var(--ink-2);margin-b
 .pbzero{position:absolute;top:0;bottom:0;width:1px;background:var(--line)}
 .livechip{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:800;letter-spacing:.08em;color:var(--good);border:1px solid rgba(82,201,138,.45);border-radius:999px;padding:1.5px 8px;margin-left:8px;vertical-align:3px}
 .livechip .dot{width:6px;height:6px;border-radius:50%;background:var(--good)}
-.ptag{font-size:9px;font-weight:800;letter-spacing:.07em;border-radius:5px;padding:2px 6px;border:1px solid}
+.ptag{font-size:9px;font-weight:800;letter-spacing:.07em;border-radius:5px;padding:2px 6px;border:1px solid;white-space:nowrap}
 .ptag.bc{color:var(--info);border-color:rgba(111,169,242,.4)}
 .ptag.st{color:var(--good);border-color:rgba(82,201,138,.4)}
-.ptag.vo{color:var(--warn);border-color:rgba(227,184,74,.45)}
+.ptag.no{color:var(--warn);border-color:rgba(227,184,74,.45)}
+.ptag.ln{color:var(--brass);border-color:rgba(205,163,85,.45)}
+
+/* dashboard (advanced-style) */
+.grid-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:0 0 18px}
+.stat{padding:16px 18px}
+.stat .lbl{font-size:12.5px;color:var(--ink-2);font-weight:550;display:flex;align-items:center;gap:6px}
+.stat .val{font-size:26px;font-weight:700;letter-spacing:-.02em;margin-top:4px}
+.stat .sub{font-size:12.5px;color:var(--ink-3);margin-top:3px}
+.section-h{display:flex;align-items:baseline;justify-content:space-between;margin:22px 0 12px}
+.section-h h2{font-size:17px}
+.cols{display:grid;grid-template-columns:1fr 340px;gap:18px;align-items:start}
+.fresh{font-size:11.5px;color:var(--ink-3)}
+.band{position:relative;height:64px;margin:14px 2px 4px}
+.band-track{position:absolute;left:0;right:0;top:26px;height:10px;border-radius:6px;overflow:hidden;display:flex}
+.band-seg{height:100%}
+.band-tick{position:absolute;top:12px;width:2px;height:38px;border-radius:2px;transform:translateX(-1px)}
+.band-tick .tk-lbl{position:absolute;top:-14px;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:11.5px;font-weight:650}
+.band-tick .tk-val{position:absolute;top:42px;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:11px;color:var(--ink-3)}
+.band-zonelbl{position:absolute;top:44px;font-size:10.5px;color:var(--ink-3);letter-spacing:.02em}
+.pos{margin-bottom:14px;overflow:hidden}
+.pos-head{display:flex;align-items:center;gap:14px;padding:16px 20px;cursor:pointer;flex-wrap:wrap}
+.pos-head:hover{background:rgba(255,255,255,.015)}
+.pair{display:flex;align-items:center}
+.coin{width:30px;height:30px;border-radius:50%;display:inline-grid;place-items:center;border:2px solid var(--surface);position:relative}
+.coin svg{width:100%;height:100%;display:block;border-radius:50%}
+.coin+.coin{margin-left:-9px}
+.pos-title{flex:1;min-width:180px}
+.pos-title .t{font-weight:650;font-size:15px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pos-title .s{font-size:12.5px;color:var(--ink-3);margin-top:2px}
+.pos-nums{display:flex;gap:28px;align-items:center;flex-wrap:wrap}
+.pos-num .lbl{font-size:11.5px;color:var(--ink-3)}
+.pos-num .v{font-weight:650;font-size:15.5px;margin-top:1px}
+.pos-body{border-top:1px solid var(--line-soft);padding:18px 20px;display:none;background:var(--bg-2)}
+.pos.open .pos-body{display:block}
+.caret{color:var(--ink-3);transition:transform .18s}
+.pos.open .caret{transform:rotate(180deg)}
+.ybreak{display:grid;grid-template-columns:1fr auto;row-gap:7px;font-size:13.5px;max-width:430px}
+.ybreak .r{color:var(--ink-2)} .ybreak .v{text-align:right;font-weight:600}
+.ybreak .net{border-top:1px solid var(--line);padding-top:8px;margin-top:3px;color:var(--ink);font-weight:650}
+.pos-actions{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
+.rangebar{position:relative;height:8px;border-radius:5px;background:var(--surface-2);border:1px solid var(--line);margin:10px 0 4px}
+.rangebar .rng{position:absolute;top:0;bottom:0;background:rgba(82,201,138,.35);border-radius:4px}
+.rangebar .cur{position:absolute;top:-4px;bottom:-4px;width:3px;border-radius:2px;background:var(--ink)}
+.rangebar.out .rng{background:rgba(227,184,74,.35)}
 
 /* docs */
 .docs h3{font-size:15px;margin:24px 0 6px}
-.docs p,.docs li{color:var(--ink-2);font-size:14px;max-width:640px}
+.docs p,.docs li{color:var(--ink-2);font-size:14px;max-width:660px}
 .docs ul{margin:6px 0 0 20px}
 .docs li{margin-bottom:5px}
-.dtable{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:8px;max-width:640px}
+.dtable{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:8px;max-width:680px}
 .dtable th{text-align:left;color:var(--ink-3);font-weight:650;font-size:12px;padding:6px 10px 6px 0;border-bottom:1px solid var(--line)}
 .dtable td{padding:8px 10px 8px 0;border-bottom:1px solid var(--line-soft);color:var(--ink-2);vertical-align:top}
 .dtable td b{color:var(--ink)}
 .note{border-left:3px solid var(--info);background:var(--info-bg);border-radius:0 10px 10px 0;
   padding:11px 14px;font-size:13px;color:var(--ink-2);margin:14px 0}
 .note.warn{border-color:var(--warn);background:var(--warn-bg)}
+.note.crit{border-color:var(--crit);background:var(--crit-bg)}
+.note.brass{border-color:var(--brass);background:var(--brass-bg)}
 details{border:1px dashed var(--line);border-radius:12px;margin-top:14px}
 summary{padding:12px 15px;cursor:pointer;font-weight:650;font-size:13.5px;color:var(--ink-2);list-style:none}
 summary::-webkit-details-marker{display:none}
@@ -126,8 +183,8 @@ details[open] summary{border-bottom:1px solid var(--line-soft)}
 
 /* hero */
 .hero h1{font-size:30px;line-height:1.2;letter-spacing:-.02em;margin-bottom:10px}
-.hero .sub{color:var(--ink-2);font-size:16px;max-width:540px;margin-bottom:22px}
-.apyline{display:flex;align-items:baseline;gap:10px;margin-bottom:22px}
+.hero .sub{color:var(--ink-2);font-size:16px;max-width:560px;margin-bottom:22px}
+.apyline{display:flex;align-items:baseline;gap:10px;margin-bottom:22px;flex-wrap:wrap}
 .apyline .v{font-size:40px;font-weight:800;letter-spacing:-.02em;color:var(--good)}
 .in-row{position:relative}
 .suffix{position:absolute;right:13px;top:50%;transform:translateY(-50%);color:var(--ink-3);font-size:14px}
@@ -137,37 +194,21 @@ details[open] summary{border-bottom:1px solid var(--line-soft)}
 .tile .d{font-size:12.8px;color:var(--ink-2);line-height:1.5}
 .ic{width:1em;height:1em;fill:none;stroke:currentColor;stroke-width:1.9;
   stroke-linecap:round;stroke-linejoin:round;flex:none;vertical-align:-.12em}
-
-/* position */
-.poshead{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap}
-.bignum{font-size:34px;font-weight:800;letter-spacing:-.02em}
-.earned{color:var(--good);font-weight:700}
-.meter{position:relative;height:14px;border-radius:8px;background:var(--surface-2);
-  border:1px solid var(--line);margin:34px 6px 34px}
-.meter .fill{position:absolute;left:0;top:0;bottom:0;border-radius:8px 0 0 8px;
-  background:linear-gradient(90deg,rgba(82,201,138,.22),rgba(82,201,138,.55))}
-.meter .tick{position:absolute;top:-7px;bottom:-7px;width:3px;border-radius:2px;background:var(--crit)}
-.meter .now{position:absolute;top:-9px;bottom:-9px;width:3px;border-radius:2px;background:var(--ink)}
-.meter .lbl{position:absolute;top:-26px;transform:translateX(-50%);font-size:11.5px;font-weight:650;white-space:nowrap}
-.meter .sub{position:absolute;top:18px;transform:translateX(-50%);font-size:11px;color:var(--ink-3);white-space:nowrap}
-.kv{display:grid;grid-template-columns:1fr auto;row-gap:8px;font-size:13.8px;margin-top:6px}
-.kv .k{color:var(--ink-2)} .kv .v{text-align:right;font-weight:650}
-.coin{width:22px;height:22px;border-radius:50%;display:inline-grid;place-items:center;vertical-align:-6px;border:2px solid var(--surface)}
-.coin svg{width:100%;height:100%;display:block;border-radius:50%}
-.coin+.coin{margin-left:-7px}
+.findbox{display:flex;gap:8px;align-items:stretch}
+.findbox .in{flex:1}
 
 /* activity */
-.act{display:flex;gap:12px;padding:13px 0;border-bottom:1px solid var(--line-soft);font-size:14px}
+.act{display:flex;gap:12px;padding:11px 0;border-bottom:1px solid var(--line-soft);font-size:13.5px}
 .act:last-child{border-bottom:none}
-.act-ic{width:30px;height:30px;border-radius:10px;display:grid;place-items:center;font-size:13px;flex:none;background:var(--surface-2)}
-.act time{color:var(--ink-3);font-size:12px;display:block;margin-top:2px}
+.act-ic{width:28px;height:28px;border-radius:9px;display:grid;place-items:center;font-size:13px;flex:none;background:var(--surface-2)}
+.act time{color:var(--ink-3);font-size:12px;display:block;margin-top:1px}
 .txlink{display:inline-flex;align-items:center;gap:4px;font-family:ui-monospace,Menlo,monospace;
   font-size:11px;color:var(--info);border:1px solid rgba(111,169,242,.30);
   background:var(--info-bg);border-radius:6px;padding:1px 7px;margin-top:5px;text-decoration:none}
 
 /* faq */
 .faq h3{font-size:15px;margin:22px 0 6px}
-.faq p{color:var(--ink-2);font-size:14px;max-width:620px}
+.faq p{color:var(--ink-2);font-size:14px;max-width:640px}
 
 /* modal */
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);
@@ -186,6 +227,7 @@ details[open] summary{border-bottom:1px solid var(--line-soft)}
   border:2px solid var(--line);background:var(--surface);font-size:12px;z-index:1}
 .bstep.done .bic{border-color:var(--good);color:var(--good);background:var(--good-bg)}
 .bstep.doing .bic{border-color:var(--info);color:var(--info);background:var(--info-bg);animation:pulse 1.6s infinite}
+.bstep.fail .bic{border-color:var(--crit);color:var(--crit);background:var(--crit-bg)}
 .bstep .bt{font-weight:650;font-size:14px}
 .bstep .bd{font-size:12.5px;color:var(--ink-2)}
 input[type=range]{width:100%;-webkit-appearance:none;appearance:none;height:6px;border-radius:4px;background:var(--line);outline:none}
@@ -193,10 +235,10 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
   background:var(--brass);border:3px solid var(--surface);cursor:grab;box-shadow:0 1px 6px rgba(205,163,85,.45)}
 #toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(90px);
   background:var(--ink);color:var(--surface);border-radius:12px;padding:12px 18px;
-  font-size:14px;font-weight:600;box-shadow:var(--shadow);transition:transform .25s;z-index:200}
+  font-size:14px;font-weight:600;box-shadow:var(--shadow);transition:transform .25s;z-index:200;max-width:min(92vw,560px);text-align:center}
 #toast.on{transform:translateX(-50%) translateY(0)}
 footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px;font-size:12.5px;color:var(--ink-3)}
-#tip{position:fixed;z-index:300;max-width:280px;background:#0C1009;color:var(--ink);border:1px solid var(--line);
+#tip{position:fixed;z-index:300;max-width:300px;background:#0C1009;color:var(--ink);border:1px solid var(--line);
   border-radius:10px;padding:10px 12px;font-size:12.6px;line-height:1.5;box-shadow:var(--shadow);
   pointer-events:none;opacity:0;transform:translateY(4px);transition:opacity .12s,transform .12s}
 #tip.on{opacity:1;transform:translateY(0)}
@@ -207,19 +249,24 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
   padding:10px 15px;border-radius:999px;font-size:13px;font-weight:700;
   background:linear-gradient(180deg,var(--brass-hi),var(--brass));color:var(--on-brass);
   box-shadow:0 4px 16px rgba(0,0,0,.4)}
-.tk-modal{width:min(460px,100%)}
+.tk-modal{width:min(520px,100%)}
 .tk-modal h4{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3);margin:18px 0 8px}
 .tk-grid{display:flex;flex-wrap:wrap;gap:7px}
 .tk-b{border:1.5px solid var(--line);background:var(--surface-2);border-radius:9px;padding:7px 11px;
   font-size:12.5px;font-weight:600;color:var(--ink);text-align:left}
 .tk-b:hover{border-color:var(--brass);color:var(--brass)}
+.tk-b.on{border-color:var(--brass);color:var(--brass);background:var(--brass-bg)}
 .tk-b .mono{font-size:10.5px;color:var(--ink-3);display:block;margin-top:2px}
 .tk-b.ok{border-left:3px solid var(--good)}
 .tk-b.warnb{border-left:3px solid var(--warn)}
 .tk-b.badb{border-left:3px solid var(--crit)}
 .tk-list{margin:6px 0 0 18px;font-size:13px;color:var(--ink-2)}
 .tk-list li{margin-bottom:5px}
+#whatif{display:none;position:fixed;left:18px;bottom:20px;z-index:150;padding:8px 13px;border-radius:999px;font-size:12px;font-weight:700;
+  background:var(--warn-bg);color:var(--warn);border:1px solid rgba(227,184,74,.5)}
+#whatif.on{display:inline-flex;gap:8px;align-items:center}
 
+@media(max-width:900px){.grid-stats{grid-template-columns:repeat(2,1fr)}.cols{grid-template-columns:1fr}}
 @media(max-width:640px){
   .wrap{padding:0 14px}
   .nav-in{gap:8px}
@@ -230,10 +277,12 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
   .modetog{padding:6px 9px}
   .price{display:none}
   .tiles{grid-template-columns:1fr}
+  .pools{grid-template-columns:1fr}
   .hero h1{font-size:24px}
   .apyline .v{font-size:32px}
-  .bignum{font-size:27px}
+  .stat .val{font-size:21px}
   .pad{padding:18px}
+  .pos-nums{gap:16px}
 }
 </style>
 </head>
@@ -248,14 +297,16 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
   <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v5.5c0 4.3-2.9 8.2-7 9.5-4.1-1.3-7-5.2-7-9.5V6l7-3z"/><path d="M9.2 12.2l2 2 3.6-3.9"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="M4.5 12.5l5 5 10-11"/></symbol>
   <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7"/><path d="M6.5 9.5V20h11V9.5"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="12" r="4"/><path d="M12 12h9M18 12v3M15 12v2"/></symbol>
   <symbol id="tk-zec" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#f4b728"/><path d="M11 10.2h10v2.6l-6.2 6.4H21v2.6H11v-2.6l6.2-6.4H11z" fill="#1a1204"/><path d="M14.9 7.5h2.2v3.4h-2.2zM14.9 21.1h2.2v3.4h-2.2z" fill="#1a1204"/></symbol>
   <symbol id="tk-usdc" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#2775ca"/><path d="M13 20.5c0 1.9 1.2 2.9 3.2 2.9 1.9 0 3.1-1 3.1-2.6 0-1.4-.8-2-2.6-2.4l-1.5-.4c-2.6-.6-3.9-1.8-3.9-3.9 0-2.2 1.6-3.7 4-3.9V8h1.6v2.2c2.3.3 3.7 1.7 3.8 3.8h-2.1c-.1-1.5-1.1-2.4-2.7-2.4-1.7 0-2.8.9-2.8 2.3 0 1.2.8 1.9 2.5 2.3l1.5.4c2.8.6 4 1.7 4 3.9 0 2.4-1.7 3.9-4.2 4.1V27h-1.6v-2.3c-2.5-.3-4.2-1.7-4.3-4.2z" fill="#fff"/><path d="M12.3 26.6a11.1 11.1 0 0 1 0-21.1v1.7a9.5 9.5 0 0 0 0 17.7zM19.7 5.5a11.1 11.1 0 0 1 0 21.1v-1.7a9.5 9.5 0 0 0 0-17.7z" fill="#fff"/></symbol>
   <symbol id="tk-weth" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#454a75"/><path d="M16 4.5v8.6l7 3.2z" fill="#fff" opacity=".7"/><path d="M16 4.5L9 16.3l7-3.2z" fill="#fff"/><path d="M16 21.3v6.2l7-9.7z" fill="#fff" opacity=".7"/><path d="M16 27.5v-6.2l-7-3.5z" fill="#fff"/><path d="M16 20l7-3.7-7-3.2z" fill="#fff" opacity=".45"/><path d="M9 16.3L16 20v-6.9z" fill="#fff" opacity=".8"/></symbol>
   <symbol id="tk-cbbtc" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#0052ff"/><path d="M20.8 14.2c.3-1.9-1.1-2.9-3.1-3.6l.6-2.5-1.5-.4-.6 2.5-1.2-.3.6-2.5-1.5-.4-.6 2.5-3.1-.8-.4 1.7s1.1.3 1.1.3c.6.2.8.6.7 1l-1.7 7c-.1.2-.3.5-.8.4 0 0-1.1-.3-1.1-.3l-.8 1.8 3.1.8-.6 2.6 1.5.4.6-2.5 1.2.3-.6 2.5 1.5.4.6-2.6c2.6.5 4.6.3 5.4-2.1.7-1.9 0-3-1.4-3.7 1-.2 1.8-.9 2.1-2.3zm-3.6 5c-.5 1.9-3.7.9-4.7.6l.8-3.4c1 .3 4.4.8 3.9 2.8zm.5-5c-.4 1.8-3.1.9-4 .7l.8-3.1c.9.2 3.7.6 3.2 2.4z" fill="#fff" transform="translate(2.5 1.5) scale(.92)"/></symbol>
+  <symbol id="tk-aero" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#1652f0"/><path d="M8 22L16 9l8 13h-4.2L16 15.6 12.2 22z" fill="#fff"/></symbol>
 </defs></svg>
 
-<nav><div class="wrap nav-in">
-  <div class="logo"><svg viewBox="0 0 64 64" width="30" height="30"><use href="#mark"/></svg><span>OILSKIN</span></div>
+<nav><div class="wrap wide nav-in">
+  <div class="logo" id="logoBtn" title="Back to your dashboard"><svg viewBox="0 0 64 64" width="30" height="30"><use href="#mark"/></svg><span>OILSKIN</span></div>
   <div class="tabs">
     <button class="tab on" data-view="earn">Earn</button>
     <button class="tab" data-view="activity">Activity</button>
@@ -267,41 +318,42 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
 </div></nav>
 
 <!-- ═══ EARN ═══ -->
-<div class="view on" id="view-earn"><div class="wrap">
+<div class="view on" id="view-earn"><div class="wrap" id="earnWrap">
 
   <!-- Deposit hero (shown when no position) -->
   <div id="hero">
     <div class="hero" style="margin-bottom:24px">
       <h1>Put your ZEC to work.<br>Never sell it.</h1>
-      <p class="sub">Deposit native Zcash, earn real DeFi yield — your ZEC is borrowed against, never sold, and comes home whenever you ask.</p>
-      <div class="apyline"><span class="v num" id="apyHero">12.9%</span><span class="muted">net yield right now <span class="tt tiny" title="Computed from your chosen pool's fee rate sampled 2026-08-27 — after the 23.5% total fees on earnings (engine 15%, then Oilskin 10% of the rest) and the 13.47% borrow cost, at your risk setting. Positions are staked in the pool's Aerodrome gauge and earn AERO incentives in lieu of trading fees; fee rates are the honest proxy, they swing hard, and volatile pairs lose part of this to impermanent loss. Trailing math, never a promise.">ⓘ</span></span></div>
+      <p class="sub">Deposit native Zcash, earn DeFi yield — your ZEC is borrowed against, never sold, and comes home whenever you ask. And when the market can't pay, we say so instead of inventing a number.</p>
+      <div class="apyline"><span class="v num" id="apyHero">0.0%</span><span class="muted">net yield right now <span class="tt tiny" id="apyTip" title="Modeled from on-chain data sampled 2026-08-31: your pool's AERO emissions at your range width, minus impermanent loss and rebalancing (simulated at realized volatility), minus the 23.5% fees on earnings and the 13.47% USDC borrow cost, at your risk setting. A model, not a promise — and when it comes out negative, the pool is not offered.">ⓘ</span></span></div>
+      <div id="marketNote" class="note warn" style="margin:-8px 0 18px;display:none"></div>
     </div>
 
     <div class="card pad">
       <div class="field">
         <label>How much ZEC?</label>
         <div class="in-row">
-          <input class="in num" id="amt" type="number" value="10" min="0.25" max="50" step="any" style="padding-right:60px">
+          <input class="in num" id="amt" type="number" value="10" min="0.25" step="any" style="padding-right:60px">
           <span class="suffix">ZEC</span>
         </div>
         <div class="small faint num" style="margin-top:7px">≈ <span id="amtUsd">$4,872</span> · min 0.25 ZEC · no deposit cap <span class="tt" title="The 0.25 floor is ours: below it, bridge fees eat the deposit. There is no Oilskin cap — deposit size is bounded only by constraints outside our control, chiefly how much USDC is actually available to borrow on Rhea at that moment.">ⓘ</span></div>
       </div>
       <div class="field">
-        <label>Risk setting — how hard your ZEC works <span class="tt" title="Sets how much is borrowed against your ZEC to earn. Borrow more and you earn more — and the liquidation line sits closer. The protection ladder runs at every setting.">ⓘ</span></label>
+        <label>Risk setting — how hard your ZEC works <span class="tt" title="Sets how much is borrowed against your ZEC (30 / 40 / 50%) and how the pool position is run: Sheltered uses a wide range that rarely needs rebalancing; Working hard uses a tight range that earns more emissions per dollar while in range but rebalances constantly and loses more to impermanent loss. Borrow more and the liquidation line sits closer. The protection ladder runs at every setting.">ⓘ</span></label>
         <div class="seg" id="riskSeg">
-          <button type="button" class="segb on" data-ltv="30"><b>Sheltered</b><span class="num">borrow 30%</span></button>
-          <button type="button" class="segb" data-ltv="40"><b>Steady</b><span class="num">borrow 40%</span></button>
-          <button type="button" class="segb" data-ltv="50"><b>Working hard</b><span class="num">borrow 50%</span></button>
+          <button type="button" class="segb on" data-ltv="30"><b>Sheltered</b><span class="num">borrow 30% · ±25% range</span></button>
+          <button type="button" class="segb" data-ltv="40"><b>Steady</b><span class="num">borrow 40% · ±8% range</span></button>
+          <button type="button" class="segb" data-ltv="50"><b>Working hard</b><span class="num">borrow 50% · ±1.5% range</span></button>
         </div>
-        <div class="small" id="riskHint" style="margin-top:7px;color:var(--ink-3)">Earning ≈12.9% — liquidation only possible if ZEC falls 57%. The safest setting, and the default.</div>
+        <div class="small" id="riskHint" style="margin-top:7px;color:var(--ink-3)"></div>
       </div>
       <div class="field">
-        <label>Your pool — one at a time, curated <span class="tt" title="Your borrowed USDC works in the single Aerodrome pool you pick here, staked in its gauge (earnings arrive as AERO incentives in lieu of trading fees). Every pool is engine-approved. Fee rates are sampled from live volume with each pool's on-chain dynamic fee — trailing numbers, never promises. Volatile pairs earn more and lose more to impermanent loss. Multi-pool mixes live in Advanced.">ⓘ</span></label>
+        <label>Where it works — one place at a time <span class="tt" title="Your borrowed USDC works in the single Aerodrome pool you pick, staked in its gauge: staked positions earn AERO emissions instead of trading fees (those go to veAERO voters). A pool is only offered when its modeled net — emissions at your range width, minus impermanent loss and rebalancing, minus fees — beats the borrow cost. Pools that don't clear that bar are shown, greyed, with the numbers that failed them.">ⓘ</span></label>
         <div class="pools" id="poolSeg"></div>
         <div class="small" id="poolHint" style="margin-top:7px;color:var(--ink-3)"></div>
       </div>
       <div class="field" style="margin-bottom:8px">
-        <label>Your Zcash address — where everything returns <span class="tt" title="Locked to your deposit. Withdrawals and earnings can only ever be sent here — even if Oilskin were fully compromised, funds cannot exit anywhere else.">ⓘ</span></label>
+        <label>Your Zcash address — where everything returns <span class="tt" title="Locked to your deposit. Withdrawals and earnings can only ever be sent here — even if Oilskin were fully compromised, funds cannot exit anywhere else. It is also how you find your position again from any device.">ⓘ</span></label>
         <input class="in mono" id="homeAddr" placeholder="t1… from your wallet's Receive screen" spellcheck="false">
         <div class="small" id="addrHint" style="margin-top:7px;color:var(--ink-3)">Open your wallet (Zodl, Ywallet, Zingo…) → Receive → copy the transparent (t1…) address.</div>
       </div>
@@ -318,47 +370,56 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
       <div class="tile"><div class="t" style="color:var(--brass)"><svg class="ic"><use href="#i-shield"/></svg>Auto-protected</div><div class="d">Earnings repay the loan first if ZEC falls; below that we automatically de-risk. ZEC would have to drop 29–57% — set by your risk setting — before liquidation is even possible.</div></div>
       <div class="tile"><div class="t" style="color:var(--info)"><svg class="ic"><use href="#i-home"/></svg>Always yours</div><div class="d">Withdrawals can never be paused, and funds can only exit to the address you set. One wallet — the one you already have.</div></div>
     </div>
+
+    <div class="card card-pad" style="margin-top:22px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">
+        <b style="font-size:14.5px"><svg class="ic" style="color:var(--brass)"><use href="#i-key"/></svg> Already deposited? Find your position</b>
+        <span class="tiny faint">No login — your locked Zcash address is your key</span>
+      </div>
+      <div class="findbox" style="margin-top:10px">
+        <input class="in mono" id="findAddr" placeholder="t1… the address you locked at deposit" spellcheck="false">
+        <button class="btn btn-ghost btn-sm" id="findBtn">Find</button>
+      </div>
+      <div class="small" id="findHint" style="margin-top:8px;color:var(--ink-3)">Works from any device or browser. Looking up is read-only: seeing a position never lets anyone move it — funds can only ever go to that same address. <button class="btn-quiet tiny" data-goto="faq-login">how this works →</button></div>
+    </div>
     <div style="text-align:center;margin-top:20px"><button class="btn-ghost btn" id="demoBtn" style="font-size:13.5px;padding:9px 16px">See a live example position →</button></div>
   </div>
 
-  <!-- Position (shown when active) -->
+  <!-- Dashboard (shown when active) — same bones as Advanced -->
   <div id="posWrap" style="display:none">
-    <div class="card pad">
-      <div class="poshead">
-        <div>
-          <div class="small muted">Your ZEC, working</div>
-          <div class="bignum num"><span id="pZec">12.0</span> ZEC <span class="muted" style="font-size:17px;font-weight:600" id="pUsd">($5,846)</span></div>
-          <div class="num" style="margin-top:4px"><span class="earned" id="pEarned">+0.128 ZEC earned</span> <span class="faint">(<span id="pEarnedUsd">$62</span>)</span> · <b id="pApy">12.9%</b> <span class="faint">current yield</span></div>
-        </div>
-        <span class="chip c-good" id="protChip"><svg class="ic"><use href="#i-shield"/></svg>Protected</span>
-      </div>
+    <div class="grid-stats">
+      <div class="card stat"><div class="lbl">Your net value <span class="tt tiny" title="ZEC collateral + working position − loan. What you'd hold after a full unwind, before exit costs.">ⓘ</span></div><div class="val num" id="stTotal">$0</div><div class="sub num"><span id="stZec">0</span> ZEC collateral · <span class="fresh" id="stFresh">updated just now</span></div></div>
+      <div class="card stat"><div class="lbl">Net yield <span class="tt tiny" title="Modeled yield on your whole deposit, after the engine's 15% fee, our 10% fee, impermanent loss and the borrow cost. Becomes a realized range once the yield service has history for your pool.">ⓘ</span></div><div class="val num" id="stApy">0.0%</div><div class="sub" id="stApySub">after all fees &amp; IL</div></div>
+      <div class="card stat"><div class="lbl">ZEC collateral on Rhea</div><div class="val num"><span id="stColl">0</span> ZEC</div><div class="sub num" id="stCollUsd">$0 · supply APR 0.04%</div></div>
+      <div class="card stat"><div class="lbl">Claimable AERO <span class="tt tiny" title="AERO emissions your staked position has earned, net of fees. While a position is staked in its Aerodrome gauge, the pool's trading fees go to veAERO voters — the position earns AERO emissions instead, so fees are never part of this number. Claim sends them home as ZEC; Compound puts them back to work.">ⓘ</span></div><div class="val num" id="stClaim">$0</div><div class="sub"><button class="btn-quiet small" id="claimBtn">Claim to my wallet →</button></div></div>
+    </div>
 
-      <div class="meter" id="meter">
-        <div class="fill" id="mFill"></div>
-        <div class="tick" id="mTick"></div><span class="lbl" id="mTickL" style="color:var(--crit)">risk line</span><span class="sub" id="mTickS">$210</span>
-        <div class="now" id="mNow"></div><span class="lbl" id="mNowL">ZEC now</span><span class="sub" id="mNowS">$487</span>
-      </div>
-      <div class="small muted" id="protLine">ZEC would have to fall <b class="num" id="protPct">57%</b> before liquidation is possible — and your earnings automatically repay the loan first, long before that line. <button class="tab tiny" data-goto="faq-crash" style="color:var(--brass);padding:0 2px">how the protection works →</button></div>
-
-      <div style="display:flex;gap:10px;margin-top:22px;flex-wrap:wrap">
-        <button class="btn btn-cta" id="addBtn">Add ZEC</button>
-        <button class="btn btn-ghost" id="wdBtn">Withdraw</button>
-      </div>
-
-      <details style="margin-top:20px">
-        <summary>How your ZEC is earning right now</summary>
-        <div class="det-in">
-          <div class="kv">
-            <span class="k">Collateral on Rhea (NEAR)</span><span class="v num" id="dColl">12.0 ZEC · $5,846</span>
-            <span class="k">Borrowed against it (your <span id="dLtv">30%</span> setting)</span><span class="v num" id="dBorrow">$1,754 USDC</span>
-            <span style="display:contents" id="dPools"></span>
-            <span class="k">Earnings auto-compound</span><span class="v">every time they cover costs 3×</span>
-            <span class="k">Fees (only ever on earnings)</span><span class="v num">15% engine, then 10% Oilskin — 23.5% all-in</span>
+    <div class="cols">
+      <div>
+        <div class="card card-pad">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
+            <h2 style="font-size:16px">Loan health <span class="tt tiny muted" title="Your borrow against ZEC collateral on Rhea Finance. If ZEC falls to the liquidation price, collateral starts being sold to repay debt. The protection ladder: earnings repay ≤ 1.35 · partial unwind ≤ 1.2 · full unwind ≤ 1.05.">ⓘ</span></h2>
+            <span class="chip c-good" id="hfChip"><span class="dot"></span>Healthy · HF <span class="num" id="hfVal">—</span></span>
           </div>
-          <div class="tiny faint" style="margin-top:10px">Your pool is rebalanced and compounded for you inside its engine-verified Aerodrome venue — the on-chain registry id for every menu pool is listed in Advanced → Pools. Every claim in this panel is checkable in the Activity tab.</div>
+          <div class="band" id="band"><div class="band-track" id="bandTrack"></div></div>
+          <div class="small muted" style="display:flex;justify-content:space-between;margin-top:10px;flex-wrap:wrap;gap:6px">
+            <span id="hfBorrowLine"></span>
+            <span id="hfLiqLine"></span>
+          </div>
+          <div class="tiny faint" style="margin-top:7px" id="protLine">ZEC would have to fall <b class="num" id="protPct">—</b> before liquidation is possible — earnings repay the loan first, long before that line. <button class="btn-quiet tiny" data-goto="faq-crash">how the protection works →</button></div>
         </div>
-      </details>
-      <div class="tiny faint" style="margin-top:14px">Returns to <span class="mono" id="homeShort">t1Py8…pGxy</span> — locked at deposit, the only address funds can ever exit to.</div>
+
+        <div class="section-h"><h2>Your position</h2><span class="fresh" id="posFresh">updated just now</span></div>
+        <div id="posList"></div>
+        <div class="tiny faint" style="margin-top:6px">Returns to <span class="mono" id="homeShort">—</span> — locked at deposit, the only address funds can ever exit to. <button class="btn-quiet tiny" id="forgetBtn" title="Removes the saved copy of this position from this browser only — the position itself is untouched and can be found again by address.">forget this device</button></div>
+      </div>
+      <div>
+        <div class="card card-pad">
+          <h2 style="font-size:15px;margin-bottom:4px">Activity</h2>
+          <div id="actListSide"></div>
+          <div class="note brass small" style="margin:14px 0 0">Every step carries its transaction id — Zcash, NEAR and Base each link to their own explorer.</div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -378,11 +439,21 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
   <h3>Is my ZEC ever sold?</h3>
   <p>No. It sits as collateral on Rhea Finance (NEAR). A bounded loan — your 30–50% risk setting — is taken against it in USDC, and that borrowed money does the earning in the curated Aerodrome pool you chose on Base. Borrowing against an asset — rather than selling it — is also why entering doesn't dispose of your ZEC (mechanics, not tax advice).</p>
 
+  <h3 id="faq-login">There's no login. How do I get back to my position?</h3>
+  <p>Your locked Zcash address is your identity. Every position is keyed on-chain by the address you set at deposit — the only address funds can ever exit to. Close the tab, restart the computer, open the app on another device: type that address into <b>Find your position</b> and it comes back. Looking up is read-only and safe to do from anywhere: seeing a position never lets anyone move it, because there is nowhere else for the money to go. This browser also keeps a local copy for convenience; "forget this device" removes only that copy.</p>
+  <p>In the live product, actions that change a position (withdraw, claim, change settings) additionally ask you to prove the address is yours — a one-time passkey created at deposit, with a fallback of sending a tiny amount from that same address. That stops a stranger who merely knows your address from withdrawing <i>to you</i> at a bad time.</p>
+
   <h3>Who holds my ZEC while it moves?</h3>
   <p>For about two minutes on the way in and out, your ZEC rides NEAR Intents — the same rails built into the Zashi and Zodl wallets, which move over $1B a month. During that window the bridge's operator controls the transit address; if anything fails, funds auto-refund to your address. We tell you this because you should know exactly who holds what, when — it's in every deposit screen, not buried here.</p>
 
   <h3 id="faq-crash">What happens if ZEC crashes?</h3>
   <p>The loan is your chosen 30–50% of your collateral's value — at the default Sheltered setting, ZEC has to fall 57% before liquidation is even possible (43% at Steady, 29% at Working hard). Before that ever gets close, protection kicks in automatically, in order: your earnings repay the loan first; if that's not enough, we unwind just enough of the working position to restore safety; in an extreme crash, everything unwinds and your ZEC sits safe as plain collateral. You'll see each step in Activity with its transaction id.</p>
+
+  <h3 id="faq-yield">Where does the yield come from — and why is today's number so low?</h3>
+  <p>Only from AERO emissions. Your pool position is staked in its Aerodrome gauge; staked positions earn the gauge's AERO emissions <i>instead of</i> trading fees (those go to veAERO voters). Against that, the position loses value to impermanent loss every time the price leaves its range and the engine re-centers it, and the borrowed USDC costs interest. We model all three from on-chain data and only offer a pool when the result is positive. At the rates sampled 2026-08-31, no curated pool clears the borrow cost — so the honest number is near zero, and the app says so rather than showing you the pool's headline rate.</p>
+
+  <h3 id="faq-refund">What if the engine can't deposit the whole amount?</h3>
+  <p>The pool engine takes your USDC, swaps roughly half into the other token itself, and mints the position in one transaction. Whatever doesn't fit the exact ratio — usually under 1% — it refunds in the same transaction. Oilskin keeps that refund inside <b>your</b> position as idle balance and puts it back to work at the next compound; it is never sent anywhere except your position or your locked address.</p>
 
   <h3>What are the fees?</h3>
   <p>15% of earnings to the pool engine that manages liquidity, then 10% of the remainder to Oilskin — 23.5% all-in, only ever on earnings. Nothing on deposits, nothing on withdrawals, nothing on your principal, ever. Every yield number you see is already net of all fees.</p>
@@ -405,9 +476,9 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
   <h3>The strategy, end to end</h3>
   <ul>
     <li><b>1 · Deposit.</b> Send ZEC from any Zcash wallet to a fresh deposit address (QR / ZIP-321). Fund it from your shielded balance — that's the default guidance.</li>
-    <li><b>2 · Collateral.</b> Your ZEC is supplied as collateral on Rhea Finance (NEAR) and starts earning supply interest. It is never sold.</li>
+    <li><b>2 · Collateral.</b> Your ZEC is supplied as collateral on Rhea Finance (NEAR). It is never sold.</li>
     <li><b>3 · Borrow.</b> USDC is borrowed against it at your risk setting — 30–50% of collateral value.</li>
-    <li><b>4 · Earn.</b> That USDC works in the single curated pool you picked (default: WETH/USDC on Aerodrome), staked in the pool's Aerodrome gauge and rebalanced automatically. Earnings arrive as AERO incentives and compound whenever they cover costs 3×.</li>
+    <li><b>4 · Earn.</b> That USDC works in the single curated pool you picked, staked in the pool's Aerodrome gauge and rebalanced automatically. Earnings arrive as AERO emissions and compound whenever they cover costs 3×.</li>
     <li><b>5 · Home.</b> Withdrawals unwind your share, repay the loan's part automatically, and arrive as native ZEC at your locked address.</li>
   </ul>
 
@@ -420,33 +491,30 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
     <tr><td><b>Exit</b></td><td>—</td><td>Funds can only ever leave to the Zcash address you locked at deposit. Under any compromise, there is nowhere else for them to go.</td></tr>
   </table>
 
-  <h3>Your risk setting</h3>
-  <p>One dial, three positions. It sets how much is borrowed against your ZEC — which sets both your yield and your distance to the liquidation line (liquidation threshold 70%). With the default pool (WETH/USDC) at rates sampled 2026-08-27:</p>
+  <h3>Your risk setting — what it actually sets</h3>
+  <p>One dial, three positions. It sets how much is borrowed against your ZEC (your distance to the liquidation line, threshold 70%) <b>and</b> how the pool position is run — the engine preset, its range width, and how long it waits out of range before re-centering:</p>
   <table class="dtable">
-    <tr><th>Setting</th><th>Borrowed</th><th>ZEC must fall</th><th>Net yield at sampled rates</th></tr>
-    <tr><td><b>Sheltered</b> (default)</td><td class="num">30%</td><td class="num">57%</td><td class="num">≈ 12.9%</td></tr>
-    <tr><td><b>Steady</b></td><td class="num">40%</td><td class="num">43%</td><td class="num">≈ 17.2%</td></tr>
-    <tr><td><b>Working hard</b></td><td class="num">50%</td><td class="num">29%</td><td class="num">≈ 21.5%</td></tr>
+    <tr><th>Setting</th><th>Borrowed</th><th>ZEC must fall</th><th>Range width</th><th>Rebalance delay</th><th>Engine preset</th></tr>
+    <tr><td><b>Sheltered</b> (default)</td><td class="num">30%</td><td class="num">57%</td><td class="num">±25% (±12.5% correlated pairs)</td><td class="num">48 h out of range</td><td>Conservative</td></tr>
+    <tr><td><b>Steady</b></td><td class="num">40%</td><td class="num">43%</td><td class="num">±8% (±4%)</td><td class="num">12 h</td><td>Moderate</td></tr>
+    <tr><td><b>Working hard</b></td><td class="num">50%</td><td class="num">29%</td><td class="num">±1.5% (±0.75%)</td><td class="num">2 h</td><td>Aggressive</td></tr>
   </table>
-  <p style="margin-top:8px">Straight talk: ZEC is volatile — drawdowns around 30% happen in ordinary years, so <b>Working hard leaves far less room</b> and leans hardest on the protection ladder. Sheltered is the setting where "protected" is close to unconditional. Your setting locks at deposit; to change it, withdraw and redeposit. Yield figures move with the pool you choose and with fee markets — they are trailing samples, not promises.</p>
+  <p style="margin-top:8px">A tighter range earns more emissions per dollar while the price sits inside it — and leaves it far more often, losing more to impermanent loss at every re-centering. Wider ranges rebalance a few times a year; the tightest, hundreds. Each pool card shows exactly these numbers for the setting you have selected. Your setting locks at deposit; to change it, withdraw and redeposit.</p>
 
-  <h3>The pool menu</h3>
-  <p>Your borrowed USDC works in <b>one pool at a time</b> — Aerodrome pools supported by the Snuggle engine only (multi-pool mixes live in Advanced). Every position is <b>staked in its pool's Aerodrome gauge</b>: staked positions earn AERO incentives <i>in lieu of</i> trading fees, so the fee rate below is the honest proxy for what the gauge pays. Aerodrome fee tiers are <b>dynamic</b> — they move with volatility — so rates below use each pool's on-chain fee at sampling (2026-08-27), volume × fee ÷ TVL × 365:</p>
-  <table class="dtable">
-    <tr><th>Pool</th><th>Fee today</th><th>Class</th><th>Fees sampled</th><th>After our fees</th></tr>
-    <tr><td><b>WETH/USDC</b></td><td class="num">0.056%</td><td>Blue chip</td><td class="num">73.6%</td><td class="num">≈ 56%</td></tr>
-    <tr><td><b>cbBTC/USDC</b></td><td class="num">0.044%</td><td>Blue chip</td><td class="num">59.6%</td><td class="num">≈ 46%</td></tr>
-    <tr><td><b>WETH/cbBTC</b></td><td class="num">0.253%</td><td>Blue chip · correlated</td><td class="num">33.0%</td><td class="num">≈ 25%</td></tr>
-    <tr><td><b>WETH/LINK</b></td><td class="num">0.25%</td><td>Blue chip</td><td class="num">35.5%</td><td class="num">≈ 27%</td></tr>
-    <tr><td><b>cbETH/WETH</b></td><td class="num">0.007%</td><td>Stable · LST</td><td class="num">3.7%</td><td class="num">≈ 3%</td></tr>
-    <tr><td><b>USDT/USDC</b></td><td class="num">0.001%</td><td>Stable</td><td class="num">0.9%</td><td class="num">≈ 0.7%</td></tr>
-    <tr><td><b>AERO/WETH</b></td><td class="num">0.30%</td><td>Volatile</td><td class="num">86.9%</td><td class="num">≈ 66%</td></tr>
-    <tr><td><b>AERO/cbBTC</b></td><td class="num">0.075%</td><td>Volatile</td><td class="num">82.4%</td><td class="num">≈ 63%</td></tr>
-  </table>
-  <p style="margin-top:8px"><b>Read the volatile rows carefully:</b> sampled fee rates on non-correlated pairs are not what you keep — impermanent loss (the pool constantly selling the winner for the loser) eats a large, variable share, and the engine realizes it at each rebalance. Correlated pairs (WETH/cbBTC, cbETH/WETH) and stables barely suffer IL but earn less. A pool that earns less than the 13.47% borrow cost loses money at these rates — the app warns you the moment you select one.</p>
+  <h3 id="docs-yield">Where the number comes from</h3>
+  <p>Every pool position is <b>staked in its Aerodrome gauge</b>. Staked positions earn the gauge's AERO emissions <i>in lieu of</i> trading fees — the fees go to veAERO voters — so <b>all yield is emissions</b>, and we never quote a fee rate. Three things are modeled per pool and per setting, from on-chain data:</p>
+  <ul>
+    <li><b>Emissions at your width.</b> Read from the gauge (<span class="mono">rewardRate</span>) and the pool's staked in-range liquidity, then scaled to a position of your range width — a wide position holds less liquidity per dollar than the tight positions it competes with, so it earns a smaller share. Sampled 2026-08-31 (AERO $0.48).</li>
+    <li><b>Impermanent loss &amp; rebalancing.</b> Simulated over a year at each pair's realized volatility (ETH 55%, BTC 40%, ETH/BTC 33%; Gecko daily candles Mar–Aug 2026), re-centering after the setting's delay, with the swap cost of every rebalance.</li>
+    <li><b>Costs.</b> 15% engine fee then 10% Oilskin fee on emissions; the live USDC borrow rate on the borrowed slice.</li>
+  </ul>
+  <p>A pool is offered at a setting only if <b>net emissions after IL beat the borrow cost</b>. Sampled 2026-08-31, with USDC borrowing at 13.47%:</p>
+  <table class="dtable" id="modelTable"></table>
+  <p style="margin-top:8px"><b>Straight talk:</b> at these emissions and this borrow rate, <b>no curated pool clears the bar at any setting</b>. Wider settings lose less but earn less; the borrowed dollar costs 13.47% and nothing here pays that after impermanent loss. Aerodrome emissions and Rhea's borrow rate both move week to week — the app recomputes from live data and offers a pool the moment it qualifies. Until then, the honest yield is the ZEC supply rate on Rhea (0.04%), and the app will not open a leveraged position for you.</p>
+  <div class="note warn">This is a model, built to be checkable: the sampling script, the simulation and its assumptions ship in the repo (<span class="mono">services/yield/scripts/lp-sim.py</span>, <span class="mono">services/yield/samples/</span>). Once the yield service has backfilled the engine's real closed-position history, realized ranges replace the model on every card — history beats simulation.</div>
 
   <h3>Live mode &amp; the realized-return band</h3>
-  <p>This page ships with a dated sample baked in. Run the Oilskin yield service beside it (<code>npm run yield</code> in the repo, then reload the page) and the numbers go live: current pool fee rates, the live Rhea borrow and ZEC supply rates, and — once the service has backfilled the engine's on-chain history — a <b>realized-return band</b> per pool instead of a single number. The band is the middle half (p25–p75, weighted by position size) of what real, closed positions in that pool actually kept over the trailing 30 days — impermanent loss, rebalances, and all fees included, measured from on-chain deposit and withdrawal flows. It is history, not a model, and never a promise. Until the backfill has run, cards say <i>"pending backfill"</i> rather than inventing a range; volatile pairs will show wide bands that can dip negative — that is the point.</p>
+  <p>This page ships with a dated sample baked in. Run the Oilskin yield service beside it (double-click <span class="mono">start-demo.command</span> in the repo) and the numbers go live: current gauge emissions, the live Rhea borrow and ZEC supply rates, and — once the service has backfilled the engine's on-chain history — a <b>realized-return band</b> per pool instead of a model. The band is the middle half (p25–p75, weighted by position size) of what real, closed positions in that pool actually kept over the trailing 30 days — impermanent loss, rebalances, and all fees included. It is history, not a model, and never a promise. Until the backfill has run, cards say <i>"pending backfill"</i> rather than inventing a range.</p>
 
   <h3>The protection ladder</h3>
   <ul>
@@ -456,12 +524,19 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
   </ul>
   <p>Every step is automatic, around the clock, and logged in Activity with its transaction id.</p>
 
+  <h3>Finding your position again</h3>
+  <p>There is no account and no password. Your locked Zcash address keys the position on-chain, so any device can look it up read-only — that is safe because funds can only ever exit to that same address. This browser also keeps a local copy (nothing sensitive — the same public facts the chain holds). In the live product, actions that change a position (withdraw, claim, adjust) require proof that the address is yours: a passkey bound at deposit — synced by your OS across your devices — with a fallback of a tiny proof transaction from the locked address. Without it, a stranger who learned your address could still only ever withdraw <i>to you</i>, but could do it at a moment you didn't choose.</p>
+
   <h3>Fees</h3>
-  <p>15% of earnings to the pool engine at harvest, then 10% of what remains to Oilskin — 23.5% total, only ever on earnings. Nothing on deposits, withdrawals, or principal — ever. Example: your position earns $100 → the engine takes $15, Oilskin takes $8.50, and $76.50 stays in your position. Every yield number shown is already net of all fees.</p>
+  <p>15% of earnings to the pool engine at harvest, then 10% of what remains to Oilskin — 23.5% total, only ever on earnings. Nothing on deposits, withdrawals, or principal — ever. Example: your position earns $100 of emissions → the engine takes $15, Oilskin takes $8.50, and $76.50 stays in your position. Every yield number shown is already net of all fees.</p>
+
+  <h3>Refunds and partial deposits</h3>
+  <p>The engine deposits single-sided: it takes your USDC, swaps part of it into the pool's other token, and mints the position in one transaction. Whatever cannot fit the exact ratio at that price — typically well under 1% — is refunded in the same transaction. Oilskin books that refund to <b>your</b> position as idle balance and redeploys it at the next compound; on withdrawal it is paid out with everything else. A failed bridge transfer refunds to your locked address automatically.</p>
 
   <h3>What can actually go wrong</h3>
   <ul>
     <li><b>A crash beyond your buffer.</b> If ZEC falls past your setting's line faster than the ladder can act, the loan's share of collateral can be liquidated. This is the core risk — it's why the buffers are wide and the ladder exists.</li>
+    <li><b>Impermanent loss.</b> The working position loses value relative to simply holding whenever the price moves and the engine re-centers. It is modeled, shown, and the reason most pools are not offered today.</li>
     <li><b>Venue risk.</b> Rhea's margin sub-system — which Oilskin does not use — was exploited in April 2026; lending resumed in May and has run consistently since. You should hear that from us, not find it later: exposure is capped per venue and monitored independently.</li>
     <li><b>Bridge transit.</b> For ~2 minutes each way, funds ride NEAR Intents under its operator's control. Failed transfers auto-refund; that window is the exposure.</li>
     <li><b>Smart-contract risk.</b> Code can have bugs. Independent audit before mainnet, and withdrawal can never be paused — a contract invariant, not a policy.</li>
@@ -474,7 +549,7 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
   <p>Every menu pool's engine registry id — the exact bytes32 key deposits pass on-chain — is listed in Advanced → Pools (same pools, same ids). Every deposit, compound, rebalance, protection step and withdrawal appears in Activity with its transaction id, linked to the right explorer — Zcash, NEAR or Base.</p>
 
   <h3>Deposit size</h3>
-  <p>No Oilskin cap. One position per account (new deposits top it up), floor 0.25 ZEC — below that, bridge fees eat the deposit. Very large deposits are bounded only by constraints outside our control: chiefly the USDC actually available to borrow on Rhea at that moment, and the pool's own depth. Once live, the app shows that headroom before you send anything.</p>
+  <p>No Oilskin cap. One position per address (new deposits top it up), floor 0.25 ZEC — below that, bridge fees eat the deposit. Very large deposits are bounded only by constraints outside our control: chiefly the USDC actually available to borrow on Rhea at that moment, and the pool's own depth. Once live, the app shows that headroom before you send anything.</p>
 </div></div>
 
 <div class="wrap" id="trust" style="margin-top:4px">
@@ -531,22 +606,23 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
   <div class="pad" style="padding-top:18px">
     <label>Amount — <span class="num" id="wdPct">100%</span></label>
     <input type="range" id="wdSlider" min="10" max="100" value="100" step="10">
-    <div class="small muted num" style="margin:10px 0 4px" id="wdEst">≈ 12.1 ZEC ($5,908) home to t1Py8…pGxy</div>
+    <div class="small muted num" style="margin:10px 0 4px" id="wdEst"></div>
     <div class="tiny faint">Your loan's share is repaid automatically as part of the withdrawal — nothing to manage, no leftover debt. Arrives as native ZEC in a few minutes; your wallet shields it on arrival.</div>
     <button class="btn btn-cta" id="wdConfirm" style="width:100%;margin-top:16px">Withdraw to my wallet</button>
   </div>
 </div></div>
 
 <!-- Tester's kit (demo build) -->
-<button class="tk-fab" id="tkBtn" title="Demo inputs &amp; a feature checklist">🧪 Test kit</button>
+<button class="tk-fab" id="tkBtn" title="Demo inputs, simulations &amp; a feature checklist">🧪 Test kit</button>
+<span id="whatif"></span>
 <div class="overlay" id="tkOverlay"><div class="card modal tk-modal">
   <div class="modal-h"><h3>Tester's kit</h3><button class="x" data-close>✕</button></div>
   <div class="pad" style="padding-top:16px">
-    <div class="note warn" style="margin-top:0">Demo build — every address, amount and transaction is <b>fake</b>. No real funds, no real keys, nothing leaves your browser. The addresses below are <b>format-valid but not real or spendable</b>, so the app's validation behaves exactly as it will in production.</div>
+    <div class="note warn" style="margin-top:0">Demo build — every address, amount and transaction is <b>fake</b>. No real funds, no real keys, nothing leaves your browser. The addresses below are <b>format-valid but not real or spendable</b>, so the app's shape validation behaves as in production (production additionally verifies the Base58Check checksum).</div>
 
     <h4>Zcash addresses — tap to drop into the home field</h4>
     <div class="tk-grid">
-      <button class="tk-b ok" data-fill="t1Py8kAoQrfmRRWTbtHkDkGb6JuaXPmpGxy">Transparent t1 — accepted ✓<span class="mono">t1Py8…pGxy</span></button>
+      <button class="tk-b ok" data-fill="t1Py8kAoQrfmRRWTbtHkDkGb6JuaXPmpGxy">Transparent t1 — accepted ✓<span class="mono">t1Py8…pGxy · the example position's address</span></button>
       <button class="tk-b ok" data-fill="t1TEsT2aZxCvBnM4qWeRtY7uIoP9sDfG1hK">Transparent t1 (alt) ✓<span class="mono">t1TEs…G1hK</span></button>
       <button class="tk-b warnb" data-fill="u1demo0testonly0notreal0zaddr0qp7r9s2t4v6x8y0a2c4e6g8j0l2n4q6s8u0w2">Unified u1 — should guide to t-addr<span class="mono">u1demo…u0w2</span></button>
       <button class="tk-b warnb" data-fill="zs1demo0testonly0notreal0sapling0zaddr0qp7r9s2t4v6x8y0a2c4e6g8j0l2n4q6s8u0w2x4z6a8c0e2">Sapling zs1 — should guide to t-addr<span class="mono">zs1demo…c0e2</span></button>
@@ -562,18 +638,39 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
       <button class="tk-b ok" data-amt="250">250 · large ✓</button>
     </div>
 
+    <h4>What-if market — labeled hypotheticals, so the full flow can be exercised</h4>
+    <div class="tk-grid" id="whatifGrid">
+      <button class="tk-b on" data-wi-aero="1">AERO price ×1 (today)</button>
+      <button class="tk-b" data-wi-aero="2">AERO ×2</button>
+      <button class="tk-b" data-wi-aero="4">AERO ×4</button>
+      <button class="tk-b on" data-wi-borrow="">USDC borrow live (13.47%)</button>
+      <button class="tk-b" data-wi-borrow="8">borrow 8%</button>
+      <button class="tk-b" data-wi-borrow="4">borrow 4%</button>
+    </div>
+    <div class="tiny faint" style="margin-top:6px">Emissions scale with AERO's price; impermanent loss does not. A yellow "what-if" tag stays on screen while a hypothetical is active.</div>
+
+    <h4>Simulate — things that can go wrong (needs a position for most)</h4>
+    <div class="tk-grid">
+      <button class="tk-b warnb" data-sim="bridgeFail">Bridge failure → auto-refund</button>
+      <button class="tk-b warnb" data-sim="partialFill">Engine partial fill → refund kept idle</button>
+      <button class="tk-b warnb" data-sim="outOfRange">Price leaves range → rebalance</button>
+      <button class="tk-b badb" data-sim="crash">ZEC −40% → buffer holds (watch the band)</button>
+      <button class="tk-b badb" data-sim="crash2">ZEC −65% → ladder de-risks</button>
+      <button class="tk-b ok" data-sim="recover">Price recovers</button>
+      <button class="tk-b warnb" data-sim="txFail">Withdrawal tx fails → retried</button>
+      <button class="tk-b ok" data-sim="compound">Force a compound</button>
+    </div>
+
     <h4>Try every path</h4>
     <ul class="tk-list">
-      <li>Pick each risk setting — watch the yield and the "falls X%" line move (57 / 43 / 29%).</li>
-      <li>Pick each pool one at a time — the yield recomputes; select USDT/USDC and read the negative-carry warning; select AERO/WETH and read the IL warning.</li>
-      <li>Deposit with a t1 address, step through the progress, open the position.</li>
-      <li>Hit <b>Add ZEC</b> — the risk selector locks and the button shows your remaining room to 50.</li>
-      <li>Top up any amount — there is no cap; the button reads "Add to my position".</li>
-      <li>Withdraw part (slider), then all — a full withdraw returns you to the start and unlocks the selector.</li>
-      <li>Open <b>Activity</b> and click a tx link (Zcash / NEAR / Base explorers).</li>
-      <li>Read <b>Docs</b> — custody table, risk table, "what can go wrong", fees.</li>
-      <li>Toggle <b>Advanced</b> (top-right) to jump to the power-user build and back.</li>
-      <li>Shrink the window to phone width — nav, cards and this kit stay clean.</li>
+      <li>Pick each risk setting — every pool card shows its range width, rebalance delay, emissions and IL for that setting, and greys out when it doesn't clear the borrow cost.</li>
+      <li>Switch on a what-if (AERO ×4, borrow 4%) — pools qualify, the headline turns green, and the tag reminds you it's hypothetical.</li>
+      <li>Deposit with a t1 address, step through the progress, land on the dashboard — net value, yield, collateral, claimable AERO, loan health, position card, activity.</li>
+      <li>Reload the page — the position is still there (local copy). Click <b>forget this device</b>, then use <b>Find your position</b> with the same address to get it back.</li>
+      <li>Expand the position card — emissions → fees → net, range bar, rebalance delay, backed-by; try Compound, Claim, Add ZEC, Withdraw (partial, then full).</li>
+      <li>Run the simulations above and watch Activity — refunds, rebalances, the ladder, a failed and retried withdrawal.</li>
+      <li>Read <b>Docs → Where the number comes from</b> and <b>FAQ → no login</b>.</li>
+      <li>Toggle <b>Advanced</b> (top-right) and back; shrink the window to phone width.</li>
     </ul>
     <div class="tiny faint" style="margin-top:12px">This panel ships only in the demo; it is stripped from any production build.</div>
   </div>
@@ -583,110 +680,118 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
 
 <script>
 "use strict";
-/* ═══ Oilskin v1 — one strategy, one address, zero knobs ═══ */
-const S = { zec: 487.20, view: "earn" };
-const LIQ_T = 0.70, NET_FEE = 0.85*0.90; // ×0.765 after engine 15% + Oilskin 10%
-const APY_BASE = 0.04;     // ZEC supply APR on Rhea (sampled live 2026-08-27)
-const BORROW_APR = 13.47;  // USDC borrow rate on the borrowed slice (Rhea, sampled 2026-08-27)
-/* Curated pool menu — Aerodrome pools supported by the Snuggle engine ONLY
-   (Matt's call 2026-08-27; multi-pool mixes moved to Advanced). ONE pool at a
-   time. `gross` = pool fee APR sampled 2026-08-27 from live TVL + 24h volume
-   using each pool's ON-CHAIN fee() — Aerodrome fees are dynamic and move with
-   volatility. Positions are STAKED in the pool's Aerodrome gauge: they earn
-   AERO incentives in lieu of trading fees, and at equilibrium emissions track
-   fees, so the fee APR is the honest proxy for what the gauge pays. Trailing
-   samples, never promises; volatile pairs lose a large share to IL. */
+/* ═══ Oilskin v1 — one strategy, one address, zero knobs ═══
+   Every number on this page is either (a) a dated on-chain sample, (b) a model
+   built from such samples with its assumptions stated, or (c) live data from
+   the yield service. Nothing is a promise. */
+const S = { zec: 487.20, base: 487.20, view: "earn" };
+const LIQ_T = 0.70;
+const NET_FEE = 0.85*0.90;   // keep 76.5% of emissions: engine 15%, then Oilskin 10%
+const OILSKIN_KEEP = 0.90;   // empirical engine-net bands already net the engine's 15%
+/* Rates sampled 2026-08-31 (workbench, base-rpc.publicnode.com block 50675328;
+   Rhea rates from the yield service's 2026-08-27 sample). */
+const SAMPLE = { at:"2026-08-31", block:50675328, aeroUsd:0.478, supplyPct:0.04, borrowPct:13.47 };
+/* Risk setting → borrow slice + engine preset (range width, rebalance delay).
+   Correlated pairs (ETH/BTC) run half the width. */
+const SETTINGS = {
+  30:{k:"sheltered", label:"Sheltered",    ltv:0.30, wVol:25,  wCorr:12.5, delayH:48, preset:"Conservative", note:"The safest setting, and the default."},
+  40:{k:"steady",    label:"Steady",       ltv:0.40, wVol:8,   wCorr:4,    delayH:12, preset:"Moderate",     note:"The middle path — a tighter range, more rebalancing."},
+  50:{k:"working",   label:"Working hard", ltv:0.50, wVol:1.5, wCorr:0.75, delayH:2,  preset:"Aggressive",   note:"Tightest range, thinnest buffer — rebalances constantly and leans hardest on the protection ladder."},
+};
+const settingOf = ltv => SETTINGS[Math.round(ltv*100)];
+/* Curated menu — Aerodrome pools supported by the Snuggle engine, staked in
+   their gauges (yield = AERO emissions ONLY; trading fees go to veAERO voters),
+   with TVL ≥ $5M (depth rule for the simple build). Per setting, the model
+   row `m` holds: w = range width %, delay = rebalance delay h, apr = in-range
+   emissions APR at that width (on-chain gauge sample, marginal), tir = modeled
+   time in range, rebal = rebalances/yr, drag = IL + rebalancing cost %/yr vs
+   holding (simulated at realized vol), emis = realized gross emissions %/yr
+   (apr × time in range). Model: services/yield/scripts/lp-sim.py; samples:
+   services/yield/samples/. */
 const POOLS = [
-  {id:"aweth",  name:"WETH/USDC",  venue:"Aerodrome · fee 0.056% today", tag:"BLUE CHIP", gross:73.6, note:"the flagship — $31.8M/day on $8.8M TVL"},
-  {id:"acbbtc", name:"cbBTC/USDC", venue:"Aerodrome · fee 0.044% today", tag:"BLUE CHIP", gross:59.6, note:"the BTC workhorse — $21.1M/day on $5.7M TVL"},
-  {id:"wbtc",   name:"WETH/cbBTC", venue:"Aerodrome · fee 0.253% today", tag:"BLUE CHIP", gross:33.0, note:"correlated majors, gentle IL — $5.5M/day on $15.4M TVL"},
-  {id:"link",   name:"WETH/LINK",  venue:"Aerodrome · fee 0.25% today",  tag:"BLUE CHIP", gross:35.5, note:"ETH against LINK (top-15 asset) — $0.6M/day on $1.6M TVL"},
-  {id:"lst",    name:"cbETH/WETH", venue:"Aerodrome · fee 0.007% today", tag:"STABLE",    gross:3.7,  note:"correlated LST pair — near-zero IL"},
-  {id:"stab",   name:"USDT/USDC",  venue:"Aerodrome · fee 0.001% today", tag:"STABLE",    gross:0.9,  note:"parking tier — near-zero IL, thin fees"},
-  {id:"aero",   name:"AERO/WETH",  venue:"Aerodrome · fee 0.30% today",  tag:"VOLATILE",  gross:86.9, note:"the venue's own token — big fees, brutal IL"},
-  {id:"abtc",   name:"AERO/cbBTC", venue:"Aerodrome · fee 0.075% today", tag:"VOLATILE",  gross:82.4, note:"AERO against BTC — big fees on thin TVL, brutal IL"},
+  {id:"lend", kind:"LEND", name:"Lending only", c:["zec"], tag:"NO LOAN", venue:"Rhea Finance · ZEC supply", note:"nothing borrowed, nothing at risk of liquidation — earns the ZEC supply rate"},
+  {id:"acbbtc", kind:"LP", api:"aero-cbbtc-usdc", name:"cbBTC/USDC", c:["cbbtc","usdc"], tag:"BLUE CHIP", venue:"Aerodrome · staked in gauge", corr:false, volPct:40, tvlM:5.6, feeLive:"0.024%", whole:31.7,
+   m:{sheltered:{w:25,delay:48,apr:14.26,tir:0.98,rebal:1.7,drag:-15.5,emis:13.24}, steady:{w:8,delay:12,apr:43.46,tir:0.96,rebal:17.0,drag:-39.4,emis:33.14}, working:{w:1.5,delay:2,apr:228.54,tir:0.89,rebal:392.2,drag:-92.5,emis:72.78}}},
+  {id:"aweth", kind:"LP", api:"aero-usdc-weth-5", name:"WETH/USDC", c:["weth","usdc"], tag:"BLUE CHIP", venue:"Aerodrome · staked in gauge", corr:false, volPct:55, tvlM:7.9, feeLive:"0.036%", whole:65.0,
+   m:{sheltered:{w:25,delay:48,apr:7.69,tir:0.97,rebal:3.1,drag:-27.1,emis:6.54}, steady:{w:8,delay:12,apr:23.45,tir:0.94,rebal:28.2,drag:-60.2,emis:14.43}, working:{w:1.5,delay:2,apr:123.32,tir:0.83,rebal:610.7,drag:-99.0,emis:21.96}}},
+  {id:"wbtc", kind:"LP", api:"aero-weth-cbbtc", name:"WETH/cbBTC", c:["weth","cbbtc"], tag:"BLUE CHIP", venue:"Aerodrome · staked in gauge", corr:true, volPct:33, tvlM:19.9, feeLive:"0.25%", whole:19.2,
+   m:{sheltered:{w:12.5,delay:48,apr:2.70,tir:0.96,rebal:4.4,drag:-20.0,emis:2.34}, steady:{w:4,delay:12,apr:8.31,tir:0.92,rebal:37.5,drag:-49.9,emis:5.52}, working:{w:0.75,delay:2,apr:43.99,tir:0.79,rebal:769.8,drag:-98.4,emis:8.20}}},
 ];
-let selPool = "aweth";                        // ONE pool at a time (mixes live in Advanced)
-const poolGross = id => POOLS.find(p=>p.id===id).gross;
-const poolNet   = id => poolGross(id) * NET_FEE;                 // after both fees
-const apyModel = (l, gross) => liveSupply() + l * (gross*NET_FEE - liveBorrow()); // whole-position % (live rates when connected; static sample otherwise)
-const apyFor   = l => apyModel(l, poolGross(pos.active ? pos.pool : selPool));
-const DROP = l => Math.round((1 - l/LIQ_T)*100);
-let selLtv = 0.30;
-const pos = { active:false, zec:0, earnedZec:0, home:"", openedAt:0, ltv:0.30, pool:"aweth" };
+const poolById = id => POOLS.find(p=>p.id===id);
+/* What-if market (tester's kit only) — labeled hypotheticals. */
+const WHATIF = { aero:1, borrow:null };
+const whatifOn = () => WHATIF.aero!==1 || WHATIF.borrow!==null;
 
 /* ── Live mode ─────────────────────────────────────────────────────────
-   The Oilskin yield service (services/yield in the repo — `npm run yield`)
-   serves live pool samples, live Rhea borrow/ZEC-supply rates, and
-   EMPIRICAL realized-APR bands computed from the engine's own on-chain
-   position history (closed positions, USD flows, principal-weighted
-   p25–p75 — methodology in docs/YIELD-SERVICE.md). When it's reachable the
-   demo switches to live numbers and band displays; without it, the static
-   dated sample below stands. No fabricated bands, ever: bands render only
-   from real backfilled history. */
+   The Oilskin yield service (start-demo.command) serves live gauge
+   emissions, live Rhea rates, and EMPIRICAL realized-return bands from the
+   engine's own closed-position history. When reachable, live numbers
+   replace the dated sample; bands (history) replace the model. No fabricated
+   bands, ever. */
 const YIELD_API = "http://127.0.0.1:8787";
-let LIVE = null; // /v1/pools payload once the service has answered
-const DEMO2API = {aweth:"aero-usdc-weth-5",acbbtc:"aero-cbbtc-usdc",wbtc:"aero-weth-cbbtc",link:"aero-weth-link",lst:"cbeth-weth",stab:"aero-usdt-usdc",aero:"aero-aero-weth",abtc:"aero-aero-cbbtc"};
-const OILSKIN_KEEP = 0.90; // empirical engine-net already nets the engine's 15%
-const liveBorrow = () => LIVE?.rates?.borrowAprPct ?? BORROW_APR;
-const liveSupply = () => LIVE?.rates?.zecSupplyAprPct ?? APY_BASE;
-const liveBand30 = id => { const p = LIVE?.pools?.find(x=>x.id===DEMO2API[id]); const b = p?.bands?.bands?.find(w=>w.windowDays===30); return b && b.n>0 ? b : null; };
-const userNet = (engineNetPct,l) => liveSupply() + l*(engineNetPct*OILSKIN_KEEP - liveBorrow());
-/* Band for the selected pool, passed through the user transform — the
-   same rule the API's /v1/band uses, so both surfaces always agree. */
-function poolBand(id,l){
-  const b=liveBand30(id);
-  if(!b) return null;
-  return {p25:userNet(b.p25,l), p50:userNet(b.p50,l), p75:userNet(b.p75,l), n:b.n, pools:1};
-}
-async function tryLive(){
-  if(location.protocol==="https:") return; // hosted demo: browsers block localhost fetches from https
-  try{
-    const r = await fetch(YIELD_API+"/v1/pools",{signal:AbortSignal.timeout(2500)});
-    if(!r.ok) return;
-    LIVE = await r.json();
-    for(const p of POOLS){
-      const lp = LIVE.pools?.find(x=>x.id===DEMO2API[p.id]);
-      if(lp?.live){ p.gross = lp.live.grossFeeAprPct; p.est = false; }
-    }
-    syncRiskLock(); renderPos();
-    toast("Live data connected — current rates, bands from real engine history");
-  }catch(e){ /* service not running — the static dated sample stands */ }
-}
-function liveChipUpd(band){
-  const line = $("#apyHero")?.parentElement; if(!line) return;
-  if(LIVE && !$("#liveChip")){
-    const chip=document.createElement("span"); chip.id="liveChip"; chip.className="livechip";
-    chip.innerHTML='<span class="dot"></span>LIVE'; line.appendChild(chip);
-  }
-  const tt = line.querySelector(".tt");
-  if(tt && LIVE){
-    tt.title = band
-      ? `Realized range from ${band.n} closed engine positions in this pool (trailing 30 days, principal-weighted p25–p75; typical ${band.p50.toFixed(1)}%). Live borrow ${liveBorrow().toFixed(1)}%, ZEC supply ${liveSupply().toFixed(2)}%. History, never a promise.`
-      : `Live rates connected (borrow ${liveBorrow().toFixed(1)}%, ZEC supply ${liveSupply().toFixed(2)}%). Realized-range bands appear once the yield service has backfilled engine history. Trailing math, never a promise.`;
-  }
-}
-function bandCard(id){
-  const b = liveBand30(id);
-  if(!b) return LIVE ? '<div class="pband">realized range: pending backfill</div>' : "";
-  const lo = Math.min(b.p10, 0), hi = Math.max(b.p90, 10), span = (hi-lo) || 1;
-  const X = v => Math.max(0, Math.min(100, (v-lo)/span*100));
-  const zero = (0>=lo && 0<=hi) ? `<span class="pbzero" style="left:${X(0).toFixed(2)}%"></span>` : "";
-  return `<div class="pband num">realized ${b.p25.toFixed(0)}–${b.p75.toFixed(0)}% <span style="color:var(--ink-3)">(typical ${b.p50.toFixed(0)}%, n=${b.n}, 30d)</span>
-    <div class="pbtrack">${zero}<span class="pbfill" style="left:${X(b.p25).toFixed(2)}%;right:${(100-X(b.p75)).toFixed(2)}%"></span><span class="pbtick" style="left:${X(b.p50).toFixed(2)}%"></span></div></div>`;
+let LIVE = null;
+const borrow = () => WHATIF.borrow ?? LIVE?.rates?.borrowAprPct ?? SAMPLE.borrowPct;
+const supply = () => LIVE?.rates?.zecSupplyAprPct ?? SAMPLE.supplyPct;
+const liveBand30 = p => { if(!p.api) return null; const lp = LIVE?.pools?.find(x=>x.id===p.api); const b = lp?.bands?.bands?.find(w=>w.windowDays===30); return b && b.n>0 ? b : null; };
+
+/* ── The model ──────────────────────────────────────────────────────── */
+function modelRow(p, k){ return p.m ? p.m[k] : null; }
+/* realized gross emissions %/yr on the working slice (scaled by live/what-if AERO) */
+function emisGross(p, k){ const m=modelRow(p,k); if(!m) return 0; const live = LIVE?.pools?.find(x=>x.id===p.api)?.emissions?.aprByWidthPct?.[String(m.w/100)]; const scale = live!=null && m.apr>0 ? live/m.apr : 1; return m.emis*scale*WHATIF.aero; }
+/* net %/yr on the working slice after fees and IL (what the borrowed dollar keeps) */
+function lpNet(p, k){ if(p.kind!=="LP") return 0; return emisGross(p,k)*NET_FEE + modelRow(p,k).drag; }
+/* whole-deposit %/yr for the user */
+function userNet(p, k){ const st=Object.values(SETTINGS).find(s=>s.k===k); return p.kind==="LP" ? supply() + st.ltv*(lpNet(p,k) - borrow()) : supply(); }
+/* the bar: the borrowed slice must earn more than it costs */
+function qualifies(p, k){ if(p.kind!=="LP") return true; const b=liveBand30(p); if(b){ const st=Object.values(SETTINGS).find(s=>s.k===k); return b.p50*OILSKIN_KEEP > borrow() && st; } return lpNet(p,k) > borrow(); }
+function bestPool(k){ let best=null; for(const p of POOLS){ if(!qualifies(p,k)) continue; const v=userNet(p,k); if(!best||v>best.v) best={p,v}; } return best?best.p:poolById("lend"); }
+/* band → user transform (same rule the API's /v1/band uses) */
+const userNetBand = (engineNetPct,l) => supply() + l*(engineNetPct*OILSKIN_KEEP - borrow());
+function poolBand(p, l){ const b=liveBand30(p); if(!b) return null; return {p25:userNetBand(b.p25,l), p50:userNetBand(b.p50,l), p75:userNetBand(b.p75,l), n:b.n}; }
+const DROP = l => Math.round((1 - l/LIQ_T)*100);
+const liqPrice = (zec, ltv) => zec*ltv/LIQ_T;
+
+/* ── State ──────────────────────────────────────────────────────────── */
+let selLtv = 0.30;
+let selPool = "lend";
+let selAuto = true;   // true until the user picks a pool card themselves
+const pos = { active:false, kind:"LEND", zec:0, home:"", openedAt:0, ltv:0.30, setting:"sheltered", pool:"lend",
+  debtUsd:0, lpUsd:0, idleUsd:0, claimUsd:0, grossUsd:0, range:"in", outSince:0, rebalances:0, ladder:0, lastTick:0 };
+let activity = [];
+const EXAMPLE_ADDR = "t1Py8kAoQrfmRRWTbtHkDkGb6JuaXPmpGxy";
+
+/* ── Persistence (this browser only; the chain is the source of truth) ── */
+const KEY = "oilskin.demo.v1";
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify({v:1, pos, activity, at:Date.now()})); }catch(e){} }
+function load(){ try{ const raw=localStorage.getItem(KEY); if(!raw) return false; const d=JSON.parse(raw); if(!d||d.v!==1||!d.pos) return false; Object.assign(pos, d.pos); activity = Array.isArray(d.activity)?d.activity:[]; return pos.active; }catch(e){ return false; } }
+function clearSaved(){ try{ localStorage.removeItem(KEY); }catch(e){} }
+/* Read-only lookup by locked payout address. Demo: this browser's saved
+   position or the example position; live: /v1/positions?payout=… */
+function find(addr){
+  const a=(addr||"").trim();
+  if(!RE.t.test(a)) return {ok:false, msg:"That doesn't look like a transparent (t1…) Zcash address."};
+  if(pos.active && pos.home===a) return {ok:true, msg:"That's the position on this screen."};
+  try{ const raw=localStorage.getItem(KEY); const d=raw?JSON.parse(raw):null; if(d?.pos?.active && d.pos.home===a){ Object.assign(pos,d.pos); activity=d.activity||[]; return {ok:true, msg:"Found — restored from this browser's copy."}; } }catch(e){}
+  if(a===EXAMPLE_ADDR){ loadExample(); return {ok:true, msg:"Found on-chain (demo): the example position."}; }
+  return {ok:false, msg:`No position is keyed to ${a.slice(0,5)}…${a.slice(-4)}. Nothing has been deposited with that address (in this demo, only your own deposits and the example exist).`};
 }
 
+/* ── Utils ──────────────────────────────────────────────────────────── */
 const $=(q,el=document)=>el.querySelector(q);
 const $$=(q,el=document)=>[...el.querySelectorAll(q)];
-const usd=v=>v.toLocaleString("en-US",{style:"currency",currency:"USD",maximumFractionDigits:v<100?2:0});
-function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("on");clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove("on"),3600);}
+const usd=v=>(v<0?"−":"")+Math.abs(v).toLocaleString("en-US",{style:"currency",currency:"USD",maximumFractionDigits:Math.abs(v)<100?2:0});
+const pct=v=>(v<0?"−":"")+Math.abs(v).toFixed(Math.abs(v)<0.1&&v!==0?2:1)+"%";
+const signed=v=>(v>=0?"+":"−")+Math.abs(v).toFixed(1)+"%";
+function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("on");clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove("on"),3800);}
+const ago = ts => { const s=Math.max(0,(Date.now()-ts)/1000); if(s<60) return "just now"; if(s<3600) return Math.round(s/60)+"m ago"; if(s<86400) return Math.round(s/3600)+"h ago"; return Math.round(s/86400)+"d ago"; };
+function coins2(list){return `<span class="pair">${list.map(c=>`<span class="coin" title="${c.toUpperCase()}"><svg><use href="#tk-${c}"/></svg></span>`).join("")}</span>`;}
 
 /* address validation — same probed rules as the full build */
 const RE={t:/^t[13][a-zA-Z0-9]{33}$/,u:/^u1[a-z0-9]{50,}$/,z:/^zs1[a-z0-9]{70,}$/};
 function checkAddr(a){
   const s=(a||"").trim();
   if(!s) return {ok:false,msg:"Open your wallet (Zodl, Ywallet, Zingo…) → Receive → copy the transparent (t1…) address.",c:"var(--ink-3)"};
-  if(RE.t.test(s)) return {ok:true,msg:"✓ This is where everything returns — locked to your deposit.",c:"var(--good)"};
+  if(RE.t.test(s)) return {ok:true,msg:"✓ This is where everything returns — locked to your deposit, and your key to find it again.",c:"var(--good)"};
   if(RE.u.test(s)||RE.z.test(s)) return {ok:false,msg:"That's your private address — payouts need the transparent (t1…) one shown just below it in your wallet. Your wallet re-shields arrivals automatically.",c:"var(--warn)"};
   return {ok:false,msg:"Keep going — that doesn't look like a full Zcash address yet.",c:"var(--warn)"};
 }
@@ -697,9 +802,9 @@ const EXPLORER={zcash:{n:"Zcash explorer",u:"https://mainnet.zcashexplorer.app/t
 const rnd=(chars,n)=>Array.from({length:n},()=>chars[Math.floor(Math.random()*chars.length)]).join("");
 const mkTx=c=>({c,id:c==="zcash"?rnd("0123456789abcdef",64):c==="near"?rnd("123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz",43):"0x"+rnd("0123456789abcdef",64)});
 const txLink=tx=>`<a class="txlink" href="${EXPLORER[tx.c].u}${tx.id}" target="_blank" rel="noopener">tx ${tx.id.slice(0,6)}…${tx.id.slice(-4)} · ${EXPLORER[tx.c].n} ↗</a>`;
-const activity=[];
+function logAct(t,d,ic,cls,tx,ts){ activity.unshift({t,d,ic,cls:cls||"",tx:tx||null,ts:ts||Date.now()}); if(activity.length>60) activity.length=60; renderActivity(); save(); }
 
-/* tooltips (hover + tap) */
+/* tooltips (hover + tap) — native title tooltips are unreliable */
 const tip=document.createElement("div");tip.id="tip";document.body.appendChild(tip);
 let tipFor=null,tipAt=0;
 function showTip(el){const t=el.dataset.tip;if(!t)return;tip.textContent=t;tip.classList.add("on");
@@ -708,11 +813,14 @@ function showTip(el){const t=el.dataset.tip;if(!t)return;tip.textContent=t;tip.c
   let x=Math.min(Math.max(8,r.left+r.width/2-w/2),innerWidth-w-8),y=r.top-h-9;if(y<8)y=r.bottom+9;
   tip.style.left=x+"px";tip.style.top=y+"px";tipFor=el;}
 function hideTip(){tip.classList.remove("on");tipFor=null;}
-$$("[title]").forEach(el=>{el.dataset.tip=el.getAttribute("title");el.removeAttribute("title");
-  el.addEventListener("mouseenter",()=>{showTip(el);tipAt=Date.now();});
-  el.addEventListener("mouseleave",hideTip);
-  el.addEventListener("click",e=>{e.stopPropagation();(tipFor===el&&Date.now()-tipAt>600)?hideTip():(showTip(el),tipAt=Date.now());});});
+function bindTips(root){
+  $$("[title]",root||document).forEach(el=>{el.dataset.tip=el.getAttribute("title");el.removeAttribute("title");
+    el.addEventListener("mouseenter",()=>{showTip(el);tipAt=Date.now();});
+    el.addEventListener("mouseleave",hideTip);
+    el.addEventListener("click",e=>{e.stopPropagation();(tipFor===el&&Date.now()-tipAt>600)?hideTip():(showTip(el),tipAt=Date.now());});});
+}
 document.addEventListener("click",hideTip);
+window.addEventListener("scroll",hideTip,{passive:true});
 
 /* views */
 function showView(v){S.view=v;
@@ -720,103 +828,130 @@ function showView(v){S.view=v;
   $$(".tab[data-view]").forEach(t=>t.classList.toggle("on",t.dataset.view===v));
   window.scrollTo({top:0});}
 $$(".tab[data-view]").forEach(t=>t.addEventListener("click",()=>showView(t.dataset.view)));
-document.addEventListener("click",e=>{const b=e.target.closest("[data-goto]");if(b){showView("faq");location.hash=b.dataset.goto;}});
+$("#logoBtn").addEventListener("click",()=>{showView("earn");});
+document.addEventListener("click",e=>{const b=e.target.closest("[data-goto]");if(b){showView("faq");const el=document.getElementById(b.dataset.goto);if(el)el.scrollIntoView({block:"start",behavior:"smooth"});}});
 
-/* deposit flow */
-$("#amt").addEventListener("input",()=>{
-  const a=+$("#amt").value||0;$("#amtUsd").textContent=usd(a*S.zec);gate();});
-$("#homeAddr").addEventListener("input",()=>{
-  const r=checkAddr($("#homeAddr").value);const h=$("#addrHint");h.textContent=r.msg;h.style.color=r.c;gate();});
-/* Pure gate decision — the single source of truth used by both the live UI
-   and the fuzz harness (window.__oil), so tests exercise the real logic. */
-function gateDecision(a, addrOk, addrTyped, existing){
-  // No Oilskin deposit cap (Matt's call 2026-08-27): size is bounded only by
-  // constraints outside our control — chiefly the USDC actually available to
-  // borrow on Rhea at that moment. The 0.25 floor stays: below it, bridge
-  // fees eat the deposit.
-  const ok = a>=0.25 && addrOk;
+/* ── Deposit form ───────────────────────────────────────────────────── */
+$("#amt").addEventListener("input",()=>{const a=+$("#amt").value||0;$("#amtUsd").textContent=usd(a*S.zec);gate();});
+$("#homeAddr").addEventListener("input",()=>{const r=checkAddr($("#homeAddr").value);const h=$("#addrHint");h.textContent=r.msg;h.style.color=r.c;gate();});
+/* Pure gate decision — single source of truth for UI + fuzz harness. */
+function gateDecision(a, addrOk, addrTyped, existing, poolOk){
+  const ok = a>=0.25 && addrOk && poolOk!==false;
   const label = (!addrOk && addrTyped) ? "Add your t1… address first"
+    : poolOk===false ? "That pool isn't offered at this setting"
     : existing>0 ? "Add to my position →" : "Get my deposit address →";
   return {ok, label};
 }
 function gate(){
   const a=+$("#amt").value||0, r=checkAddr($("#homeAddr").value);
   const existing = pos.active ? pos.zec : 0;
-  const {ok,label} = gateDecision(a, r.ok, !!$("#homeAddr").value, existing);
+  const k = pos.active ? pos.setting : settingOf(selLtv).k;
+  const p = poolById(pos.active ? pos.pool : selPool);
+  const {ok,label} = gateDecision(a, r.ok, !!$("#homeAddr").value, existing, pos.active ? true : qualifies(p,k));
   const b=$("#startBtn");b.disabled=!ok;b.textContent=label;
 }
-
-/* risk setting — free to choose on a fresh deposit; locked to the position's
-   setting on a top-up (changing it would silently re-risk existing funds). */
+/* risk setting — free on a fresh deposit; locked on a top-up */
 $$("#riskSeg .segb").forEach(b=>b.addEventListener("click",()=>{
   if(b.disabled) return;
   $$("#riskSeg .segb").forEach(x=>x.classList.remove("on"));b.classList.add("on");
-  selLtv=(+b.dataset.ltv)/100;riskUpd(false);}));
+  selLtv=(+b.dataset.ltv)/100;
+  const k=settingOf(selLtv).k;
+  if(selAuto || !qualifies(poolById(selPool),k)) selPool = bestPool(k).id;   // never leave a disqualified pool selected
+  renderPools(); riskUpd(false); gate();}));
 function syncRiskLock(){
-  const locked = pos.active; // top-up mode
+  const locked = pos.active;
   if(locked) selLtv = pos.ltv;
   const sel = Math.round(selLtv*100);
   $$("#riskSeg .segb").forEach(x=>{
     const on = Math.round(+x.dataset.ltv) === sel;
-    x.disabled = locked;
-    x.classList.toggle("on", on);
-    x.style.opacity = (locked && !on) ? ".4" : "1";
+    x.disabled = locked; x.classList.toggle("on", on); x.style.opacity = (locked && !on) ? ".4" : "1";
   });
-  renderPools();       // pool cards share the same lock state
-  riskUpd(locked);
+  renderPools(); riskUpd(locked);
+}
+function headline(){
+  const k = pos.active ? pos.setting : settingOf(selLtv).k;
+  const p = poolById(pos.active ? pos.pool : selPool);
+  const band = poolBand(p, pos.active ? pos.ltv : selLtv);
+  return {k,p,band,apy:userNet(p,k)};
 }
 function riskUpd(locked){
-  const note={30:"The safest setting, and the default.",40:"The middle path — solid buffer, better pay.",50:"Highest yield, thinnest buffer — leans hardest on the protection ladder."};
-  const apy = apyFor(selLtv);
-  const band = poolBand(pos.active ? pos.pool : selPool, selLtv);
-  if(band){
-    $("#apyHero").textContent = band.p25.toFixed(1)+"–"+band.p75.toFixed(1)+"%";
-    $("#apyHero").style.color = band.p50 < liveSupply() ? "var(--warn)" : "var(--good)";
-  } else {
-    $("#apyHero").textContent = apy.toFixed(1)+"%";
-    $("#apyHero").style.color = apy < liveSupply() ? "var(--warn)" : "var(--good)";
-  }
+  const {k,p,band,apy} = headline();
+  const st = Object.values(SETTINGS).find(s=>s.k===k);
+  const hero=$("#apyHero");
+  if(band){ hero.textContent = band.p25.toFixed(1)+"–"+band.p75.toFixed(1)+"%"; hero.style.color = band.p50 < supply() ? "var(--warn)" : "var(--good)"; }
+  else { hero.textContent = pct(apy); hero.style.color = apy <= supply()+0.005 ? "var(--warn)" : "var(--good)"; }
   liveChipUpd(band);
+  const any = POOLS.some(q=>q.kind==="LP" && qualifies(q,k));
+  const note=$("#marketNote");
+  if(!any && !locked){
+    note.style.display="block";
+    note.innerHTML=`<b>Today no pool clears the bar.</b> At the ${whatifOn()?"what-if":"sampled"} rates (USDC borrow ${borrow().toFixed(2)}%, AERO $${(SAMPLE.aeroUsd*WHATIF.aero).toFixed(2)}), every curated pool is expected to lose more to impermanent loss than its emissions pay after fees — so Oilskin won't open a leveraged position for you. Lending only earns the ZEC supply rate (${supply().toFixed(2)}%). <button class="btn-quiet tiny" data-view-docs="docs-yield">the numbers →</button>`;
+  } else note.style.display="none";
   const earnTxt = band
     ? `Typically ${band.p50.toFixed(1)}% (realized range ${band.p25.toFixed(1)}–${band.p75.toFixed(1)}%, ${band.n} positions, 30d)`
-    : `Earning ≈${apy.toFixed(1)}%`;
+    : `Earning ≈${pct(apy)}`;
   $("#riskHint").textContent = locked
-    ? `Locked at your ${Math.round(selLtv*100)}% setting for this position — withdraw and redeposit to change. ${earnTxt}.`
-    : earnTxt+" — liquidation only possible if ZEC falls "+DROP(selLtv)+"%. "+note[Math.round(selLtv*100)];
+    ? `Locked at ${st.label} (${Math.round(st.ltv*100)}%) for this position — withdraw and redeposit to change. ${earnTxt}.`
+    : (p.kind==="LP"
+        ? `${earnTxt} — ${st.label} borrows ${Math.round(st.ltv*100)}%, runs a ±${p.corr?st.wCorr:st.wVol}% range, re-centers after ${st.delayH}h out of range; liquidation only possible if ZEC falls ${DROP(st.ltv)}%. ${st.note}`
+        : `Lending only — nothing is borrowed at any setting, so there is no liquidation line and no impermanent loss; the setting applies the moment you pick a pool. ${earnTxt}.`);
 }
-
-/* pool — ONE curated Aerodrome pool at a time, locked at deposit */
+function liveChipUpd(band){
+  const line = $("#apyHero")?.parentElement; if(!line) return;
+  if(LIVE && !$("#liveChip")){ const chip=document.createElement("span"); chip.id="liveChip"; chip.className="livechip"; chip.innerHTML='<span class="dot"></span>LIVE'; line.appendChild(chip); }
+  const tt = $("#apyTip");
+  if(tt && LIVE){
+    tt.dataset.tip = band
+      ? `Realized range from ${band.n} closed engine positions in this pool (trailing 30 days, principal-weighted p25–p75; typical ${band.p50.toFixed(1)}%). Live borrow ${borrow().toFixed(2)}%, ZEC supply ${supply().toFixed(2)}%. History, never a promise.`
+      : `Live rates connected (borrow ${borrow().toFixed(2)}%, ZEC supply ${supply().toFixed(2)}%). Emissions from the live gauge sample where available; IL from the model. Realized-range bands appear once the yield service has backfilled engine history.`;
+  }
+}
+function bandCard(p){
+  const b = liveBand30(p);
+  if(!b) return LIVE && p.api ? '<div class="pband">realized range: pending backfill</div>' : "";
+  const lo = Math.min(b.p10, 0), hi = Math.max(b.p90, 10), span = (hi-lo) || 1;
+  const X = v => Math.max(0, Math.min(100, (v-lo)/span*100));
+  const zero = (0>=lo && 0<=hi) ? `<span class="pbzero" style="left:${X(0).toFixed(2)}%"></span>` : "";
+  return `<div class="pband num">realized ${b.p25.toFixed(0)}–${b.p75.toFixed(0)}% <span style="color:var(--ink-3)">(typical ${b.p50.toFixed(0)}%, n=${b.n}, 30d)</span>
+    <div class="pbtrack">${zero}<span class="pbfill" style="left:${X(b.p25).toFixed(2)}%;right:${(100-X(b.p75)).toFixed(2)}%"></span><span class="pbtick" style="left:${X(b.p50).toFixed(2)}%"></span></div></div>`;
+}
+/* pool cards — every LP card shows its numbers FOR THE SELECTED SETTING */
+function poolLine(p,k){
+  if(p.kind!=="LP") return `<div class="pa num"><b>${pct(supply())}</b> ZEC supply rate · no borrow, no IL, no liquidation line</div>`;
+  const m=modelRow(p,k), st=Object.values(SETTINGS).find(s=>s.k===k);
+  const eg=emisGross(p,k), net=lpNet(p,k), ok=qualifies(p,k), un=userNet(p,k);
+  const b=liveBand30(p);
+  const head = b ? `<b class="${b.p50*OILSKIN_KEEP>borrow()?"":"neg"}">${b.p25.toFixed(0)}–${b.p75.toFixed(0)}%</b> realized (30d, n=${b.n})`
+    : `<b class="${ok?"":"neg"}">${signed(net)}</b> on the borrowed slice · you'd net <b class="${ok?"":"neg"}">${pct(un)}</b>`;
+  return `<div class="pa num">${head}</div>
+    <div class="pr num">±${m.w}% range · re-centers after ${m.delay}h out · in range ~${Math.round(m.tir*100)}% · ~${m.rebal<10?m.rebal.toFixed(1):Math.round(m.rebal)} rebalances/yr<br>
+    emissions ≈${eg.toFixed(1)}% gross (${(eg*NET_FEE).toFixed(1)}% after fees) · IL &amp; rebalancing ≈${m.drag.toFixed(0)}%${ok?"":` · borrow ${borrow().toFixed(1)}% → <span class="warn">not offered</span>`}</div>`;
+}
 function renderPools(){
   const locked = pos.active;
+  const k = locked ? pos.setting : settingOf(selLtv).k;
   const cur = locked ? pos.pool : selPool;
   $("#poolSeg").innerHTML = POOLS.map(p=>{
-    const on = cur===p.id;
-    const tagCls = p.tag==="BLUE CHIP"?"bc":p.tag==="STABLE"?"st":"vo";
-    const netSlice = (p.gross*NET_FEE).toFixed(0);
-    return `<button type="button" class="poolb${on?" on":""}" data-pool="${p.id}" role="radio" aria-checked="${on}" ${locked?"disabled":""} style="${locked&&!on?"opacity:.4":""}">
+    const on = cur===p.id, ok = qualifies(p,k);
+    const tagCls = p.tag==="BLUE CHIP"?"bc":p.tag==="NO LOAN"?"ln":"st";
+    const dis = locked || !ok;
+    return `<button type="button" class="poolb${on?" on":""}${!ok?" off":""}" data-pool="${p.id}" data-ok="${ok}" role="radio" aria-checked="${on}" ${dis?"disabled":""} style="${locked&&!on?"opacity:.4":""}">
       <div class="pn"><span>${p.name}</span><span class="ptag ${tagCls}">${p.tag}</span></div>
-      <div class="pv">${p.venue}</div>
-      <div class="pa num"><b>${p.gross>=100?Math.round(p.gross):p.gross.toFixed(1)}%</b> fees sampled · ≈${netSlice}% after fees</div>
-      ${bandCard(p.id)}
-    </button>`;
+      <div class="pv">${p.venue}${p.tvlM?` · $${p.tvlM}M TVL · fee ${p.feeLive}`:""}</div>
+      ${poolLine(p,k)}${bandCard(p)}</button>`;
   }).join("");
-  $$("#poolSeg .poolb").forEach(b=>b.addEventListener("click",()=>{
-    if(b.disabled) return;
-    selPool = b.dataset.pool;
-    renderPools(); riskUpd(false);
-  }));
+  $$("#poolSeg .poolb").forEach(b=>b.addEventListener("click",()=>{ if(b.disabled) return; selPool=b.dataset.pool; selAuto=false; renderPools(); riskUpd(false); gate(); }));
   poolHintUpd(locked);
 }
 function poolHintUpd(locked){
-  const id = locked ? pos.pool : selPool;
-  const p = POOLS.find(x=>x.id===id);
-  const net = poolNet(id);
-  const when = LIVE ? "sampled live "+new Date(LIVE.generatedAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : "sampled 2026-08-27";
-  let msg = `${p.name} on ${p.venue.split(" ·")[0]} — earns ≈${net.toFixed(0)}% on the working slice after all fees, ${when}. Staked in its Aerodrome gauge: earnings arrive as AERO incentives in lieu of trading fees.`;
-  if(net < liveBorrow()) msg += " ⚠ This pool currently earns less than the "+liveBorrow().toFixed(1)+"% borrow cost — at these rates the strategy loses money.";
-  else if(p.tag==="VOLATILE") msg += " ⚠ Volatile pair: impermanent loss makes realized returns run well below sampled fee rates.";
-  if(locked) msg = `Locked for this position: ${p.name}. Withdraw and redeposit to change pools.`;
-  $("#poolHint").textContent = msg;
+  const k = locked ? pos.setting : settingOf(selLtv).k;
+  const p = poolById(locked ? pos.pool : selPool);
+  const when = LIVE ? "live "+new Date(LIVE.generatedAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : "sampled "+SAMPLE.at;
+  let msg;
+  if(p.kind!=="LP") msg = `Lending only: your ZEC earns Rhea's supply rate (${supply().toFixed(2)}%, ${when}) and nothing is borrowed. Greyed pools are the ones the model says would lose money at this setting — hover a card for the exact numbers.`;
+  else { const m=modelRow(p,k); msg = `${p.name}: AERO emissions at a ±${m.w}% range ≈${emisGross(p,k).toFixed(1)}%/yr gross, impermanent loss &amp; rebalancing ≈${m.drag.toFixed(0)}%/yr (modeled at ${p.volPct}% realized vol), ${when}. Staked in its gauge — earnings are emissions, never trading fees.`; }
+  if(locked) msg = `Locked for this position: ${p.name}. Withdraw and redeposit to change.`;
+  $("#poolHint").innerHTML = msg;
 }
 function qrSvg(seed){
   let h=0;for(const ch of seed)h=(h*31+ch.charCodeAt(0))>>>0;
@@ -829,7 +964,7 @@ function qrSvg(seed){
 }
 $("#startBtn").addEventListener("click",()=>{
   const a=+$("#amt").value;
-  pos.home=$("#homeAddr").value.trim();
+  if(!pos.active) pos.home=$("#homeAddr").value.trim();
   $("#depAmt").textContent=a+" ZEC";
   $("#qrBox").innerHTML=qrSvg("oilskin"+a);
   $("#depIntro").style.display="block";$("#depProg").style.display="none";
@@ -837,160 +972,328 @@ $("#startBtn").addEventListener("click",()=>{
   $("#depOverlay").classList.add("on");
 });
 $("#copyBtn").addEventListener("click",()=>{toast("Address copied — fresh for this deposit only");});
+let depFail = null; // tester's kit can arm a bridge failure for the next deposit
 $("#sentBtn").addEventListener("click",()=>{
   const a=+$("#amt").value;
+  const k = pos.active ? pos.setting : settingOf(selLtv).k, st=Object.values(SETTINGS).find(s=>s.k===k);
+  const p = poolById(pos.active ? pos.pool : selPool);
   $("#depIntro").style.display="none";$("#depProg").style.display="block";
   $("#depTitle").textContent="Putting your ZEC to work";
-  const steps=[
-    {t:"ZEC received",d:"Confirmed on Zcash",tx:[mkTx("zcash")]},
-    {t:"Working as collateral",d:`Supplied on Rhea (NEAR) · ${Math.round((pos.active?pos.ltv:selLtv)*100)}% borrowed as USDC`,tx:[mkTx("near")]},
-    {t:"Earning",d:`Deployed to ${POOLS.find(p=>p.id===(pos.active?pos.pool:selPool)).name} on Base · staked in its Aerodrome gauge`,tx:[mkTx("base")]},
-    {t:"Done — protected and earning",d:"Auto-compounding from here",tx:[]}];
-  $("#depNote")?.remove();
+  const steps = p.kind==="LP" ? [
+    {t:"ZEC received",d:"Confirmed on Zcash · handed to NEAR Intents",tx:[mkTx("zcash")]},
+    {t:"Working as collateral",d:`Supplied on Rhea (NEAR) · ${Math.round(st.ltv*100)}% borrowed as USDC`,tx:[mkTx("near")]},
+    {t:"Earning",d:`Deployed to ${p.name} on Base at ±${p.corr?st.wCorr:st.wVol}% · staked in its Aerodrome gauge`,tx:[mkTx("base")]},
+    {t:"Done — protected and earning",d:"Auto-compounding from here",tx:[]}]
+  : [
+    {t:"ZEC received",d:"Confirmed on Zcash · handed to NEAR Intents",tx:[mkTx("zcash")]},
+    {t:"Lending on Rhea",d:"Supplied on Rhea (NEAR) · nothing borrowed",tx:[mkTx("near")]},
+    {t:"Done",d:"Earning the ZEC supply rate — withdraw any time",tx:[]}];
   $("#depSteps").innerHTML=steps.map((s,i)=>`<div class="bstep" data-i="${i}"><div class="bic">${i+1}</div><div style="flex:1"><div class="bt">${s.t}</div><div class="bd">${s.d}</div><div class="btx" style="display:flex;gap:6px;flex-wrap:wrap"></div></div></div>`).join("")
     + `<div id="depNote" class="tiny faint" style="margin-top:8px">Each step turns green only when its transaction is confirmed on-chain — never on a timer. (Demo simulates the timing.)</div>`;
   let i=0;
   const tick=()=>{const rows=$$("#depSteps .bstep");
     if(i>0){const r=rows[i-1];r.classList.remove("doing");r.classList.add("done");r.querySelector(".bic").textContent="✓";
       r.querySelector(".btx").innerHTML=(steps[i-1].tx||[]).map(txLink).join("");}
+    if(depFail && i===1){ // armed bridge failure: refund instead of continuing
+      depFail=null; const r=rows[0]; r.classList.remove("done"); r.classList.add("fail"); r.querySelector(".bic").textContent="✕";
+      r.querySelector(".bt").textContent="Transfer failed — refunded"; r.querySelector(".bd").textContent=`NEAR Intents could not complete the transfer; ${a} ZEC auto-returned to ${pos.home.slice(0,5)}…${pos.home.slice(-4)}. Nothing was deposited.`;
+      logAct("Deposit refunded",`${a} ZEC returned to your address — bridge transfer failed (NEAR Intents auto-refund). Nothing was deposited.`,"↩","c-warn",mkTx("zcash"));
+      $("#depDone").textContent="Back"; $("#depDone").style.display="block"; return; }
     if(i<rows.length){rows[i].classList.add("doing");i++;setTimeout(tick,i===1?1200:1400);}
-    else{$("#depDone").style.display="block";
-      openPosition(a,steps);
-    }};
+    else{$("#depDone").textContent="See my position →";$("#depDone").style.display="block"; openPosition(a,steps,p,st);}};
   tick();
 });
-function openPosition(a,steps){
-  if(pos.active){pos.zec+=a;}else{pos.active=true;pos.zec=a;pos.earnedZec=0;pos.openedAt=Date.now();pos.ltv=selLtv;pos.pool=selPool;}
-  activity.unshift({t:"Deposited",d:`${a} ZEC → working (collateral on Rhea, earning on Base)`,ic:"＋",when:"just now",tx:steps[0].tx[0]});
-  renderActivity();renderPos();
+function openPosition(a,steps,p,st){
+  const px=S.zec;
+  if(pos.active){ pos.zec+=a; if(pos.kind==="LP"){ const b=a*px*pos.ltv; pos.debtUsd+=b; pos.lpUsd+=b; } }
+  else{ Object.assign(pos,{active:true, kind:p.kind, zec:a, openedAt:Date.now(), ltv:st.ltv, setting:st.k, pool:p.id, debtUsd:0, lpUsd:0, idleUsd:0, claimUsd:0, grossUsd:0, range:"in", outSince:0, rebalances:0, ladder:0, lastTick:Date.now()});
+    if(p.kind==="LP"){ pos.debtUsd=a*px*st.ltv; pos.lpUsd=pos.debtUsd; } }
+  logAct("Deposited",`${a} ZEC → ${p.kind==="LP"?`working (collateral on Rhea, ${usd(a*px*st.ltv)} USDC borrowed, earning in ${p.name})`:"lending on Rhea (nothing borrowed)"}`,"＋","c-good",steps[0].tx[0]);
+  save(); renderPos();
 }
 $("#depDone").addEventListener("click",()=>{$("#depOverlay").classList.remove("on");renderPos();});
-$("#demoBtn").addEventListener("click",()=>{
-  pos.active=true;pos.zec=12;pos.earnedZec=0.128;pos.home="t1Py8kAoQrfmRRWTbtHkDkGb6JuaXPmpGxy";pos.openedAt=Date.now()-86400000*18;pos.ltv=0.30;pos.pool="aweth";
-  activity.length=0;
-  activity.push(
-    {t:"Auto-compounded",d:"0.041 ZEC of earnings put back to work",ic:"↻",when:"6h ago",tx:mkTx("base")},
-    {t:"Rebalanced",d:"WETH/USDC re-centered — no action needed from you",ic:"⇄",when:"2d ago",tx:mkTx("base")},
-    {t:"Auto-compounded",d:"0.087 ZEC of earnings put back to work",ic:"↻",when:"9d ago",tx:mkTx("base")},
-    {t:"Deposited",d:"12 ZEC → working (collateral on Rhea, earning on Base)",ic:"＋",when:"18d ago",tx:mkTx("zcash")});
-  renderActivity();renderPos();toast("Example position loaded — everything is demo data");
-});
+function loadExample(){
+  const days=18, px=S.base, p=poolById("acbbtc"), st=SETTINGS[30];
+  const debt0=12*px*st.ltv;
+  Object.assign(pos,{active:true, kind:"LP", zec:12, home:EXAMPLE_ADDR, openedAt:Date.now()-86400000*days, ltv:st.ltv, setting:st.k, pool:p.id,
+    debtUsd:debt0*(1+SAMPLE.borrowPct/100*days/365), lpUsd:debt0*(1+(modelRow(p,"sheltered").drag/100)*days/365)*(1-0.0088), idleUsd:debt0*0.0088,
+    claimUsd:debt0*(modelRow(p,"sheltered").emis/100)*NET_FEE*days/365*0.35, grossUsd:debt0*(modelRow(p,"sheltered").emis/100)*days/365*0.35, range:"in", outSince:0, rebalances:1, ladder:0, lastTick:Date.now()});
+  const T=Date.now(), D=86400000;
+  activity=[];
+  activity.push({t:"Auto-compounded",d:`${usd(debt0*0.0028)} of AERO emissions swapped and put back to work · cbBTC/USDC`,ic:"↻",cls:"c-good",ts:T-6*3600000,tx:mkTx("base")});
+  activity.push({t:"Rebalanced",d:"cbBTC/USDC re-centered at ±25% after 48h out of range — no action needed from you",ic:"⇄",cls:"c-info",ts:T-2*D,tx:mkTx("base")});
+  activity.push({t:"Auto-compounded",d:`${usd(debt0*0.0031)} of AERO emissions swapped and put back to work · cbBTC/USDC`,ic:"↻",cls:"c-good",ts:T-9*D,tx:mkTx("base")});
+  activity.push({t:"Engine refund kept",d:`${usd(debt0*0.0088)} the engine could not fit the pool ratio came back in the deposit transaction — booked idle in your position, redeployed at the next compound`,ic:"↩",cls:"c-mute",ts:T-days*D+60000,tx:mkTx("base")});
+  activity.push({t:"Deposited",d:`12 ZEC → working (collateral on Rhea, ${usd(debt0)} USDC borrowed, earning in cbBTC/USDC)`,ic:"＋",cls:"c-good",ts:T-days*D,tx:mkTx("zcash")});
+  save();
+}
+$("#demoBtn").addEventListener("click",()=>{loadExample();renderPos();toast("Example position loaded — everything is demo data");});
+$("#findBtn").addEventListener("click",()=>{ const r=find($("#findAddr").value); const h=$("#findHint"); h.textContent=r.msg; h.style.color=r.ok?"var(--good)":"var(--warn)"; if(r.ok){ renderPos(); toast("Position found — read-only until you prove the address is yours (production)"); } });
+$("#findAddr").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#findBtn").click(); });
+$("#forgetBtn").addEventListener("click",()=>{ clearSaved(); const h=pos.home; Object.assign(pos,{active:false,zec:0,debtUsd:0,lpUsd:0,idleUsd:0,claimUsd:0,grossUsd:0}); activity=[]; renderActivity(); renderPos(); toast(`Forgot this device — find it again any time with ${h.slice(0,5)}…${h.slice(-4)}`); });
 
-/* position render + protection meter */
+/* ── Dashboard ──────────────────────────────────────────────────────── */
+const netValue = () => pos.zec*S.zec + pos.lpUsd + pos.idleUsd + pos.claimUsd - pos.debtUsd;
+const hf = () => pos.debtUsd>0 ? pos.zec*S.zec*LIQ_T/pos.debtUsd : Infinity;
+function hfMeta(h){ if(!isFinite(h)) return {cls:"c-mute",label:"No debt"}; if(h>=1.7) return {cls:"c-good",label:"Healthy"}; if(h>=1.5) return {cls:"c-good",label:"Comfortable"}; if(h>=1.2) return {cls:"c-warn",label:"Caution"}; return {cls:"c-crit",label:"At risk"}; }
 function renderPos(){
   const on=pos.active;
   $("#hero").style.display=on?"none":"block";
   $("#posWrap").style.display=on?"block":"none";
-  if(!on){syncRiskLock();return;} // fresh hero → selector unlocked
-  const totZec=pos.zec+pos.earnedZec, v=totZec*S.zec;
-  $("#pZec").textContent=totZec.toFixed(1);
-  $("#pUsd").textContent="("+usd(v)+")";
-  $("#pEarned").textContent="+"+pos.earnedZec.toFixed(3)+" ZEC earned";
-  $("#pEarnedUsd").textContent=usd(pos.earnedZec*S.zec);
-  const pBand = poolBand(pos.pool, pos.ltv);
-  $("#pApy").textContent = pBand ? pBand.p25.toFixed(1)+"–"+pBand.p75.toFixed(1)+"%" : apyFor(pos.ltv).toFixed(1)+"%";
-  const borrow=pos.zec*S.zec*pos.ltv;
-  $("#dColl").textContent=totZec.toFixed(1)+" ZEC · "+usd(v);
-  $("#dBorrow").textContent=usd(borrow)+" USDC";
-  $("#dLtv").textContent=Math.round(pos.ltv*100)+"%";
-  { const p=POOLS.find(x=>x.id===pos.pool);
-    $("#dPools").innerHTML = `<span class="k">Working in ${p.name} <span class="faint tiny">(${p.venue.split(" ·")[0]} · staked for AERO)</span></span><span class="v num">${usd(borrow)}</span>`; }
+  $("#earnWrap").classList.toggle("wide",on);
+  if(!on){syncRiskLock();gate();return;}
+  const p=poolById(pos.pool), band = poolBand(p,pos.ltv), apy = band ? band.p50 : userNet(p,pos.setting);
+  $("#stTotal").textContent=usd(netValue());
+  $("#stZec").textContent=pos.zec.toLocaleString(undefined,{maximumFractionDigits:2});
+  $("#stApy").textContent = band ? band.p25.toFixed(1)+"–"+band.p75.toFixed(1)+"%" : pct(apy);
+  $("#stApy").style.color = apy < 0 ? "var(--warn)" : "var(--good)";
+  $("#stApySub").textContent = band ? `realized, ${band.n} positions, 30d` : (pos.kind==="LP" ? "modeled, after all fees & IL" : "ZEC supply rate, nothing borrowed");
+  $("#stColl").textContent=pos.zec.toLocaleString(undefined,{maximumFractionDigits:2});
+  $("#stCollUsd").textContent=`${usd(pos.zec*S.zec)} · supply APR ${supply().toFixed(2)}%`;
+  $("#stClaim").textContent=usd(pos.claimUsd);
+  $("#claimBtn").disabled = pos.claimUsd<0.01;
   $("#homeShort").textContent=pos.home?pos.home.slice(0,5)+"…"+pos.home.slice(-4):"—";
-  // protection meter: liquidation price vs now, on a runway
-  const liq=(pos.zec*S.zec*pos.ltv)/(LIQ_T*pos.zec); // = S.zec*ltv/LIQ_T
-  const lo=liq*0.55, hi=Math.max(S.zec*1.15, liq*2.4);
-  const X=p=>Math.min(97,Math.max(3,((p-lo)/(hi-lo))*100));
-  $("#mFill").style.width=X(S.zec)+"%";
-  $("#mTick").style.left=X(liq)+"%";$("#mTickL").style.left=X(liq)+"%";$("#mTickS").style.left=X(liq)+"%";
-  $("#mTickS").textContent=usd(liq);
-  $("#mNow").style.left=X(S.zec)+"%";$("#mNowL").style.left=X(S.zec)+"%";$("#mNowS").style.left=X(S.zec)+"%";
-  $("#mNowS").textContent=usd(S.zec);
-  const dropPct=Math.round((1-liq/S.zec)*100);
-  $("#protPct").textContent=dropPct+"%";
-  const chip=$("#protChip");
-  if(dropPct>=20){chip.className="chip c-good";chip.innerHTML='<svg class="ic"><use href="#i-shield"/></svg>Protected';}
-  else if(dropPct>=10){chip.className="chip c-warn";chip.innerHTML="⚠ De-risking";}
-  else{chip.className="chip c-warn";chip.innerHTML="⚠ Unwinding to safety";}
+  renderHealth(); renderCard(); renderActivity();
+  $("#stFresh").textContent=$("#posFresh").textContent="updated just now";
 }
-
-/* withdraw — always home, loan repaid automatically */
-$("#wdBtn").addEventListener("click",()=>{$("#wdSlider").value=100;wdUpd();$("#wdOverlay").classList.add("on");});
-$("#addBtn").addEventListener("click",()=>{
-  pos.active=true; // keep position; prefill deposit form for top-up
-  $("#hero").style.display="block";$("#posWrap").style.display="none";
-  $("#homeAddr").value=pos.home;$("#homeAddr").dispatchEvent(new Event("input"));
-  $("#amt").value="";                 // start blank so the room-left hint reads cleanly
-  syncRiskLock();                     // lock the risk selector to this position
-  gate();
-  toast(`Top-ups keep your ${Math.round(pos.ltv*100)}% setting, pool and locked address`);
-  window.scrollTo({top:0});
-});
-function wdUpd(){
-  const p=+$("#wdSlider").value;$("#wdPct").textContent=p+"%";
-  const totZec=(pos.zec+pos.earnedZec)*p/100;
-  $("#wdEst").textContent=`≈ ${totZec.toFixed(2)} ZEC (${usd(totZec*S.zec)}) home to ${pos.home?pos.home.slice(0,5)+"…"+pos.home.slice(-4):"your address"}`;
-}
-$("#wdSlider").addEventListener("input",wdUpd);
-$("#wdConfirm").addEventListener("click",()=>{
-  const p=+$("#wdSlider").value, totZec=(pos.zec+pos.earnedZec)*p/100;
-  $("#wdOverlay").classList.remove("on");
-  activity.unshift({t:"Withdrawn",d:`${totZec.toFixed(2)} ZEC → your wallet (loan share repaid automatically)`,ic:"⌂",when:"just now",tx:mkTx("zcash")});
-  if(p>=100){pos.active=false;pos.zec=0;pos.earnedZec=0;}
-  else{const k=1-p/100;pos.zec*=k;pos.earnedZec*=k;}
-  renderActivity();renderPos();
-  toast(`${totZec.toFixed(2)} ZEC on its way home — shield it on arrival`);
-});
-$$("[data-close]").forEach(b=>b.addEventListener("click",()=>b.closest(".overlay").classList.remove("on")));
-
-/* activity */
-function renderActivity(){
-  $("#actList").innerHTML=activity.length?activity.map(a=>`<div class="act">
-    <div class="act-ic">${a.ic}</div>
-    <div><b>${a.t}</b><div class="muted small">${a.d}</div>${a.tx?txLink(a.tx):""}<time>${a.when}</time></div></div>`).join("")
-    :'<div class="muted small">Nothing yet — your deposits, earnings and withdrawals will appear here, each with its transaction id.</div>';
-}
-
-/* gentle price jitter + earning trickle */
-setInterval(()=>{
-  const d=(Math.random()-0.48)*1.4;S.zec=Math.max(50,S.zec+d);
-  $("#px").textContent=usd(S.zec);
-  if(pos.active){pos.earnedZec+=pos.zec*(apyFor(pos.ltv)/100)/365/86400*12; renderPos();}
-},12000);
-
-/* tester's kit */
-$("#tkBtn").addEventListener("click",()=>$("#tkOverlay").classList.add("on"));
-$$("#tkOverlay [data-fill]").forEach(b=>b.addEventListener("click",()=>{
-  $("#tkOverlay").classList.remove("on"); // always close the panel first
-  if(pos.active){ // top-up mode reuses the locked home address — nothing to fill
-    toast("Home address is locked while topping up — withdraw fully to test address inputs");
+function renderHealth(){
+  const track=$("#bandTrack"), band=$("#band");
+  $$(".band-tick,.band-zonelbl",band).forEach(e=>e.remove());
+  const D=pos.debtUsd, C=pos.zec, now=S.zec, chip=$("#hfChip");
+  const mk=(x,lbl,val,color)=>{const el=document.createElement("div");el.className="band-tick";el.style.left=x+"%";el.style.background=color;el.innerHTML=`<span class="tk-lbl" style="color:${color}">${lbl}</span><span class="tk-val num">${val}</span>`;band.appendChild(el);};
+  const zl=(x,txt)=>{const e=document.createElement("div");e.className="band-zonelbl";e.style.left=x+"%";e.textContent=txt;band.appendChild(e);};
+  if(D<=0){
+    track.innerHTML=`<div class="band-seg" style="flex:1;background:var(--good)"></div>`;
+    mk(50,"ZEC now",usd(now),"var(--ink)"); zl(1,"no debt — nothing can be liquidated");
+    chip.className="chip c-good"; chip.innerHTML=`<span class="dot"></span>No debt · HF <span class="num" id="hfVal">∞</span>`;
+    $("#hfBorrowLine").innerHTML=`No borrow against your <b class="num">${C.toLocaleString(undefined,{maximumFractionDigits:2})} ZEC</b> collateral`;
+    $("#hfLiqLine").innerHTML=`Liquidation — none possible · ZEC now <b class="num">${usd(now)}</b>`;
+    $("#protLine").innerHTML=`Nothing is borrowed, so there is no liquidation line and no impermanent loss.`;
     return;
   }
+  const lp=D/(LIQ_T*C), h=hf(), m=hfMeta(h);
+  const lo=lp*0.72, hi=Math.max(now*1.18, lp*2.05);
+  const X=q=>Math.max(0,Math.min(100,((q-lo)/(hi-lo))*100));
+  const p12=lp*1.2, p15=lp*1.5;
+  track.innerHTML=[`<div class="band-seg" style="width:${X(p12)}%;background:var(--crit)"></div>`,`<div class="band-seg" style="width:${X(p15)-X(p12)}%;background:var(--warn)"></div>`,`<div class="band-seg" style="flex:1;background:var(--good)"></div>`].join("");
+  mk(X(lp),"Liquidation",usd(lp),"var(--crit)"); mk(X(now),"ZEC now",usd(now),"var(--ink)");
+  zl(1,"at risk"); zl(X(p12)+1,"caution"); zl(X(p15)+1,"healthy");
+  chip.className="chip "+m.cls; chip.innerHTML=`<span class="dot"></span>${m.label} · HF <span class="num" id="hfVal">${h.toFixed(2)}</span>`;
+  $("#hfBorrowLine").innerHTML=`Borrowed <b class="num">${usd(D)} USDC</b> against <b class="num">${C.toLocaleString(undefined,{maximumFractionDigits:2})} ZEC</b> (${usd(C*now)}) · ${(D/(C*now)*100).toFixed(1)}% LTV`;
+  $("#hfLiqLine").innerHTML=`Liquidation at <b class="num" style="color:var(--crit)">${usd(lp)}</b> · ZEC now <b class="num">${usd(now)}</b>`;
+  const drop=Math.round((1-lp/now)*100);
+  $("#protLine").innerHTML = drop>0
+    ? `ZEC would have to fall <b class="num">${drop}%</b> before liquidation is possible — earnings repay the loan first, long before that line. <button class="btn-quiet tiny" data-goto="faq-crash">how the protection works →</button>`
+    : `<span class="crit">Below the liquidation line — the ladder has unwound the working position; collateral may be partially liquidated by Rhea.</span>`;
+}
+function renderCard(){
+  const L=$("#posList"); L.innerHTML="";
+  const p=poolById(pos.pool), st=Object.values(SETTINGS).find(s=>s.k===pos.setting);
+  const el=document.createElement("div"); el.className="card pos open"; el.dataset.id="1";
+  let head, body;
+  if(pos.kind==="LEND"){
+    head=`${coins2(["zec"])}<div class="pos-title"><div class="t">ZEC on Rhea <span class="chip c-mute">Lending only</span><span class="chip c-good"><span class="dot"></span>No loan</span></div><div class="s">Simple lending · NEAR · opened ${ago(pos.openedAt)}</div></div>
+      <div class="pos-nums"><div class="pos-num"><div class="lbl">Deposited</div><div class="v num">${pos.zec.toLocaleString(undefined,{maximumFractionDigits:2})} ZEC</div></div><div class="pos-num"><div class="lbl">Supply APR</div><div class="v num good">${supply().toFixed(2)}%</div></div></div><span class="caret">▾</span>`;
+    body=`<div class="small muted" style="max-width:560px">Your ZEC is supplied on Rhea and earns its supply rate in-protocol — nothing to compound, nothing borrowed, no impermanent loss and no liquidation line. Add a pool later by withdrawing and redepositing at a setting that qualifies.</div>
+      <div class="pos-actions"><button class="btn btn-ghost btn-sm" data-act="add">Add ZEC</button><button class="btn btn-ghost btn-sm" data-act="withdraw">Withdraw</button></div>`;
+  } else {
+    const m=modelRow(p,pos.setting), ok=qualifies(p,pos.setting), band=poolBand(p,pos.ltv), un=band?band.p50:userNet(p,pos.setting);
+    const inR=pos.range==="in";
+    const feeE=pos.grossUsd*0.15, feeP=(pos.grossUsd-feeE)*0.10;
+    const outH = inR?0:Math.max(0,(Date.now()-pos.outSince)/3600000);
+    head=`${coins2(p.c)}<div class="pos-title"><div class="t">${p.name} <span class="chip c-mute">Aerodrome</span>${inR?`<span class="chip c-good"><span class="dot"></span>In range</span>`:`<span class="chip c-warn"><span class="dot"></span>Out of range ${outH<1?"<1h":Math.round(outH)+"h"} · re-centers after ${m.delay}h</span>`}<span class="chip c-mute">Auto-compound</span><span class="chip c-brass">${st.label} · ±${m.w}%</span></div><div class="s">staked in gauge · opened ${ago(pos.openedAt)}</div></div>
+      <div class="pos-nums"><div class="pos-num"><div class="lbl">Working</div><div class="v num">${usd(pos.lpUsd+pos.idleUsd)}</div></div><div class="pos-num"><div class="lbl">Net yield</div><div class="v num ${un<0?"warn":"good"}">${band?band.p25.toFixed(1)+"–"+band.p75.toFixed(1)+"%":pct(un)}</div></div><div class="pos-num"><div class="lbl">Claimable</div><div class="v num">${usd(pos.claimUsd)}</div></div></div><span class="caret">▾</span>`;
+    const lo=100-m.w, hi=100+m.w, cur = inR ? 100+(Math.random()*0.6-0.3)*m.w : (Math.random()<0.5?lo-m.w*0.3:hi+m.w*0.3);
+    const span=(hi-lo)*2.2, left=lo-(hi-lo)*0.6, X=v=>Math.max(1,Math.min(99,(v-left)/span*100));
+    body=`<div style="display:flex;gap:34px;flex-wrap:wrap">
+        <div class="ybreak" style="flex:1;min-width:260px">
+          <span class="r">AERO emissions earned (staked in gauge)</span><span class="v num">${usd(pos.grossUsd)}</span>
+          <span class="r">Engine performance fee (15%)</span><span class="v num faint">−${usd(feeE)}</span>
+          <span class="r">Oilskin fee (10% of the rest)</span><span class="v num faint">−${usd(feeP)}</span>
+          <span class="r net">Net claimable</span><span class="v num net">${usd(pos.claimUsd)}</span>
+        </div>
+        <div class="small muted" style="flex:1;min-width:240px">
+          <div><b>${st.label} · ${st.preset} preset</b></div>
+          <div class="num" style="margin-top:4px">±${m.w}% range · re-centers after ${m.delay}h out of range · in range ~${Math.round(m.tir*100)}% of the time · ~${m.rebal<10?m.rebal.toFixed(1):Math.round(m.rebal)} rebalances/yr (modeled)</div>
+          <div class="rangebar${inR?"":" out"}"><span class="rng" style="left:${X(lo)}%;right:${100-X(hi)}%"></span><span class="cur" style="left:${X(cur)}%"></span></div>
+          <div class="tiny faint num">range ${(lo).toFixed(1)}%–${(hi).toFixed(1)}% of entry price · ${pos.rebalances} rebalance${pos.rebalances===1?"":"s"} so far</div>
+          <div style="margin-top:7px">Backed by <b class="num">${pos.zec.toLocaleString(undefined,{maximumFractionDigits:2})} ZEC</b> collateral · borrowed <b class="num">${usd(pos.debtUsd)} USDC</b> (accruing ${borrow().toFixed(2)}%)</div>
+          ${pos.idleUsd>0.005?`<div style="margin-top:5px">Idle in your position: <b class="num">${usd(pos.idleUsd)}</b> — engine refunds, redeployed at the next compound.</div>`:""}
+          <div style="margin-top:5px">Emissions ≈${emisGross(p,pos.setting).toFixed(1)}%/yr gross at this width · IL &amp; rebalancing ≈${m.drag.toFixed(0)}%/yr (modeled at ${p.volPct}% vol) — trading fees go to veAERO voters while staked.</div>
+          ${ok?"":`<div class="warn" style="margin-top:6px">At today's rates this pool no longer clears the borrow cost — Oilskin would not open it now. Consider withdrawing to lending-only; the protection ladder keeps running either way.</div>`}
+        </div>
+      </div>
+      <div class="pos-actions">
+        <button class="btn btn-cta btn-sm" data-act="compound" ${pos.claimUsd+pos.idleUsd<0.01?"disabled":""} title="Swaps accrued AERO into the pool's tokens and re-deposits them, plus any idle refund. Restarts the engine's 60s hold.">Compound now</button>
+        <button class="btn btn-ghost btn-sm" data-act="claim" ${pos.claimUsd<0.01?"disabled":""} title="Sends accrued AERO home as native ZEC to your locked address.">Claim to wallet</button>
+        <button class="btn btn-ghost btn-sm" data-act="add">Add ZEC</button>
+        <button class="btn btn-ghost btn-sm" data-act="withdraw">Withdraw</button>
+      </div>`;
+  }
+  el.innerHTML=`<div class="pos-head">${head}</div><div class="pos-body">${body}</div>`;
+  $(".pos-head",el).addEventListener("click",e=>{ if(e.target.closest("[data-act]")) return; el.classList.toggle("open"); });
+  $$("[data-act]",el).forEach(b=>b.addEventListener("click",e=>{e.stopPropagation();act(b.dataset.act);}));
+  bindTips(el); L.appendChild(el);
+}
+function act(a){
+  if(a==="withdraw"){ $("#wdSlider").value=100; wdUpd(); $("#wdOverlay").classList.add("on"); }
+  if(a==="add"){ $("#hero").style.display="block";$("#posWrap").style.display="none";$("#earnWrap").classList.remove("wide");
+    $("#homeAddr").value=pos.home;$("#homeAddr").dispatchEvent(new Event("input"));$("#amt").value="";
+    syncRiskLock(); gate(); toast(`Top-ups keep your ${settingOf(pos.ltv).label} setting, pool and locked address`); window.scrollTo({top:0}); }
+  if(a==="compound") compound(false);
+  if(a==="claim") claim();
+}
+function compound(auto){
+  const amt=pos.claimUsd+pos.idleUsd; if(amt<0.01) return false;
+  pos.lpUsd+=amt; pos.claimUsd=0; pos.idleUsd=0; pos.grossUsd=0;
+  logAct(auto?"Auto-compounded":"Compounded",`${usd(amt)} of AERO emissions${pos.idleUsd>0?" + idle refund":""} swapped and re-deposited · ${poolById(pos.pool).name}`,"↻","c-good",mkTx("base"));
+  save(); renderPos(); if(!auto) toast(`↻ Compounded ${usd(amt)} back into ${poolById(pos.pool).name} — 60s hold restarted`); return true;
+}
+function claim(){
+  const amt=pos.claimUsd; if(amt<0.01) return false;
+  pos.claimUsd=0; pos.grossUsd=0;
+  logAct("Rewards routed home",`${usd(amt)} of AERO → ${(amt/S.zec).toFixed(4)} ZEC to ${pos.home.slice(0,5)}…${pos.home.slice(-4)} · quote hash emitted on Base`,"⚡","c-brass",mkTx("zcash"));
+  save(); renderPos(); toast(`${usd(amt)} on its way home as ZEC — shield it on arrival`); return true;
+}
+$("#claimBtn").addEventListener("click",claim);
+$("#wdSlider").addEventListener("input",wdUpd);
+function wdUpd(){
+  const q=+$("#wdSlider").value;$("#wdPct").textContent=q+"%";
+  const outZec=Math.max(0,netValue()*q/100/S.zec);
+  $("#wdEst").textContent=`≈ ${outZec.toFixed(3)} ZEC (${usd(outZec*S.zec)}) home to ${pos.home?pos.home.slice(0,5)+"…"+pos.home.slice(-4):"your address"}${pos.debtUsd>0?` · repays ${usd(pos.debtUsd*q/100)} of the loan`:""}`;
+}
+let wdFailNext=false;
+function withdraw(q){
+  const outZec=Math.max(0,netValue()*q/100/S.zec);
+  if(wdFailNext){ wdFailNext=false; logAct("Withdrawal failed — retrying",`Base transaction reverted (RPC timeout before inclusion) — nothing moved; the agent retries automatically`,"!","c-crit",mkTx("base")); toast("Withdrawal transaction failed — retrying automatically"); setTimeout(()=>{ withdraw(q); toast("Retry confirmed"); },2500); return {retry:true}; }
+  const k=1-q/100;
+  logAct("Withdrawn",`${outZec.toFixed(3)} ZEC → ${pos.home.slice(0,5)}…${pos.home.slice(-4)}${pos.debtUsd>0?` (${usd(pos.debtUsd*q/100)} of the loan repaid automatically)`:""}`,"⌂","c-brass",mkTx("zcash"));
+  if(q>=100){ Object.assign(pos,{active:false,zec:0,debtUsd:0,lpUsd:0,idleUsd:0,claimUsd:0,grossUsd:0}); }
+  else { pos.zec*=k; pos.debtUsd*=k; pos.lpUsd*=k; pos.idleUsd*=k; pos.claimUsd*=k; pos.grossUsd*=k; }
+  save(); renderPos(); return {outZec};
+}
+$("#wdConfirm").addEventListener("click",()=>{ const q=+$("#wdSlider").value; $("#wdOverlay").classList.remove("on"); const r=withdraw(q); if(!r.retry) toast(`${r.outZec.toFixed(3)} ZEC on its way home — shield it on arrival`); });
+$$("[data-close]").forEach(b=>b.addEventListener("click",()=>b.closest(".overlay").classList.remove("on")));
+
+/* activity — full page + dashboard side box */
+function actHtml(a){ return `<div class="act"><div class="act-ic ${a.cls||""}">${a.ic}</div><div><b>${a.t}</b><div class="muted small">${a.d}</div>${a.tx?txLink(a.tx):""}<time>${ago(a.ts)}</time></div></div>`; }
+function renderActivity(){
+  const empty='<div class="muted small">Nothing yet — your deposits, earnings and withdrawals will appear here, each with its transaction id.</div>';
+  $("#actList").innerHTML=activity.length?activity.map(actHtml).join(""):empty;
+  $("#actListSide").innerHTML=activity.length?activity.slice(0,6).map(actHtml).join(""):empty;
+}
+
+/* ── Protection ladder + accrual (every 12s; simulations call it directly) ── */
+function ladder(){
+  if(!pos.active||pos.kind!=="LP"||pos.debtUsd<=0) return;
+  const h=hf();
+  if(h>1.5){ if(pos.ladder>0||pos.warned){ pos.ladder=0; pos.warned=false; logAct("Health restored",`HF back to ${h.toFixed(2)} — ladder reset`,"♥","c-good"); } return; }
+  if(!pos.warned){ pos.warned=true; logAct("Health warning",`HF ${h.toFixed(2)} ≤ 1.5 — watching closely; earnings repay the loan first at 1.35`,"♥","c-warn"); }
+  if(h<=1.35 && pos.ladder<1){ pos.ladder=1; const r=Math.min(pos.claimUsd+pos.idleUsd,pos.debtUsd); if(r>0.01){ pos.debtUsd-=r; pos.claimUsd=0; pos.idleUsd=0; pos.grossUsd=0; } logAct("Protection · earnings repaid the loan",`HF ${h.toFixed(2)} ≤ 1.35 — ${usd(r)} of accrued rewards repaid debt on Rhea`,"1","c-warn",mkTx("near")); }
+  if(hf()<=1.2 && pos.ladder<2){ pos.ladder=2; const part=pos.lpUsd*0.4; pos.lpUsd-=part; pos.debtUsd=Math.max(0,pos.debtUsd-part); logAct("Protection · partial unwind",`HF ${hf().toFixed(2)} ≤ 1.2 — ${usd(part)} of the working position unwound and repaid`,"2","c-warn",mkTx("base")); }
+  if(hf()<=1.05 && pos.ladder<3){ pos.ladder=3; const all=pos.lpUsd+pos.idleUsd; const rep=Math.min(all,pos.debtUsd); pos.lpUsd=0; pos.idleUsd=Math.max(0,all-rep); pos.debtUsd-=rep; logAct("Protection · full unwind",`HF ≤ 1.05 — working position fully unwound (${usd(all)}), ${usd(rep)} repaid; your ZEC sits as plain collateral${pos.debtUsd>0?` with ${usd(pos.debtUsd)} residual debt`:""}`,"3","c-crit",mkTx("base")); }
+}
+function tickAccrue(now){
+  if(!pos.active) return;
+  const dt=Math.max(0,(now-(pos.lastTick||now))/1000/86400/365); pos.lastTick=now;
+  if(pos.kind==="LP"){
+    const p=poolById(pos.pool), m=modelRow(p,pos.setting);
+    if(pos.range==="in"){ const g=pos.lpUsd*emisGross(p,pos.setting)/100*dt*12*3600; /* demo runs 43,200× real time so movement is visible */ pos.grossUsd+=g; pos.claimUsd+=g*NET_FEE; }
+    pos.lpUsd*= (1+m.drag/100*dt*12*3600);
+    pos.debtUsd*=(1+borrow()/100*dt*12*3600);
+    if(pos.claimUsd+pos.idleUsd > pos.lpUsd*0.02) compound(true);   // auto-compound once it covers costs 3×
+  }
+  ladder();
+}
+setInterval(()=>{
+  const d=(Math.random()-0.48)*1.4; S.zec=Math.max(50,S.zec+d); $("#px").textContent=usd(S.zec);
+  tickAccrue(Date.now());
+  if(pos.active){ renderPos(); save(); } else { renderPools(); riskUpd(false); }
+},12000);
+
+/* ── Simulations (tester's kit) ─────────────────────────────────────── */
+function simulate(kind){
+  if(kind==="bridgeFail"){ if(pos.active&&$("#posWrap").style.display!=="none"){ logAct("Deposit refunded",`Top-up refunded — bridge transfer failed (NEAR Intents auto-refund to ${pos.home.slice(0,5)}…${pos.home.slice(-4)}). Position unchanged.`,"↩","c-warn",mkTx("zcash")); renderPos(); return "logged"; } depFail=true; return "armed: the next deposit fails at the bridge and refunds"; }
+  if(kind==="partialFill"){ if(!pos.active||pos.kind!=="LP") return "needs a pool position"; const r=pos.lpUsd*0.0088; pos.lpUsd-=r; pos.idleUsd+=r; logAct("Engine refund kept",`${usd(r)} the engine could not fit the pool ratio came back in the same transaction — booked idle in your position, redeployed at the next compound`,"↩","c-mute",mkTx("base")); save(); renderPos(); return "refund booked idle"; }
+  if(kind==="outOfRange"){ if(!pos.active||pos.kind!=="LP") return "needs a pool position"; const m=modelRow(poolById(pos.pool),pos.setting); pos.range="out"; pos.outSince=Date.now()-3600000*1.5; logAct("Price left range",`${poolById(pos.pool).name} moved outside ±${m.w}% — emissions pause; re-centers after ${m.delay}h out of range`,"⇄","c-warn"); save(); renderPos();
+    setTimeout(()=>{ if(!pos.active) return; pos.range="in"; pos.rebalances++; pos.lpUsd*=0.9995; logAct("Rebalanced",`${poolById(pos.pool).name} re-centered at ±${m.w}% — no action needed from you`,"⇄","c-info",mkTx("base")); save(); renderPos(); },6000); return "out of range; rebalances in 6s (demo)"; }
+  if(kind==="crash"){ S.zec=S.base*0.6; $("#px").textContent=usd(S.zec); ladder(); save(); renderPos(); return "ZEC −40%"; }
+  if(kind==="crash2"){ S.zec=S.base*0.35; $("#px").textContent=usd(S.zec); ladder(); save(); renderPos(); return "ZEC −65%"; }
+  if(kind==="recover"){ S.zec=S.base; $("#px").textContent=usd(S.zec); ladder(); save(); renderPos(); return "price restored"; }
+  if(kind==="txFail"){ if(!pos.active) return "needs a position"; wdFailNext=true; withdraw(10); return "10% withdrawal failed and retried"; }
+  if(kind==="compound"){ if(!pos.active||pos.kind!=="LP") return "needs a pool position"; if(pos.claimUsd+pos.idleUsd<0.01){ pos.grossUsd+=pos.lpUsd*0.004; pos.claimUsd+=pos.lpUsd*0.004*NET_FEE; } compound(false); return "compounded"; }
+  return "unknown";
+}
+
+/* ── Docs: the model table ──────────────────────────────────────────── */
+function renderModelTable(){
+  const rows=[`<tr><th>Pool</th><th>Setting</th><th>Range · delay</th><th>Emissions gross</th><th>after fees</th><th>IL &amp; rebal.</th><th>Net on slice</th><th>vs borrow ${borrow().toFixed(2)}%</th></tr>`];
+  for(const p of POOLS){ if(p.kind!=="LP") continue; for(const st of Object.values(SETTINGS)){ const m=modelRow(p,st.k), eg=emisGross(p,st.k), net=lpNet(p,st.k), ok=qualifies(p,st.k);
+    rows.push(`<tr><td><b>${p.name}</b></td><td>${st.label}</td><td class="num">±${m.w}% · ${m.delay}h</td><td class="num">${eg.toFixed(1)}%</td><td class="num">${(eg*NET_FEE).toFixed(1)}%</td><td class="num">${m.drag.toFixed(1)}%</td><td class="num"><b class="${ok?"good":"warn"}">${signed(net)}</b></td><td>${ok?'<span class="good">offered</span>':'<span class="warn">not offered</span>'}</td></tr>`); } }
+  $("#modelTable").innerHTML=rows.join("");
+}
+
+/* ── Live mode ──────────────────────────────────────────────────────── */
+async function tryLive(){
+  if(location.protocol==="https:") return; // hosted demo: browsers block localhost fetches from https
+  try{
+    const r = await fetch(YIELD_API+"/v1/pools",{signal:AbortSignal.timeout(2500)});
+    if(!r.ok) return;
+    LIVE = await r.json();
+    renderModelTable(); if(pos.active) renderPos(); else { syncRiskLock(); gate(); }
+    toast("Live data connected — current rates; bands from real engine history where backfilled");
+  }catch(e){ /* service not running — the static dated sample stands */ }
+}
+
+/* ── Tester's kit ───────────────────────────────────────────────────── */
+$("#tkBtn").addEventListener("click",()=>$("#tkOverlay").classList.add("on"));
+$$("#tkOverlay [data-fill]").forEach(b=>b.addEventListener("click",()=>{
+  $("#tkOverlay").classList.remove("on");
+  if(pos.active){ toast("Home address is locked while a position exists — withdraw fully to test address inputs"); return; }
   $("#homeAddr").value=b.dataset.fill;$("#homeAddr").dispatchEvent(new Event("input"));
   $("#homeAddr").scrollIntoView({block:"center",behavior:"smooth"});
 }));
 $$("#tkOverlay [data-amt]").forEach(b=>b.addEventListener("click",()=>{
   $("#tkOverlay").classList.remove("on");
+  if(pos.active){ act("add"); }
   $("#amt").value=b.dataset.amt;$("#amt").dispatchEvent(new Event("input"));
   $("#amt").scrollIntoView({block:"center",behavior:"smooth"});
 }));
+function setWhatIf(aero, brw){
+  if(aero!==undefined) WHATIF.aero=aero; if(brw!==undefined) WHATIF.borrow=brw;
+  $$("#whatifGrid [data-wi-aero]").forEach(b=>b.classList.toggle("on",+b.dataset.wiAero===WHATIF.aero));
+  $$("#whatifGrid [data-wi-borrow]").forEach(b=>b.classList.toggle("on",(b.dataset.wiBorrow===""?null:+b.dataset.wiBorrow)===WHATIF.borrow));
+  const tag=$("#whatif"); tag.classList.toggle("on",whatifOn());
+  tag.textContent = whatifOn() ? `what-if: AERO ×${WHATIF.aero}${WHATIF.borrow!==null?` · borrow ${WHATIF.borrow}%`:""} — hypothetical` : "";
+  if(!pos.active){ const k=settingOf(selLtv).k; if(selAuto || !qualifies(poolById(selPool),k)) selPool=bestPool(k).id; }
+  renderModelTable(); if(pos.active) renderPos(); else { syncRiskLock(); gate(); }
+}
+$$("#whatifGrid [data-wi-aero]").forEach(b=>b.addEventListener("click",()=>setWhatIf(+b.dataset.wiAero,undefined)));
+$$("#whatifGrid [data-wi-borrow]").forEach(b=>b.addEventListener("click",()=>setWhatIf(undefined,b.dataset.wiBorrow===""?null:+b.dataset.wiBorrow)));
+$$("#tkOverlay [data-sim]").forEach(b=>b.addEventListener("click",()=>{ $("#tkOverlay").classList.remove("on"); const r=simulate(b.dataset.sim); toast("Simulation: "+r); showView("earn"); }));
+document.addEventListener("click",e=>{const b=e.target.closest("[data-view-docs]");if(b){showView("docs");const el=document.getElementById(b.dataset.viewDocs);if(el)el.scrollIntoView({block:"start",behavior:"smooth"});}});
 
-/* Advanced toggle: the power build is a separate file (prototype/index.html).
-   From the repo folder (file://) the relative link just works. On a web host
-   where index.html isn't deployed alongside (e.g. the hosted artifact), check
-   first and explain instead of dead-clicking. */
+/* Advanced toggle: the power build is a separate file (prototype/index.html). */
 $("#modeTog").addEventListener("click",(e)=>{
-  if(location.protocol==="file:") return; // both files sit together on disk
+  if(location.protocol==="file:") return;
   e.preventDefault();
   fetch("index.html",{method:"HEAD"}).then(r=>{ if(r.ok) location.href="index.html"; else throw 0; })
     .catch(()=>toast("The Advanced build is a separate file — open prototype/simple.html from your ZEC Defi App folder (index.html sits right beside it)."));
 });
 
 /* Demo-only test seam (stripped in production, like the tester's kit): lets the
-   fuzz harness exercise the REAL pure logic instead of a reimplementation. */
-window.__oil = { apyFor, apyModel, poolGross, poolNet, POOLS, get selPool(){return selPool}, set selPool(v){selPool=v}, DROP, checkAddr, gateDecision, liqPrice:(zec,ltv)=>zec*ltv/LIQ_T, LTV_STOPS:[0.30,0.40,0.50], LIQ_T, S, BORROW_APR, NET_FEE, APY_BASE, OILSKIN_KEEP, poolBand, userNet, liveBand30, tryLive, get LIVE(){return LIVE} };
+   fuzz harness exercise the REAL logic instead of a reimplementation. */
+window.__oil = { S, SETTINGS, POOLS, SAMPLE, WHATIF, LIQ_T, NET_FEE, OILSKIN_KEEP, settingOf, poolById, modelRow, emisGross, lpNet, userNet, qualifies, bestPool, poolBand, userNetBand, liveBand30, borrow, supply, DROP, liqPrice,
+  checkAddr, gateDecision, find, save, load, clearSaved, KEY, EXAMPLE_ADDR, pos, get activity(){return activity}, get selPool(){return selPool}, set selPool(v){selPool=v}, get selLtv(){return selLtv}, set selLtv(v){selLtv=v},
+  netValue, hf, ladder, tickAccrue, compound, claim, withdraw, simulate, setWhatIf, loadExample, renderPos, renderPools, riskUpd, gate, syncRiskLock, tryLive, get LIVE(){return LIVE}, set LIVE(v){LIVE=v} };
 
 /* boot */
-gate();syncRiskLock();renderActivity();renderPos();tryLive();
+bindTips(document);
+renderModelTable();
+selPool = bestPool(settingOf(selLtv).k).id;
+if(load()){ pos.lastTick=Date.now(); }
+gate(); syncRiskLock(); renderActivity(); renderPos(); tryLive();
+
 </script>
 </body>
 </html>

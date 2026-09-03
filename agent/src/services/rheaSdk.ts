@@ -177,12 +177,31 @@ export function mapPortfolioToState(
     amountAtomic: String(b?.balance ?? b?.amount ?? "0"),
   }));
 
-  const hf = Number(portfolio?.healthFactor ?? portfolio?.health_factor ?? NaN);
+  const hasDebt = borrowedAssets.some((b) => {
+    try {
+      return BigInt(b.amountAtomic) > 0n;
+    } catch {
+      return true; // unparseable amount → treat as debt (fail closed)
+    }
+  });
+
+  // Health factor, FAIL-CLOSED at the schema boundary:
+  //   • missing / unparseable field WITH debt → NaN (assessHealth escalates
+  //     CRITICAL/NOTIFY) — never Infinity, which reads as "no debt = healthy".
+  //   • missing WITHOUT debt → Infinity (genuinely no borrow leg).
+  //   • bounds check 0 < hf < 1e3: an SDK reporting bps (e.g. 10500) or any
+  //     absurd magnitude is suspect data → NaN, not a silently-healthy read.
+  //     (A percent-unit feed like 105 is inside these bounds — the unit is
+  //     additionally pinned against a recorded SDK fixture in the tests.)
+  const rawHf = Number(portfolio?.healthFactor ?? portfolio?.health_factor ?? NaN);
+  const bounded = Number.isFinite(rawHf) && rawHf > 0 && rawHf < 1e3 ? rawHf : NaN;
+  const healthFactor = Number.isFinite(bounded) ? bounded : hasDebt ? NaN : Infinity;
+
   return {
     mcaId,
     suppliedZecAtomic: String(zec?.balance ?? zec?.amount ?? "0"),
     borrowedAssets,
-    healthFactor: Number.isFinite(hf) ? hf : Infinity,
+    healthFactor,
     borrowHeadroomUsd: Number(portfolio?.borrowHeadroomUsd ?? 0),
   };
 }

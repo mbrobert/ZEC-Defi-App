@@ -5,6 +5,8 @@
  * (GET https://1click.chaindefuser.com/v0/tokens) on 2026-08-05.
  */
 
+import { sha256 } from "./sha256.js";
+
 /** NEAR Intents 1-Click API. */
 export const ONE_CLICK_BASE_URL = "https://1click.chaindefuser.com";
 
@@ -110,7 +112,11 @@ export const REWARD_CLAIM_POLICY = {
  * docs/PRIVACY.md for the full boundary map.
  */
 export const ZCASH_ADDRESS_PATTERNS = {
-  /** Transparent P2PKH (t1) / P2SH (t3) — the only settleable recipient type. */
+  /**
+   * Transparent P2PKH (t1) / P2SH (t3) — the only settleable recipient type.
+   * SHAPE ONLY: classifyZcashAddress additionally requires a valid
+   * Base58Check checksum (a shape match with a bad checksum is "invalid").
+   */
   transparent: /^t[13][a-zA-Z0-9]{33}$/,
   /** Unified address (ZIP-316). Private, but not settleable by the bridge yet. */
   unified: /^u1[a-z0-9]{50,}$/,
@@ -118,10 +124,70 @@ export const ZCASH_ADDRESS_PATTERNS = {
   sapling: /^zs1[a-z0-9]{70,}$/,
 } as const;
 
+// ---------------------------------------------------------------------------
+// Base58Check validation for transparent addresses.
+//
+// A Zcash transparent address is Base58Check over a 26-byte payload:
+//   2-byte version prefix (0x1CB8 = t1/P2PKH, 0x1CBD = t3/P2SH)
+//   + 20-byte hash160
+//   + first 4 bytes of SHA256(SHA256(prefix ‖ hash160)) as checksum.
+// A typo'd or truncated address fails the checksum with probability
+// ≈ 1 − 2⁻³², so this catches what the old shape-only regex let through.
+// ---------------------------------------------------------------------------
+
+const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+/** Decode a base58 string to bytes, or null on any non-alphabet character. */
+function base58Decode(s: string): Uint8Array | null {
+  if (!s.length) return null;
+  let n = 0n;
+  for (const ch of s) {
+    const i = BASE58_ALPHABET.indexOf(ch);
+    if (i < 0) return null; // 0, O, I, l and anything non-base58
+    n = n * 58n + BigInt(i);
+  }
+  const bytes: number[] = [];
+  while (n > 0n) {
+    bytes.unshift(Number(n & 0xffn));
+    n >>= 8n;
+  }
+  // Leading '1' characters encode leading zero bytes.
+  for (const ch of s) {
+    if (ch === "1") bytes.unshift(0);
+    else break;
+  }
+  return Uint8Array.from(bytes);
+}
+
+/**
+ * True iff `addr` (already trimmed) is a Base58Check-valid Zcash transparent
+ * address: 26-byte payload, t1/t3 version prefix, double-SHA256 checksum.
+ */
+export function isValidTransparentAddress(addr: string): boolean {
+  const decoded = base58Decode(addr);
+  if (!decoded || decoded.length !== 26) return false;
+  const prefix = (decoded[0]! << 8) | decoded[1]!;
+  if (prefix !== 0x1cb8 && prefix !== 0x1cbd) return false; // t1 / t3
+  const payload = decoded.subarray(0, 22);
+  const checksum = decoded.subarray(22);
+  const digest = sha256(sha256(payload));
+  for (let i = 0; i < 4; i++) {
+    if (digest[i] !== checksum[i]) return false;
+  }
+  return true;
+}
+
 export type ZcashAddressKind = "transparent" | "unified" | "sapling" | "invalid";
 
 export interface ZcashAddressInfo {
   kind: ZcashAddressKind;
+  /**
+   * The trimmed address the classification applies to. Callers MUST use this
+   * exact string (not their raw input) for anything downstream — quote
+   * recipients, on-chain storage, comparisons — so validation and use can
+   * never diverge on whitespace.
+   */
+  normalized: string;
   /** Can NEAR Intents settle a withdrawal to this address today? */
   settleable: boolean;
   /** Are amounts arriving here publicly visible on the Zcash chain? */
@@ -132,7 +198,11 @@ export interface ZcashAddressInfo {
 
 export function classifyZcashAddress(addr: string): ZcashAddressKind {
   const a = addr.trim();
-  if (ZCASH_ADDRESS_PATTERNS.transparent.test(a)) return "transparent";
+  if (ZCASH_ADDRESS_PATTERNS.transparent.test(a)) {
+    // Shape alone is not enough: require the real Base58Check checksum so a
+    // typo cannot masquerade as a settleable address.
+    return isValidTransparentAddress(a) ? "transparent" : "invalid";
+  }
   if (ZCASH_ADDRESS_PATTERNS.unified.test(a)) return "unified";
   if (ZCASH_ADDRESS_PATTERNS.sapling.test(a)) return "sapling";
   return "invalid";
@@ -140,11 +210,13 @@ export function classifyZcashAddress(addr: string): ZcashAddressKind {
 
 /** Everything the UI needs to guide a user to a working, private-as-possible setup. */
 export function describeZcashAddress(addr: string): ZcashAddressInfo {
-  const kind = classifyZcashAddress(addr);
+  const normalized = addr.trim();
+  const kind = classifyZcashAddress(normalized);
   switch (kind) {
     case "transparent":
       return {
         kind,
+        normalized,
         settleable: true,
         publiclyVisible: true,
         note:
@@ -153,6 +225,7 @@ export function describeZcashAddress(addr: string): ZcashAddressInfo {
     case "unified":
       return {
         kind,
+        normalized,
         settleable: false,
         publiclyVisible: false,
         note:
@@ -161,6 +234,7 @@ export function describeZcashAddress(addr: string): ZcashAddressInfo {
     case "sapling":
       return {
         kind,
+        normalized,
         settleable: false,
         publiclyVisible: false,
         note:
@@ -169,6 +243,7 @@ export function describeZcashAddress(addr: string): ZcashAddressInfo {
     default:
       return {
         kind,
+        normalized,
         settleable: false,
         publiclyVisible: false,
         note: "Not a recognized Zcash address. Expected t1…/t3… (transparent), u1… (unified) or zs1… (shielded).",

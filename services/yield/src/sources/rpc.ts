@@ -42,8 +42,24 @@ export class RpcError extends Error {
   }
 }
 
-/** Errors that mean "range too large — split and retry smaller". */
-const RANGE_HINTS = /range|10000|block range|too many|response size|limit/i;
+/**
+ * Errors that mean "range too large — split and retry smaller". Deliberately
+ * NARROW: generic words like "limit"/"too many" also appear in provider
+ * rate-limit errors, and bisecting a throttled chunk down to single blocks
+ * multiplies the billed calls that triggered the throttle in the first place.
+ */
+const RANGE_HINTS = /block range|exceeds|query returned more than|response size/i;
+
+/** Rate limiting — RETRYABLE WITH BACKOFF, never bisected. */
+const RATE_LIMIT_HINTS = /rate ?limit|too many requests/i;
+/** JSON-RPC codes providers use for "slow down" (−32005 spec'd, −32097 seen in the wild). */
+const RATE_LIMIT_CODES = new Set([-32005, -32097]);
+
+export function isRateLimitError(e: unknown): boolean {
+  if (!(e instanceof Error)) return false;
+  const code = e instanceof RpcError ? e.code : undefined;
+  return (code !== undefined && RATE_LIMIT_CODES.has(code)) || RATE_LIMIT_HINTS.test(e.message);
+}
 
 export class RpcClient {
   private id = 0;
@@ -94,10 +110,20 @@ export class RpcClient {
   }
 
   async call<T>(method: string, params: unknown[]): Promise<T> {
-    const req: RpcRequest = { jsonrpc: "2.0", id: ++this.id, method, params };
-    const res = (await this.post(req)) as RpcResponse;
-    if (res.error) throw new RpcError(`${method}: ${res.error.message}`, res.error.code);
-    return res.result as T;
+    for (let attempt = 0; ; attempt++) {
+      const req: RpcRequest = { jsonrpc: "2.0", id: ++this.id, method, params };
+      const res = (await this.post(req)) as RpcResponse;
+      if (!res.error) return res.result as T;
+      const err = new RpcError(`${method}: ${res.error.message}`, res.error.code);
+      // JSON-RPC-level rate limits (some providers return HTTP 200 with a
+      // -32005/"rate limit" error body) back off and retry; every other
+      // JSON-RPC error (reverts, bad params, range hints) surfaces at once.
+      if (isRateLimitError(err) && attempt < this.retries) {
+        await sleep(500 * 2 ** attempt + Math.floor(200 * ((this.id % 7) / 7)));
+        continue;
+      }
+      throw err;
+    }
   }
 
   /** Batched calls, preserving order; falls back to sequential when batchSize=1. */
@@ -107,7 +133,8 @@ export class RpcClient {
       const slice = calls.slice(i, i + this.batchSize);
       if (slice.length === 1 || this.batchSize === 1) {
         for (let j = 0; j < slice.length; j++) {
-          out[i + j] = await this.call<T>(slice[j].method, slice[j].params);
+          const c = slice[j]!;
+          out[i + j] = await this.call<T>(c.method, c.params);
         }
         continue;
       }
@@ -121,15 +148,20 @@ export class RpcClient {
       if (!Array.isArray(res)) {
         // Endpoint refused the batch shape → degrade to sequential once.
         for (let j = 0; j < slice.length; j++) {
-          out[i + j] = await this.call<T>(slice[j].method, slice[j].params);
+          const c = slice[j]!;
+          out[i + j] = await this.call<T>(c.method, c.params);
         }
         continue;
       }
-      const byId = new Map(res.map((r) => [r.id, r]));
+      // Coerce reply ids with Number(): some gateways echo ids as strings,
+      // which would make every lookup miss and fail the whole batch.
+      const byId = new Map(res.map((r) => [Number(r.id), r]));
       for (let j = 0; j < reqs.length; j++) {
-        const r = byId.get(reqs[j].id);
-        if (!r) throw new RpcError(`batch: missing response for ${slice[j].method}`);
-        if (r.error) throw new RpcError(`${slice[j].method}: ${r.error.message}`, r.error.code);
+        const req = reqs[j]!;
+        const call = slice[j]!;
+        const r = byId.get(req.id);
+        if (!r) throw new RpcError(`batch: missing response for ${call.method}`);
+        if (r.error) throw new RpcError(`${call.method}: ${r.error.message}`, r.error.code);
         out[i + j] = r.result as T;
       }
     }
@@ -155,13 +187,21 @@ export class RpcClient {
   async blockTimestamps(blocks: number[]): Promise<Map<number, number>> {
     const missing = [...new Set(blocks)].filter((b) => !this.tsCache.has(b));
     if (missing.length) {
-      const res = await this.callMany<{ timestamp: string }>(
+      const res = await this.callMany<{ timestamp: string } | null>(
         missing.map((b) => ({
           method: "eth_getBlockByNumber",
           params: [`0x${b.toString(16)}`, false],
         }))
       );
-      missing.forEach((b, i) => this.tsCache.set(b, Number(res[i].timestamp)));
+      missing.forEach((b, i) => {
+        const block = res[i];
+        // A null block (pruned/unknown) or a missing timestamp must fail
+        // LOUD — NaN timestamps would silently poison every cohort window.
+        if (!block || block.timestamp === undefined) {
+          throw new RpcError(`eth_getBlockByNumber(${b}): endpoint returned no block/timestamp`);
+        }
+        this.tsCache.set(b, Number(block.timestamp));
+      });
     }
     return new Map(blocks.map((b) => [b, this.tsCache.get(b)!]));
   }
@@ -174,10 +214,10 @@ export class RpcClient {
 
   async getReceipt(txHash: Hex): Promise<{ logs: RawLog[] } | null> {
     const r = await this.call<{
-      logs: { address: string; topics: string[]; data: string; blockNumber: string; transactionHash: string; logIndex: string }[];
+      logs: { address: string; topics: string[]; data: string; blockNumber: string; transactionHash: string; logIndex: string }[] | null;
     } | null>("eth_getTransactionReceipt", [txHash]);
     if (!r) return null;
-    return { logs: r.logs.map(normalizeLog) };
+    return { logs: (r.logs ?? []).map(normalizeLog) };
   }
 
   /**
@@ -192,7 +232,8 @@ export class RpcClient {
   ): Promise<RawLog[]> {
     try {
       const raw = await this.call<
-        { address: string; topics: string[]; data: string; blockNumber: string; transactionHash: string; logIndex: string }[]
+        | { address: string; topics: string[]; data: string; blockNumber: string; transactionHash: string; logIndex: string }[]
+        | null
       >("eth_getLogs", [
         {
           address,
@@ -201,10 +242,13 @@ export class RpcClient {
           ...(topics ? { topics } : {}),
         },
       ]);
-      return raw.map(normalizeLog);
+      return (raw ?? []).map(normalizeLog);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      if (fromBlock < toBlock && RANGE_HINTS.test(msg)) {
+      // NEVER bisect on a rate limit: splitting a throttled chunk into
+      // log₂(chunk) sub-requests multiplies the very load being throttled
+      // (call() already backed off and retried before this throw).
+      if (!isRateLimitError(e) && fromBlock < toBlock && RANGE_HINTS.test(msg)) {
         const mid = Math.floor((fromBlock + toBlock) / 2);
         const left = await this.getLogs(address, fromBlock, mid, topics);
         const right = await this.getLogs(address, mid + 1, toBlock, topics);

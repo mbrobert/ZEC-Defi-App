@@ -67,7 +67,11 @@ contract PositionVaultTest is Test {
         assertEq(p.poolKey, POOL);
         assertTrue(p.active);
         assertEq(usdc.balanceOf(address(vault)), 0);
-        assertEq(usdc.balanceOf(address(engine)), 5_000e6);
+        // Engine refunds 88bps of the deposit in-tx (live behavior); the
+        // refund stays attributed to the position as its idle balance.
+        assertEq(usdc.balanceOf(address(engine)), 5_000e6 - 44e6);
+        (uint256 idle0,) = adapter.idleOf(id);
+        assertEq(idle0, 44e6);
         assertEq(adapter.tokenCount(id), 1);
 
         uint256[] memory ids = vault.positionsOf(alice);
@@ -185,8 +189,11 @@ contract PositionVaultTest is Test {
         vault.increase(id, 500e6);
         assertEq(adapter.tokenCount(id), 2);
 
+        // Operator increase/consolidate share a per-position cooldown (M-1:
+        // each one restarts the engine's 60s hold clock).
+        vm.warp(block.timestamp + 1 hours);
         vm.prank(operator);
-        uint256 count = vault.consolidate(id);
+        uint256 count = vault.consolidate(id, 0);
 
         assertEq(count, 1);
         assertEq(adapter.tokenCount(id), 1);
@@ -199,33 +206,36 @@ contract PositionVaultTest is Test {
         uint256 id = _openAlice(1_000e6);
         vm.prank(bob);
         vm.expectRevert(PositionVault.NotOperator.selector);
-        vault.consolidate(id);
+        vault.consolidate(id, 0);
     }
 
     function test_consolidate_revertsOnInactivePosition() public {
         uint256 id = _openAlice(1_000e6);
         vm.prank(alice);
-        vault.withdraw(id, 10_000, alice, 0, 0); // fully close
+        vault.withdraw(id, 10_000, alice, 0, 0, 0); // fully close
         vm.prank(operator);
         vm.expectRevert(abi.encodeWithSelector(PositionVault.PositionNotActive.selector, id));
-        vault.consolidate(id);
+        vault.consolidate(id, 0);
     }
 
     function test_withdraw_partialThenFull() public {
         uint256 id = _openAlice(1_000e6);
 
-        // Partial 40%: engine closes the whole position, pays 40%, re-deposits 60%.
+        // Partial 40%: engine closes the whole position, pays 40% of
+        // EVERYTHING attributable to the position (engine holdings + the idle
+        // deposit refund), re-deposits the rest.
         vm.prank(alice);
-        vault.withdraw(id, 4_000, alice, 0, 0);
+        vault.withdraw(id, 4_000, alice, 0, 0, 0);
         assertEq(usdc.balanceOf(alice), 400e6);
         PositionVault.Position memory p = vault.getPosition(id);
         assertEq(p.shares, 600e6);
         assertTrue(p.active);
         assertEq(adapter.tokenCount(id), 1); // fresh re-deposited position
-        assertEq(usdc.balanceOf(address(engine)), 600e6);
+        // 600e6 kept, of which 88bps (5.28e6) refunded to idle by the engine.
+        assertEq(usdc.balanceOf(address(engine)), 600e6 - 5_280_000);
 
         vm.prank(alice);
-        vault.withdraw(id, 10_000, alice, 0, 0);
+        vault.withdraw(id, 10_000, alice, 0, 0, 0);
         assertEq(usdc.balanceOf(alice), 1_000e6);
         p = vault.getPosition(id);
         assertEq(p.shares, 0);
@@ -236,7 +246,7 @@ contract PositionVaultTest is Test {
         uint256 id = _openAlice(1_000e6);
         vm.prank(bob);
         vm.expectRevert(PositionVault.NotPositionOwner.selector);
-        vault.withdraw(id, 10_000, bob, 0, 0);
+        vault.withdraw(id, 10_000, bob, 0, 0, 0);
     }
 
     function test_withdraw_worksWhilePaused() public {
@@ -253,7 +263,7 @@ contract PositionVaultTest is Test {
         );
 
         vm.prank(alice);
-        vault.withdraw(id, 10_000, alice, 0, 0);
+        vault.withdraw(id, 10_000, alice, 0, 0, 0);
         assertEq(usdc.balanceOf(alice), 1_000e6);
     }
 
@@ -291,10 +301,14 @@ contract PositionVaultTest is Test {
 
         uint256 id = _openAlice(amount);
         vm.prank(alice);
-        vault.withdraw(id, bps, alice, 0, 0);
+        vault.withdraw(id, bps, alice, 0, 0, 0);
 
         assertLe(usdc.balanceOf(alice), uint256(amount));
-        // alice's payout + engine's remaining custody == original deposit
-        assertEq(usdc.balanceOf(alice) + usdc.balanceOf(address(engine)), uint256(amount));
+        // alice's payout + engine custody + the position's idle refund balance
+        // == original deposit (nothing minted, nothing stranded)
+        (uint256 idle0,) = adapter.idleOf(id);
+        assertEq(
+            usdc.balanceOf(alice) + usdc.balanceOf(address(engine)) + idle0, uint256(amount)
+        );
     }
 }

@@ -26,6 +26,7 @@ import type {
   PositionLifecycle,
   ValuedLifecycle,
 } from "./types.js";
+import { MIN_COHORT_N } from "./types.js";
 
 export function valueLifecycle(
   lc: PositionLifecycle,
@@ -36,7 +37,10 @@ export function valueLifecycle(
 
   let principalUsd = 0;
   let outUsd = 0;
-  let unpriced = false;
+  // A lifecycle whose exit amounts could not be attributed to tokens
+  // (registry gap) is UNPRICED, not a −100% loss: its measured outUsd would
+  // be missing real flows, poisoning the band with a fake catastrophic APR.
+  let unpriced = lc.unattributed === true;
 
   for (const [token, amount] of Object.entries(lc.entryFlows)) {
     const v = prices.usdValue(token as Address, amount, lc.openedAt);
@@ -83,14 +87,14 @@ export function weightedPercentile(
     acc += x.weight;
     if (acc >= target) return x.value;
   }
-  return sorted[sorted.length - 1].value;
+  return sorted[sorted.length - 1]!.value;
 }
 
 export function unweightedMedian(values: number[]): number {
   if (!values.length) return NaN;
   const s = [...values].sort((a, b) => a - b);
   const mid = Math.floor(s.length / 2);
-  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+  return s.length % 2 ? s[mid]! : (s[mid - 1]! + s[mid]!) / 2;
 }
 
 export interface CohortOptions {
@@ -99,6 +103,8 @@ export interface CohortOptions {
   nowSeconds: number;
   minDaysOpen: number;
   minPrincipalUsd?: number;
+  /** Minimum eligible positions before percentiles are served (default MIN_COHORT_N). */
+  minN?: number;
 }
 
 export function buildCohortBand(
@@ -108,6 +114,7 @@ export function buildCohortBand(
 ): CohortBand {
   const windowStart = opts.nowSeconds - opts.windowDays * 86_400;
   const minPrincipal = opts.minPrincipalUsd ?? 1;
+  const minN = opts.minN ?? MIN_COHORT_N;
 
   const inWindow = valued.filter(
     (v): v is ValuedLifecycle =>
@@ -118,13 +125,7 @@ export function buildCohortBand(
   );
   const excluded = inWindow.length - eligible.length;
 
-  const pairs = eligible.map((v) => ({
-    value: v.netAprFraction * 100,
-    weight: v.principalUsd,
-  }));
-  const pct = (p: number) => round2(weightedPercentile(pairs, p));
-
-  return {
+  const common = {
     windowDays: opts.windowDays,
     n: eligible.length,
     excluded,
@@ -132,6 +133,32 @@ export function buildCohortBand(
     meanDaysOpen: round2(
       eligible.length ? eligible.reduce((s, v) => s + v.daysOpen, 0) / eligible.length : 0
     ),
+  };
+
+  // Too small a sample and the "distribution" is one or two positions — a
+  // single whale IS every percentile. Withhold percentiles honestly instead
+  // (n stays in the payload so consumers can see how thin the window is).
+  if (eligible.length < minN) {
+    return {
+      ...common,
+      p10: null,
+      p25: null,
+      p50: null,
+      p75: null,
+      p90: null,
+      medianUnweighted: null,
+      reason: "insufficient_sample",
+    };
+  }
+
+  const pairs = eligible.map((v) => ({
+    value: v.netAprFraction * 100,
+    weight: v.principalUsd,
+  }));
+  const pct = (p: number) => round2(weightedPercentile(pairs, p));
+
+  return {
+    ...common,
     p10: pct(10),
     p25: pct(25),
     p50: pct(50),

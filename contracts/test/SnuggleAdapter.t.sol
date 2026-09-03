@@ -50,7 +50,7 @@ contract SnuggleAdapterTest is Test {
         vm.expectRevert(SnuggleAdapter.OnlyVault.selector);
         adapter.open(1, POOL, address(usdc), 1e6, params);
         vm.expectRevert(SnuggleAdapter.OnlyVault.selector);
-        adapter.withdraw(1, 10_000, recipient, 0, 0);
+        adapter.withdraw(1, 10_000, recipient, 0, 0, 0);
         vm.expectRevert(SnuggleAdapter.OnlyVault.selector);
         adapter.claim(1, recipient);
     }
@@ -93,21 +93,25 @@ contract SnuggleAdapterTest is Test {
 
         vm.prank(vault);
         (address[] memory tokens, uint256[] memory amounts) =
-            adapter.withdraw(1, 2_500, recipient, 0, 0); // 25%
+            adapter.withdraw(1, 2_500, recipient, 0, 0, 0); // 25%
 
         assertEq(tokens[0], address(usdc));
-        assertEq(amounts[0], 375e6); // 25% of 1500
+        assertEq(amounts[0], 375e6); // 25% of 1500 (idle refunds included)
         assertEq(usdc.balanceOf(recipient), 375e6);
         assertEq(adapter.shares(1), 1_125e6);
         assertEq(adapter.tokenCount(1), 1); // consolidated into one fresh position
-        assertEq(usdc.balanceOf(address(engine)), 1_125e6);
-        assertEq(usdc.balanceOf(address(adapter)), 0); // never holds idle funds
+        // 1125e6 re-deposited, of which the engine refunds 88bps (9.9e6) back
+        // to the position's holder as idle.
+        assertEq(usdc.balanceOf(address(engine)), 1_125e6 - 9_900_000);
+        (uint256 idle0,) = adapter.idleOf(1);
+        assertEq(idle0, 9_900_000);
+        assertEq(usdc.balanceOf(address(adapter)), 0); // adapter never holds funds itself
     }
 
     function test_fullWithdraw_leavesNothingBehind() public {
         _open(1, 1_000e6);
         vm.prank(vault);
-        adapter.withdraw(1, 10_000, recipient, 0, 0);
+        adapter.withdraw(1, 10_000, recipient, 0, 0, 0);
 
         assertEq(usdc.balanceOf(recipient), 1_000e6);
         assertEq(adapter.shares(1), 0);
@@ -184,7 +188,7 @@ contract SnuggleAdapterTest is Test {
         uint256 engineBalBefore = usdc.balanceOf(address(engine));
 
         vm.prank(vault);
-        uint256 count = adapter.consolidate(1);
+        uint256 count = adapter.consolidate(1, 0);
 
         assertEq(count, 1);
         assertEq(adapter.tokenCount(1), 1); // four → one
@@ -196,16 +200,35 @@ contract SnuggleAdapterTest is Test {
     function test_consolidate_onlyVault() public {
         _open(1, 1_000e6);
         vm.expectRevert(SnuggleAdapter.OnlyVault.selector);
-        adapter.consolidate(1);
+        adapter.consolidate(1, 0);
     }
 
-    function test_consolidate_noopOnSinglePosition() public {
+    function test_consolidate_singlePositionFoldsIdle() public {
+        // One engine position + an idle deposit refund: consolidate folds the
+        // idle back into the engine (it is only a true no-op when there is
+        // nothing idle to fold).
         _open(1, 1_000e6);
+        (uint256 idleBefore,) = adapter.idleOf(1);
+        assertEq(idleBefore, 8_800_000); // 88bps refund of 1000e6
         vm.prank(vault);
-        uint256 count = adapter.consolidate(1);
+        uint256 count = adapter.consolidate(1, 0);
         assertEq(count, 1);
         assertEq(adapter.tokenCount(1), 1);
         assertEq(adapter.shares(1), 1_000e6);
+        // idle after = 88bps refund of the folded 1000e6 re-deposit
+        (uint256 idleAfter,) = adapter.idleOf(1);
+        assertEq(idleAfter, 8_800_000);
+        assertEq(usdc.balanceOf(address(engine)), 991_200_000);
+    }
+
+    function test_consolidate_trueNoopWhenNothingToFold() public {
+        engine.setRefundBps(0); // no refund → no idle
+        _open(1, 1_000e6);
+        uint256 engineBal = usdc.balanceOf(address(engine));
+        vm.prank(vault);
+        uint256 count = adapter.consolidate(1, 0);
+        assertEq(count, 1);
+        assertEq(usdc.balanceOf(address(engine)), engineBal); // untouched
     }
 
     function test_consolidate_restoresHeadroomAfterCap() public {
@@ -227,7 +250,7 @@ contract SnuggleAdapterTest is Test {
         adapter.increase(1, address(usdc), 10e6);
 
         vm.prank(vault);
-        adapter.consolidate(1);
+        adapter.consolidate(1, 0);
         assertEq(adapter.tokenCount(1), 1);
 
         // headroom restored

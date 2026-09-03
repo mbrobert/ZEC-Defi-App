@@ -18,6 +18,16 @@ test("userNetPct: affine map matches the product formula", () => {
   assert.equal(userNetPct(50, 0, 13.2, 0.8), 0.8);
 });
 
+test("performance fee applies to GAINS only — losses pass through undamped", () => {
+  // engineNet −40%: the user eats the FULL loss. Fee-on-losses would show
+  // 0.8 + 0.5 × (−36 − 13) = −23.7 and understate the downside by 2 pts.
+  assert.equal(userNetPct(-40, 0.5, 13, 0.8), 0.8 + 0.5 * (-40 - 13));
+  // exactly zero engine-net: no fee either way
+  assert.equal(userNetPct(0, 0.5, 13, 0.8), 0.8 + 0.5 * (0 - 13));
+  // the kept() map stays monotonic through 0 (band ordering survives)
+  assert.ok(userNetPct(-1, 0.5, 13, 0.8) < userNetPct(1, 0.5, 13, 0.8));
+});
+
 function band(p: [number, number, number, number, number], n = 5): CohortBand {
   return {
     windowDays: 30, n, excluded: 0, totalPrincipalUsd: 1000, meanDaysOpen: 10,

@@ -34,6 +34,17 @@ contract RewardRouter is Ownable2Step, ReentrancyGuard {
     /// @notice Max amount of `token` routable to an intents address per tx (0 = disabled).
     mapping(address => uint256) public maxRoutePerTx;
 
+    /// @notice Rewards held here on behalf of a position's owner: claimed
+    ///         tokens that did not match the position's entry token (e.g. AERO
+    ///         from a staked Aerodrome position) and matched amounts above the
+    ///         per-tx routing cap awaiting the next route. A claim is never
+    ///         reverted just because nothing matched — that would roll the
+    ///         engine claim back and leave the rewards unreachable forever.
+    mapping(uint256 => mapping(address => uint256)) internal heldRewards;
+    /// @notice Total `heldRewards` per token — the slice of this contract's
+    ///         balance that belongs to position owners and can NOT be rescued.
+    mapping(address => uint256) public totalHeld;
+
     event OperatorSet(address indexed operator, bool allowed);
     event MaxRoutePerTxSet(address indexed token, uint256 amount);
     event Compounded(
@@ -48,14 +59,20 @@ contract RewardRouter is Ownable2Step, ReentrancyGuard {
         bytes32 quoteHash
     );
     event UnmatchedReward(uint256 indexed positionId, address indexed token, uint256 amount);
+    event RewardHeld(uint256 indexed positionId, address indexed token, uint256 amount);
+    event UnmatchedClaimed(
+        uint256 indexed positionId, address indexed token, address indexed recipient, uint256 amount
+    );
     event TokenRescued(address indexed token, address indexed to, uint256 amount);
 
     error NotOperator();
+    error NotPositionOwner();
     error WrongPreference();
     error NothingClaimed();
-    error RouteCapExceeded(address token, uint256 amount, uint256 cap);
+    error NothingHeld(uint256 positionId, address token);
     error RoutingDisabled(address token);
     error ZeroAddress();
+    error RescueExceedsUserHeld(address token, uint256 requested, uint256 rescuable);
 
     modifier onlyOperator() {
         if (!operators[msg.sender]) revert NotOperator();
@@ -78,7 +95,12 @@ contract RewardRouter is Ownable2Step, ReentrancyGuard {
 
     /// @notice Claim rewards for `positionId` and compound the matching token
     ///         back into the position. Non-matching reward tokens are held
-    ///         here and surfaced via `UnmatchedReward` for a later sweep/swap.
+    ///         here for the position owner (`unmatchedOf` / `claimUnmatched`)
+    ///         and surfaced via `UnmatchedReward`.
+    /// @dev Never reverts after a successful claim just because nothing
+    ///      matched: Aerodrome-gauge positions pay AERO only, and a revert
+    ///      would roll the engine claim back — leaving the rewards unreachable
+    ///      through this path forever. Returns (0, 0) in that case.
     function compound(uint256 positionId)
         external
         onlyOperator
@@ -89,15 +111,23 @@ contract RewardRouter is Ownable2Step, ReentrancyGuard {
         (address[] memory tokens, uint256[] memory amounts) =
             vault.claimTo(positionId, address(this));
 
+        uint256 totalClaimed;
         for (uint256 i = 0; i < tokens.length; i++) {
             if (amounts[i] == 0) continue;
+            totalClaimed += amounts[i];
             if (tokens[i] == p.token) {
                 compoundedAmount += amounts[i];
             } else {
+                _holdForOwner(positionId, tokens[i], amounts[i]);
                 emit UnmatchedReward(positionId, tokens[i], amounts[i]);
             }
         }
-        if (compoundedAmount == 0) revert NothingClaimed();
+        if (compoundedAmount == 0) {
+            // A truly empty claim is a no-op worth surfacing loudly; an
+            // unmatched-only claim is held for the owner and must stand.
+            if (totalClaimed == 0) revert NothingClaimed();
+            return (0, 0);
+        }
 
         IERC20(p.token).forceApprove(address(vault), compoundedAmount);
         sharesAdded = vault.increase(positionId, compoundedAmount);
@@ -127,19 +157,38 @@ contract RewardRouter is Ownable2Step, ReentrancyGuard {
         (address[] memory tokens, uint256[] memory amounts) =
             vault.claimTo(positionId, address(this));
 
+        uint256 totalClaimed;
+        uint256 claimedMatched;
         for (uint256 i = 0; i < tokens.length; i++) {
             if (amounts[i] == 0) continue;
+            totalClaimed += amounts[i];
             if (tokens[i] == p.token) {
-                routedAmount += amounts[i];
+                claimedMatched += amounts[i];
             } else {
+                _holdForOwner(positionId, tokens[i], amounts[i]);
                 emit UnmatchedReward(positionId, tokens[i], amounts[i]);
             }
         }
-        if (routedAmount == 0) revert NothingClaimed();
 
+        // Route what fits under the per-tx cap and HOLD the remainder for the
+        // next route — an accrual larger than the cap must never deadlock the
+        // position (the claim would be rolled back atomically, forever).
+        uint256 available = claimedMatched + heldRewards[positionId][p.token];
+        if (available == 0) {
+            if (totalClaimed == 0) revert NothingClaimed();
+            return 0; // unmatched-only claim: held for the owner, must stand
+        }
         uint256 cap = maxRoutePerTx[p.token];
         if (cap == 0) revert RoutingDisabled(p.token);
-        if (routedAmount > cap) revert RouteCapExceeded(p.token, routedAmount, cap);
+        routedAmount = available > cap ? cap : available;
+
+        uint256 remainder = available - routedAmount;
+        uint256 prevHeld = heldRewards[positionId][p.token];
+        if (remainder != prevHeld) {
+            heldRewards[positionId][p.token] = remainder;
+            totalHeld[p.token] = totalHeld[p.token] + remainder - prevHeld;
+            if (remainder > prevHeld) emit RewardHeld(positionId, p.token, remainder - prevHeld);
+        }
 
         IERC20(p.token).safeTransfer(intentsDepositAddress, routedAmount);
 
@@ -148,9 +197,48 @@ contract RewardRouter is Ownable2Step, ReentrancyGuard {
         );
     }
 
-    /// @notice Owner can sweep stuck non-matching reward tokens (e.g. to swap
-    ///         and redistribute). Never holds user principal.
+    /// @notice Rewards held here for `positionId`'s owner in `token`:
+    ///         unmatched claim proceeds plus matched amounts above the routing
+    ///         cap awaiting the next route.
+    function unmatchedOf(uint256 positionId, address token) external view returns (uint256) {
+        return heldRewards[positionId][token];
+    }
+
+    /// @notice Position owner withdraws rewards held here for their position
+    ///         (e.g. AERO that did not match the entry token). Owner-gated by
+    ///         POSITION ownership, not contract ownership — held rewards are
+    ///         the user's, reachable without any operator.
+    function claimUnmatched(uint256 positionId, address token, address recipient)
+        external
+        nonReentrant
+        returns (uint256 amount)
+    {
+        if (recipient == address(0)) revert ZeroAddress();
+        if (vault.getPosition(positionId).owner != msg.sender) revert NotPositionOwner();
+        amount = heldRewards[positionId][token];
+        if (amount == 0) revert NothingHeld(positionId, token);
+        heldRewards[positionId][token] = 0;
+        totalHeld[token] -= amount;
+        IERC20(token).safeTransfer(recipient, amount);
+        emit UnmatchedClaimed(positionId, token, recipient, amount);
+    }
+
+    /// @dev Account claim proceeds that belong to a position's owner but
+    ///      cannot be compounded/routed as-is.
+    function _holdForOwner(uint256 positionId, address token, uint256 amount) internal {
+        heldRewards[positionId][token] += amount;
+        totalHeld[token] += amount;
+    }
+
+    /// @notice Owner can sweep tokens that arrived OUTSIDE the per-position
+    ///         held-reward accounting (mistaken direct transfers). The slice
+    ///         tracked in `totalHeld` belongs to position owners and is out of
+    ///         the admin's reach — only `claimUnmatched` can move it.
     function rescueToken(address token, address to, uint256 amount) external onlyOwner {
+        uint256 bal = IERC20(token).balanceOf(address(this));
+        uint256 held = totalHeld[token];
+        uint256 rescuable = bal > held ? bal - held : 0;
+        if (amount > rescuable) revert RescueExceedsUserHeld(token, amount, rescuable);
         IERC20(token).safeTransfer(to, amount);
         emit TokenRescued(token, to, amount);
     }

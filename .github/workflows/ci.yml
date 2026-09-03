@@ -28,8 +28,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Install (shared + agent + yield workspaces)
-        run: npm install -w @zyo/shared -w @zyo/agent -w @zyo/yield
+      # npm ci = reproducible installs pinned by the committed package-lock.json
+      # (unpinned `npm install` let every CI run and demo machine resolve its
+      # own dependency tree).
+      - name: Install (shared + agent + yield workspaces, from lockfile)
+        run: npm ci -w @zyo/shared -w @zyo/agent -w @zyo/yield
+      # Visibility without flake: report known vulns in production deps, but
+      # never fail the build on an upstream advisory landing overnight.
+      - name: Audit production dependencies (non-blocking)
+        run: npm audit --omit=dev --audit-level=high || true
       # agent and yield import @zyo/shared's compiled dist/ — a fresh runner
       # has none, so build it first (this missing step failed every run
       # 2026-08-14 → 2026-08-27).

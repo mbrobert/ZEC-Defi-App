@@ -21,6 +21,7 @@ export interface AgentConfig {
   maxHoldDays: number;
   hfWarning: number;
   hfCritical: number;
+  hfEmergency: number;
   storePath: string;
 }
 
@@ -67,6 +68,19 @@ function matches(
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AgentConfig {
+  const hfWarning = num(env, "HF_WARNING", RHEA.healthFactor.warning);
+  const hfCritical = num(env, "HF_CRITICAL", RHEA.healthFactor.critical);
+  const hfEmergency = num(env, "HF_EMERGENCY", 1.05);
+  // The protection ladder only works when the rungs are ordered. Accepting
+  // e.g. HF_CRITICAL=1.5 > HF_WARNING=1.2 silently makes EMERGENCY_UNWIND
+  // unreachable; negative thresholds make everything HEALTHY. Fail fast.
+  if (!(hfWarning > hfCritical && hfCritical > hfEmergency && hfEmergency >= 1)) {
+    throw new ConfigError(
+      "HF_WARNING/HF_CRITICAL/HF_EMERGENCY",
+      `must satisfy warning > critical > emergency ≥ 1 ` +
+        `(got warning=${hfWarning}, critical=${hfCritical}, emergency=${hfEmergency})`
+    );
+  }
   return {
     baseRpcUrl: env.BASE_RPC_URL || "https://mainnet.base.org",
     operatorPrivateKey: matches(
@@ -97,8 +111,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AgentConfig {
     minCostMultiple: num(env, "MIN_COST_MULTIPLE", REWARD_CLAIM_POLICY.minCostMultiple, 1),
     minAbsoluteUsd: num(env, "MIN_ABSOLUTE_USD", REWARD_CLAIM_POLICY.minAbsoluteUsd, 0),
     maxHoldDays: num(env, "MAX_HOLD_DAYS", REWARD_CLAIM_POLICY.maxHoldDays, 1),
-    hfWarning: num(env, "HF_WARNING", RHEA.healthFactor.warning),
-    hfCritical: num(env, "HF_CRITICAL", RHEA.healthFactor.critical),
+    hfWarning,
+    hfCritical,
+    hfEmergency,
     storePath: env.STORE_PATH || "data/strategies.json",
   };
 }

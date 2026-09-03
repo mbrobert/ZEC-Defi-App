@@ -142,8 +142,20 @@ export interface PositionLifecycle {
   entryFlows: Record<Address, string>;
   /** token → atomic out (withdraw amounts + harvests + staking rewards). */
   exitFlows: Record<Address, string>;
+  /** FeesHarvested events whose recipient WAS the owner (owner exit flows). */
   harvests: number;
+  /**
+   * FeesHarvested events paid to a non-owner recipient (auto-compound legs):
+   * value re-entered the position instead of leaving — never owner flows.
+   */
+  internalHarvests: number;
   rebalances: number;
+  /**
+   * True when the pool was missing from the registry map, so non-zero exit
+   * amounts could not be attributed to tokens. Valuation treats this as
+   * unpriced (excluded + counted) — never a fabricated −100% loss.
+   */
+  unattributed?: boolean;
 }
 
 /** A lifecycle valued in USD, ready for cohort math. */
@@ -160,22 +172,31 @@ export interface ValuedLifecycle {
   unpriced: boolean;
 }
 
+/** Minimum closed positions a window needs before percentiles are served. */
+export const MIN_COHORT_N = 5;
+
 export interface CohortBand {
   windowDays: number;
-  /** Number of closed positions in the band. */
+  /** Number of closed positions in the band (always present, even when tiny). */
   n: number;
   /** Positions excluded (unpriced flows or open < minDays). */
   excluded: number;
   totalPrincipalUsd: number;
   meanDaysOpen: number;
-  /** Engine-net APR percentiles, as PERCENT (e.g. 34.2), principal-weighted. */
-  p10: number;
-  p25: number;
-  p50: number;
-  p75: number;
-  p90: number;
+  /**
+   * Engine-net APR percentiles, as PERCENT (e.g. 34.2), principal-weighted.
+   * null when n < MIN_COHORT_N — one whale would BE every percentile, which
+   * misleads worse than admitting the sample is too small.
+   */
+  p10: number | null;
+  p25: number | null;
+  p50: number | null;
+  p75: number | null;
+  p90: number | null;
   /** Unweighted median, for transparency alongside the weighted p50. */
-  medianUnweighted: number;
+  medianUnweighted: number | null;
+  /** Set when percentiles are withheld. */
+  reason?: "insufficient_sample";
 }
 
 export interface PoolBands {
@@ -196,13 +217,38 @@ export interface PoolBands {
 export interface PoolLiveSample {
   poolId: string;
   poolAddress: Address;
+  /** GeckoTerminal reserve_in_usd. */
   tvlUsd: number;
   volume24hUsd: number;
   feeTierBps: number;
   /** volume × fee ÷ TVL × 365, percent. */
   grossFeeAprPct: number;
+  /** Token USD prices from the same sample (feeds emissions math). */
+  baseTokenAddress?: Address;
+  quoteTokenAddress?: Address;
+  baseTokenPriceUsd?: number;
+  quoteTokenPriceUsd?: number;
   sampledAt: string; // ISO
   source: "geckoterminal" | "onchain";
+}
+
+/**
+ * Aerodrome gauge emissions for one pool (AERO paid to staked CL liquidity).
+ * APRs are MARGINAL for newly staked in-range liquidity at the given range
+ * width — see sources/gauges.ts for the model and its precision notes.
+ */
+export interface EmissionsSample {
+  /** rewardRate × 1yr × AERO/USD ÷ pool TVL, percent. */
+  wholePoolAprPct: number;
+  /** width (fraction, e.g. "0.04") → APR percent for a staked position of that width. */
+  aprByWidthPct: Record<string, number>;
+  /** periodFinish > now — false means the epoch lapsed and APRs are 0. */
+  epochActive: boolean;
+  sampledAt: string; // ISO
+  /** The pool's CL gauge (resolved via the Aerodrome Voter, cached). */
+  gauge: Address;
+  /** Rolling stakedLiquidity samples averaged into the APR (max 12). */
+  samples: number;
 }
 
 export interface RatesSample {
@@ -228,6 +274,8 @@ export interface PoolPayload {
   venue: string;
   riskTag: string;
   live: PoolLiveSample | null;
+  /** Gauge emissions (AERODROME pools only); null when unavailable/failed. */
+  emissions: EmissionsSample | null;
   bands: PoolBands | null;
   /** Set when bands are absent: e.g. "backfill_pending". */
   bandsUnavailableReason?: string;

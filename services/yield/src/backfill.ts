@@ -16,11 +16,10 @@
  * Usage: npm run backfill -- <subcommand> [--to-block N]
  */
 
-import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadConfig } from "./config.js";
 import { buildCohortBand, valueLifecycle } from "./cohorts.js";
-import { EngineIndexer, EventStore } from "./engine/indexer.js";
+import { atomicWriteFileSync, EngineIndexer, EventStore } from "./engine/indexer.js";
 import { foldLifecycles } from "./engine/lifecycles.js";
 import { syncEngineRegistry } from "./engine/registry.js";
 import { TOPICS } from "./engine/events.js";
@@ -47,7 +46,10 @@ function makeBlockscout(): BlockscoutSource | undefined {
 async function scan(toBlock?: number): Promise<void> {
   const rpc = makeRpc();
   const store = new EventStore(cfg.dataDir, cfg.engineVault as Address);
-  const indexer = new EngineIndexer(rpc, store, cfg.engineVault as Address, cfg.logChunk);
+  const indexer = new EngineIndexer(rpc, store, cfg.engineVault as Address, {
+    logChunk: cfg.logChunk,
+    startBlock: cfg.startBlock,
+  });
   const t0 = Date.now();
   const r = await indexer.scan(toBlock, (p) => {
     if (p.scanned % (cfg.logChunk * 20) < cfg.logChunk) {
@@ -92,8 +94,12 @@ async function cohorts(): Promise<void> {
   for (const m of mismatches) console.warn(`registry: ${m}`);
 
   const { lifecycles, orphanEvents } = foldLifecycles(events, tokenMap);
+  const internalHarvests = lifecycles.reduce((s, l) => s + l.internalHarvests, 0);
+  const unattributed = lifecycles.filter((l) => l.unattributed).length;
   console.log(
-    `folded ${lifecycles.length} lifecycles (${lifecycles.filter((l) => l.closedAt).length} closed, ${orphanEvents} orphan events from pre-backfill history)`
+    `folded ${lifecycles.length} lifecycles (${lifecycles.filter((l) => l.closedAt).length} closed, ` +
+      `${orphanEvents} orphan events from pre-backfill history, ` +
+      `${internalHarvests} internal (non-owner) harvests, ${unattributed} unattributed lifecycles)`
   );
 
   const prices = new PriceBook(new GeckoSource());
@@ -119,7 +125,7 @@ async function cohorts(): Promise<void> {
   }));
 
   const path = join(cfg.dataDir, "bands.json");
-  writeFileSync(path, JSON.stringify(out, null, 2));
+  atomicWriteFileSync(path, JSON.stringify(out, null, 2)); // tmp+fsync+rename — the server may read concurrently
   for (const b of out) {
     const w = b.bands.find((x) => x.windowDays === 30) ?? b.bands[0];
     console.log(
@@ -169,9 +175,18 @@ async function verifyEvents(): Promise<void> {
 }
 
 const [cmd, ...rest] = process.argv.slice(2);
-const toBlockArg = rest.includes("--to-block")
-  ? Number(rest[rest.indexOf("--to-block") + 1])
-  : undefined;
+let toBlockArg: number | undefined;
+if (rest.includes("--to-block")) {
+  const raw = rest[rest.indexOf("--to-block") + 1];
+  const parsed = Number(raw);
+  if (raw === undefined || !Number.isInteger(parsed) || parsed <= 0) {
+    // `--to-block abc` used to become NaN and silently scan NOTHING while
+    // claiming success. A bad bound is an error, not an empty run.
+    console.error(`--to-block: not a positive integer: ${raw}`);
+    process.exit(2);
+  }
+  toBlockArg = parsed;
+}
 
 const run = async () => {
   switch (cmd) {

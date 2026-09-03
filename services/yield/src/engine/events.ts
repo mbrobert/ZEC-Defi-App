@@ -79,9 +79,12 @@ export function decodeEngineLog(log: RawLog): EngineEvent | null {
       return {
         kind: "PositionCreated",
         ...base,
-        tokenId: topicToBigint(log.topics[1]).toString(),
-        owner: topicToAddress(log.topics[2]),
-        poolId: log.topics[3],
+        tokenId: topicToBigint(log.topics[1]!).toString(),
+        owner: topicToAddress(log.topics[2]!),
+        // Lowercase at the decode boundary: poolId is compared against the
+        // registry map's (lowercased) keys — a checksummed/uppercase topic
+        // from a provider must never silently unattribute a lifecycle.
+        poolId: log.topics[3]!.toLowerCase() as Hex,
         tickLower: wordToInt24(word(data, 0)),
         tickUpper: wordToInt24(word(data, 1)),
         liquidity: wordToBigint(word(data, 2)).toString(),
@@ -93,8 +96,8 @@ export function decodeEngineLog(log: RawLog): EngineEvent | null {
       return {
         kind: "PositionWithdrawn",
         ...base,
-        tokenId: topicToBigint(log.topics[1]).toString(),
-        owner: topicToAddress(log.topics[2]),
+        tokenId: topicToBigint(log.topics[1]!).toString(),
+        owner: topicToAddress(log.topics[2]!),
         amount0: wordToBigint(word(data, 0)).toString(),
         amount1: wordToBigint(word(data, 1)).toString(),
       };
@@ -104,8 +107,8 @@ export function decodeEngineLog(log: RawLog): EngineEvent | null {
       return {
         kind: "FeesHarvested",
         ...base,
-        tokenId: topicToBigint(log.topics[1]).toString(),
-        recipient: topicToAddress(log.topics[2]),
+        tokenId: topicToBigint(log.topics[1]!).toString(),
+        recipient: topicToAddress(log.topics[2]!),
         amount0: wordToBigint(word(data, 0)).toString(),
         amount1: wordToBigint(word(data, 1)).toString(),
       };
@@ -115,9 +118,9 @@ export function decodeEngineLog(log: RawLog): EngineEvent | null {
       return {
         kind: "StakingRewardsClaimed",
         ...base,
-        tokenId: topicToBigint(log.topics[1]).toString(),
-        recipient: topicToAddress(log.topics[2]),
-        rewardToken: topicToAddress(log.topics[3]),
+        tokenId: topicToBigint(log.topics[1]!).toString(),
+        recipient: topicToAddress(log.topics[2]!),
+        rewardToken: topicToAddress(log.topics[3]!),
         amount: wordToBigint(word(data, 0)).toString(),
       };
     }
@@ -126,8 +129,8 @@ export function decodeEngineLog(log: RawLog): EngineEvent | null {
       return {
         kind: "PerformanceFeeCollected",
         ...base,
-        tokenId: topicToBigint(log.topics[1]).toString(),
-        token: topicToAddress(log.topics[2]),
+        tokenId: topicToBigint(log.topics[1]!).toString(),
+        token: topicToAddress(log.topics[2]!),
         amountA: wordToBigint(word(data, 0)).toString(),
         amountB: wordToBigint(word(data, 1)).toString(),
         amountC: wordToBigint(word(data, 2)).toString(),
@@ -138,9 +141,9 @@ export function decodeEngineLog(log: RawLog): EngineEvent | null {
       return {
         kind: "SnuggleRebalanced",
         ...base,
-        tokenId: topicToBigint(log.topics[1]).toString(),
-        newTokenId: topicToBigint(log.topics[2]).toString(),
-        pool: topicToAddress(log.topics[3]),
+        tokenId: topicToBigint(log.topics[1]!).toString(),
+        newTokenId: topicToBigint(log.topics[2]!).toString(),
+        pool: topicToAddress(log.topics[3]!),
         tickLower: wordToInt24(word(data, 0)),
         tickUpper: wordToInt24(word(data, 1)),
         amount0: wordToBigint(word(data, 2)).toString(),

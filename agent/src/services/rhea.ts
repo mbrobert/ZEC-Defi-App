@@ -135,48 +135,7 @@ export class MockRheaService implements RheaService {
   }
 }
 
-/**
- * Real SDK wrapper. Kept behind a dynamic import so the workspace
- * builds/tests without the dependency installed.
- *
- * TODO(integration): `npm i @rhea-finance/cross-chain-sdk -w @zyo/agent`,
- * then map each method to the SDK's MCA + intent-deposit calls and delete
- * the NotWired errors. See docs/INTEGRATIONS.md.
- */
-export class RheaSdkService implements RheaService {
-  private sdk: unknown;
-
-  static async create(networkId: "mainnet" | "testnet"): Promise<RheaSdkService> {
-    const svc = new RheaSdkService();
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      svc.sdk = await (Function('return import("@rhea-finance/cross-chain-sdk")')() as Promise<unknown>);
-    } catch {
-      throw new Error(
-        "@rhea-finance/cross-chain-sdk is not installed. Run the agent with RHEA_MODE=mock, " +
-          "or install the SDK and wire RheaSdkService (docs/INTEGRATIONS.md)."
-      );
-    }
-    void networkId;
-    return svc;
-  }
-
-  ensureAccount(): never {
-    throw new Error("RheaSdkService not wired yet — see docs/INTEGRATIONS.md");
-  }
-  getAccountState(): never {
-    throw new Error("RheaSdkService not wired yet — see docs/INTEGRATIONS.md");
-  }
-  supplyZec(): never {
-    throw new Error("RheaSdkService not wired yet — see docs/INTEGRATIONS.md");
-  }
-  borrow(): never {
-    throw new Error("RheaSdkService not wired yet — see docs/INTEGRATIONS.md");
-  }
-  repay(): never {
-    throw new Error("RheaSdkService not wired yet — see docs/INTEGRATIONS.md");
-  }
-  withdrawZec(): never {
-    throw new Error("RheaSdkService not wired yet — see docs/INTEGRATIONS.md");
-  }
-}
+// The real SDK wrapper lives in ./rheaSdk.ts (RheaSdkService). The throwing
+// placeholder that used to sit here — and was what index.ts actually wired
+// for RHEA_MODE=sdk, erroring on every tick — has been deleted; import
+// RheaSdkService from "./rheaSdk.js" instead.

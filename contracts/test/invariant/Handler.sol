@@ -17,9 +17,11 @@ import {MockSnuggleVault} from "../mocks/MockSnuggleVault.sol";
 ///
 /// Every branch a real user can trigger is represented: deposit amounts, range
 /// widths, rebalance delays, auto-compound, reward preference, increases,
-/// partial and full withdrawals at any share, fee accrual, compounding,
-/// routing to Zcash, preference changes, out-of-range flips, and time warps
-/// (to clear the engine's flash-loan hold).
+/// consolidations, partial and full withdrawals at any share, fee accrual,
+/// compounding, routing to Zcash, preference changes, out-of-range flips, time
+/// warps (to clear the engine's flash-loan hold) — and the engine keeper's
+/// rebalance, which RE-KEYS positions (new tokenId, old emptied). The re-key
+/// action is what makes invariant_exitLiveness a real C-1 regression.
 contract Handler is Test {
     PositionVault public immutable vault;
     RewardRouter public immutable router;
@@ -44,6 +46,7 @@ contract Handler is Test {
     uint256 public g_feesMintedUsdc; // USDC fees minted into the engine
     uint256 public g_paidToUsers; // USDC returned to users on withdraw
     uint256 public g_paidToIntents; // USDC routed to the intents deposit addr
+    uint256 public g_rebalances; // keeper re-keys executed
 
     // ---- call counters (visibility into what the fuzzer actually exercised)
     mapping(bytes32 => uint256) public calls;
@@ -131,7 +134,12 @@ contract Handler is Test {
         (bool ok, uint256 id) = _pickActive(posSeed);
         if (!ok) return;
         if (adapter.tokenCount(id) >= adapter.MAX_ENGINE_POSITIONS()) return;
-        amt = bound(amt, 1e6, 500_000e6);
+        // Operator increases are throttled (M-1): respect the per-position
+        // cooldown and the minimum size so the action stays productive.
+        vm.warp(block.timestamp + vault.OPERATOR_TOUCH_COOLDOWN() + 1);
+        uint256 minAmt = vault.getPosition(id).shares / vault.MIN_OPERATOR_INCREASE_DIVISOR();
+        if (minAmt < 1e6) minAmt = 1e6;
+        amt = bound(amt, minAmt, minAmt + 500_000e6);
         usdc.mint(address(vault), amt);
         vm.prank(OPERATOR);
         try vault.increase(id, amt) {
@@ -142,6 +150,29 @@ contract Handler is Test {
         }
     }
 
+    /// @notice The engine keeper auto-snuggle: RE-KEYS a random live engine
+    ///         position (new tokenId minted, old one emptied). The shipped
+    ///         adapter used to pin the stale id — this action is what lets
+    ///         invariant_exitLiveness prove exits survive re-keys.
+    function keeperRebalance(uint256 posSeed, uint256 idSeed) external count("keeperRebalance") {
+        (bool ok, uint256 id) = _pickActive(posSeed);
+        if (!ok) return;
+        uint256 n = adapter.tokenCount(id);
+        if (n == 0) return;
+        uint256 engineId = adapter.tokenIdsOf(id, idSeed % n);
+        engine.rebalance(engineId);
+        g_rebalances++;
+    }
+
+    function consolidate(uint256 posSeed) external count("consolidate") {
+        (bool ok, uint256 id) = _pickActive(posSeed);
+        if (!ok) return;
+        // Respect the operator touch cooldown (shared with increase).
+        vm.warp(block.timestamp + vault.OPERATOR_TOUCH_COOLDOWN() + 1);
+        vm.prank(OPERATOR);
+        try vault.consolidate(id, 0) {} catch {}
+    }
+
     function withdraw(uint256 posSeed, uint256 bpsSeed, uint256 warpSeed) external count("withdraw") {
         (bool ok, uint256 id) = _pickActive(posSeed);
         if (!ok) return;
@@ -150,7 +181,7 @@ contract Handler is Test {
         address user = ownerOf[id];
         uint256 before = usdc.balanceOf(user);
         vm.prank(user);
-        try vault.withdraw(id, bps, user, 0, 0) {
+        try vault.withdraw(id, bps, user, 0, 0, 0) {
             g_paidToUsers += usdc.balanceOf(user) - before;
         } catch {}
     }
@@ -158,6 +189,7 @@ contract Handler is Test {
     function accrueFees(uint256 posSeed, uint256 usdcFee, uint256 aeroFee) external count("accrueFees") {
         (bool ok, uint256 id) = _pickActive(posSeed);
         if (!ok) return;
+        if (adapter.tokenCount(id) == 0) return;
         uint256 engineId = adapter.tokenIdsOf(id, 0);
         usdcFee = bound(usdcFee, 0, 50_000e6);
         aeroFee = bound(aeroFee, 0, 100e18);
@@ -222,9 +254,28 @@ contract Handler is Test {
         return positionIds.length;
     }
 
+    function idAt(uint256 i) external view returns (uint256) {
+        return positionIds[i];
+    }
+
     function sumActiveShares() external view returns (uint256 total) {
         for (uint256 i = 0; i < positionIds.length; i++) {
             total += vault.getPosition(positionIds[i]).shares;
+        }
+    }
+
+    /// @notice USDC sitting idle on every position's holder (deposit refunds).
+    function sumHolderUsdc() external view returns (uint256 total) {
+        for (uint256 i = 0; i < positionIds.length; i++) {
+            total += usdc.balanceOf(adapter.holderOf(positionIds[i]));
+        }
+    }
+
+    /// @notice Σ idleOf across all tracked positions (token0 = USDC leg).
+    function sumIdleOf() external view returns (uint256 total) {
+        for (uint256 i = 0; i < positionIds.length; i++) {
+            (uint256 i0,) = adapter.idleOf(positionIds[i]);
+            total += i0;
         }
     }
 

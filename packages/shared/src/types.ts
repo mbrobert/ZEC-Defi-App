@@ -90,6 +90,18 @@ export interface Strategy {
   rewardPreference: RewardPreference;
   lending: LendingLeg;
   lp?: LpLeg;
+  /**
+   * Last health-ladder action dispatched for this strategy, keyed
+   * "band:action" (e.g. "CRITICAL:EMERGENCY_UNWIND"). Persisted BEFORE the
+   * handler runs so overlapping ticks and agent restarts never re-dispatch
+   * the same action; rolled back if the handler throws so it retries.
+   */
+  lastDispatchedAction?: string;
+  /**
+   * Set alongside status "UNWINDING" when an emergency unwind is dispatched —
+   * the id a resumed agent checks before dispatching again (idempotency).
+   */
+  inflightActionId?: string;
   createdAt: string;
   updatedAt: string;
 }

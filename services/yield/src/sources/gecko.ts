@@ -24,12 +24,15 @@ export interface GeckoPoolInfo {
 export class GeckoSource {
   constructor(private readonly fetchImpl: typeof fetch = fetch) {}
 
-  private async get<T>(path: string): Promise<T> {
+  private async get<T>(path: string, signal?: AbortSignal): Promise<T> {
     let backoff = 1200;
     for (let attempt = 0; attempt < 4; attempt++) {
+      const timeout = AbortSignal.timeout(20_000);
       const res = await this.fetchImpl(`${BASE}${path}`, {
         headers: { accept: "application/json", "user-agent": "oilskin-yield/0.1" },
-        signal: AbortSignal.timeout(20_000),
+        // Caller deadline (e.g. the whole-refresh budget) composes with the
+        // per-request timeout: whichever fires first aborts the fetch.
+        signal: signal ? AbortSignal.any([timeout, signal]) : timeout,
       });
       if (res.status === 429 || res.status >= 500) {
         await new Promise((r) => setTimeout(r, backoff));
@@ -42,7 +45,7 @@ export class GeckoSource {
     throw new Error(`geckoterminal: rate-limited after retries on ${path}`);
   }
 
-  async pool(address: Address): Promise<GeckoPoolInfo> {
+  async pool(address: Address, signal?: AbortSignal): Promise<GeckoPoolInfo> {
     const j = await this.get<{
       data: {
         attributes: {
@@ -56,7 +59,7 @@ export class GeckoSource {
           quote_token: { data: { id: string } };
         };
       };
-    }>(`/pools/${address}`);
+    }>(`/pools/${address}`, signal);
     const a = j.data.attributes;
     const tokenAddr = (id: string) => id.replace(/^base_/, "").toLowerCase() as Address;
     return {
@@ -74,15 +77,17 @@ export class GeckoSource {
    * TODO(dynamic fees): Aerodrome Slipstream fees move with volatility —
    * pool.fee() (selector 0xddca3f43) is the truth, and the curated list's
    * feeTierBps is only that value at its last sampling (2026-08-27). The
-   * honest upgrade is an eth_call to fee() per sample instead of trusting
-   * the static bps. Uniswap tiers are static; only AERODROME entries drift.
+   * gauge emissions source (sources/gauges.ts) already eth_calls fee() per
+   * sample; folding that into grossFeeAprPct is the remaining step.
+   * Uniswap tiers are static; only AERODROME entries drift.
    */
   async liveSample(
     curatedId: string,
     address: Address,
-    feeTierBps: number
+    feeTierBps: number,
+    signal?: AbortSignal
   ): Promise<PoolLiveSample> {
-    const p = await this.pool(address);
+    const p = await this.pool(address, signal);
     const grossFeeAprPct =
       p.tvlUsd > 0 ? ((p.volume24hUsd * (feeTierBps / 10_000)) / p.tvlUsd) * 365 * 100 : 0;
     return {
@@ -92,6 +97,12 @@ export class GeckoSource {
       volume24hUsd: p.volume24hUsd,
       feeTierBps,
       grossFeeAprPct,
+      // Token identities + USD prices from the same sample — the emissions
+      // model prices AERO and token1 from these instead of extra requests.
+      baseTokenAddress: p.baseTokenAddress,
+      quoteTokenAddress: p.quoteTokenAddress,
+      baseTokenPriceUsd: p.baseTokenPriceUsd,
+      quoteTokenPriceUsd: p.quoteTokenPriceUsd,
       sampledAt: new Date().toISOString(),
       source: "geckoterminal",
     };

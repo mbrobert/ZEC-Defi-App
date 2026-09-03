@@ -110,6 +110,8 @@ export class RpcReadOnlyChainService implements ChainService {
         method: "eth_call",
         params: [{ to, data: dataHex }, "latest"],
       }),
+      // A hung RPC socket must not wedge a monitoring tick indefinitely.
+      signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) throw new Error(`rpc http ${res.status}`);
     const body = (await res.json()) as { result?: string; error?: { message: string } };

@@ -109,12 +109,15 @@ export class BlockscoutSource {
 
   /**
    * Decoded ERC-20 transfers of one transaction (entry-principal pass).
-   * Paginated; loops until the cursor is exhausted.
+   * Paginated; loops until the cursor is exhausted — HARD-CAPPED at 100
+   * pages (5000 transfers): a buggy/hostile cursor that never advances must
+   * fail loudly, not spin credits forever.
    */
   async txTokenTransfers(txHash: Hex): Promise<TokenTransfer[]> {
+    const MAX_PAGES = 100;
     const out: TokenTransfer[] = [];
     let qs = "";
-    for (;;) {
+    for (let page = 0; page < MAX_PAGES; page++) {
       const j = await this.rest<{
         items: {
           token: { address_hash?: string; address?: string };
@@ -141,5 +144,9 @@ export class BlockscoutSource {
           .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
           .join("&");
     }
+    throw new Error(
+      `blockscout: token-transfer pagination for ${txHash} exceeded ${MAX_PAGES} pages — ` +
+        `cursor is not advancing; refusing to loop (and bill) forever`
+    );
   }
 }

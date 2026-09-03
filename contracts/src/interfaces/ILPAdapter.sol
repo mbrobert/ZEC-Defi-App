@@ -39,9 +39,13 @@ interface ILPAdapter {
     ///         position (the engine has no in-place increase); left unbounded
     ///         they hit the adapter's per-position cap and further
     ///         increases/compounds revert. Consolidation restores headroom
-    ///         without touching principal or user funds.
+    ///         without touching principal or user funds. Idle refund balances
+    ///         held for the position are folded into the re-deposit.
+    /// @param deadline Engine deadline for the re-deposit leg (0 = adapter
+    ///        default window from now). A stale queued tx reverts instead of
+    ///        re-minting at whatever price it lands on.
     /// @return count Engine positions remaining after consolidation (0 or 1).
-    function consolidate(uint256 positionId) external returns (uint256 count);
+    function consolidate(uint256 positionId, uint256 deadline) external returns (uint256 count);
 
     /// @notice Number of underlying engine positions backing `positionId`.
     ///         Lets the operator consolidate before hitting the cap.
@@ -50,16 +54,25 @@ interface ILPAdapter {
     /// @notice Remove `shareBps` (1..10_000) of the position; tokens go to `recipient`.
     /// @dev The engine only supports full closes; partial withdrawals close the
     ///      whole position, pay out the share, and re-deposit the remainder.
+    ///      Idle refund balances held for the position are included in the
+    ///      payout accounting, and configured incentive-token balances (e.g.
+    ///      AERO paid by the engine on close) are forwarded to `recipient`.
     /// @param minOut0 Minimum token0 the recipient must receive (slippage floor).
     /// @param minOut1 Minimum token1 the recipient must receive (slippage floor).
     ///        Pass 0 for no floor. Protects against MEV sandwiching the
     ///        close/re-deposit and against unexpectedly deep price impact.
+    /// @param deadline Latest acceptable execution time, also passed to the
+    ///        engine on the re-deposit leg (0 = adapter default window).
+    /// @return tokens Slots 0/1 are the pool's token0/token1; any further
+    ///         entries are forwarded incentive tokens.
+    /// @return amounts Amounts paid to `recipient` per `tokens` entry.
     function withdraw(
         uint256 positionId,
         uint256 shareBps,
         address recipient,
         uint256 minOut0,
-        uint256 minOut1
+        uint256 minOut1,
+        uint256 deadline
     ) external returns (address[] memory tokens, uint256[] memory amounts);
 
     /// @notice The pool's canonical (token0, token1) for a position — lets the
@@ -81,6 +94,13 @@ interface ILPAdapter {
 
     /// @notice Current accounting shares of a position (0 when fully withdrawn).
     function shares(uint256 positionId) external view returns (uint256);
+
+    /// @notice Idle pool-token balances attributable to `positionId` that sit
+    ///         outside the engine: deposit refunds (the engine returns
+    ///         un-fitting leftovers in the deposit tx) and keeper-pushed
+    ///         leftovers. Folded into the next re-deposit and included in
+    ///         withdrawal payouts — never swept to the protocol.
+    function idleOf(uint256 positionId) external view returns (uint256 amt0, uint256 amt1);
 
     /// @notice Whether every underlying engine position is currently in range
     ///         (engine-tracked via outOfRangeSince).

@@ -107,12 +107,23 @@ discloses AI-only audits so far; weigh that in position limits).
 
 ## Accepted risks / open items (unchanged from RISKS.md, restated)
 
-1. **Operator fund-attribution trust (High, by design, v1)**: `openFor`/
-   `increase` let the single trusted operator assign idle vault balances to
-   positions. A malicious operator could misattribute arriving bridge funds
-   between users (never exfiltrate — funds stay in user positions). Mitigation
-   now: one operator key, event trail, caps. Roadmap: deterministic per-strategy
-   deposit sub-accounts so attribution is trustless.
+1. **Operator custody over in-flight funds (High, by design, v1 — corrected
+   2026-09-02)**: `openFor`/`increase` let the single trusted operator assign
+   idle vault balances to positions — including to a position the operator
+   itself owns, which it can then withdraw anywhere after the engine's 60s
+   hold. The earlier wording here ("never exfiltrate — funds stay in user
+   positions") was **wrong**: between bridge arrival and `openFor`, and for
+   any idle top-ups, the operator hot key is effectively full custody. The
+   internal audit (docs/PRE-AUDIT-2026-09-02.md, H-2/A-01) both demonstrated
+   the exfiltration and showed the same key either can or cannot run the
+   protection ladder depending on who owns positions — the design must pick
+   one. Mainnet gate: deterministic per-user deposit forwarders as the
+   intents recipient (`openFor(user)` pulls only from `forwarderOf(user)`),
+   plus an on-chain per-position `payoutRecipient` locked at open with
+   `withdraw`/`deleverage` constrained to it — then a compromised operator
+   can misTIME actions but cannot redirect funds. Until that lands, this line
+   is the product's honest custody disclosure. Mitigation today: one operator
+   key, event trail, caps.
 2. **Reward routing quote binding (Medium)**: on-chain can't verify the 1-Click
    deposit address pays the user's zaddr. Agent hard-verifies + quoteHash audit
    trail + per-token caps; rewards only, never principal.

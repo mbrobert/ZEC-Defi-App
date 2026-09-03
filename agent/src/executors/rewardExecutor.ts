@@ -35,6 +35,12 @@ export interface RewardContext {
   accrualAgeDays: number;
   /** Atomic amount of the position token expected to be claimed. */
   accruedAtomic: bigint;
+  /**
+   * USD value of pending rewards in tokens the router CANNOT route (anything
+   * other than the position's entry token) — see accruedForPosition().
+   * Surfaced for observability; never funds a claim decision.
+   */
+  unmatchedUsd?: number;
   /** Intents asset id for the position token (e.g. USDC on Base). */
   originAssetId: string;
   /** Address refunds should land on if the intent fails (the vault). */
@@ -100,21 +106,25 @@ export class RewardExecutor {
   }
 
   private async routeToZcash(ctx: RewardContext): Promise<RewardOutcome> {
-    const zcashAddress = ctx.position.zcashAddress;
-    if (!zcashAddress) {
+    if (!ctx.position.zcashAddress) {
       throw new QuoteSafetyError("position has SEND_TO_ZCASH pref but no zcash address");
     }
 
     // ---- safety invariant #0: fail fast on an address the bridge cannot settle.
     // Shielded (u1…/zs1…) recipients are rejected by 1-Click with a generic
-    // "recipient is not valid"; catching it here keeps the reason legible and
-    // avoids burning a quote. Rewards accrue and retry — nothing is lost.
-    const addr = describeZcashAddress(zcashAddress);
+    // "recipient is not valid"; a transparent address with a bad Base58Check
+    // checksum would send ZEC into the void. Catching both here keeps the
+    // reason legible and avoids burning a quote. Rewards accrue and retry.
+    const addr = describeZcashAddress(ctx.position.zcashAddress);
     if (!addr.settleable) {
       throw new QuoteSafetyError(
         `position zcash address is ${addr.kind}, which the bridge cannot settle to: ${addr.note}`
       );
     }
+    // The SAME normalized (trimmed) string is used for the quote request and
+    // every comparison below — validation and use can never diverge on
+    // whitespace the API would normalize away.
+    const zcashAddress = addr.normalized;
 
     const deadline = new Date(
       Date.now() + this.policy.quoteDeadlineMinutes * 60_000
@@ -156,15 +166,31 @@ export class RewardExecutor {
     // ---- safety invariant #3: the quote must return roughly the value we put
     // in. A tampered or mispriced quote could otherwise route real USDC rewards
     // for a dust amount of ZEC. Require a positive on-chain settlement floor
-    // (minAmountOut) AND, when the API gives a USD figure, that the output value
-    // is within maxQuoteValueLossBps of what we send in.
+    // (minAmountOut) AND that the quoted output USD value is within
+    // maxQuoteValueLossBps of what we send in. A quote that omits amountOutUsd
+    // cannot be value-checked at all — REFUSE it rather than skip the check
+    // (skipping is exactly what a tampered quote would want).
     const minOut = quote.quote.minAmountOut;
     if (minOut === undefined || minOut === null || BigInt(minOut) <= 0n) {
       throw new QuoteSafetyError(`quote has no positive minAmountOut floor: ${minOut}`);
     }
-    const maxLossBps = this.policy.maxQuoteValueLossBps ?? 500;
-    const outUsd = quote.quote.amountOutUsd ? Number(quote.quote.amountOutUsd) : undefined;
-    if (outUsd !== undefined && Number.isFinite(outUsd) && ctx.accruedUsd > 0) {
+    // Clamp to [0, 5000]: a misconfigured policy > 10000 bps would compute a
+    // NEGATIVE floor (check silently bypassed); anything above 50% loss is
+    // never a legitimate tolerance.
+    const rawLossBps = this.policy.maxQuoteValueLossBps ?? 500;
+    const maxLossBps = Math.min(5000, Math.max(0, rawLossBps));
+    if (ctx.accruedUsd > 0) {
+      const rawOutUsd = quote.quote.amountOutUsd;
+      const outUsd =
+        rawOutUsd === undefined || rawOutUsd === null || String(rawOutUsd).trim() === ""
+          ? NaN
+          : Number(rawOutUsd);
+      if (!Number.isFinite(outUsd)) {
+        throw new QuoteSafetyError(
+          `quote has no usable amountOutUsd (${JSON.stringify(rawOutUsd)}) — ` +
+            `cannot price the value floor, refusing to route`
+        );
+      }
       const floorUsd = ctx.accruedUsd * (1 - maxLossBps / 10_000);
       if (outUsd < floorUsd) {
         throw new QuoteSafetyError(

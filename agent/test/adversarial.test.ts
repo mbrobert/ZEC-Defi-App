@@ -12,7 +12,9 @@ import { spy } from "./helpers.js";
 
 const VAULT = "0x4444444444444444444444444444444444444444" as const;
 const ADAPTER = "0x8888888888888888888888888888888888888888" as const;
-const ZADDR = "t1KrbA8XLcmZUsSdcXhkpKUWX5rMctSH5dP";
+// GENERATED TEST VECTOR (not a real wallet): hash160 = sha256("oilskin-test-vector-1")[0..20],
+// prefix 0x1CB8 (t1), valid Base58Check checksum — passes the real validation in @zyo/shared.
+const ZADDR = "t1Le9mTDaqQUX1ANKaeDchpJsxEY4h5LQCX";
 const DEPOSIT = "0x2222222222222222222222222222222222222222";
 
 // ---------------------------------------------------------------------------
@@ -188,7 +190,7 @@ describe("RewardExecutor — MEV / malicious-quote resistance", () => {
   const oc = (mutate?: (r: QuoteRequest) => QuoteRequest, deposit = DEPOSIT) => ({
     getQuote: spy(async (r: QuoteRequest) => ({
       quoteRequest: mutate ? mutate(structuredClone(r)) : r,
-      quote: { depositAddress: deposit, amountIn: r.amount, amountOut: "5", minAmountOut: "5" },
+      quote: { depositAddress: deposit, amountIn: r.amount, amountOut: "5", minAmountOut: "5", amountOutUsd: "99.5" },
     })),
     submitDepositTx: spy(async () => undefined),
   });

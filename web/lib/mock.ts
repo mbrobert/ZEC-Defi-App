@@ -6,7 +6,7 @@ export const MOCK_STRATEGIES: Strategy[] = [
     id: "strat-a41f",
     owner: {
       baseAddress: "0x7C3aE2f6bE85731F0AF1D4b7cF74c88F9C1d2E11",
-      zcashAddress: "t1KrbA8XLcmZUsSdcXhkpKUWX5rMctSH5dP",
+      zcashAddress: "t1Le9mTDaqQUX1ANKaeDchpJsxEY4h5LQCX", // checksum-valid test vector (hash160 = sha256("oilskin-test-vector-1")[0..20])
     },
     mode: "FULL_STRATEGY",
     status: "ACTIVE_FULL",

@@ -18,8 +18,11 @@ into the right field on tap.
 | Sapling `zs1` | `zs1demo0testonly0notreal0sapling0zaddr0qp7r9s2t4v6x8y0a2c4e6g8j0l2n4q6s8u0w2x4z6a8c0e2` | Guided to the transparent address |
 | Malformed | `t1short` | Stays blocked with a "keep going" hint |
 
-Amounts worth trying: `0.25` (min ✓), `12.5` (typical ✓), `50` (cap ✓), `0.1`
-(below min → blocked), `80` (over cap → blocked). All are one tap in the Test kit.
+Amounts worth trying: `0.25` (min ✓), `12.5` (typical ✓), `250` (large ✓ — there
+is no cap), `0.1` (below min → blocked). All are one tap in the Test kit, along
+with what-if market switches (AERO ×2/×4, borrow 8%/4%) and failure
+simulations (bridge refund, engine partial fill, out-of-range → rebalance,
+crashes, failed withdrawal retry).
 
 ## What to click (every path)
 
@@ -102,3 +105,21 @@ designed static-fallback path, not a page bug.
 The pre-audit self-review, its attack-vector map, and the findings it fixed are in
 `docs/SECURITY-REVIEW-2026-08.md`. A professional third-party audit is still required
 before mainnet.
+
+## Suite totals (2026-09-02)
+
+- Contracts: `FOUNDRY_PROFILE=local forge test` → **91 passed, 8 skipped**
+  (fork tests skip un-forked instead of sham-passing); invariants include
+  exit-liveness under keeper re-keys and holder-balance attribution.
+  Audit regressions: `contracts/test/audit-regressions/` (21 `test_FIX_*`).
+- Agent: **119** (`npm test -w @zyo/agent`) — incl. Base58Check vectors,
+  store corruption, threshold ordering, dispatch idempotency.
+- Yield service: **78** (`npm test -w @zyo/yield`) — incl. gauge-emissions
+  math pinned to the 2026-08-31 on-chain capture, atomic-store crash cases,
+  band input hardening.
+- Prototype (simple): smoke **33 checks**; combination + stateful fuzz
+  **15,600+ checks / 1,068 actions / 220-click storm** across pools ×
+  settings × what-ifs × deposits/top-ups/partial withdraws/claims/refunds/
+  failed-tx/crash/rebalance/persistence paths — zero failures, zero console
+  errors. Advanced: 12-check verify + toggle suite.
+- Full findings ledger: docs/PRE-AUDIT-2026-09-02.md.

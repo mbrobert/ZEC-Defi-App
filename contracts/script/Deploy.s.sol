@@ -34,6 +34,14 @@ contract Deploy is Script {
         address maxfiEngine = vm.envOr("MAXFI_ENGINE", MAXFI_VAULT_PROXY_BASE);
         address snuggleEngine = vm.envOr("SNUGGLE_ENGINE", address(0));
 
+        // The mock engine has permissionless config hooks (addPool /
+        // setPendingFee / setStaked): allowlisting an adapter to it on mainnet
+        // would let anyone corrupt pools or drain deposits. A missing env var
+        // must never silently deploy it to Base.
+        require(
+            block.chainid != 8453 || snuggleEngine != address(0), "mock engine on mainnet"
+        );
+
         vm.startBroadcast();
 
         PositionVault vault = new PositionVault(owner);
@@ -64,9 +72,11 @@ contract Deploy is Script {
         router.setMaxRoutePerTx(BASE_WETH, 10e18);
 
         // ⚠️ Per-pool exposure caps default to 0 (unlimited). Before opening to
-        // users, set a cap per curated pool with vault.setMaxDepositPerPool(
-        // enginePoolId, cap) sized to a safe fraction of that pool's TVL
-        // (rule of thumb: ≤ 1–2% of pool liquidity) to bound price impact.
+        // users, set a cap per curated pool AND PER ENTRY TOKEN with
+        // vault.setMaxDepositPerPool(enginePoolId, entryToken, cap) — caps are
+        // keyed by token because raw USDC/cbBTC/WETH units do not share a
+        // scale. Size each to a safe fraction of that pool's TVL (rule of
+        // thumb: ≤ 1–2% of pool liquidity) to bound price impact.
         // enginePoolIds come from packages/shared pools.ts / EnumeratePools.
 
         vm.stopBroadcast();
