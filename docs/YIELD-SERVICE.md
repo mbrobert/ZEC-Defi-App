@@ -1,149 +1,164 @@
-# The yield service — live rates + empirical realized-return bands
+# The yield service — live Base rates, gauge emissions, the gate, and empirical bands
 
-`services/yield` is the backend behind the app's yield numbers. It does two
-jobs, both stamped with sample timestamps and both refusing to invent data:
+`services/yield` is the backend behind the app's yield numbers (Base-first
+v1, 2026-09-05). Four jobs, every one stamped with a sample timestamp and
+every one refusing to invent data:
 
-1. **Live sampling** — current pool fee APRs (volume × feeTier ÷ TVL × 365,
-   GeckoTerminal), live Rhea borrow + supply rates (bare NEAR JSON-RPC view
-   calls on the Burrow contract), refreshed continuously.
-   ⚠️ **Aerodrome Slipstream fees are DYNAMIC** (pool.fee(), selector
-   `0xddca3f43`, moves with volatility — verified on-chain 2026-08-27:
-   WETH/USDC read 0.056%, AERO/WETH 0.30% where the old label said 1%).
-   The curated list's `feeTierBps` now carries each Aerodrome pool's
-   sampled fee() and must be refreshed on re-sampling; the honest upgrade
-   is reading fee() live per sample — tracked as a TODO in
-   `src/sources/gecko.ts`. Uniswap tiers are static.
-2. **Empirical bands** — the flagship: instead of quoting one modeled APY,
+1. **Live rates — Aave v3 on Base** (`src/sources/aave.ts`). The USDC
+   variable borrow APR (the strategy's funding cost) and, per enabled
+   collateral (cbBTC, WETH), the supply APR and the liquidation threshold /
+   LTV / flags, read from the `PoolDataProvider`
+   (`getReserveData`, `getReserveConfigurationData`). Addresses come only
+   from `@zyo/shared` (`docs/VERIFIED-BASE-FACTS.md`). Decoding is STRICT:
+   exact word counts, plausibility bounds, boolean words ∈ {0,1}; anything
+   else throws and nothing is read as zero. A half-readable sample is
+   refused entirely.
+2. **Gauge emissions — Aerodrome Slipstream** (`src/sources/gauges.ts`).
+   Per Aerodrome pool, including the tracked cbZEC/USDC pool: the gauge via
+   `Voter.gauges(pool)` (cross-checked against the registry's recorded
+   gauge where there is one), `rewardRate()`, `periodFinish()`, the pool's
+   `slot0()`, `stakedLiquidity()`, `fee()`. Converted to the marginal
+   in-range APR at every shared range preset (`APR(bps)`, see the model).
+   `epochActive` requires `rewardRate > 0 AND periodFinish > now`; a
+   never-voted gauge (cbZEC/USDC today) is `epochActive:false, emissions:0`.
+   A `stakedLiquidity` reading more than 5× away from the pool's FIRST
+   reading is flagged `outlier` and kept out of the rolling average.
+3. **The gate** (`src/gate.ts`, `src/model.ts`).
+   `qualifies(pool, setting, collateral)` ⇔ `lpNet > aaveUsdcBorrowApr`
+   with every input live and fresh; every missing/stale/inactive/outlier/
+   uncalibrated input is a specific refusal reason. Exposed on `/v1/pools`
+   (per pool, every setting × collateral) and `/v1/gate` (503 when the rates
+   are absent or stale — fail closed).
+4. **Empirical bands** — the flagship: instead of quoting one modeled APY,
    backtest the engine's OWN on-chain position history and serve the
-   distribution of what real positions actually kept. Matt's call
-   2026-08-27: empirical over analytical-LVR.
+   distribution of what real positions actually kept (methodology
+   `closed-position-flows-v2`, below). Where these exist they replace the
+   model everywhere in the UI.
 
 Zero runtime dependencies (mirrors `agent/`), plain `node:http`, TypeScript,
-41-test offline suite on recorded on-chain fixtures.
+105-test offline suite on recorded on-chain fixtures (RPC mocked at the
+JSON-RPC boundary with real chain words).
 
-## Methodology: `closed-position-flows-v1`
+## The model (`src/model.ts` — one place; the Python sim and the web pin to it)
+
+- **Width.** `rangeWidthBps` is the TOTAL tick span (shared `RANGE_PRESETS`:
+  4500/1500/300 uncorrelated, 2356/784/150 correlated; delays 48/12/2 h).
+  The exact price half-width is `w = 1.0001^(bps/2) − 1` (4500 → ±25.23 %),
+  never `bps/200`.
+- **Concentration.** `f(w) = 2 − √(1−w) − 1/√(1+w)`; a position of
+  liquidity L is worth `L·√P·f(w)` in token1.
+- **Emissions.** `APR(w) = rewardRate·yr·AERO$ ÷ (stakedLiquidity·√P·f(w)/10^dec1·token1$)` —
+  the marginal rate for new staked in-range liquidity at width w.
+- **Fees.** Emissions are gross. Engine-routed pools keep
+  `(1 − engine 15 %)(1 − FEES.performanceBps)` = 0.765; DIRECT pools keep
+  `1 − FEES.performanceBps`. Nothing on principal, ever.
+- **Drag + combining.** `x = σ²/(4·f(w))`; `drag = −100(1−e^{−x})`;
+  emissions accrue on the drag-shrunk base, so
+  `realized = r(1−e^{−x})/x` and **`lpNet = (1−e^{−x})(r/x − 1)`**. The
+  Monte Carlo (`scripts/lp-sim.py`, hourly zero-drift GBM with re-centering
+  after the preset's delay) matches this to ~0.1 pt at Conservative/Moderate
+  and within ~5 pt at Aggressive (time out of range). Note `r/x` is
+  width-independent: a pool that loses at one width loses at every width.
+- **User net** on the whole collateral position:
+  `supply(collateral) + LTV × (lpNet − borrow)` at the shared LTV presets
+  (30 %, 40 %, top = min(50 %, floor(LT/1.55)) from the LIVE LT).
+- **σ inputs** live in `samples/volatility.json` with provenance per pool;
+  a pool absent from it is refused with `no_volatility_input` — never a
+  default. `breakEvenSigma` and `breakEvenEmissionsMultiple` are reported
+  for every failing cell.
+
+`npm run model` regenerates `samples/lp-model-<date>.json` and
+`samples/MODEL-NUMBERS.md` from the recorded inputs; `test/model-pin.test.ts`
+replays the same raw words through the TypeScript source + gate and fails
+if any served cell drifts from the generated numbers by > 0.01 pt, or if
+`samples/model-inputs.json` drifts from what `@zyo/shared` exports.
+**Verdict at the 2026-09-05 borrow (4.828 %): nothing clears** — see
+`samples/MODEL-NUMBERS.md`.
+
+## Staleness contract (audit Lens F / round 3)
+
+Every sample stores `sampledAt` only. `stale` is DERIVED at serve time from
+the sample's age against `YIELD_STALE_AFTER_MS` (default 10 min) — for the
+rates, for each pool's emissions, and for the payload — so a source that
+dies keeps flipping the flag as time passes; no code path stores it.
+`epochActive` is likewise re-derived from `periodFinish` at serve time. The
+gate refuses stale inputs; `/v1/gate` and `/v1/band` return 503 on absent or
+stale rates; `/v1/rates` is 503 until the first successful sample and
+`stale:true` afterwards whenever the sample is old.
+
+## Methodology: `closed-position-flows-v2` (empirical bands)
 
 A "position" is one economic position in the MaxFi/Snuggle engine, followed
 through its full life:
 
 - **Open** = `PositionCreated(tokenId, owner, poolId, …)`.
 - **Rebalances RE-KEY the position** — `SnuggleRebalanced(oldId, newId, …)`
-  mints a fresh id each time (verified live: `positions(oldId)` empties
-  after the event and later events reference the new id). The folder
-  aliases every successor id back to the root, so one position stays one
-  lifecycle. Miss this and every rebalanced position looks like it never
-  closed — the single biggest correctness trap in this pipeline.
-- **Entry principal** = ERC-20 amounts on the owner→vault edge of the
-  deposit tx minus same-tx vault→owner refunds (internal vault↔adapter dust
-  legs excluded — verified against a live deposit receipt).
-- **Exit flows** = `PositionWithdrawn` amounts + `FeesHarvested` +
-  `StakingRewardsClaimed` (AERO emissions), attributed to token0/token1 via
-  the engine's own `approvedPools` registry.
-- **Fees**: measured flows are ALREADY net of the engine's 15% performance
-  fee (`PerformanceFeeCollected` fires before owner payouts), so bands
-  apply only Oilskin's 10%: `user = supply + LTV × (engineNet × 0.90 −
-  borrow)`. The demo's static path multiplies GROSS samples by 0.765
-  (= 0.85 × 0.90) — same economics, pinned by a test.
+  mints a fresh id each time (verified live 2026-08-27 and 2026-09-03). The
+  folder aliases every successor id back to the root.
+- **Entry principal** = ERC-20 inflows on the owner→vault edge of the
+  deposit tx MINUS the attributed same-tx vault→owner refunds. Inflows and
+  refunds are stored SEPARATELY; a refund in the *other* pool token of a
+  single-sided deposit counts (it used to be dropped — 32 pt understatement).
+  Attribution: a refund counts only in a pool token or a deposited token; an
+  unrelated vault→owner leg is ignored and counted. A deposit tx that
+  created MORE THAN ONE position is refused (`ambiguous_entry`), never split
+  by guesswork.
+- **Exit flows** = `PositionWithdrawn` + `FeesHarvested` +
+  `StakingRewardsClaimed`, attributed via the engine's `approvedPools`.
+- **Strict event decoding**: a log whose topic0 is indexed but whose
+  topic/data shape is wrong is a `MalformedLogError` — counted in the
+  indexer state, never decoded to zeros.
+- **Fees**: measured flows are ALREADY net of the engine's performance fee;
+  bands apply only Oilskin's (`FEES.performanceBps`).
 - **USD valuation**: day-close prices per token (stables pinned at $1;
   others via reference-pool OHLCV with runtime side-detection). A flow that
-  can't be priced marks the position excluded — counted in the payload,
-  never guessed.
+  can't be priced marks the position `unpriced`.
 - **Cohorts**: positions whose close falls in the trailing 30/60/90 days.
-  Per position: `netApr = (outUsd − principalUsd)/principalUsd × 365/days`.
-  Percentiles p10/25/50/75/90 are principal-weighted (a $200k position
-  moves the band more than a $50 one); the unweighted median ships
-  alongside. Exclusions (unpriced, open <1 day, principal <$1) are counted
-  in `excluded`.
+  Exclusions counted per reason: `unpriced`, `ambiguous_entry`,
+  `short_position` (< 1 day), `dust_principal` (< $1), and the **absolute
+  outcome bound** `absurd_outcome` (|netApr| > 2000 %/yr — an attribution
+  defect, not a return; asserted again on the produced band). Percentiles
+  p10/25/50/75/90 are principal-weighted; the unweighted median ships
+  alongside.
 
-**Stated limitations (v1):** open positions are not marked to market (the
-cohort is closed positions only — the payload says so); exit flows are
-valued at the close day (harvests cluster near close for short-lived
-positions); the equal-split mix band averages percentile points across
-pools before the fee/LTV transform (`percentile-mean-v1` — true mix
-percentiles need joint distributions). Each is labeled in the API, not
-hidden.
+**Stated limitations:** open positions are not marked to market; exit flows
+are valued at the close day; the equal-split mix band averages percentile
+points across pools before the fee/LTV transform (`percentile-mean-v1`).
+Each is labeled in the API, not hidden.
 
 ## Event map provenance (dual-verified 2026-08-27)
 
 Topic constants in `src/engine/events.ts` come from the engine
 implementation's VERIFIED source ABI (SnuggleVaultUpgradeable at
 `0x359f90ee4c2e21cbf6e32c5a062eeef306822d28` behind proxy
-`0x7d27cdfbfcc878f7e7349e216d44204bfd2afd55`, base.blockscout.com,
-33 events), hashed with the test-verified vendored keccak, then matched 1:1
-against a live 2,000-block log sweep (OutOfRangeStatusUpdated ×631,
-SnuggleRebalanced ×48, PerformanceFeeCollected ×44, FeesHarvested ×31,
-PositionCreated ×27, StakingRewardsClaimed ×18, PositionWithdrawn ×12).
-After any engine upgrade run `npm run backfill -- verify-events` — it
-resolves the EIP-1967 implementation slot, pulls the verified ABI through
-Blockscout, and diffs the event set against our constants.
-
-Other live verifications the code pins against (same date): Burrow
-`get_asset` returns `borrow_apr`/`supply_apr` as decimal-fraction strings
-(USDC borrow 13.56%, supply 8.70%; ZEC `zec.omft.near` supply 0.04%);
-GeckoTerminal OHLCV rows are `[ts,o,h,l,c,vol]` with USD closes and
-`meta.base` naming the priced token; the engine registry stores the Aero
-WETH/USDC pool with fee word `100` (units differ per DEX — the raw word is
-kept as `engineFeeRaw` and NEVER used as bps; display math uses the curated
-list's fee tiers).
+`0x7d27cdfbfcc878f7e7349e216d44204bfd2afd55`), hashed with the vendored
+keccak and matched 1:1 against a live 2,000-block log sweep. Every function
+selector the service uses (Aave, Voter, gauge, pool) is re-derived from its
+signature in the test suite. After any engine upgrade run
+`npm run backfill -- verify-events`.
 
 ## Running it
 
 ```bash
-# .env (repo root, gitignored) — the service reads the same file the agent uses:
-#   BASE_RPC_URL=…            # any Base RPC url (1rpc/Alchemy/…)
-#   BLOCKSCOUT_PRO_API_KEY=…  # optional; enables decoded-transfer receipts,
-#                             # verify-events, and the PRO json-rpc gateway
-#   NEAR_RPC_URL=…            # defaults to rpc.mainnet.near.org
+# .env (repo root, gitignored):
+#   BASE_RPC_URL=…            # any Base RPC url — needed for Aave rates + gauges
+#   BLOCKSCOUT_PRO_API_KEY=…  # optional; enables decoded-transfer receipts + verify-events
 
-set -a; . ./.env; set +a       # or: node --env-file=.env …
+set -a; . ./.env; set +a
 
-npm run backfill -- all        # scan → timestamps → receipts → cohorts
-                               # (resumable at every step; state in services/yield/data/)
+npm run backfill -- sample     # live gauge words + Aave rates → samples/gauge-emissions-<date>.json
+npm run model                  # re-run the sim + regenerate MODEL-NUMBERS.md (edit the borrow/supply/LT args to the live values)
+npm run backfill -- all        # scan → timestamps → receipts → cohorts (resumable)
 npm run yield                  # serve http://127.0.0.1:8787
 ```
 
-Endpoints: `/healthz`, `/v1/pools` (live samples + bands + rates, `stale`
-flag, per-item `sampledAt`), `/v1/rates`, `/v1/band?ltv=0.40&mix=aweth,acbbtc`
-(demo pool ids accepted). Failing sources serve the last good sample flagged
-`stale:true` rather than 500ing. Bands are `null` with
-`bandsUnavailableReason:"backfill_pending"` until a backfill has produced
-`data/bands.json` — the frontend renders "pending backfill", never an
-invented range.
-
-**Demo wiring**: `prototype/simple.html` probes `http://127.0.0.1:8787` at
-boot. Service up → LIVE chip, live rates through the same `apyModel`,
-banded headline (p25–p75 + typical), per-card band bars, live sample times.
-Service down → the static dated sample stands (one tolerated
-`ERR_CONNECTION_REFUSED` console line is that probe). The hosted demo
-(https) never probes — browsers block localhost from https pages.
+Endpoints: `/healthz`, `/v1/pools`, `/v1/rates`, `/v1/gate[?pool=&setting=&collateral=]`,
+`/v1/band?ltv=0.40&mix=aweth,acbbtc&collateral=cbBTC`. Demo ids are accepted
+(`aweth acbbtc wbtc link lst stab aero abtc zec`).
 
 ## Security & key handling
 
 The Blockscout key is read from the environment at runtime, sent only as a
-`Bearer` header to `api.blockscout.com`, and never logged. 401/403 stops
-immediately with a key message; 402 (credits) stops cleanly;
-`x-credits-remaining` is tracked and printed after receipt batches. RPC
-URLs may embed provider keys — they are never printed either. Keep `.env`
-gitignored (it is), and rotate any key that has ever appeared in a chat,
-log, or screenshot.
-
-## 2026-09-02 addendum — gauge emissions + hardening
-
-`/v1/pools` entries now carry `emissions` for Aerodrome pools: whole-pool APR
-from the gauge's on-chain `rewardRate` × AERO price ÷ TVL, plus
-`aprByWidthPct` — the marginal in-range APR for a position of width ±w given
-the pool's **staked in-range liquidity** (rolling-averaged across refreshes;
-`samples` says how many readings) — and `epochActive` (false = the gauge's
-reward epoch has ended; APRs are 0, as AERO/WETH was when sampled
-2026-08-31). `live` gains the pool's token addresses + USD prices;
-`/v1/rates` gains `stale`; cohort windows with n < 5 return null percentiles
-with `reason:"insufficient_sample"` instead of a 1-position "band". The
-performance fee in user transforms applies to gains only. Hardening from the
-pre-audit sweep (docs/PRE-AUDIT-2026-09-02.md): malformed request paths
-return 400 instead of killing the process; the backfill store writes
-atomically (tmp+fsync+rename), tolerates a torn final line, and refuses to
-scan past lost data; the indexer stops 64 blocks behind head; rate-limit
-errors back off instead of bisecting into request storms. **Interpretation
-warning:** whole-pool emissions APR is NOT what a position earns — a ±25%
-position earns roughly an eighth of it (see docs/YIELD-REALITY-2026-08-31.md
-before quoting any number from this API).
+`Bearer` header to `api.blockscout.com`, and never logged. RPC URLs may
+embed provider keys — they are never printed either. Upstream error text
+never reaches a response (fixed reason enums). Keep `.env` gitignored.

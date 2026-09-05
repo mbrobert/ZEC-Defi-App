@@ -125,33 +125,3 @@ be the computed trailing figure, never a promise.
 > bars; not running → the static dated sample stands. Bands render only
 > from real backfilled history — "pending backfill" is shown rather than
 > any invented range.
-
-> **Amended 2026-09-02 (measured yield + the five fixes).** (1) **The menu is
-> now gated by measurement, not curation.** Every pool models
-> `net = emissions(width) × 0.765 + IL drag(vol, width)` from the 2026-08-31
-> on-chain gauge sample and the realized-vol Monte Carlo
-> (docs/YIELD-REALITY-2026-08-31.md); a pool is offered at a setting only when
-> net beats the live borrow rate. At sampled rates **nothing qualifies** — the
-> page says so, shows the failing numbers on each greyed card, and offers
-> lending-only (Rhea ZEC supply, 0.04%) instead of a leveraged loss. Empirical
-> bands (backfill) override the model when present; the tester's kit carries
-> labeled what-if switches so the full flow stays exercisable. (2) **Risk
-> setting now also sets the engine preset**: Sheltered = Conservative ±25%
-> (±12.5% correlated) / 48h; Steady = Moderate ±8% (±4%) / 12h; Working hard
-> = Aggressive ±1.5% (±0.75%) / 2h — every pool card shows its width,
-> rebalance delay, modeled time-in-range and rebalances/yr for the selected
-> setting. (3) **Dashboard** adopts the advanced bones: four stat tiles,
-> loan-health band, expandable position card (emissions → engine fee →
-> Oilskin fee → net; range bar; backed-by; idle refunds), activity rail with
-> per-chain tx links. (4) **Identity without login**: the locked payout
-> address keys the position; localStorage keeps a local copy
-> ("forget this device" clears it); **Find your position** restores by
-> address from any browser — read-only-safe because funds can only exit to
-> that address. Production: a passkey bound at deposit (OS-synced) gates
-> state-changing actions, fallback = a dust-sized proof transaction from the
-> locked address. (5) **Emissions-only language**: staked positions earn AERO
-> emissions in lieu of trading fees, so the simple build no longer mentions
-> fee rates at all — every yield word is emissions, IL, or the borrow cost.
-> Engine refunds (single-sided deposits return sub-1% leftovers in the same
-> tx) are booked idle to the position and redeployed at the next compound —
-> surfaced in the FAQ and Activity.
