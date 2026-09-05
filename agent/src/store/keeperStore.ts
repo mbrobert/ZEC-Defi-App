@@ -1,0 +1,559 @@
+import { createHash } from "node:crypto";
+import { closeSync, fsyncSync, openSync, writeSync } from "node:fs";
+import { link, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { hostname } from "node:os";
+import { dirname, isAbsolute } from "node:path";
+import type { Address, Hex } from "../types/evm.js";
+import { isAddress, lowerAddress } from "../types/evm.js";
+import type { LadderState } from "../engine/ladder.js";
+
+/**
+ * Crash-safe keeper store: one JSON file, one writer.
+ *
+ * Guarantees (each has a test in test/keeperStore.test.ts):
+ *   • Atomic persistence — write to a temp file, fsync, rename over the store.
+ *     A crash mid-write leaves the previous store intact.
+ *   • Single writer — `open()` takes a lock by creating a temp file and
+ *     hard-`link()`ing it to `<store>.lock`. link(2) is atomic and fails with
+ *     EEXIST when the lock exists, including on NFS where O_EXCL is unreliable.
+ *     A lock held by a dead pid on this host is reclaimed once; a lock held by
+ *     a live pid (or another host) is fatal.
+ *   • External-edit detection — after every write the file's size, mtime,
+ *     inode and SHA-256 are recorded; before every subsequent write they are
+ *     re-checked. A mismatch means someone edited the store behind the
+ *     keeper's back and the keeper REFUSES to write (StoreTamperedError):
+ *     overwriting an operator's manual edit is worse than stopping, and a
+ *     store the keeper did not write cannot be trusted for idempotency keys.
+ *   • Duplicate-id rejection — accounts and dispatch records are arrays in
+ *     the file (a JSON object silently drops duplicate keys); duplicates are
+ *     rejected on load and on insert.
+ *   • Monotonic counters — `episode` and `dispatchSeq` only ever increase and
+ *     are persisted by the caller BEFORE the action they key (see
+ *     dispatch/dispatcher.ts).
+ *   • Serialised mutations — every `mutate` runs to completion (including the
+ *     fsync'd rename) before the next begins.
+ */
+
+export const STORE_VERSION = 2 as const;
+
+export type ValuationKind = "OK" | "NO_DEBT" | "UNKNOWN";
+
+export interface AccountRecord {
+  /** Lower-cased account address (the id). */
+  account: Address;
+  owner: Address;
+  discoveredAtBlock: string;
+  addedAt: string;
+  ladder: LadderState;
+  /** Episode number the account is currently in, or null when clear. */
+  episode: number | null;
+  lastHf: number | null;
+  lastValuation: ValuationKind | null;
+  lastEvaluatedAt: string | null;
+  /** Consecutive UNKNOWN valuations (for escalation). */
+  unknownStreak: number;
+}
+
+/**
+ * PENDING    — key persisted, nothing sent yet (resume: dispatch with the same key)
+ * SENT       — broadcast, awaiting receipt (resume: confirm)
+ * CONFIRMED  — receipt success
+ * NOTIFIED   — off-chain action (warn rung) delivered
+ * FAILED     — send/receipt failure; retried with the SAME key while the
+ *              episode is open and attempts < max
+ * REFUSED    — no grant on-chain / keeper cannot act; re-checked like FAILED
+ * SUPERSEDED — a later, more severe dispatch for the account replaced it, or
+ *              the world moved on (HF recovered) before it could act
+ * ABANDONED  — retries exhausted; escalated to a human
+ */
+export type DispatchStatus =
+  | "PENDING"
+  | "SENT"
+  | "CONFIRMED"
+  | "NOTIFIED"
+  | "FAILED"
+  | "REFUSED"
+  | "SUPERSEDED"
+  | "ABANDONED";
+
+export const DISPATCH_STATUSES: readonly DispatchStatus[] = [
+  "PENDING",
+  "SENT",
+  "CONFIRMED",
+  "NOTIFIED",
+  "FAILED",
+  "REFUSED",
+  "SUPERSEDED",
+  "ABANDONED",
+];
+
+export interface DispatchRecord {
+  /** `${account}:${episode}:${seq}:${action}` */
+  key: string;
+  account: Address;
+  episode: number;
+  seq: number;
+  action: string;
+  rung: string;
+  hf: number;
+  status: DispatchStatus;
+  txHash?: Hex;
+  attempts: number;
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StoreState {
+  version: typeof STORE_VERSION;
+  cursor: { lastScannedBlock: string } | null;
+  counters: { episode: number; dispatchSeq: number };
+  accounts: AccountRecord[];
+  dispatches: DispatchRecord[];
+}
+
+export function emptyState(): StoreState {
+  return {
+    version: STORE_VERSION,
+    cursor: null,
+    counters: { episode: 0, dispatchSeq: 0 },
+    accounts: [],
+    dispatches: [],
+  };
+}
+
+export class StoreError extends Error {
+  constructor(msg: string) {
+    super(`store: ${msg}`);
+    this.name = "StoreError";
+  }
+}
+export class StoreLockedError extends StoreError {
+  constructor(msg: string) {
+    super(`locked — ${msg}`);
+    this.name = "StoreLockedError";
+  }
+}
+export class StoreTamperedError extends StoreError {
+  constructor(msg: string) {
+    super(`external edit detected — ${msg}`);
+    this.name = "StoreTamperedError";
+  }
+}
+export class DuplicateIdError extends StoreError {
+  constructor(kind: string, id: string) {
+    super(`duplicate ${kind} id ${id}`);
+    this.name = "DuplicateIdError";
+  }
+}
+
+interface Fingerprint {
+  size: number;
+  mtimeMs: number;
+  ino: number;
+  sha256: string;
+}
+
+function sha256(s: string): string {
+  return createHash("sha256").update(s).digest("hex");
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function isNonNegInt(v: unknown): v is number {
+  return typeof v === "number" && Number.isInteger(v) && v >= 0;
+}
+
+/** Validate a parsed store document. Throws StoreError on any shape problem. */
+export function validateState(doc: unknown): StoreState {
+  if (!isRecord(doc)) throw new StoreError("document is not an object");
+  if (doc.version !== STORE_VERSION) throw new StoreError(`unsupported version ${String(doc.version)}`);
+  if (doc.cursor !== null && !(isRecord(doc.cursor) && typeof doc.cursor.lastScannedBlock === "string" && /^\d+$/.test(doc.cursor.lastScannedBlock))) {
+    throw new StoreError("cursor malformed");
+  }
+  if (!isRecord(doc.counters) || !isNonNegInt(doc.counters.episode) || !isNonNegInt(doc.counters.dispatchSeq)) {
+    throw new StoreError("counters malformed");
+  }
+  if (!Array.isArray(doc.accounts) || !Array.isArray(doc.dispatches)) throw new StoreError("accounts/dispatches must be arrays");
+
+  const accountIds = new Set<string>();
+  for (const a of doc.accounts as unknown[]) {
+    if (!isRecord(a) || typeof a.account !== "string" || !isAddress(a.account)) throw new StoreError("account record malformed");
+    const id = a.account.toLowerCase();
+    if (accountIds.has(id)) throw new DuplicateIdError("account", id);
+    accountIds.add(id);
+    if (typeof a.owner !== "string" || !isAddress(a.owner)) throw new StoreError(`account ${id}: owner malformed`);
+    if (!isRecord(a.ladder) || !Array.isArray(a.ladder.fired)) throw new StoreError(`account ${id}: ladder malformed`);
+    if (a.episode !== null && !isNonNegInt(a.episode)) throw new StoreError(`account ${id}: episode malformed`);
+    if (a.episode !== null && a.episode > (doc.counters as { episode: number }).episode) {
+      throw new StoreError(`account ${id}: episode ${a.episode} exceeds counter`);
+    }
+    if (!isNonNegInt(a.unknownStreak)) throw new StoreError(`account ${id}: unknownStreak malformed`);
+  }
+  const keys = new Set<string>();
+  for (const d of doc.dispatches as unknown[]) {
+    if (!isRecord(d) || typeof d.key !== "string") throw new StoreError("dispatch record malformed");
+    if (keys.has(d.key)) throw new DuplicateIdError("dispatch", d.key);
+    keys.add(d.key);
+    if (!isNonNegInt(d.episode) || !isNonNegInt(d.seq)) throw new StoreError(`dispatch ${d.key}: counters malformed`);
+    const c = doc.counters as { episode: number; dispatchSeq: number };
+    if (d.episode > c.episode || d.seq > c.dispatchSeq) {
+      throw new StoreError(`dispatch ${d.key}: exceeds persisted counters (store rolled back?)`);
+    }
+    if (typeof d.status !== "string" || !DISPATCH_STATUSES.includes(d.status as DispatchStatus)) {
+      throw new StoreError(`dispatch ${d.key}: status malformed`);
+    }
+    if (!isNonNegInt(d.attempts)) throw new StoreError(`dispatch ${d.key}: attempts malformed`);
+    if (d.txHash !== undefined && !(typeof d.txHash === "string" && /^0x[0-9a-fA-F]{64}$/.test(d.txHash))) {
+      throw new StoreError(`dispatch ${d.key}: txHash malformed`);
+    }
+  }
+  return doc as unknown as StoreState;
+}
+
+export interface KeeperStoreOptions {
+  /** Injected for tests; defaults to process.pid. */
+  pid?: number;
+  /** Injected for tests; defaults to process.kill(pid, 0) liveness. */
+  isPidAlive?: (pid: number) => boolean;
+}
+
+export class KeeperStore {
+  private state: StoreState | null = null;
+  private fingerprint: Fingerprint | null = null;
+  private queue: Promise<unknown> = Promise.resolve();
+  private locked = false;
+  private readonly lockPath: string;
+  private readonly pid: number;
+  private readonly isPidAlive: (pid: number) => boolean;
+
+  constructor(
+    readonly path: string,
+    opts: KeeperStoreOptions = {}
+  ) {
+    if (!isAbsolute(path)) throw new StoreError(`path must be absolute: ${path}`);
+    this.lockPath = `${path}.lock`;
+    this.pid = opts.pid ?? process.pid;
+    this.isPidAlive =
+      opts.isPidAlive ??
+      ((pid: number) => {
+        try {
+          process.kill(pid, 0);
+          return true;
+        } catch (e) {
+          return (e as NodeJS.ErrnoException).code === "EPERM";
+        }
+      });
+  }
+
+  // ---- lifecycle ----------------------------------------------------------
+
+  async open(): Promise<void> {
+    if (this.locked) return;
+    await mkdir(dirname(this.path), { recursive: true });
+    await this.acquireLock();
+    try {
+      await this.loadFromDisk();
+    } catch (e) {
+      await this.releaseLock();
+      throw e;
+    }
+  }
+
+  async close(): Promise<void> {
+    await this.queue; // drain
+    await this.releaseLock();
+    this.state = null;
+    this.fingerprint = null;
+  }
+
+  private async acquireLock(): Promise<void> {
+    const tmp = `${this.lockPath}.${this.pid}.${process.hrtime.bigint().toString(36)}`;
+    const body = JSON.stringify({ pid: this.pid, host: hostname(), at: new Date().toISOString() });
+    await writeFile(tmp, body);
+    try {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          await link(tmp, this.lockPath);
+          this.locked = true;
+          return;
+        } catch (e) {
+          if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+          const holder = await this.readLockHolder();
+          if (attempt === 0 && holder && holder.host === hostname() && !this.isPidAlive(holder.pid)) {
+            // Dead holder on this host: reclaim once.
+            await unlink(this.lockPath).catch(() => undefined);
+            continue;
+          }
+          throw new StoreLockedError(
+            holder ? `held by pid ${holder.pid} on ${holder.host} since ${holder.at}` : `${this.lockPath} exists`
+          );
+        }
+      }
+      throw new StoreLockedError("could not acquire after reclaim");
+    } finally {
+      await unlink(tmp).catch(() => undefined);
+    }
+  }
+
+  private async readLockHolder(): Promise<{ pid: number; host: string; at: string } | null> {
+    try {
+      const raw = await readFile(this.lockPath, "utf8");
+      const j = JSON.parse(raw) as { pid?: unknown; host?: unknown; at?: unknown };
+      if (typeof j.pid === "number" && typeof j.host === "string") {
+        return { pid: j.pid, host: j.host, at: typeof j.at === "string" ? j.at : "?" };
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async releaseLock(): Promise<void> {
+    if (!this.locked) return;
+    this.locked = false;
+    await unlink(this.lockPath).catch(() => undefined);
+  }
+
+  private async loadFromDisk(): Promise<void> {
+    let raw: string;
+    try {
+      raw = await readFile(this.path, "utf8");
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+        this.state = emptyState();
+        await this.persist();
+        return;
+      }
+      throw e;
+    }
+    let doc: unknown;
+    try {
+      doc = JSON.parse(raw);
+    } catch {
+      throw new StoreError(`${this.path} is not valid JSON — refusing to start on a corrupt store`);
+    }
+    this.state = validateState(doc);
+    this.fingerprint = await this.fingerprintOf(raw);
+  }
+
+  private async fingerprintOf(content: string): Promise<Fingerprint> {
+    const st = await stat(this.path);
+    return { size: st.size, mtimeMs: st.mtimeMs, ino: st.ino, sha256: sha256(content) };
+  }
+
+  /** Throws StoreTamperedError when the file no longer matches our last write. */
+  async assertUntampered(): Promise<void> {
+    if (!this.fingerprint) return;
+    let st;
+    try {
+      st = await stat(this.path);
+    } catch {
+      throw new StoreTamperedError("store file vanished");
+    }
+    const fp = this.fingerprint;
+    if (st.size !== fp.size || st.ino !== fp.ino || st.mtimeMs !== fp.mtimeMs) {
+      const raw = await readFile(this.path, "utf8").catch(() => "");
+      if (sha256(raw) !== fp.sha256) throw new StoreTamperedError(`${this.path} changed on disk since last write`);
+      // Same content, different metadata (e.g. copied back): accept and re-pin.
+      this.fingerprint = { size: st.size, mtimeMs: st.mtimeMs, ino: st.ino, sha256: fp.sha256 };
+    }
+  }
+
+  private async persist(): Promise<void> {
+    if (!this.state) throw new StoreError("not open");
+    const content = JSON.stringify(this.state, null, 2);
+    const tmp = `${this.path}.tmp.${this.pid}.${process.hrtime.bigint().toString(36)}`;
+    const fd = openSync(tmp, "w", 0o600);
+    try {
+      writeSync(fd, content);
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+    await rename(tmp, this.path);
+    this.fingerprint = await this.fingerprintOf(content);
+  }
+
+  // ---- reads --------------------------------------------------------------
+
+  private snapshot(): StoreState {
+    if (!this.state) throw new StoreError("not open");
+    return this.state;
+  }
+
+  getState(): Readonly<StoreState> {
+    return structuredClone(this.snapshot());
+  }
+
+  listAccounts(): AccountRecord[] {
+    return structuredClone(this.snapshot().accounts);
+  }
+
+  getAccount(account: Address): AccountRecord | undefined {
+    const id = lowerAddress(account);
+    const a = this.snapshot().accounts.find((x) => x.account === id);
+    return a ? structuredClone(a) : undefined;
+  }
+
+  getDispatch(key: string): DispatchRecord | undefined {
+    const d = this.snapshot().dispatches.find((x) => x.key === key);
+    return d ? structuredClone(d) : undefined;
+  }
+
+  listDispatches(filter?: { account?: Address; status?: DispatchStatus }): DispatchRecord[] {
+    const acc = filter?.account ? lowerAddress(filter.account) : undefined;
+    return structuredClone(
+      this.snapshot().dispatches.filter(
+        (d) => (acc === undefined || d.account === acc) && (filter?.status === undefined || d.status === filter.status)
+      )
+    );
+  }
+
+  get counters(): Readonly<StoreState["counters"]> {
+    return { ...this.snapshot().counters };
+  }
+
+  get cursor(): bigint | null {
+    const c = this.snapshot().cursor;
+    return c ? BigInt(c.lastScannedBlock) : null;
+  }
+
+  // ---- writes (serialised, atomic, tamper-checked) ------------------------
+
+  /**
+   * Apply `fn` to the state and persist. Mutations are serialised; the state
+   * handed to `fn` is the live object — return normally to commit, throw to
+   * roll back (the in-memory copy is restored from the last persisted JSON).
+   */
+  mutate<T>(fn: (s: StoreState) => T): Promise<T> {
+    const run = async (): Promise<T> => {
+      if (!this.locked) throw new StoreError("not open");
+      await this.assertUntampered();
+      const before = JSON.stringify(this.state);
+      let result: T;
+      try {
+        result = fn(this.snapshot());
+        validateState(JSON.parse(JSON.stringify(this.state)));
+      } catch (e) {
+        this.state = JSON.parse(before) as StoreState;
+        throw e;
+      }
+      try {
+        await this.persist();
+      } catch (e) {
+        this.state = JSON.parse(before) as StoreState;
+        throw e;
+      }
+      return result;
+    };
+    const next = this.queue.then(run, run);
+    this.queue = next.catch(() => undefined);
+    return next;
+  }
+
+  registerAccount(rec: { account: Address; owner: Address; discoveredAtBlock: bigint }, now: Date): Promise<AccountRecord> {
+    return this.mutate((s) => {
+      const id = lowerAddress(rec.account);
+      if (s.accounts.some((a) => a.account === id)) throw new DuplicateIdError("account", id);
+      const a: AccountRecord = {
+        account: id,
+        owner: lowerAddress(rec.owner),
+        discoveredAtBlock: rec.discoveredAtBlock.toString(),
+        addedAt: now.toISOString(),
+        ladder: { fired: [] },
+        episode: null,
+        lastHf: null,
+        lastValuation: null,
+        lastEvaluatedAt: null,
+        unknownStreak: 0,
+      };
+      s.accounts.push(a);
+      return structuredClone(a);
+    });
+  }
+
+  updateAccount(account: Address, patch: Partial<Omit<AccountRecord, "account" | "owner">>): Promise<AccountRecord> {
+    return this.mutate((s) => {
+      const id = lowerAddress(account);
+      const a = s.accounts.find((x) => x.account === id);
+      if (!a) throw new StoreError(`account ${id} not registered`);
+      Object.assign(a, patch);
+      return structuredClone(a);
+    });
+  }
+
+  setCursor(lastScannedBlock: bigint): Promise<void> {
+    return this.mutate((s) => {
+      const prev = s.cursor ? BigInt(s.cursor.lastScannedBlock) : -1n;
+      if (lastScannedBlock < prev) throw new StoreError(`cursor cannot move backwards (${prev} → ${lastScannedBlock})`);
+      s.cursor = { lastScannedBlock: lastScannedBlock.toString() };
+    });
+  }
+
+  /** Allocate the next episode number for `account` and persist it. */
+  beginEpisode(account: Address): Promise<number> {
+    return this.mutate((s) => {
+      const id = lowerAddress(account);
+      const a = s.accounts.find((x) => x.account === id);
+      if (!a) throw new StoreError(`account ${id} not registered`);
+      if (a.episode !== null) throw new StoreError(`account ${id} already in episode ${a.episode}`);
+      s.counters.episode += 1;
+      a.episode = s.counters.episode;
+      return a.episode;
+    });
+  }
+
+  endEpisode(account: Address): Promise<void> {
+    return this.mutate((s) => {
+      const id = lowerAddress(account);
+      const a = s.accounts.find((x) => x.account === id);
+      if (!a) throw new StoreError(`account ${id} not registered`);
+      a.episode = null;
+    });
+  }
+
+  /**
+   * Allocate a dispatch sequence number, mint the key and persist a PENDING
+   * record — all before the caller sends anything. Returns the record.
+   */
+  createDispatch(input: { account: Address; episode: number; action: string; rung: string; hf: number }, now: Date): Promise<DispatchRecord> {
+    return this.mutate((s) => {
+      const id = lowerAddress(input.account);
+      s.counters.dispatchSeq += 1;
+      const seq = s.counters.dispatchSeq;
+      const key = dispatchKey(id, input.episode, seq, input.action);
+      if (s.dispatches.some((d) => d.key === key)) throw new DuplicateIdError("dispatch", key);
+      const d: DispatchRecord = {
+        key,
+        account: id,
+        episode: input.episode,
+        seq,
+        action: input.action,
+        rung: input.rung,
+        hf: input.hf,
+        status: "PENDING",
+        attempts: 0,
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString(),
+      };
+      s.dispatches.push(d);
+      return structuredClone(d);
+    });
+  }
+
+  updateDispatch(key: string, patch: Partial<Pick<DispatchRecord, "status" | "txHash" | "attempts" | "error">>, now: Date): Promise<DispatchRecord> {
+    return this.mutate((s) => {
+      const d = s.dispatches.find((x) => x.key === key);
+      if (!d) throw new StoreError(`dispatch ${key} not found`);
+      Object.assign(d, patch, { updatedAt: now.toISOString() });
+      return structuredClone(d);
+    });
+  }
+}
+
+export function dispatchKey(account: Address, episode: number, seq: number, action: string): string {
+  return `${lowerAddress(account)}:${episode}:${seq}:${action}`;
+}

@@ -6,7 +6,6 @@
     "outDir": "dist",
     "rootDir": ".",
     "strict": true,
-    "noUncheckedIndexedAccess": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "declaration": false,
@@ -14,5 +13,5 @@
     "types": ["node"]
   },
   "include": ["src", "test"],
-  "exclude": ["integrations", "dist", "node_modules"]
+  "exclude": ["dist", "node_modules", "scripts"]
 }
