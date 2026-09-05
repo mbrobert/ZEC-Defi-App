@@ -7,47 +7,236 @@
 }
 
 body {
-  @apply bg-ink-bg text-ink-soft antialiased;
+  @apply bg-oil-bg text-oil-ink antialiased;
   background-image:
-    radial-gradient(1100px 500px at 85% -10%, rgba(244, 183, 40, 0.055), transparent 60%),
-    radial-gradient(900px 480px at -10% 110%, rgba(139, 156, 249, 0.05), transparent 55%);
-  font-feature-settings: "tnum" 1;
+    radial-gradient(1100px 500px at 85% -10%, rgba(205, 163, 85, 0.06), transparent 60%),
+    radial-gradient(900px 480px at -10% 110%, rgba(111, 169, 242, 0.05), transparent 55%);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+h1,
+h2,
+h3 {
+  letter-spacing: -0.02em;
+  font-weight: 650;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
 }
 
 /* Cards carry a faint top sheen so surfaces read as lit, not flat. */
 .card {
-  @apply rounded-card border border-ink-border bg-ink-surface shadow-card;
+  @apply rounded-card border border-oil-line bg-oil-surface shadow-card;
   background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.022), transparent 32%);
 }
 
-.btn-primary {
-  @apply rounded-ctl px-5 py-2.5 font-semibold text-zec-on transition disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none;
-  background-image: linear-gradient(180deg, #ffcd45, #f4b728);
-  box-shadow: 0 2px 14px rgba(244, 183, 40, 0.28);
+.btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-ctl px-4 py-2 text-sm font-semibold transition;
 }
-.btn-primary:hover:not(:disabled) {
-  box-shadow: 0 4px 22px rgba(244, 183, 40, 0.42);
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
 }
-
+.btn:disabled {
+  @apply cursor-not-allowed opacity-45 shadow-none;
+}
+.btn-brass {
+  @apply btn text-brass-on;
+  background-image: linear-gradient(180deg, #ddb56a, #cda355);
+  box-shadow: 0 2px 14px rgba(205, 163, 85, 0.28);
+}
+.btn-brass:hover:not(:disabled) {
+  box-shadow: 0 4px 22px rgba(205, 163, 85, 0.42);
+}
 .btn-ghost {
-  @apply rounded-ctl border border-ink-border bg-ink-surface px-5 py-2.5 font-medium text-ink-soft transition hover:bg-ink-raised;
+  @apply btn border border-oil-line bg-oil-surface text-oil-ink hover:bg-oil-surface2;
+}
+.btn-quiet {
+  @apply btn px-2.5 py-1.5 text-oil-ink2 hover:bg-white/5 hover:text-oil-ink;
+}
+.btn-lg {
+  @apply rounded-xl px-5 py-3 text-[15px];
 }
 
 .input {
-  @apply w-full rounded-ctl border border-ink-border bg-ink-bg2 px-3 py-2.5 text-ink-hi outline-none transition focus:border-zec;
+  @apply w-full rounded-ctl border border-oil-line bg-oil-bg2 px-3 py-2.5 text-oil-ink outline-none transition focus:border-brass;
 }
-
 .label {
-  @apply mb-1.5 block text-sm font-semibold text-ink-soft;
+  @apply mb-1.5 block text-[13px] font-semibold text-oil-ink2;
 }
 
-/* Status chips — state is icon + label + hue, never color alone. */
+/* Status chips — state is icon + label + hue, never colour alone. */
 .chip {
-  @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold;
+  @apply inline-flex flex-none items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-semibold;
 }
-.chip-good { @apply border-status-good/30 bg-status-good/10 text-status-good; }
-.chip-warn { @apply border-status-warn/30 bg-status-warn/10 text-status-warn; }
-.chip-serious { @apply border-status-serious/30 bg-status-serious/10 text-status-serious; }
-.chip-info { @apply border-status-info/30 bg-status-info/10 text-status-info; }
-.chip-gold { @apply border-zec/30 bg-zec/10 text-zec; }
-.chip-neutral { @apply border-ink-border bg-ink-raised text-ink-soft; }
+.chip-good {
+  @apply border-status-good/25 bg-status-good/10 text-status-good;
+}
+.chip-warn {
+  @apply border-status-warn/30 bg-status-warn/10 text-status-warn;
+}
+.chip-crit {
+  @apply border-status-crit/30 bg-status-crit/10 text-status-crit;
+}
+.chip-info {
+  @apply border-status-info/30 bg-status-info/10 text-status-info;
+}
+.chip-brass {
+  @apply border-brass/30 bg-brass/10 text-brass;
+}
+.chip-mute {
+  @apply border-oil-line bg-oil-surface2 text-oil-ink2;
+}
+
+/* Option cards (wizard) */
+.opt {
+  @apply cursor-pointer rounded-xl border-[1.5px] border-oil-line bg-oil-bg2 p-4 text-left transition;
+}
+.opt:hover:not(:disabled) {
+  @apply border-oil-ink3;
+}
+.opt.sel {
+  @apply border-brass bg-brass/10;
+}
+.opt:disabled {
+  @apply cursor-not-allowed opacity-60;
+}
+
+/* Callouts */
+.note {
+  @apply rounded-r-xl border-l-[3px] border-status-info bg-status-info/10 px-3.5 py-2.5 text-[13px] text-oil-ink2;
+}
+.note-brass {
+  @apply border-brass bg-brass/10;
+}
+.note-warn {
+  @apply border-status-warn bg-status-warn/10;
+}
+.note-crit {
+  @apply border-status-crit bg-status-crit/10;
+}
+
+/* Wizard step bar */
+.step {
+  @apply flex items-center gap-2 whitespace-nowrap text-[13px] font-semibold text-oil-ink3;
+}
+.step .n {
+  @apply grid h-[22px] w-[22px] place-items-center rounded-full border-[1.5px] border-oil-line bg-oil-surface text-[11.5px];
+}
+.step.on {
+  @apply text-oil-ink;
+}
+.step.on .n {
+  @apply border-brass text-brass;
+}
+.step.done {
+  @apply text-oil-ink2;
+}
+.step.done .n {
+  @apply border-brass bg-brass text-brass-on;
+}
+.step-bar {
+  @apply h-px min-w-[18px] flex-1 bg-oil-line;
+}
+
+/* Health band gauge */
+.band {
+  position: relative;
+  height: 72px;
+  margin: 14px 2px 4px;
+}
+.band-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 26px;
+  height: 10px;
+  border-radius: 6px;
+  overflow: hidden;
+  display: flex;
+}
+.band-tick {
+  position: absolute;
+  top: 12px;
+  width: 2px;
+  height: 38px;
+  border-radius: 2px;
+  transform: translateX(-1px);
+}
+.band-tick .tk-lbl {
+  position: absolute;
+  top: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 11.5px;
+  font-weight: 650;
+}
+.band-tick .tk-val {
+  position: absolute;
+  top: 42px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 11px;
+  color: #8c8a77;
+}
+.band-zonelbl {
+  position: absolute;
+  top: 44px;
+  font-size: 10.5px;
+  color: #8c8a77;
+  letter-spacing: 0.02em;
+}
+
+/* Activity rail */
+.act {
+  @apply flex gap-3 border-b border-white/10 py-2.5 text-[13.5px] last:border-b-0;
+}
+.act-ic {
+  @apply grid h-7 w-7 flex-none place-items-center rounded-lg text-[13px];
+}
+
+/* Range slider — brass thumb */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 4px;
+  background: #333c2a;
+  outline: none;
+  width: 100%;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #cda355;
+  border: 3px solid #171204;
+  cursor: grab;
+  box-shadow: 0 0 10px rgba(205, 163, 85, 0.5);
+}
+
+.pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #52c98a;
+  animation: pulse 2.2s infinite;
+}
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.mono {
+  @apply break-all font-mono text-[12.5px];
+}

@@ -1,188 +1,311 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
-import type { Strategy } from "@zyo/shared";
-import { poolById } from "@zyo/shared";
-import HealthGauge from "@/components/HealthGauge";
-import StatusPill from "@/components/StatusPill";
-import { fmtUsd } from "@/lib/estimates";
+import { useMemo, useState } from "react";
+import type { Address } from "viem";
+import { usePublicClient, useSignTypedData, useWriteContract } from "wagmi";
+import { BASE_CHAIN, BASE_TOKENS, CHAIN_ID, COLLATERAL_ASSETS, feeBreakdown, shortAddress, type CollateralSymbol } from "@zyo/shared";
+import { useAccountRead, useDeployment, useIndexed, useMarket, useSession } from "@/lib/hooks";
+import { useMode } from "@/lib/mode";
+import { DEMO_ACCOUNT, DEMO_ACCOUNT_STATE } from "@/lib/demo";
+import { currentLtvBps, hfBand, liveLiquidationPrice } from "@/lib/math";
+import { fromDemo, mergePositions, type PositionView } from "@/lib/positions";
+import { buildClaimPlan, buildUnwindPlan, deadlineFromNow, DEFAULT_BAND_TOLERANCE_BPS, encodeClaimWrite, type PlannedCall } from "@/lib/plan";
+import { runClaim, runUnwind, type Emit, type RunContext } from "@/lib/execute";
+import { fmtAgo, fmtAmount, fmtHf, fmtPct, fmtUsd, fmtUsd0 } from "@/lib/format";
+import StatTile from "@/components/StatTile";
+import HealthBand from "@/components/HealthBand";
+import PositionCard from "@/components/PositionCard";
+import ActivityRail from "@/components/ActivityRail";
+import Disclosures from "@/components/Disclosures";
+import Chip from "@/components/Chip";
+import SignStep from "@/components/wizard/SignStep";
 
-export default function Dashboard() {
-  const [strategies, setStrategies] = useState<Strategy[]>([]);
-  const [zecPrice, setZecPrice] = useState(48.75);
+type Action = { kind: "claim" | "unwind"; position: PositionView } | null;
 
-  useEffect(() => {
-    fetch("/api/strategies")
-      .then((r) => r.json())
-      .then((d) => setStrategies(d.strategies ?? []))
-      .catch(() => undefined);
-    fetch("/api/price")
-      .then((r) => r.json())
-      .then((d) => d.zecUsd && setZecPrice(d.zecUsd))
-      .catch(() => undefined);
-  }, []);
+export default function DashboardPage() {
+  const s = useSession();
+  const { mode } = useMode();
+  const { market, source } = useMarket();
+  const { deployment } = useDeployment();
+  const { account, loading, refetch } = useAccountRead(market);
+  const indexed = useIndexed(s.mode === "live" ? s.address : undefined, s.mode === "live");
+  const [action, setAction] = useState<Action>(null);
+  const publicClient = usePublicClient({ chainId: CHAIN_ID });
+  const { writeContractAsync } = useWriteContract();
+  const { signTypedDataAsync } = useSignTypedData();
 
-  const totalZec = strategies.reduce(
-    (s, x) => s + Number(x.lending.suppliedZecAtomic) / 1e8,
-    0
-  );
-  const totalRewards = strategies.reduce((s, x) => s + (x.lp?.pendingRewardsUsd ?? 0), 0);
+  // ---- Assemble the view: demo state or chain (+ cache) ----
+  const view = useMemo(() => {
+    if (s.mode === "demo") {
+      const holdings = DEMO_ACCOUNT_STATE.collateral.map((c) => {
+        const r = market.reserves[c.symbol]!;
+        return { symbol: c.symbol as CollateralSymbol, amount: c.amount, usd: c.amount * r.priceUsd, ltBps: r.liquidationThresholdBps, priceUsd: r.priceUsd };
+      });
+      const collateralUsd = holdings.reduce((a, h) => a + h.usd, 0);
+      const debtUsd = DEMO_ACCOUNT_STATE.debtUsdc;
+      const ltBps = holdings.length ? Math.round(holdings.reduce((a, h) => a + h.ltBps * h.usd, 0) / collateralUsd) : 0;
+      const hf = debtUsd > 0 ? ((collateralUsd * ltBps) / 10_000) / debtUsd : Number.POSITIVE_INFINITY;
+      return {
+        accountAddr: DEMO_ACCOUNT as Address,
+        deployed: true,
+        holdings,
+        collateralUsd,
+        debtUsd,
+        ltBps,
+        hf,
+        accountUsdc: 0,
+        positions: DEMO_ACCOUNT_STATE.positions.map(fromDemo),
+        activity: DEMO_ACCOUNT_STATE.activity,
+        readAt: market.readAt,
+        dataSource: "demo" as const,
+      };
+    }
+    const holdings = (account?.collateral ?? []).map((c) => ({
+      symbol: c.symbol,
+      amount: c.amount,
+      usd: c.usd,
+      ltBps: market.reserves[c.symbol]?.liquidationThresholdBps ?? 0,
+      priceUsd: market.reserves[c.symbol]?.priceUsd ?? NaN,
+    }));
+    return {
+      accountAddr: account?.account ?? null,
+      deployed: !!account?.deployed,
+      holdings,
+      collateralUsd: account?.aave?.totalCollateralUsd ?? 0,
+      debtUsd: account?.aave?.totalDebtUsd ?? 0,
+      ltBps: account?.aave?.currentLiquidationThresholdBps ?? 0,
+      hf: account?.aave?.healthFactor ?? Number.POSITIVE_INFINITY,
+      accountUsdc: account ? Number(account.accountUsdc) / 10 ** BASE_TOKENS.USDC.decimals : 0,
+      positions: mergePositions(account ? account.lpPositions : null, indexed),
+      activity: indexed?.activity ?? [],
+      readAt: account?.readAt ?? "",
+      dataSource: account ? ("chain" as const) : indexed ? ("cache" as const) : ("chain" as const),
+    };
+  }, [s.mode, market, account, indexed]);
+
+  const primary = view.holdings[0];
+  const liqPrice = primary ? liveLiquidationPrice(view.collateralUsd, view.debtUsd, view.ltBps, primary.priceUsd) : 0;
+  const lpValue = view.positions.reduce((a, p) => a + (p.valueUsd ?? 0), 0);
+  const claimableGross = view.positions.reduce((a, p) => a + (p.accruedRewardsUsd ?? 0), 0);
+  const claimable = feeBreakdown(claimableGross);
+  const netValue = view.collateralUsd + lpValue + view.accountUsdc - view.debtUsd;
+  const band = hfBand(view.hf);
+  const ltvBps = currentLtvBps(view.collateralUsd, view.debtUsd);
+  const empty = s.mode === "live" && !loading && (!account || !account.deployed);
+
+  // ---- Action plans (claim / unwind) ----
+  const actionPlan: PlannedCall[] = useMemo(() => {
+    if (!action) return [];
+    const p = action.position;
+    const ids = p.positionId !== undefined ? [p.positionId] : [];
+    const label = p.pool ? `${p.pool.token0}/${p.pool.token1}` : "the position";
+    if (action.kind === "claim") {
+      const tokens = [BASE_TOKENS.AERO, ...(p.pool ? [BASE_TOKENS[p.pool.token0 as keyof typeof BASE_TOKENS], BASE_TOKENS[p.pool.token1 as keyof typeof BASE_TOKENS]] : [])].filter(Boolean);
+      return buildClaimPlan({ account: view.accountAddr, positionIds: ids, sweepTokens: tokens.map((t) => ({ symbol: t.symbol, address: t.address })), deployment, poolLabel: label });
+    }
+    return buildUnwindPlan({ account: view.accountAddr, positionIds: ids, collateral: primary?.symbol ?? "cbBTC", deployment, deadline: deadlineFromNow(), bandToleranceBps: DEFAULT_BAND_TOLERANCE_BPS, swapMinOut: 0n, tickSpacing: null, poolLabel: label });
+  }, [action, view.accountAddr, deployment, primary]);
+
+  const ctx = (): RunContext | null =>
+    publicClient
+      ? {
+          wallet: {
+            chainId: s.chainId,
+            writeContract: (spec) => writeContractAsync({ address: spec.address, abi: spec.abi as never, functionName: spec.functionName, args: spec.args as never, chainId: CHAIN_ID }),
+            signTypedData: (td) => signTypedDataAsync(td as never),
+            waitForReceipt: async (hash) => ({ status: (await publicClient.waitForTransactionReceipt({ hash })).status }),
+          },
+          read: publicClient as never,
+          gas: publicClient as never,
+          owner: s.address,
+          ethPriceUsd: market.reserves.WETH?.priceUsd ?? null,
+          nowSeconds: () => Math.floor(Date.now() / 1000),
+        }
+      : null;
+
+  const runAction = async (emit: Emit) => {
+    const c = ctx();
+    if (!action || !c || !view.accountAddr) return null;
+    const p = action.position;
+    const ids = p.positionId !== undefined ? [p.positionId] : [];
+    if (action.kind === "claim") {
+      const plan = actionPlan[0];
+      const spec = plan.encodable ? encodeClaimWrite({ account: view.accountAddr, positionIds: ids, sweepTokens: [], deployment }) : null;
+      if (!spec) return null;
+      const hash = await runClaim(c, { account: view.accountAddr, positionIds: ids, sweepTokens: [BASE_TOKENS.AERO].map((t) => ({ symbol: t.symbol, address: t.address })), deployment }, emit);
+      if (hash) refetch();
+      return hash ? { account: view.accountAddr } : null;
+    }
+    if (!p.enginePoolId || p.tickLower === undefined || p.tickUpper === undefined || !p.pool?.poolAddress) return null;
+    const hash = await runUnwind(
+      c,
+      { account: view.accountAddr, positionIds: ids, collateral: primary?.symbol ?? "cbBTC", deployment, deadline: deadlineFromNow(), bandToleranceBps: DEFAULT_BAND_TOLERANCE_BPS, poolLabel: p.pool ? `${p.pool.token0}/${p.pool.token1}` : undefined },
+      { enginePoolId: p.enginePoolId, tickLower: p.tickLower, tickUpper: p.tickUpper, poolAddress: p.pool.poolAddress as Address, usdcIsToken0: p.pool.token0 === "USDC", valueUsd: p.valueUsd ?? null },
+      emit,
+    );
+    if (hash) refetch();
+    return hash ? { account: view.accountAddr } : null;
+  };
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white">Your strategies</h1>
-        <Link href="/deposit" className="btn-primary text-sm">
-          New strategy
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-[22px]">{s.mode === "demo" ? "Demo dashboard" : "Your positions"}</h1>
+          <div className="mono mt-1 flex flex-wrap items-center gap-2 text-oil-ink3">
+            <span>
+              your wallet <span className="text-oil-ink2">{shortAddress(s.address)}</span>
+            </span>
+            {view.accountAddr && (
+              <span>
+                · your Oilskin account{" "}
+                <a className="text-brass" href={`${BASE_CHAIN.explorerUrl}/address/${view.accountAddr}`} target="_blank" rel="noreferrer" data-testid="account-link">
+                  {shortAddress(view.accountAddr)}
+                </a>
+              </span>
+            )}
+            {s.mode === "demo" && <Chip kind="mute">demo</Chip>}
+            {s.mode === "live" && <Chip kind={view.dataSource === "chain" ? "good" : "info"}>{view.dataSource === "chain" ? "read from chain" : "indexer cache"}</Chip>}
+            {view.readAt && <span>· {loading ? "refreshing…" : s.mode === "demo" ? `snapshot ${view.readAt.slice(0, 10)}` : `updated ${fmtAgo(view.readAt)}`}</span>}
+          </div>
+        </div>
+        <Link href="/new" className="btn-brass">
+          New position
         </Link>
       </div>
 
-      {/* summary tiles */}
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Tile label="ZEC supplied" value={`${totalZec.toLocaleString()} ZEC`} sub={fmtUsd(totalZec * zecPrice)} />
-        <Tile label="Active strategies" value={String(strategies.length)} sub={`${strategies.filter((s) => s.mode === "FULL_STRATEGY").length} full · ${strategies.filter((s) => s.mode === "SIMPLE_LENDING").length} simple`} />
-        <Tile label="Unclaimed rewards" value={fmtUsd(totalRewards)} sub="claimed when they clear costs 3×" />
-      </div>
-
-      <div className="space-y-4">
-        {strategies.map((s) => (
-          <StrategyCard key={s.id} s={s} zecPrice={zecPrice} />
-        ))}
-        {strategies.length === 0 && (
-          <div className="card p-10 text-center text-ink-muted">
-            No strategies yet. <Link className="text-zec" href="/deposit">Create your first</Link>.
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function Tile({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return (
-    <div className="card p-5">
-      <div className="text-sm text-ink-muted">{label}</div>
-      <div className="mt-1 text-2xl font-bold text-white">{value}</div>
-      {sub && <div className="mt-0.5 text-xs text-ink-muted">{sub}</div>}
-    </div>
-  );
-}
-
-function StrategyCard({ s, zecPrice }: { s: Strategy; zecPrice: number }) {
-  const zec = Number(s.lending.suppliedZecAtomic) / 1e8;
-  const pool = s.lp ? poolById(s.lp.poolId) : undefined;
-  const isFull = s.mode === "FULL_STRATEGY";
-
-  return (
-    <div className="card p-5">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <span className="font-mono text-sm text-ink-muted">{s.id}</span>
-          <StatusPill
-            kind={s.status.startsWith("ACTIVE") ? "good" : s.status === "ERROR" ? "critical" : "warn"}
-            label={s.status.replace(/_/g, " ").toLowerCase()}
-          />
-          <span className="text-xs text-ink-muted">{isFull ? "Full strategy" : "Simple lending"}</span>
+      {empty ? (
+        <div className="card p-10 text-center">
+          <p className="text-oil-ink2">No Oilskin account for this wallet yet{account?.account ? ` (it will be created at ${shortAddress(account.account)} when you open your first position)` : ""}.</p>
+          <Link href="/new" className="btn-brass mt-4 inline-flex">
+            Open your first position
+          </Link>
         </div>
-        <div className="flex gap-2">
-          {!isFull && (
-            <button className="btn-ghost px-3 py-1.5 text-xs">Upgrade to full strategy</button>
-          )}
-          <button className="btn-ghost px-3 py-1.5 text-xs">Change rewards</button>
-          <button className="btn-ghost px-3 py-1.5 text-xs">Withdraw</button>
-        </div>
-      </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-2.5 sm:gap-3.5 lg:grid-cols-4">
+            <StatTile label="Net value" value={fmtUsd0(netValue)} sub={`collateral ${fmtUsd0(view.collateralUsd)} + LP ${fmtUsd0(lpValue)}${view.accountUsdc > 0 ? ` + USDC ${fmtUsd0(view.accountUsdc)}` : ""} − debt ${fmtUsd0(view.debtUsd)}`} hint="Collateral + LP value + USDC held − debt. What a full unwind returns before exit costs." testId="tile-net" />
+            <StatTile label="Health factor" value={fmtHf(view.hf)} sub={band.label} tone={band.kind} hint="Aave account health, read from the pool. Liquidation at 1.0." testId="tile-hf" />
+            <StatTile label="Borrowed" value={`${fmtUsd0(view.debtUsd)}`} sub={view.debtUsd > 0 ? `USDC · ${fmtPct(ltvBps / 100, 1)} LTV · ${fmtPct(market.usdcBorrowAprPct)} variable` : "no debt"} testId="tile-debt" />
+            <StatTile label="Claimable rewards" value={fmtUsd(claimable.net)} sub={`${fmtUsd(claimable.gross)} accrued − ${fmtUsd(claimable.performanceFee)} fee`} hint="AERO emissions accrued by your engine positions, net of the performance fee. Claimed to your wallet." testId="tile-claim" />
+          </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* lending leg */}
-        <div>
-          <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-muted">
-            Rhea Finance · NEAR
-          </div>
-          <div className="mb-3 grid grid-cols-2 gap-3">
-            <div>
-              <div className="text-xs text-ink-muted">Supplied</div>
-              <div className="font-bold text-white">{zec} ZEC</div>
-              <div className="text-xs text-ink-muted">{fmtUsd(zec * zecPrice)}</div>
-            </div>
-            {s.lending.borrowedAsset ? (
-              <div>
-                <div className="text-xs text-ink-muted">Borrowed</div>
-                <div className="font-bold text-white">
-                  {fmtUsd(Number(s.lending.borrowedAmountAtomic ?? 0) / 1e6)}
-                </div>
-                <div className="text-xs text-ink-muted">
-                  {s.lending.borrowedAsset} · {(s.lending.targetLtvBps ?? 0) / 100}% LTV
-                </div>
-              </div>
-            ) : (
-              <div>
-                <div className="text-xs text-ink-muted">Borrowed</div>
-                <div className="font-bold text-white">—</div>
-                <div className="text-xs text-ink-muted">supply only</div>
-              </div>
-            )}
-          </div>
-          <HealthGauge hf={s.lending.healthFactor ?? Infinity} />
-        </div>
-
-        {/* lp leg */}
-        <div>
-          <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-muted">
-            {isFull && pool
-              ? `${pool.protocol === "MAXFI" ? "MaxFi" : "SnuggleFi"} · Base`
-              : "Base leg"}
-          </div>
-          {isFull && s.lp && pool ? (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <div className="text-xs text-ink-muted">Pool</div>
-                <div className="font-bold text-white">
-                  {pool.token0}/{pool.token1}
-                </div>
-                <div className="text-xs text-ink-muted">
-                  {pool.dex.replace("_", " ")} · {(pool.feeTierBps / 100).toFixed(2)}%
-                </div>
-              </div>
-              <div>
-                <div className="text-xs text-ink-muted">Range status</div>
-                <div className="mt-0.5">
-                  {s.lp.inRange ? (
-                    <StatusPill kind="good" label="In range — earning" />
-                  ) : (
-                    <StatusPill kind="warn" label="Out of range" />
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+            <div className="min-w-0 space-y-4">
+              <div className="card p-5">
+                <HealthBand hf={view.hf} priceUsd={primary?.priceUsd ?? 0} liquidationPriceUsd={liqPrice} symbol={primary?.symbol ?? "collateral"} />
+                <div className="num mt-3 flex flex-wrap justify-between gap-2 text-[13px] text-oil-ink2">
+                  <span>
+                    {view.debtUsd > 0 ? (
+                      <>
+                        Borrowed <b className="text-oil-ink">{fmtUsd(view.debtUsd)} USDC</b> against{" "}
+                        {view.holdings.map((h) => (
+                          <b key={h.symbol} className="text-oil-ink">
+                            {fmtAmount(h.amount, 6)} {h.symbol}{" "}
+                          </b>
+                        ))}
+                        ({fmtUsd0(view.collateralUsd)}) · {fmtPct(ltvBps / 100, 1)} LTV · account threshold {fmtPct(view.ltBps / 100, 1)}
+                      </>
+                    ) : (
+                      <>No borrow against {fmtUsd0(view.collateralUsd)} of collateral.</>
+                    )}
+                  </span>
+                  {primary && view.debtUsd > 0 && (
+                    <span>
+                      Liquidation at <b className="text-status-crit">{fmtUsd0(liqPrice)}</b> · {primary.symbol} now <b className="text-oil-ink">{fmtUsd0(primary.priceUsd)}</b>
+                    </span>
                   )}
                 </div>
-                <div className="mt-1 text-xs text-ink-muted">
-                  ±{(s.lp.params.rangeWidthBps / 200).toFixed(2)}% · {s.lp.params.rebalanceDelayHours}h delay
-                </div>
+                <p className="mt-2 text-[11.5px] text-oil-ink3">
+                  {source === "live" ? "Threshold, price and HF read from Aave v3 on Base" : `Snapshot ${market.readAt.slice(0, 10)}`}; registry LT {view.holdings.map((h) => `${h.symbol} ${fmtPct(h.ltBps / 100, 0)}`).join(", ") || "—"}. Anything you can do from the account, the keeper can only do within your grant.
+                </p>
               </div>
-              <div>
-                <div className="text-xs text-ink-muted">Unclaimed rewards</div>
-                <div className="font-bold text-status-good">
-                  {fmtUsd(s.lp.pendingRewardsUsd ?? 0)}
-                </div>
-              </div>
-              <div>
-                <div className="text-xs text-ink-muted">Reward destination</div>
-                <div className="text-sm font-medium text-white">
-                  {s.rewardPreference === "SEND_TO_ZCASH" ? "→ Zcash wallet" : "→ compound"}
-                </div>
-                {s.rewardPreference === "SEND_TO_ZCASH" && (
-                  <div className="break-all font-mono text-[10px] text-ink-muted">
-                    {s.owner.zcashAddress}
+
+              {action && (
+                <div className="card border-brass/40 p-5" data-testid="action-panel">
+                  <div className="flex items-start justify-between gap-3">
+                    <h2 className="text-[17px]">{action.kind === "claim" ? "Claim rewards" : "Unwind position"}</h2>
+                    <button className="btn-quiet" onClick={() => setAction(null)} aria-label="Close">
+                      ✕
+                    </button>
                   </div>
-                )}
+                  <SignStep
+                    key={`${action.kind}-${action.position.id}`}
+                    calls={actionPlan}
+                    mode={s.mode}
+                    flowKind={action.kind}
+                    summary={`${action.kind} ${action.position.pool ? `${action.position.pool.token0}/${action.position.pool.token1}` : action.position.poolId}`}
+                    owner={s.address}
+                    demoAccount={DEMO_ACCOUNT}
+                    run={runAction}
+                    doneTitle={action.kind === "claim" ? "Rewards sent to your wallet" : "Position closed"}
+                    doneBody={action.kind === "claim" ? "The AERO rewards were collected into your Oilskin account, the performance fee came off, and the rest was moved to your wallet." : "The LP position was closed, the loan repaid and your collateral returned to your wallet. Your Oilskin account stays yours for next time."}
+                  />
+                </div>
+              )}
+
+              <div className="flex items-baseline justify-between">
+                <h2 className="text-[17px]">Positions</h2>
+                <span className="text-[11.5px] text-oil-ink3">{view.positions.length} engine position{view.positions.length === 1 ? "" : "s"}</span>
               </div>
+              {view.positions.length === 0 && <div className="card p-8 text-center text-[13.5px] text-oil-ink3">No LP positions under this account.</div>}
+              {view.positions.map((p) => (
+                <PositionCard key={p.id} p={p} advanced={mode === "advanced"} onClaim={(pos) => setAction({ kind: "claim", position: pos })} onUnwind={(pos) => setAction({ kind: "unwind", position: pos })} busy={!!action} />
+              ))}
+
+              {view.holdings.length > 0 && (
+                <div className="card p-5">
+                  <h3 className="text-[15px]">Collateral on Aave (under your account)</h3>
+                  <ul className="num mt-2 space-y-1 text-[13.5px]">
+                    {view.holdings.map((h) => (
+                      <li key={h.symbol} className="flex justify-between">
+                        <span>
+                          {fmtAmount(h.amount, 8)} {h.symbol} <span className="text-oil-ink3">· LT {fmtPct(h.ltBps / 100, 0)} · {COLLATERAL_ASSETS[h.symbol].venue}</span>
+                        </span>
+                        <span>{fmtUsd(h.usd)}</span>
+                      </li>
+                    ))}
+                    {view.accountUsdc > 0 && (
+                      <li className="flex justify-between">
+                        <span>
+                          {fmtAmount(view.accountUsdc, 2)} USDC <span className="text-oil-ink3">· held in your account (not deployed)</span>
+                        </span>
+                        <span>{fmtUsd(view.accountUsdc)}</span>
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              )}
+
+              {mode === "advanced" && (
+                <div className="card p-5" data-testid="raw-account">
+                  <h3 className="text-[15px]">Raw account data</h3>
+                  <dl className="mono mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-oil-ink2">
+                    <dt className="text-oil-ink3">wallet</dt>
+                    <dd>{s.address}</dd>
+                    <dt className="text-oil-ink3">Oilskin account</dt>
+                    <dd>{view.accountAddr ?? "—"}</dd>
+                    <dt className="text-oil-ink3">factory / router</dt>
+                    <dd>{deployment ? `${deployment.factory} / ${deployment.router}${deployment.demo ? " (demo)" : ""}` : "not configured"}</dd>
+                    <dt className="text-oil-ink3">registry / LP venue / Aave venue / engine</dt>
+                    <dd>{deployment ? `${deployment.registry} / ${deployment.lpVenue} / ${deployment.aaveVenue} / ${deployment.engine}` : "—"}</dd>
+                    <dt className="text-oil-ink3">Aave account data</dt>
+                    <dd>
+                      collateral {fmtUsd(view.collateralUsd)} · debt {fmtUsd(view.debtUsd)} · current LT {view.ltBps} bps · HF {fmtHf(view.hf)}
+                    </dd>
+                    <dt className="text-oil-ink3">keeper</dt>
+                    <dd>{deployment?.keeper ?? "not configured"} — grants are revocable from your account (revokeAll)</dd>
+                  </dl>
+                </div>
+              )}
+
+              <Disclosures scope="dashboard" />
             </div>
-          ) : (
-            <div className="flex h-full min-h-24 items-center justify-center rounded-lg border border-dashed border-ink-border text-sm text-ink-muted">
-              No Base position — upgrade to deploy borrowed capital into an LP strategy.
-            </div>
-          )}
-        </div>
-      </div>
+            <ActivityRail items={view.activity} source={s.mode === "demo" ? "demo" : view.activity.length ? "cache" : "chain"} />
+          </div>
+        </>
+      )}
     </div>
   );
 }

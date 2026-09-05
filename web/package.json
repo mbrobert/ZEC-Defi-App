@@ -1,21 +1,33 @@
 {
   "name": "@zyo/web",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "ZEC Yield Orchestrator web app — deposit wizard + strategy dashboard.",
+  "description": "Oilskin web — Base-first front end: wallet connect, cbZEC onboarding, leveraged-LP wizard over the user's OilskinAccount, chain-read dashboard, CoW spot.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import ../node_modules/tsx/dist/loader.mjs --test test/*.test.ts",
+    "test:e2e": "PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers playwright test"
   },
   "dependencies": {
+    "@coinbase/wallet-sdk": "^4.3.7",
+    "@cowprotocol/cow-sdk": "^9.2.8",
+    "@cowprotocol/sdk-viem-adapter": "^0.3.27",
+    "@rainbow-me/rainbowkit": "^2.2.11",
+    "@tanstack/react-query": "^5.102.8",
     "@zyo/shared": "*",
+    "cross-fetch": "^3.2.0",
     "next": "^14.2.15",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "viem": "^2.56.3",
+    "wagmi": "^2.19.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.56.1",
     "@types/node": "^22.0.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
