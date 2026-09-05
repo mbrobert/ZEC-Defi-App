@@ -1,24 +1,26 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-/// @title ISnuggleVault — REAL external surface of SnuggleVaultUpgradeable.
+/// @title ISnuggleVault — REAL external surface of SnuggleVaultUpgradeable (MaxFi / Snuggle engine).
 ///
-/// @notice Extracted from the verified implementation behind the MaxFi Vault
-///         proxy on Base (proxy 0x7d27cdfbfcc878f7e7349e216d44204bfd2afd55,
-///         impl 0x359f90ee4c2e21cbf6e32c5a062eeef306822d28, solc 0.8.33,
-///         source: base.blockscout.com verified code, fetched 2026-08-05).
-///         MaxFi and SnuggleFi share this contract ("Snuggle protocol").
+/// @notice Proxy on Base 0x7D27CDfBFcC878F7E7349e216d44204BFd2AFd55, implementation (EIP-1967)
+///         0x359f90ee4c2e21cbf6e32c5a062eeef306822d28. Re-verified against the live chain on
+///         2026-09-03 (AUDIT-FINDINGS-2026-09-03 Part 1, head ≈ block 50,821,540):
 ///
-/// Semantics that shaped our adapter:
-///   • poolId is a bytes32 registry key (`approvedPools`), NOT a pool address.
-///   • withdraw() closes the WHOLE position — no partial exits. Partials are
-///     emulated adapter-side (close → pay share → re-deposit remainder).
-///   • harvest()/claimStakingRewards() route fees through the engine vault for
-///     its 15% performance fee, then pay the position owner — collect by
-///     balance-diff, not return values.
-///   • No pending-fee views; range status is tracked engine-side via
-///     `outOfRangeSince` (0 = in range).
-///   • `ref` is a referral address, immutable after first deposit per user.
+///   FACT 1  `userPositions` is the compiler-generated getter of `mapping(address => uint256[])`:
+///           `userPositions(address,uint256) returns (uint256)` — one id per index, REVERTS past the
+///           end. `userPositions(address) returns (uint256[])` DOES NOT EXIST (selector 0x613cf420
+///           reverts). Enumerate by index until revert; the revert shape is measured at runtime by
+///           a canary probe, never assumed (SnuggleLpVenue.positionsOf).
+///   FACT 2  Re-key (keeper rebalance) REPLACES the id: the old id is removed from the list and
+///           `positions(old)` reads back all-zero; the new id is in the list.
+///   FACT 3  `rangeWidthBps` is the TOTAL tick span (1 bps = 1 tick). Deployed bounds [150, 5000].
+///   FACT 4  `depositSingleSided` swaps to ratio inside the engine, ≈ zero residual. Dual `deposit`
+///           mints the balanced part and bounces the excess of the long leg to msg.sender. There is
+///           NO increaseLiquidity: every deposit mints a NEW id; `withdraw(id)` closes a whole id.
+///   Also:   poolId is a bytes32 registry key (`approvedPools`), not a pool address; harvest /
+///           claimStakingRewards pay the owner by transfer (measure by balance diff), net of the
+///           engine's own performance fee; `ref` is a referral address locked at first deposit.
 interface ISnuggleVault {
     function deposit(
         bytes32 poolId,
@@ -61,7 +63,8 @@ interface ISnuggleVault {
         bool newAutoCompoundEnabled
     ) external;
 
-    /// @notice Auto-generated public-mapping getter → flattened UserPosition.
+    /// @notice Auto-generated public-mapping getter → flattened UserPosition. All-zero after a
+    ///         withdraw or a re-key (FACT 2).
     function positions(uint256 tokenId)
         external
         view
@@ -100,7 +103,8 @@ interface ISnuggleVault {
             address rewardAdapter
         );
 
-    function userPositions(address user) external view returns (uint256[] memory);
+    /// @notice FACT 1 — index getter. Reverts past the end of `user`'s list.
+    function userPositions(address user, uint256 index) external view returns (uint256 tokenId);
 
     function poolIds(uint256 index) external view returns (bytes32);
 

@@ -3,26 +3,24 @@ pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ISnuggleVault} from "../../src/interfaces/ISnuggleVault.sol";
+import {MockCLPool} from "./MockCLPool.sol";
 
-/// @notice Test double for SnuggleVaultUpgradeable, faithful to the REAL
-///         semantics our adapter depends on:
-///           • bytes32 poolId registry (approvedPools)
-///           • deposits pull via transferFrom(msg.sender)
-///           • deposits REFUND un-fitting leftovers to msg.sender in the same
-///             tx (live receipts show ~0.88% of a leg refunded; refundBps
-///             defaults to 88 and is configurable)
-///           • withdraw() closes the WHOLE position, pays the owner — and ALSO
-///             pays accrued fees / staking rewards (e.g. AERO) in the same tx
-///             (PositionWithdrawn + FeesHarvested/StakingRewardsClaimed share
-///             a tx in the live fixtures)
-///           • the keeper's rebalance() RE-KEYS the position: a NEW tokenId is
-///             minted and positions(oldId) empties (verified live 2026-08-27)
-///           • harvest() reverts for staked positions (use claimStakingRewards)
-///           • fees/rewards are PAID BY TRANSFER to the owner (balance-diff),
-///             not returned
-///           • userPositions(owner) always reflects the LIVE tokenId set
-///           • outOfRangeSince tracks range status (0 = in range)
+/// @notice Test double for SnuggleVaultUpgradeable, faithful to the CHAIN-VERIFIED semantics
+///         (AUDIT-FINDINGS-2026-09-03 Part 1), not to an interface we wished it had:
+///           • FACT 1  `userPositions(address,uint256)` index getter — reverts past the end
+///                     (Panic 0x32, the compiler-generated shape); no array-returning getter exists.
+///           • FACT 2  re-key REPLACES: the old id leaves the list and `positions(old)` reads zero.
+///           • FACT 4  single-sided deposit mints with ≈ zero residual; dual deposit mints the
+///                     balanced part at the pool price and BOUNCES the excess of the long leg to
+///                     msg.sender; every deposit mints a NEW id; withdraw closes a whole id.
+///           • deposits pull via transferFrom(msg.sender); withdraw / harvest / claimStakingRewards
+///             pay the OWNER by transfer; harvest reverts on staked ids, claimStakingRewards on
+///             unstaked ones; outOfRangeSince tracks range (0 = in range).
+///           • the 60 s flash-loan hold (settable; default 0 for terse unit tests).
+///         Plus switches that reproduce the engine failure modes the venue must survive: a
+///         glitching index, a paused engine, an un-closable id, an id that refuses both claims.
 contract MockSnuggleVault is ISnuggleVault {
     using SafeERC20 for IERC20;
 
@@ -30,10 +28,12 @@ contract MockSnuggleVault is ISnuggleVault {
     error NotOwner();
     error UseClaimStakingRewards();
     error NotStaked();
-    /// @dev Mirrors live-engine behavior (fork-verified): dual deposit with a
-    ///      zero side mints zero liquidity and reverts at the pool.
     error ZeroLiquidityMinted();
-    error PositionNotFound(uint256 tokenId);
+    error MinimumHoldTimeNotMet();
+    error EnginePaused();
+    error Expired();
+    error WithdrawRefused(uint256 tokenId);
+    error ClaimRefused(uint256 tokenId);
 
     struct Pool {
         address pool;
@@ -58,43 +58,7 @@ contract MockSnuggleVault is ISnuggleVault {
         bool exists;
     }
 
-    /// @dev Fork-verified live-engine behavior: flash-loan hold guard.
-    ///      Settable (default 0) so simple unit tests stay terse; the invariant
-    ///      suite and the dedicated hold test enable the real 60s.
-    error MinimumHoldTimeNotMet();
-
-    uint256 public minHoldTime;
-
-    function setMinHoldTime(uint256 s) external {
-        minHoldTime = s;
-    }
-
-    /// @dev Live-engine behavior: deposits refund the un-fitting leftover to
-    ///      msg.sender in the deposit tx. Default mirrors the 0.88% seen on a
-    ///      live receipt; configurable so specific tests can pin it.
-    uint256 public refundBps = 88;
-
-    function setRefundBps(uint256 b) external {
-        refundBps = b;
-    }
-
-    /// @dev Live-engine behavior: withdraw also pays accrued fees/rewards to
-    ///      the owner in the same tx. Hookable off for targeted tests.
-    bool public payRewardsOnClose = true;
-
-    function setPayRewardsOnClose(bool v) external {
-        payRewardsOnClose = v;
-    }
-
-    /// @dev Simulate pool price-impact/slippage on exit: `withdraw` returns
-    ///      this fraction less to the caller (the shortfall stays in the mock,
-    ///      mimicking value left in the pool). Used to test the adapter's
-    ///      minOut slippage floor.
-    uint256 public withdrawSlippageBps;
-
-    function setWithdrawSlippageBps(uint256 b) external {
-        withdrawSlippageBps = b;
-    }
+    uint256 private constant Q96 = 2 ** 96;
 
     mapping(bytes32 => Pool) internal pools;
     bytes32[] internal _poolIds;
@@ -102,21 +66,30 @@ contract MockSnuggleVault is ISnuggleVault {
     uint256 public nextTokenId = 1;
     mapping(uint256 => Pos) internal pos;
     mapping(uint256 => bool) public staked;
-
-    // live tokenId set per owner (the real engine maintains userPositions)
     mapping(address => uint256[]) internal _userPositions;
-    mapping(uint256 => uint256) internal _userPosIndex;
 
-    // pending payouts per tokenId (parallel arrays), transferred on claim
+    // pending payouts per tokenId, transferred to the owner on claim
     mapping(uint256 => address[]) internal feeTokens;
     mapping(uint256 => uint256[]) internal feeAmounts;
+
+    // failure-mode switches
+    uint256 public minHoldTime;
+    uint256 public withdrawSlippageBps;
+    uint256 public singleSidedResidualBps;
+    bool public paused;
+    address public glitchUser;
+    uint256 public glitchIndex;
+    bool public glitchArmed;
+    mapping(uint256 => bool) public withdrawRefused;
+    mapping(uint256 => bool) public claimRefused;
 
     // ------------------------------------------------------------ test hooks
 
     function addPool(bytes32 id, address poolAddr, address token0, address token1, uint24 fee)
         external
     {
-        pools[id] = Pool(poolAddr, token0, token1, fee, 60, true);
+        int24 spacing = poolAddr.code.length != 0 ? MockCLPool(poolAddr).tickSpacing() : int24(100);
+        pools[id] = Pool(poolAddr, token0, token1, fee, spacing, true);
         _poolIds.push(id);
     }
 
@@ -124,21 +97,39 @@ contract MockSnuggleVault is ISnuggleVault {
         pools[id].active = active;
     }
 
-    // Simulates an engine upgrade re-ordering / corrupting the PoolConfig
-    // GETTER layout (L-3): approvedPools(id) starts returning garbage while
-    // the engine's internal accounting still works. An exit path that
-    // re-reads the registry decodes junk token addresses and bricks.
-    bytes32 internal _viewOverrideId;
-    Pool internal _viewOverride;
-    bool internal _viewOverrideSet;
-
-    function corruptRegistryView(bytes32 id, address t0, address t1) external {
-        _viewOverrideId = id;
-        _viewOverride = Pool(address(0xdead), t0, t1, 0, 0, true);
-        _viewOverrideSet = true;
+    function setMinHoldTime(uint256 s) external {
+        minHoldTime = s;
     }
 
-    /// @dev Fund this contract with `token` first (mimics accrued fees).
+    function setWithdrawSlippageBps(uint256 b) external {
+        withdrawSlippageBps = b;
+    }
+
+    /// @dev Fraction of a single-sided deposit the engine hands back in the SAME token (≈ 0 live).
+    function setSingleSidedResidualBps(uint256 b) external {
+        singleSidedResidualBps = b;
+    }
+
+    function setPaused(bool p) external {
+        paused = p;
+    }
+
+    /// @dev Make `userPositions(user, index)` revert with a NON-end-of-list shape.
+    function setGlitch(address user, uint256 index, bool armed) external {
+        glitchUser = user;
+        glitchIndex = index;
+        glitchArmed = armed;
+    }
+
+    function setWithdrawRefused(uint256 tokenId, bool v) external {
+        withdrawRefused[tokenId] = v;
+    }
+
+    function setClaimRefused(uint256 tokenId, bool v) external {
+        claimRefused[tokenId] = v;
+    }
+
+    /// @dev Fund this contract with `token` first (mimics accrued fees / AERO).
     function setPendingFee(uint256 tokenId, address token, uint256 amount) external {
         feeTokens[tokenId].push(token);
         feeAmounts[tokenId].push(amount);
@@ -152,33 +143,20 @@ contract MockSnuggleVault is ISnuggleVault {
         pos[tokenId].outOfRangeSince = since;
     }
 
+    /// @dev FACT 2 — keeper rebalance: the id is REPLACED. Old id gone from the list and zeroed.
+    function rekey(uint256 tokenId) external returns (uint256 newId) {
+        Pos memory x = _mustPos(tokenId);
+        _prune(x.owner, tokenId);
+        delete pos[tokenId];
+        newId = _mint(x.poolId, x.owner, x.rangeWidthBps, x.rebalanceDelay, x.autoSnuggle, x.autoCompound, x.amount0, x.amount1);
+    }
+
     function positionAmounts(uint256 tokenId) external view returns (uint256, uint256) {
         return (pos[tokenId].amount0, pos[tokenId].amount1);
     }
 
-    function exists(uint256 tokenId) external view returns (bool) {
-        return pos[tokenId].exists;
-    }
-
-    /// @notice Keeper auto-snuggle: the LIVE engine mints a NEW tokenId and
-    ///         empties the old one (SnuggleRebalanced(oldId, newId, ...)).
-    ///         Public so handlers/invariants can drive rebalances at will.
-    ///         Restarts the position's hold clock (fresh depositTimestamp) and
-    ///         carries staking state and pending fees over to the new id.
-    function rebalance(uint256 tokenId) external returns (uint256 newId) {
-        Pos memory x = _mustPos(tokenId);
-        newId = nextTokenId++;
-        x.depositTimestamp = uint64(block.timestamp);
-        x.outOfRangeSince = 0;
-        pos[newId] = x;
-        staked[newId] = staked[tokenId];
-        feeTokens[newId] = feeTokens[tokenId];
-        feeAmounts[newId] = feeAmounts[tokenId];
-        _retrack(x.owner, tokenId, newId);
-        delete pos[tokenId];
-        delete staked[tokenId];
-        delete feeTokens[tokenId];
-        delete feeAmounts[tokenId];
+    function userPositionCount(address user) external view returns (uint256) {
+        return _userPositions[user].length;
     }
 
     // ------------------------------------------------------------ engine API
@@ -191,25 +169,34 @@ contract MockSnuggleVault is ISnuggleVault {
         uint256 rebalanceDelay,
         bool autoSnuggleEnabled,
         bool autoCompoundEnabled,
-        uint256,
+        uint256 deadline,
         address
     ) external returns (uint256 tokenId) {
+        _live();
+        if (deadline < block.timestamp) revert Expired();
         Pool storage p = _mustPool(poolId);
         if (amount0Desired == 0 || amount1Desired == 0) revert ZeroLiquidityMinted();
         IERC20(p.token0).safeTransferFrom(msg.sender, address(this), amount0Desired);
         IERC20(p.token1).safeTransferFrom(msg.sender, address(this), amount1Desired);
-        // Live engine refunds the un-fitting leftover of the legs in-tx.
-        amount0Desired = _refund(p.token0, amount0Desired);
-        amount1Desired = _refund(p.token1, amount1Desired);
+
+        // Balanced part at the pool price; bounce the excess of the long leg (FACT 4).
+        uint160 sqrtP = MockCLPool(p.pool).sqrtPriceX96();
+        uint256 v0in1 = Math.mulDiv(Math.mulDiv(amount0Desired, sqrtP, Q96), sqrtP, Q96);
+        uint256 keep0 = amount0Desired;
+        uint256 keep1 = amount1Desired;
+        if (v0in1 > amount1Desired) {
+            keep0 = Math.mulDiv(Math.mulDiv(amount1Desired, Q96, sqrtP), Q96, sqrtP);
+            uint256 bounce0 = amount0Desired - keep0;
+            if (bounce0 != 0) IERC20(p.token0).safeTransfer(msg.sender, bounce0);
+        } else if (v0in1 < amount1Desired) {
+            keep1 = v0in1;
+            uint256 bounce1 = amount1Desired - keep1;
+            if (bounce1 != 0) IERC20(p.token1).safeTransfer(msg.sender, bounce1);
+        }
+        if (keep0 == 0 || keep1 == 0) revert ZeroLiquidityMinted();
         tokenId = _mint(
-            poolId,
-            msg.sender,
-            rangeWidthBps,
-            uint64(rebalanceDelay),
-            autoSnuggleEnabled,
-            autoCompoundEnabled,
-            amount0Desired,
-            amount1Desired
+            poolId, msg.sender, rangeWidthBps, uint64(rebalanceDelay), autoSnuggleEnabled,
+            autoCompoundEnabled, keep0, keep1
         );
     }
 
@@ -221,59 +208,60 @@ contract MockSnuggleVault is ISnuggleVault {
         uint256 rebalanceDelay,
         bool autoSnuggleEnabled,
         bool autoCompoundEnabled,
-        uint256,
+        uint256 deadline,
         address
     ) external returns (uint256 tokenId) {
+        _live();
+        if (deadline < block.timestamp) revert Expired();
         Pool storage p = _mustPool(poolId);
+        if (token != p.token0 && token != p.token1) revert PoolNotApproved(poolId);
+        if (amount == 0) revert ZeroLiquidityMinted();
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
-        amount = _refund(token, amount);
-        (uint256 a0, uint256 a1) = token == p.token0 ? (amount, uint256(0)) : (uint256(0), amount);
+        uint256 residual = (amount * singleSidedResidualBps) / 10_000;
+        if (residual != 0) IERC20(token).safeTransfer(msg.sender, residual);
+        uint256 kept = amount - residual;
+        (uint256 a0, uint256 a1) = token == p.token0 ? (kept, uint256(0)) : (uint256(0), kept);
         tokenId = _mint(
-            poolId,
-            msg.sender,
-            rangeWidthBps,
-            uint64(rebalanceDelay),
-            autoSnuggleEnabled,
-            autoCompoundEnabled,
-            a0,
-            a1
+            poolId, msg.sender, rangeWidthBps, uint64(rebalanceDelay), autoSnuggleEnabled,
+            autoCompoundEnabled, a0, a1
         );
     }
 
     function withdraw(uint256 tokenId, bool) external {
+        _live();
         Pos storage x = _mustPos(tokenId);
         if (msg.sender != x.owner) revert NotOwner();
-        if (block.timestamp < x.depositTimestamp + minHoldTime) {
-            revert MinimumHoldTimeNotMet();
-        }
+        if (withdrawRefused[tokenId]) revert WithdrawRefused(tokenId);
+        if (block.timestamp < x.depositTimestamp + minHoldTime) revert MinimumHoldTimeNotMet();
         Pool storage p = pools[x.poolId];
-        // Live engine pays accrued fees / staking rewards on close, same tx.
-        if (payRewardsOnClose) _payout(tokenId);
         uint256 keep = 10_000 - withdrawSlippageBps;
         uint256 pay0 = (x.amount0 * keep) / 10_000;
         uint256 pay1 = (x.amount1 * keep) / 10_000;
-        if (pay0 > 0) IERC20(p.token0).safeTransfer(x.owner, pay0);
-        if (pay1 > 0) IERC20(p.token1).safeTransfer(x.owner, pay1);
-        _untrack(x.owner, tokenId);
+        address owner = x.owner;
+        _prune(owner, tokenId);
         delete pos[tokenId];
-        delete staked[tokenId];
+        if (pay0 > 0) IERC20(p.token0).safeTransfer(owner, pay0);
+        if (pay1 > 0) IERC20(p.token1).safeTransfer(owner, pay1);
     }
 
     function harvest(uint256 tokenId) external {
+        _live();
         if (staked[tokenId]) revert UseClaimStakingRewards();
+        if (claimRefused[tokenId]) revert ClaimRefused(tokenId);
         _payout(tokenId);
     }
 
     function claimStakingRewards(uint256 tokenId) external returns (uint256 earned) {
+        _live();
         if (!staked[tokenId]) revert NotStaked();
+        if (claimRefused[tokenId]) revert ClaimRefused(tokenId);
         earned = _payout(tokenId);
     }
 
     function updateParameters(uint256 tokenId, uint256 d, uint24 w, bool s, bool c) external {
         Pos storage x = _mustPos(tokenId);
         if (msg.sender != x.owner) revert NotOwner();
-        (x.rebalanceDelay, x.rangeWidthBps, x.autoSnuggle, x.autoCompound) =
-            (uint64(d), w, s, c);
+        (x.rebalanceDelay, x.rangeWidthBps, x.autoSnuggle, x.autoCompound) = (uint64(d), w, s, c);
     }
 
     function positions(uint256 tokenId)
@@ -299,9 +287,10 @@ contract MockSnuggleVault is ISnuggleVault {
             uint128
         )
     {
+        // A deleted / re-keyed id reads all-zero (FACT 2): the storage struct is zero after delete.
         Pos storage x = pos[tokenId];
         return (
-            tokenId,
+            x.exists ? tokenId : 0,
             x.poolId,
             x.owner,
             x.rangeWidthBps,
@@ -326,13 +315,16 @@ contract MockSnuggleVault is ISnuggleVault {
         view
         returns (address, address, address, uint24, int24, bool, address, address)
     {
-        Pool storage p =
-            (_viewOverrideSet && poolId == _viewOverrideId) ? _viewOverride : pools[poolId];
+        Pool storage p = pools[poolId];
         return (p.pool, p.token0, p.token1, p.fee, p.tickSpacing, p.active, address(0), address(0));
     }
 
-    function userPositions(address user) external view returns (uint256[] memory) {
-        return _userPositions[user];
+    /// @dev FACT 1: index getter, reverts past the end exactly like the compiler-generated one
+    ///      (array bounds → Panic 0x32). The glitch switch reproduces "some other revert".
+    function userPositions(address user, uint256 index) external view returns (uint256) {
+        _live();
+        if (glitchArmed && user == glitchUser && index == glitchIndex) revert("engine glitch");
+        return _userPositions[user][index];
     }
 
     function poolIds(uint256 i) external view returns (bytes32) {
@@ -340,16 +332,11 @@ contract MockSnuggleVault is ISnuggleVault {
     }
 
     function poolIdsCount() external view returns (uint256) {
+        _live();
         return _poolIds.length;
     }
 
     // -------------------------------------------------------------- internal
-
-    function _refund(address token, uint256 amount) internal returns (uint256 kept) {
-        uint256 r = (amount * refundBps) / 10_000;
-        if (r > 0) IERC20(token).safeTransfer(msg.sender, r);
-        kept = amount - r;
-    }
 
     function _mint(
         bytes32 poolId,
@@ -362,27 +349,19 @@ contract MockSnuggleVault is ISnuggleVault {
         uint256 a1
     ) internal returns (uint256 tokenId) {
         tokenId = nextTokenId++;
-        pos[tokenId] =
-            Pos(poolId, owner, w, d, s, c, 0, uint64(block.timestamp), a0, a1, true);
-        _userPosIndex[tokenId] = _userPositions[owner].length;
+        pos[tokenId] = Pos(poolId, owner, w, d, s, c, 0, uint64(block.timestamp), a0, a1, true);
         _userPositions[owner].push(tokenId);
     }
 
-    function _untrack(address owner, uint256 tokenId) internal {
-        uint256[] storage arr = _userPositions[owner];
-        uint256 idx = _userPosIndex[tokenId];
-        uint256 last = arr[arr.length - 1];
-        arr[idx] = last;
-        _userPosIndex[last] = idx;
-        arr.pop();
-        delete _userPosIndex[tokenId];
-    }
-
-    function _retrack(address owner, uint256 oldId, uint256 newId) internal {
-        uint256 idx = _userPosIndex[oldId];
-        _userPositions[owner][idx] = newId;
-        _userPosIndex[newId] = idx;
-        delete _userPosIndex[oldId];
+    function _prune(address owner, uint256 tokenId) internal {
+        uint256[] storage list = _userPositions[owner];
+        for (uint256 i = 0; i < list.length; i++) {
+            if (list[i] == tokenId) {
+                list[i] = list[list.length - 1];
+                list.pop();
+                return;
+            }
+        }
     }
 
     function _payout(uint256 tokenId) internal returns (uint256 total) {
@@ -406,6 +385,10 @@ contract MockSnuggleVault is ISnuggleVault {
 
     function _mustPos(uint256 tokenId) internal view returns (Pos storage x) {
         x = pos[tokenId];
-        if (!x.exists) revert PositionNotFound(tokenId);
+        if (!x.exists) revert PoolNotApproved(bytes32(tokenId));
+    }
+
+    function _live() internal view {
+        if (paused) revert EnginePaused();
     }
 }

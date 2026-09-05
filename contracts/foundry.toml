@@ -37,3 +37,6 @@ optimizer_runs = 200
 via_ir = true
 evm_version = "cancun"
 remappings = ["@openzeppelin/=lib/openzeppelin-contracts/"]
+
+[lint]
+lint_on_build = false

@@ -1,0 +1,209 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import {Test, console2} from "forge-std/Test.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {BaseAddresses} from "../../script/Deploy.s.sol";
+import {OilskinAccount} from "../../src/account/OilskinAccount.sol";
+import {OilskinAccountFactory} from "../../src/account/OilskinAccountFactory.sol";
+import {AaveV3Venue} from "../../src/venues/AaveV3Venue.sol";
+import {SnuggleLpVenue} from "../../src/venues/SnuggleLpVenue.sol";
+import {ICollateralVenue} from "../../src/interfaces/ICollateralVenue.sol";
+import {ILpVenue, LpOpenParams, PriceBand} from "../../src/interfaces/ILpVenue.sol";
+import {ISnuggleVault} from "../../src/interfaces/ISnuggleVault.sol";
+import {IAerodromeCLPool} from "../../src/interfaces/IAerodromeCLPool.sol";
+import {IPoolAddressesProvider} from "../../src/interfaces/IAaveV3.sol";
+
+/// @title BaseFork — the tests that can only be true against the chain (Part 6 lesson 2: "verify
+///        the external contract against the chain, not against your own mock").
+///
+/// Run:   FORK_URL=<Base RPC> FOUNDRY_PROFILE=local forge test --match-path test/fork/BaseFork.t.sol -vv
+/// CI:    a `fork` job with `secrets.BASE_RPC_URL`; the job is REQUIRED on main. Without FORK_URL every
+///        test here is reported as SKIPPED (vm.skip), never as passed — a green run with these
+///        skipped is not a verified run and the CI summary must say so.
+///
+/// Pinned block: none by default (`FORK_BLOCK` env pins one for reproducibility). The assertions
+/// are about SHAPES (selectors answer, getters revert past the end, token order, decimals, flags)
+/// and about our flows landing under the account; they are not about live numbers, which the
+/// fixture mirrors from VERIFIED-BASE-FACTS and which change.
+contract BaseForkTest is Test {
+    bool forked;
+    OilskinAccountFactory factory;
+    OilskinAccount acct;
+    AaveV3Venue aaveVenue;
+    SnuggleLpVenue lpVenue;
+    address alice = makeAddr("alice-fork");
+    address treasury = makeAddr("treasury-fork");
+
+    function setUp() public {
+        string memory url = vm.envOr("FORK_URL", string(""));
+        if (bytes(url).length == 0) return;
+        uint256 blockNumber = vm.envOr("FORK_BLOCK", uint256(0));
+        if (blockNumber == 0) vm.createSelectFork(url);
+        else vm.createSelectFork(url, blockNumber);
+        forked = true;
+        require(block.chainid == BaseAddresses.CHAIN_ID, "FORK_URL is not Base");
+
+        factory = new OilskinAccountFactory(BaseAddresses.PERMIT2);
+        acct = OilskinAccount(payable(factory.createAccount(alice)));
+        aaveVenue = new AaveV3Venue(IPoolAddressesProvider(BaseAddresses.AAVE_POOL_ADDRESSES_PROVIDER));
+        lpVenue = new SnuggleLpVenue(ISnuggleVault(BaseAddresses.SNUGGLE_ENGINE), BaseAddresses.AERO, treasury, 1000);
+    }
+
+    modifier onlyForked() {
+        vm.skip(!forked);
+        _;
+    }
+
+    // -------------------------------------------------------------- facts
+
+    function test_fork_aaveProviderResolvesToVerifiedAddresses() public onlyForked {
+        IPoolAddressesProvider p = IPoolAddressesProvider(BaseAddresses.AAVE_POOL_ADDRESSES_PROVIDER);
+        assertEq(p.getPool(), BaseAddresses.AAVE_POOL, "Aave pool moved: re-read VERIFIED-BASE-FACTS");
+        assertEq(p.getPoolDataProvider(), BaseAddresses.AAVE_POOL_DATA_PROVIDER, "data provider moved");
+        assertEq(p.getPriceOracle(), BaseAddresses.AAVE_ORACLE, "oracle moved");
+    }
+
+    function test_fork_reserveParamsAreLiveAndListed() public onlyForked {
+        uint256 ltBtc = aaveVenue.liquidationThresholdBps(BaseAddresses.CBBTC);
+        uint256 ltEth = aaveVenue.liquidationThresholdBps(BaseAddresses.WETH);
+        console2.log("cbBTC LT / LTV", ltBtc, aaveVenue.maxLtvBps(BaseAddresses.CBBTC));
+        console2.log("WETH  LT / LTV", ltEth, aaveVenue.maxLtvBps(BaseAddresses.WETH));
+        console2.log("USDC borrow rate (ray)", aaveVenue.borrowRateRay(BaseAddresses.USDC));
+        assertGt(ltBtc, 0);
+        assertGt(ltEth, 0);
+        assertGt(aaveVenue.maxLtvBps(BaseAddresses.CBBTC), 0);
+        assertLt(aaveVenue.maxLtvBps(BaseAddresses.CBBTC), ltBtc);
+        assertGt(aaveVenue.borrowRateRay(BaseAddresses.USDC), 0);
+        assertEq(aaveVenue.liquidationThresholdBps(BaseAddresses.CBZEC), 0, "cbZEC is NOT listed on Aave");
+    }
+
+    function test_fork_cbzecIsAB20WithLiveMultiplier() public onlyForked {
+        assertEq(BaseAddresses.CBZEC.code.length, 1, "B20 precompile: code is a single 0xef byte");
+        assertEq(IERC20Metadata(BaseAddresses.CBZEC).decimals(), 8);
+        assertEq(IERC20Metadata(BaseAddresses.CBZEC).symbol(), "cbZEC");
+        (bool ok, bytes memory ret) = BaseAddresses.CBZEC.staticcall(abi.encodeWithSignature("multiplier()"));
+        assertTrue(ok && ret.length >= 32, "multiplier() must answer");
+        console2.log("cbZEC multiplier", abi.decode(ret, (uint256)));
+    }
+
+    function test_fork_cbzecUsdcPoolSlot0() public onlyForked {
+        IAerodromeCLPool pool = IAerodromeCLPool(BaseAddresses.AERODROME_CBZEC_USDC_POOL);
+        assertEq(pool.token0(), BaseAddresses.USDC, "token0 is USDC");
+        assertEq(pool.token1(), BaseAddresses.CBZEC, "token1 is cbZEC");
+        assertEq(pool.tickSpacing(), 200);
+        (uint160 sqrtPriceX96, int24 tick,,,,) = pool.slot0();
+        assertGt(sqrtPriceX96, 0);
+        console2.log("cbZEC/USDC sqrtPriceX96", sqrtPriceX96);
+        console2.log("cbZEC/USDC tick", tick);
+        console2.log("cbZEC/USDC liquidity", pool.liquidity());
+        // The band check reads exactly this word through a raw staticcall.
+        (bool ok, bytes memory ret) = address(pool).staticcall(abi.encodeWithSelector(IAerodromeCLPool.slot0.selector));
+        assertTrue(ok && ret.length >= 32);
+        assertEq(abi.decode(ret, (uint256)), uint256(sqrtPriceX96));
+    }
+
+    /// FACT 1 against the live engine: the array-returning getter does not exist; the index getter
+    /// reverts past the end; our canary-measured enumeration returns EMPTY for a fresh address
+    /// (not a revert, not garbage) — and records the live revert shape in the log.
+    function test_fork_engineIndexGetterShape() public onlyForked {
+        address fresh = makeAddr("nobody");
+        (bool okArray,) = BaseAddresses.SNUGGLE_ENGINE.staticcall(abi.encodeWithSelector(0x613cf420, fresh));
+        assertFalse(okArray, "userPositions(address) must NOT exist (C-2)");
+        (bool okIdx, bytes memory shape) =
+            BaseAddresses.SNUGGLE_ENGINE.staticcall(abi.encodeCall(ISnuggleVault.userPositions, (fresh, 0)));
+        assertFalse(okIdx, "index 0 of an empty list must revert");
+        console2.log("live end-of-list revert shape (bytes):");
+        console2.logBytes(shape);
+        uint256[] memory ids = lpVenue.positionsOf(fresh);
+        assertEq(ids.length, 0);
+        assertGt(ISnuggleVault(BaseAddresses.SNUGGLE_ENGINE).poolIdsCount(), 0);
+    }
+
+    // -------------------------------------------------------------- flows
+
+    function test_fork_supplyBorrowRepayWithdrawUnderTheAccount() public onlyForked {
+        deal(BaseAddresses.CBBTC, address(acct), 1e8);
+        vm.startPrank(alice);
+        acct.exec(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.supply, (BaseAddresses.CBBTC, 1e8)));
+        assertEq(aaveVenue.collateral(address(acct), BaseAddresses.CBBTC), 1e8);
+        uint256 borrow = 10_000e6;
+        acct.exec(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.borrow, (BaseAddresses.USDC, borrow)));
+        assertEq(IERC20(BaseAddresses.USDC).balanceOf(address(acct)), borrow, "borrowed USDC lands in the account");
+        uint256 hf = aaveVenue.healthFactor(address(acct));
+        console2.log("HF after borrow (wad)", hf);
+        assertGt(hf, 1e18);
+        assertApproxEqAbs(aaveVenue.debt(address(acct), BaseAddresses.USDC), borrow, 2);
+        acct.exec(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.repay, (BaseAddresses.USDC, type(uint256).max)));
+        assertEq(aaveVenue.debt(address(acct), BaseAddresses.USDC), 0);
+        acct.exec(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.withdraw, (BaseAddresses.CBBTC, type(uint256).max)));
+        vm.stopPrank();
+        assertEq(IERC20(BaseAddresses.CBBTC).balanceOf(address(acct)), 1e8);
+        assertEq(IERC20(BaseAddresses.CBBTC).allowance(address(acct), BaseAddresses.AAVE_POOL), 0);
+        assertEq(IERC20(BaseAddresses.USDC).allowance(address(acct), BaseAddresses.AAVE_POOL), 0);
+    }
+
+    /// Open → close on the live engine through the account, in the first active USDC pool the
+    /// engine lists. Proves the id is minted TO THE ACCOUNT, the band reads the live pool, the
+    /// enumeration sees the id, and the close pays the account.
+    function test_fork_lpOpenCloseOnLiveEngine() public onlyForked {
+        ISnuggleVault engine = ISnuggleVault(BaseAddresses.SNUGGLE_ENGINE);
+        bytes32 poolId;
+        address pool;
+        uint256 n = engine.poolIdsCount();
+        for (uint256 i = 0; i < n; i++) {
+            bytes32 candidate = engine.poolIds(i);
+            (address cPool, address c0, address c1,,, bool active,,) = engine.approvedPools(candidate);
+            if (active && (c0 == BaseAddresses.USDC || c1 == BaseAddresses.USDC) && (c0 == BaseAddresses.WETH || c1 == BaseAddresses.WETH)) {
+                poolId = candidate;
+                pool = cPool;
+                break;
+            }
+        }
+        vm.skip(poolId == bytes32(0)); // no active WETH/USDC pool listed: nothing to prove
+        (address t0,,) = lpVenue.poolTokens(poolId);
+        uint256 amount = 1_000e6;
+        deal(BaseAddresses.USDC, address(acct), amount);
+        uint256 price = lpVenue.poolSqrtPriceX96(poolId);
+        LpOpenParams memory p = LpOpenParams({
+            poolId: poolId,
+            amount0: t0 == BaseAddresses.USDC ? amount : 0,
+            amount1: t0 == BaseAddresses.USDC ? 0 : amount,
+            rangeWidthBps: 1500,
+            rebalanceDelay: 12 hours,
+            autoCompound: true,
+            band: PriceBand(uint160((price * 90) / 100), uint160((price * 110) / 100)),
+            deadline: block.timestamp + 15 minutes
+        });
+        vm.prank(alice);
+        uint256 id = abi.decode(acct.exec(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p))), (uint256));
+        (bytes32 pid, address owner) = lpVenue.poolOf(id);
+        assertEq(pid, poolId);
+        assertEq(owner, address(acct), "minted to the account");
+        uint256[] memory ids = lpVenue.positionsOf(address(acct));
+        assertEq(ids.length, 1);
+        assertEq(ids[0], id);
+
+        // Engine flash-loan hold: one timestamp read, single warp (via-IR CSE note, AUDIT round 3).
+        uint256 t = block.timestamp;
+        vm.warp(t + 2 minutes);
+        PriceBand memory band = PriceBand(uint160((price * 80) / 100), uint160((price * 120) / 100));
+        vm.prank(alice);
+        bytes memory ret = acct.exec(address(lpVenue), 0, abi.encodeCall(ILpVenue.close, (id, band)));
+        (uint256 out0, uint256 out1,) = abi.decode(ret, (uint256, uint256, uint256));
+        console2.log("closed: out0", out0, "out1", out1);
+        assertGt(out0 + out1, 0);
+        assertEq(lpVenue.positionsOf(address(acct)).length, 0);
+        // Round-trip loss bounded to engine fees / swap impact on a small size.
+        uint256 usdcBack = IERC20(BaseAddresses.USDC).balanceOf(address(acct));
+        assertGt(usdcBack, 900e6, "excessive round-trip loss");
+        assertEq(IERC20(BaseAddresses.USDC).balanceOf(address(lpVenue)), 0);
+    }
+
+    function test_fork_permit2Present() public onlyForked {
+        assertGt(BaseAddresses.PERMIT2.code.length, 0);
+        assertGt(BaseAddresses.MORPHO_BLUE.code.length, 0);
+        assertGt(BaseAddresses.PYTH.code.length, 0);
+    }
+}
