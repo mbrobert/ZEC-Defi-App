@@ -1,0 +1,1262 @@
+{
+ "generatedAt": "2026-09-05T01:47:16+00:00",
+ "inputs": {
+  "gaugeSample": {
+   "file": "samples/gauge-emissions-2026-09-05-composite.json",
+   "sampledAt": "2026-08-31T01:34:32Z",
+   "block": 50675328,
+   "aeroUsd": 0.478221898577248
+  },
+  "volatility": {
+   "file": "samples/volatility.json",
+   "asOf": "2026-08-31",
+   "sigma": {
+    "aero-usdc-weth-5": 0.55,
+    "aero-cbbtc-usdc": 0.4,
+    "aero-weth-cbbtc": 0.33
+   },
+   "provenance": {
+    "aero-usdc-weth-5": "ETH/USD realized 0.56 (Gecko OHLCV daily 2026-03-01\u219208-31); model rounds to 0.55. docs/YIELD-REALITY-2026-08-31.md",
+    "aero-cbbtc-usdc": "BTC/USD realized 0.39 (Gecko OHLCV daily 2026-03-01\u219208-31); model rounds to 0.40. docs/YIELD-REALITY-2026-08-31.md",
+    "aero-weth-cbbtc": "ETH/BTC realized 0.26\u20130.43 hourly/daily blend (Gecko OHLCV 2026-03-01\u219208-31); model uses 0.33. docs/YIELD-REALITY-2026-08-31.md"
+   },
+   "notCalibrated": {
+    "aero-weth-link": "no realized-vol series taken; pool also fails the $5M depth rule",
+    "aero-usdt-usdc": "stable/stable \u2014 emissions alone (\u22480.0x%) cannot clear any borrow, so \u03c3 is moot",
+    "cbeth-weth": "LST/ETH \u2014 emissions alone (\u22480.0x%) cannot clear any borrow, so \u03c3 is moot",
+    "aero-aero-weth": "venue token; gauge epoch lapsed 2026-05-28 (no emissions)",
+    "aero-aero-cbbtc": "venue token; no realized-vol series taken \u2014 the gate reports breakEvenSigma instead",
+    "aero-cbzec-usdc": "gauge never voted (rewardRate 0) \u2014 emissions 0, \u03c3 moot; 4 days of price history is not a volatility estimate"
+   }
+  },
+  "borrowAprPct": 4.828,
+  "borrowSource": "Aave v3 Base PoolDataProvider getReserveData(USDC) variableBorrowRate, read live 2026-09-05 ~01:00Z (docs/VERIFIED-BASE-FACTS.md)",
+  "collateral": {
+   "cbBTC": {
+    "supplyAprPct": 0.012,
+    "liquidationThresholdBps": 7800,
+    "ltvPresets": [
+     {
+      "id": "p30",
+      "ltvBps": 3000,
+      "offerable": true
+     },
+     {
+      "id": "p40",
+      "ltvBps": 4000,
+      "offerable": true
+     },
+     {
+      "id": "top",
+      "ltvBps": 5000,
+      "offerable": true
+     }
+    ]
+   },
+   "WETH": {
+    "supplyAprPct": 1.843,
+    "liquidationThresholdBps": 8300,
+    "ltvPresets": [
+     {
+      "id": "p30",
+      "ltvBps": 3000,
+      "offerable": true
+     },
+     {
+      "id": "p40",
+      "ltvBps": 4000,
+      "offerable": true
+     },
+     {
+      "id": "top",
+      "ltvBps": 5000,
+      "offerable": true
+     }
+    ]
+   }
+  },
+  "fees": {
+   "performanceBps": 1000,
+   "engineFeeBps": 1500
+  },
+  "keep": {
+   "engine": 0.765,
+   "direct": 0.9
+  },
+  "settings": [
+   {
+    "id": "sheltered",
+    "preset": "CONSERVATIVE",
+    "rangeWidthBps": {
+     "UNCORRELATED": 4500,
+     "CORRELATED": 2356
+    },
+    "rebalanceDelayHours": 48
+   },
+   {
+    "id": "steady",
+    "preset": "MODERATE",
+    "rangeWidthBps": {
+     "UNCORRELATED": 1500,
+     "CORRELATED": 784
+    },
+    "rebalanceDelayHours": 12
+   },
+   {
+    "id": "working",
+    "preset": "AGGRESSIVE",
+    "rangeWidthBps": {
+     "UNCORRELATED": 300,
+     "CORRELATED": 150
+    },
+    "rebalanceDelayHours": 2
+   }
+  ],
+  "paths": 3000,
+  "stepHours": 1,
+  "horizonDays": 365,
+  "seed": 7,
+  "drift": 0,
+  "rebalance": "re-center at current price with the same width after the position has been out of range for the full rebalance delay; cost = (pool fee + 5 bps slippage) on the swapped half",
+  "emissions": "in-range emissions APR at the position's exact width from the raw gauge words; paid only while in range on the position's current value; AERO sold on claim",
+  "widthConvention": "rangeWidthBps is the TOTAL tick span; half-width w = 1.0001^(bps/2) - 1 (audit FACT 3)",
+  "closedForm": "x = sigma^2/(4 f(w)); drag = -100(1-e^-x); realized = r(1-e^-x)/x; lpNet = (1-e^-x)(r/x - 1); gate: lpNet > borrow"
+ },
+ "results": {
+  "aero-usdc-weth-5": {
+   "sheltered": {
+    "rangeWidthBps": 4500,
+    "halfWidth": 0.2523086285796854,
+    "rebalanceDelayHours": 48,
+    "preset": "CONSERVATIVE",
+    "protocol": "SNUGGLEFI",
+    "pairClass": "UNCORRELATED",
+    "keep": 0.765,
+    "emissionsGrossPct": 7.625013660508732,
+    "emissionsNetPct": 5.833135450289181,
+    "sigma": 0.55,
+    "dragRate": 0.3128799324673794,
+    "dragPct": -26.86622827872488,
+    "emissionsRealizedPct": 5.00876957343791,
+    "lpNetPct": -21.85745870528697,
+    "qualifies": false,
+    "reason": "net_below_borrow",
+    "breakEvenSigma": 0.09740877772569878,
+    "breakEvenEmissionsMultiple": 6.327747326769249,
+    "monteCarlo": {
+     "timeInRange": 0.9697698249619482,
+     "rebalancesPerYear": 3.065,
+     "dragPct": {
+      "mean": -26.867773975975258,
+      "p10": -40.29807910812227,
+      "p90": -12.757619672893489
+     },
+     "emissionsGrossPct": 6.497416981626271,
+     "emissionsNetPct": 4.9705239909440975,
+     "lpNetPct": -21.89724998503116,
+     "qualifies": false
+    },
+    "userNet": {
+     "cbBTC": {
+      "p30": {
+       "ltvBps": 3000,
+       "offerable": true,
+       "userNetPct": -7.993637611586091
+      },
+      "p40": {
+       "ltvBps": 4000,
+       "offerable": true,
+       "userNetPct": -10.662183482114788
+      },
+      "top": {
+       "ltvBps": 5000,
+       "offerable": true,
+       "userNetPct": -13.330729352643484
+      }
+     },
+     "WETH": {
+      "p30": {
+       "ltvBps": 3000,
+       "offerable": true,
+       "userNetPct": -6.16263761158609
+      },
+      "p40": {
+       "ltvBps": 4000,
+       "offerable": true,
+       "userNetPct": -8.831183482114788
+      },
+      "top": {
+       "ltvBps": 5000,
+       "offerable": true,
+       "userNetPct": -11.499729352643485
+      }
+     }
+    }
+   },
+   "steady": {
+    "rangeWidthBps": 1500,
+    "halfWidth": 0.07788010909608545,
+    "rebalanceDelayHours": 12,
+    "preset": "MODERATE",
+    "protocol": "SNUGGLEFI",
+    "pairClass": "UNCORRELATED",
+    "keep": 0.765,
+    "emissionsGrossPct": 24.08126800161742,
+    "emissionsNetPct": 18.422170021237328,
+    "sigma": 0.55,
+    "dragRate": 0.9881353452647095,
+    "dragPct": -62.77298003653977,
+    "emissionsRealizedPct": 11.7029971300448,
+    "lpNetPct": -51.06998290649497,
+    "qualifies": false,
+    "reason": "net_below_borrow",
+    "breakEvenSigma": 0.2015292297235502,
+    "breakEvenEmissionsMultiple": 5.77638183495658,
+    "monteCarlo": {
+     "timeInRange": 0.9343527016742771,
+     "rebalancesPerYear": 29.457666666666668,
+     "dragPct": {
+      "mean": -61.03378310659567,
+      "p10": -68.47926056324083,
+      "p90": -53.37427656265151
+     },
+     "emissionsGrossPct": 14.631171741550315,
+     "emissionsNetPct": 11.19284638228599,
+     "lpNetPct": -49.84093672430968,
+     "qualifies": false
+    },
+    "userNet": {
+     "cbBTC": {
+      "p30": {
+       "ltvBps": 3000,
+       "offerable": true,
+       "userNetPct": -16.75739487194849
+      },
+      "p40": {
+       "ltvBps": 4000,
+       "offerable": true,
+       "userNetPct": -22.34719316259799
+      },
+      "top": {
+       "ltvBps": 5000,
+       "offerable": true,
+       "userNetPct": -27.936991453247487
+      }
+     },
+     "WETH": {
+      "p30": {
+       "ltvBps": 3000,
+       "offerable": true,
+       "userNetPct": -14.926394871948492
+      },
+      "p40": {
+       "ltvBps": 4000,
+       "offerable": true,
+       "userNetPct": -20.51619316259799
+      },
+      "top": {
+       "ltvBps": 5000,
+       "offerable": true,
+       "userNetPct": -26.105991453247487
+      }
+     }
+    }
+   },
+   "working": {
+    "rangeWidthBps": 300,
+    "halfWidth": 0.015112303331956234,
+    "rebalanceDelayHours": 2,
+    "preset": "AGGRESSIVE",
+    "protocol": "SNUGGLEFI",
+    "pairClass": "UNCORRELATED",
+    "keep": 0.765,
+    "emissionsGrossPct": 122.406522470155,
+    "emissionsNetPct": 93.64098968966857,
+    "sigma": 0.55,
+    "dragRate": 5.022750933861753,
+    "dragPct": -99.34136169394198,
+    "emissionsRealizedPct": 18.520574777909342,
+    "lpNetPct": -80.82078691603263,
+    "qualifies": false,
+    "reason": "net_below_borrow",
+    "breakEvenSigma": 0.22815153056213222,
+    "breakEvenEmissionsMultiple": 5.624520995870568,
+    "monteCarlo": {
+     "timeInRange": 0.8321489726027397,
+     "rebalancesPerYear": 604.6773333333333,
+     "dragPct": {
+      "mean": -98.99975047460626,
+      "p10": -99.20345520879158,
+      "p90": -98.78278789177902
+     },
+     "emissionsGrossPct": 21.973095105541418,
+     "emissionsNetPct": 16.809417755739187,
+     "lpNetPct": -82.19033271886707,
+     "qualifies": false
+    },
+    "userNet": {
+     "cbBTC": {
+      "p30": {
+       "ltvBps": 3000,
+       "offerable": true,
+       "userNetPct": -25.68263607480979
+      },
+      "p40": {
+       "ltvBps": 4000,
+       "offerable": true,
+       "userNetPct": -34.247514766413055
+      },
+      "top": {
+       "ltvBps": 5000,
+       "offerable": true,
+       "userNetPct": -42.81239345801632
+      }
+     },
+     "WETH": {
+      "p30": {
+       "ltvBps": 3000,
+       "offerable": true,
+       "userNetPct": -23.85163607480979
+      },
+      "p40": {
+       "ltvBps": 4000,
+       "offerable": true,
+       "userNetPct": -32.41651476641306
+      },
+      "top": {
+       "ltvBps": 5000,
+       "offerable": true,
+       "userNetPct": -40.98139345801631
+      }
+     }
+    }
+   }
+  },
+  "aero-cbbtc-usdc": {
+   "sheltered": {
+    "rangeWidthBps": 4500,
+    "halfWidth": 0.2523086285796854,
+    "rebalanceDelayHours": 48,
+    "preset": "CONSERVATIVE",
+    "protocol": "SNUGGLEFI",
+    "pairClass": "UNCORRELATED",
+    "keep": 0.765,
+    "emissionsGrossPct": 14.131040058186025,
+    "emissionsNetPct": 10.81024564451231,
+    "sigma": 0.4,
+    "dragRate": 0.1654902122141511,
+    "dragPct": -15.252184190094864,
+    "emissionsRealizedPct": 9.963118392579691,
+    "lpNetPct": -5.289065797515173,
+    "qualifies": false,
+    "reason": "net_below_borrow",
+    "breakEvenSigma": 0.23761643846458275,
+    "breakEvenEmissionsMultiple": 2.0154517289536713,
+    "monteCarlo": {
+     "timeInRange": 0.9830518264840182,
+     "rebalancesPerYear": 1.703,
+     "dragPct": {
+      "mean": -15.38691851661182,
+      "p10": -26.137668792091773,
+      "p90": -3.950665074953642
+     },
+     "emissionsGrossPct": 13.135553689006985,
+     "emissionsNetPct": 10.048698572090343,
+     "lpNetPct": -5.338219944521477,
+     "qualifies": false
+    },
+    "userNet": {
+     "cbBTC": {
+      "p30": {
+       "ltvBps": 3000,
+       "offerable": true,
+       "userNetPct": -3.023119739254552
+      },
+      "p40": {
+       "ltvBps": 4000,
+       "offerable": true,
+       "userNetPct": -4.03482631900607
+      },
+      "top": {
+       "ltvBps": 5000,
+       "offerable": true,
+       "userNetPct": -5.0465328987575875
+      }
+     },
+     "WETH": {
+      "p30": {
+       "ltvBps": 3000,
+       "offerable": true,
+       "userNetPct": -1.1921197392545522
+      },
+      "p40": {
+       "ltvBps": 4000,
+       "offerable": true,
+       "userNetPct": -2.20382631900607
+      },
+      "top": {
+       "ltvBps": 5000,
+       "offerable": true,
+       "userNetPct": -3.215532898757587
+      }
+     }
+    }
+   },
+   "steady": {
+    "rangeWidthBps": 1500,
+    "halfWidth": 0.07788010909608545,
+    "rebalanceDelayHours": 12,
+    "preset": "MODERATE",
+    "protocol": "SNUGGLEFI",
+    "pairClass": "UNCORRELATED",
+    "keep": 0.765,
+    "emissionsGrossPct": 44.62855778806107,
+    "emissionsNetPct": 34.14084670786672,
+    "sigma": 0.4,
+    "dragRate": 0.5226500999747224,
+    "dragPct": -40.70529050941233,
+    "emissionsRealizedPct": 26.58974108200191,
+    "lpNetPct": -14.115549427410418,
+    "qualifies": false,
+    "reason": "net_below_borrow",
+    "breakEvenSigma": 0.29584237833793814,
+    "breakEvenEmissionsMultiple": 1.7124382809516314,
+    "monteCarlo": {
+     "timeInRange": 0.9606566971080671,
+     "rebalancesPerYear": 17.719666666666665,
+     "dragPct": {
+      "mean": -40.06645679916741,
+      "p10": -48.02168249330192,
+      "p90": -32.01700981522377
+     },
+     "emissionsGrossPct": 33.81645002537319,
+     "emissionsNetPct": 25.869584269410492,
+     "lpNetPct": -14.19687252975692,
+     "qualifies": false
+    },
+    "userNet": {
+     "cbBTC": {
+      "p30": {
+       "ltvBps": 3000,
+       "offerable": true,
+       "userNetPct": -5.671064828223125
+      },
+      "p40": {
+       "ltvBps": 4000,
+       "offerable": true,
+       "userNetPct": -7.5654197709641675
+      },
+      "top": {
+       "ltvBps": 5000,
+       "offerable": true,
+       "userNetPct": -9.459774713705208
+      }
+     },
+     "WETH": {
+      "p30": {
+       "ltvBps": 3000,
+       "offerable": true,
+       "userNetPct": -3.8400648282231247
+      },
+      "p40": {
+       "ltvBps": 4000,
+       "offerable": true,
+       "userNetPct": -5.734419770964167
+      },
+      "top": {
+       "ltvBps": 5000,
+       "offerable": true,
+       "userNetPct": -7.628774713705209
+      }
+     }
+    }
+   },
+   "working": {
+    "rangeWidthBps": 300,
+    "halfWidth": 0.015112303331956234,
+    "rebalanceDelayHours": 2,
+    "preset": "AGGRESSIVE",
+    "protocol": "SNUGGLEFI",
+    "pairClass": "UNCORRELATED",
+    "keep": 0.765,
+    "emissionsGrossPct": 226.8496227577384,
+    "emissionsNetPct": 173.53996140966987,
+    "sigma": 0.4,
+    "dragRate": 2.6566616509682,
+    "dragPct": -92.98178764713381,
+    "emissionsRealizedPct": 60.738091484871845,
+    "lpNetPct": -32.24369616226197,
+    "qualifies": false,
+    "reason": "net_below_borrow",
+    "breakEvenSigma": 0.31401560058432665,
+    "breakEvenEmissionsMultiple": 1.6103533261576959,
+    "monteCarlo": {
+     "timeInRange": 0.8923766742770167,
+     "rebalancesPerYear": 387.78366666666665,
+     "dragPct": {
+      "mean": -92.35764053782357,
+      "p10": -93.42543742887074,
+      "p90": -91.27634429606911
+     },
+     "emissionsGrossPct": 72.73803956743183,
+     "emissionsNetPct": 55.644600269085345,
+     "lpNetPct": -36.713040268738226,
+     "qualifies": false
+    },
+    "userNet": {
+     "cbBTC": {
+      "p30": {
+       "ltvBps": 3000,
+       "offerable": true,
+       "userNetPct": -11.10950884867859
+      },
+      "p40": {
+       "ltvBps": 4000,
+       "offerable": true,
+       "userNetPct": -14.81667846490479
+      },
+      "top": {
+       "ltvBps": 5000,
+       "offerable": true,
+       "userNetPct": -18.523848081130986
+      }
+     },
+     "WETH": {
+      "p30": {
+       "ltvBps": 3000,
+       "offerable": true,
+       "userNetPct": -9.278508848678591
+      },
+      "p40": {
+       "ltvBps": 4000,
+       "offerable": true,
+       "userNetPct": -12.98567846490479
+      },
+      "top": {
+       "ltvBps": 5000,
+       "offerable": true,
+       "userNetPct": -16.692848081130986
+      }
+     }
+    }
+   }
+  },
+  "aero-weth-cbbtc": {
+   "sheltered": {
+    "rangeWidthBps": 2356,
+    "halfWidth": 0.12501245914726167,
+    "rebalanceDelayHours": 48,
+    "preset": "CONSERVATIVE",
+    "protocol": "SNUGGLEFI",
+    "pairClass": "CORRELATED",
+    "keep": 0.765,
+    "emissionsGrossPct": 2.703715058595427,
+    "emissionsNetPct": 2.0683420198255016,
+    "reason": "emissions_below_borrow",
+    "lpNetPct": -18.17850736397652,
+    "qualifies": false,
+    "sigma": 0.33,
+    "dragRate": 0.22354328827459363,
+    "dragPct": -20.03197256609678,
+    "emissionsRealizedPct": 1.8534652021202567,
+    "breakEvenSigma": null,
+    "breakEvenEmissionsMultiple": 13.412699918864627,
+    "userNet": {
+     "cbBTC": {
+      "p30": {
+       "ltvBps": 3000,
+       "offerable": true,
+       "userNetPct": -6.889952209192956
+      },
+      "p40": {
+       "ltvBps": 4000,
+       "offerable": true,
+       "userNetPct": -9.190602945590609
+      },
+      "top": {
+       "ltvBps": 5000,
+       "offerable": true,
+       "userNetPct": -11.49125368198826
+      }
+     },
+     "WETH": {
+      "p30": {
+       "ltvBps": 3000,
+       "offerable": true,
+       "userNetPct": -5.058952209192956
+      },
+      "p40": {
+       "ltvBps": 4000,
+       "offerable": true,
+       "userNetPct": -7.359602945590609
+      },
+      "top": {
+       "ltvBps": 5000,
+       "offerable": true,
+       "userNetPct": -9.66025368198826
+      }
+     }
+    }
+   },
+   "steady": {
+    "rangeWidthBps": 784,
+    "halfWidth": 0.03997642032377846,
+    "rebalanceDelayHours": 12,
+    "preset": "MODERATE",
+    "protocol": "SNUGGLEFI",
+    "pairClass": "CORRELATED",
+    "keep": 0.765,
+    "emissionsGrossPct": 8.31512801490661,
+    "emissionsNetPct": 6.361072931403557,
+    "sigma": 0.33,
+    "dragRate": 0.6874951755611612,
+    "dragPct": -49.716599614301316,
+    "emissionsRealizedPct": 4.600045604535681,
+    "lpNetPct": -45.116554009765636,
+    "qualifies": false,
+    "reason": "net_below_borrow",
+    "breakEvenSigma": 0.04869317431809246,
+    "breakEvenEmissionsMultiple": 11.857404100628898,
+    "monteCarlo": {
+     "timeInRange": 0.9165385844748858,
+     "rebalancesPerYear": 37.49666666666667,
+     "dragPct": {
+      "mean": -49.82688158265269,
+      "p10": -55.86063818648075,
+      "p90": -43.44495087235803
+     },
+     "emissionsGrossPct": 5.528475546328428,
+     "emissionsNetPct": 4.2292837929412475,
+     "lpNetPct": -45.59759778971144,
+     "qualifies": false
+    },
+    "userNet": {
+     "cbBTC": {
+      "p30": {
+       "ltvBps": 3000,
+       "offerable": true,
+       "userNetPct": -14.97136620292969
+      },
+      "p40": {
+       "ltvBps": 4000,
+       "offerable": true,
+       "userNetPct": -19.965821603906257
+      },
+      "top": {
+       "ltvBps": 5000,
+       "offerable": true,
+       "userNetPct": -24.96027700488282
+      }
+     },
+     "WETH": {
+      "p30": {
+       "ltvBps": 3000,
+       "offerable": true,
+       "userNetPct": -13.140366202929691
+      },
+      "p40": {
+       "ltvBps": 4000,
+       "offerable": true,
+       "userNetPct": -18.134821603906257
+      },
+      "top": {
+       "ltvBps": 5000,
+       "offerable": true,
+       "userNetPct": -23.12927700488282
+      }
+     }
+    }
+   },
+   "working": {
+    "rangeWidthBps": 150,
+    "halfWidth": 0.007527817646717061,
+    "rebalanceDelayHours": 2,
+    "preset": "AGGRESSIVE",
+    "protocol": "SNUGGLEFI",
+    "pairClass": "CORRELATED",
+    "keep": 0.765,
+    "emissionsGrossPct": 43.823491167446285,
+    "emissionsNetPct": 33.52497074309641,
+    "sigma": 0.33,
+    "dragRate": 3.623328311946002,
+    "dragPct": -97.3306316429223,
+    "emissionsRealizedPct": 9.005550414733415,
+    "lpNetPct": -88.32508122818888,
+    "qualifies": false,
+    "reason": "net_below_borrow",
+    "breakEvenSigma": 0.09171917306864766,
+    "breakEvenEmissionsMultiple": 11.343963104774472,
+    "monteCarlo": {
+     "timeInRange": 0.7874017123287671,
+     "rebalancesPerYear": 765.8586666666666,
+     "dragPct": {
+      "mean": -98.41516490167433,
+      "p10": -98.66037488947183,
+      "p90": -98.15682405993746
+     },
+     "emissionsGrossPct": 8.206878671519705,
+     "emissionsNetPct": 6.278262183712575,
+     "lpNetPct": -92.13690271796176,
+     "qualifies": false
+    },
+    "userNet": {
+     "cbBTC": {
+      "p30": {
+       "ltvBps": 3000,
+       "offerable": true,
+       "userNetPct": -27.933924368456662
+      },
+      "p40": {
+       "ltvBps": 4000,
+       "offerable": true,
+       "userNetPct": -37.249232491275556
+      },
+      "top": {
+       "ltvBps": 5000,
+       "offerable": true,
+       "userNetPct": -46.56454061409444
+      }
+     },
+     "WETH": {
+      "p30": {
+       "ltvBps": 3000,
+       "offerable": true,
+       "userNetPct": -26.102924368456662
+      },
+      "p40": {
+       "ltvBps": 4000,
+       "offerable": true,
+       "userNetPct": -35.41823249127556
+      },
+      "top": {
+       "ltvBps": 5000,
+       "offerable": true,
+       "userNetPct": -44.73354061409444
+      }
+     }
+    }
+   }
+  },
+  "aero-weth-link": {
+   "sheltered": {
+    "rangeWidthBps": 4500,
+    "halfWidth": 0.2523086285796854,
+    "rebalanceDelayHours": 48,
+    "preset": "CONSERVATIVE",
+    "protocol": "SNUGGLEFI",
+    "pairClass": "UNCORRELATED",
+    "keep": 0.765,
+    "emissionsGrossPct": 17.4557891733237,
+    "emissionsNetPct": 13.353678717592631,
+    "reason": "no_volatility_input",
+    "lpNetPct": null,
+    "qualifies": false,
+    "breakEvenSigma": 0.28365319500750297
+   },
+   "steady": {
+    "rangeWidthBps": 1500,
+    "halfWidth": 0.07788010909608545,
+    "rebalanceDelayHours": 12,
+    "preset": "MODERATE",
+    "protocol": "SNUGGLEFI",
+    "pairClass": "UNCORRELATED",
+    "keep": 0.765,
+    "emissionsGrossPct": 55.12875858041336,
+    "emissionsNetPct": 42.17350031401622,
+    "reason": "no_volatility_input",
+    "lpNetPct": null,
+    "qualifies": false,
+    "breakEvenSigma": 0.33387525012458663
+   },
+   "working": {
+    "rangeWidthBps": 300,
+    "halfWidth": 0.015112303331956234,
+    "rebalanceDelayHours": 2,
+    "preset": "AGGRESSIVE",
+    "protocol": "SNUGGLEFI",
+    "pairClass": "UNCORRELATED",
+    "keep": 0.765,
+    "emissionsGrossPct": 280.2227700581166,
+    "emissionsNetPct": 214.3704190944592,
+    "reason": "no_volatility_input",
+    "lpNetPct": null,
+    "qualifies": false,
+    "breakEvenSigma": 0.34972789029104123
+   }
+  },
+  "aero-usdt-usdc": {
+   "sheltered": {
+    "rangeWidthBps": 2356,
+    "halfWidth": 0.12501245914726167,
+    "rebalanceDelayHours": 48,
+    "preset": "CONSERVATIVE",
+    "protocol": "SNUGGLEFI",
+    "pairClass": "CORRELATED",
+    "keep": 0.765,
+    "emissionsGrossPct": 0.0038664525430950423,
+    "emissionsNetPct": 0.0029578361954677073,
+    "reason": "emissions_below_borrow",
+    "lpNetPct": null,
+    "qualifies": false
+   },
+   "steady": {
+    "rangeWidthBps": 784,
+    "halfWidth": 0.03997642032377846,
+    "rebalanceDelayHours": 12,
+    "preset": "MODERATE",
+    "protocol": "SNUGGLEFI",
+    "pairClass": "CORRELATED",
+    "keep": 0.765,
+    "emissionsGrossPct": 0.011891063652283823,
+    "emissionsNetPct": 0.009096663693997125,
+    "reason": "emissions_below_borrow",
+    "lpNetPct": null,
+    "qualifies": false
+   },
+   "working": {
+    "rangeWidthBps": 150,
+    "halfWidth": 0.007527817646717061,
+    "rebalanceDelayHours": 2,
+    "preset": "AGGRESSIVE",
+    "protocol": "SNUGGLEFI",
+    "pairClass": "CORRELATED",
+    "keep": 0.765,
+    "emissionsGrossPct": 0.06266986172710827,
+    "emissionsNetPct": 0.04794244422123783,
+    "reason": "emissions_below_borrow",
+    "lpNetPct": null,
+    "qualifies": false
+   }
+  },
+  "cbeth-weth": {
+   "sheltered": {
+    "rangeWidthBps": 2356,
+    "halfWidth": 0.12501245914726167,
+    "rebalanceDelayHours": 48,
+    "preset": "CONSERVATIVE",
+    "protocol": "SNUGGLEFI",
+    "pairClass": "CORRELATED",
+    "keep": 0.765,
+    "emissionsGrossPct": 0.0022311960510715927,
+    "emissionsNetPct": 0.0017068649790697684,
+    "reason": "emissions_below_borrow",
+    "lpNetPct": null,
+    "qualifies": false
+   },
+   "steady": {
+    "rangeWidthBps": 784,
+    "halfWidth": 0.03997642032377846,
+    "rebalanceDelayHours": 12,
+    "preset": "MODERATE",
+    "protocol": "SNUGGLEFI",
+    "pairClass": "CORRELATED",
+    "keep": 0.765,
+    "emissionsGrossPct": 0.006861921611167294,
+    "emissionsNetPct": 0.00524937003254298,
+    "reason": "emissions_below_borrow",
+    "lpNetPct": null,
+    "qualifies": false
+   },
+   "working": {
+    "rangeWidthBps": 150,
+    "halfWidth": 0.007527817646717061,
+    "rebalanceDelayHours": 2,
+    "preset": "AGGRESSIVE",
+    "protocol": "SNUGGLEFI",
+    "pairClass": "CORRELATED",
+    "keep": 0.765,
+    "emissionsGrossPct": 0.036164609922974954,
+    "emissionsNetPct": 0.02766592659107584,
+    "reason": "emissions_below_borrow",
+    "lpNetPct": null,
+    "qualifies": false
+   }
+  },
+  "aero-aero-weth": {
+   "sheltered": {
+    "rangeWidthBps": 4500,
+    "halfWidth": 0.2523086285796854,
+    "rebalanceDelayHours": 48,
+    "preset": "CONSERVATIVE",
+    "protocol": "SNUGGLEFI",
+    "pairClass": "UNCORRELATED",
+    "keep": 0.765,
+    "emissionsGrossPct": 0.0,
+    "emissionsNetPct": 0.0,
+    "reason": "no_emissions",
+    "lpNetPct": null,
+    "qualifies": false
+   },
+   "steady": {
+    "rangeWidthBps": 1500,
+    "halfWidth": 0.07788010909608545,
+    "rebalanceDelayHours": 12,
+    "preset": "MODERATE",
+    "protocol": "SNUGGLEFI",
+    "pairClass": "UNCORRELATED",
+    "keep": 0.765,
+    "emissionsGrossPct": 0.0,
+    "emissionsNetPct": 0.0,
+    "reason": "no_emissions",
+    "lpNetPct": null,
+    "qualifies": false
+   },
+   "working": {
+    "rangeWidthBps": 300,
+    "halfWidth": 0.015112303331956234,
+    "rebalanceDelayHours": 2,
+    "preset": "AGGRESSIVE",
+    "protocol": "SNUGGLEFI",
+    "pairClass": "UNCORRELATED",
+    "keep": 0.765,
+    "emissionsGrossPct": 0.0,
+    "emissionsNetPct": 0.0,
+    "reason": "no_emissions",
+    "lpNetPct": null,
+    "qualifies": false
+   }
+  },
+  "aero-aero-cbbtc": {
+   "sheltered": {
+    "rangeWidthBps": 4500,
+    "halfWidth": 0.2523086285796854,
+    "rebalanceDelayHours": 48,
+    "preset": "CONSERVATIVE",
+    "protocol": "SNUGGLEFI",
+    "pairClass": "UNCORRELATED",
+    "keep": 0.765,
+    "emissionsGrossPct": 23.16049039263005,
+    "emissionsNetPct": 17.717775150361987,
+    "reason": "no_volatility_input",
+    "lpNetPct": null,
+    "qualifies": false,
+    "breakEvenSigma": 0.34874627939996683
+   },
+   "steady": {
+    "rangeWidthBps": 1500,
+    "halfWidth": 0.07788010909608545,
+    "rebalanceDelayHours": 12,
+    "preset": "MODERATE",
+    "protocol": "SNUGGLEFI",
+    "pairClass": "UNCORRELATED",
+    "keep": 0.765,
+    "emissionsGrossPct": 73.14530845792585,
+    "emissionsNetPct": 55.95616097031328,
+    "reason": "no_volatility_input",
+    "lpNetPct": null,
+    "qualifies": false,
+    "breakEvenSigma": 0.39055482563851707
+   },
+   "working": {
+    "rangeWidthBps": 300,
+    "halfWidth": 0.015112303331956234,
+    "rebalanceDelayHours": 2,
+    "preset": "AGGRESSIVE",
+    "protocol": "SNUGGLEFI",
+    "pairClass": "UNCORRELATED",
+    "keep": 0.765,
+    "emissionsGrossPct": 371.80196834901557,
+    "emissionsNetPct": 284.42850578699694,
+    "reason": "no_volatility_input",
+    "lpNetPct": null,
+    "qualifies": false,
+    "breakEvenSigma": 0.403574546391824
+   }
+  },
+  "aero-cbzec-usdc": {
+   "sheltered": {
+    "rangeWidthBps": 4500,
+    "halfWidth": 0.2523086285796854,
+    "rebalanceDelayHours": 48,
+    "preset": "CONSERVATIVE",
+    "protocol": "DIRECT",
+    "pairClass": "UNCORRELATED",
+    "keep": 0.9,
+    "emissionsGrossPct": 0.0,
+    "emissionsNetPct": 0.0,
+    "reason": "no_emissions",
+    "lpNetPct": null,
+    "qualifies": false
+   },
+   "steady": {
+    "rangeWidthBps": 1500,
+    "halfWidth": 0.07788010909608545,
+    "rebalanceDelayHours": 12,
+    "preset": "MODERATE",
+    "protocol": "DIRECT",
+    "pairClass": "UNCORRELATED",
+    "keep": 0.9,
+    "emissionsGrossPct": 0.0,
+    "emissionsNetPct": 0.0,
+    "reason": "no_emissions",
+    "lpNetPct": null,
+    "qualifies": false
+   },
+   "working": {
+    "rangeWidthBps": 300,
+    "halfWidth": 0.015112303331956234,
+    "rebalanceDelayHours": 2,
+    "preset": "AGGRESSIVE",
+    "protocol": "DIRECT",
+    "pairClass": "UNCORRELATED",
+    "keep": 0.9,
+    "emissionsGrossPct": 0.0,
+    "emissionsNetPct": 0.0,
+    "reason": "no_emissions",
+    "lpNetPct": null,
+    "qualifies": false
+   }
+  }
+ },
+ "validation": [
+  {
+   "pool": "aero-usdc-weth-5",
+   "setting": "sheltered",
+   "closedFormLpNetPct": -21.85745870528697,
+   "monteCarloLpNetPct": -21.89724998503116,
+   "deltaPct": 0.03979127974418972,
+   "tolerancePct": 2.5,
+   "verdictAgrees": true,
+   "ok": true
+  },
+  {
+   "pool": "aero-usdc-weth-5",
+   "setting": "steady",
+   "closedFormLpNetPct": -51.06998290649497,
+   "monteCarloLpNetPct": -49.84093672430968,
+   "deltaPct": -1.229046182185293,
+   "tolerancePct": 2.5,
+   "verdictAgrees": true,
+   "ok": true
+  },
+  {
+   "pool": "aero-usdc-weth-5",
+   "setting": "working",
+   "closedFormLpNetPct": -80.82078691603263,
+   "monteCarloLpNetPct": -82.19033271886707,
+   "deltaPct": 1.3695458028344376,
+   "tolerancePct": 8.0,
+   "verdictAgrees": true,
+   "ok": true
+  },
+  {
+   "pool": "aero-cbbtc-usdc",
+   "setting": "sheltered",
+   "closedFormLpNetPct": -5.289065797515173,
+   "monteCarloLpNetPct": -5.338219944521477,
+   "deltaPct": 0.04915414700630372,
+   "tolerancePct": 2.5,
+   "verdictAgrees": true,
+   "ok": true
+  },
+  {
+   "pool": "aero-cbbtc-usdc",
+   "setting": "steady",
+   "closedFormLpNetPct": -14.115549427410418,
+   "monteCarloLpNetPct": -14.19687252975692,
+   "deltaPct": 0.0813231023465022,
+   "tolerancePct": 2.5,
+   "verdictAgrees": true,
+   "ok": true
+  },
+  {
+   "pool": "aero-cbbtc-usdc",
+   "setting": "working",
+   "closedFormLpNetPct": -32.24369616226197,
+   "monteCarloLpNetPct": -36.713040268738226,
+   "deltaPct": 4.469344106476257,
+   "tolerancePct": 8.0,
+   "verdictAgrees": true,
+   "ok": true
+  },
+  {
+   "pool": "aero-weth-cbbtc",
+   "setting": "steady",
+   "closedFormLpNetPct": -45.116554009765636,
+   "monteCarloLpNetPct": -45.59759778971144,
+   "deltaPct": 0.48104377994580716,
+   "tolerancePct": 2.5,
+   "verdictAgrees": true,
+   "ok": true
+  },
+  {
+   "pool": "aero-weth-cbbtc",
+   "setting": "working",
+   "closedFormLpNetPct": -88.32508122818888,
+   "monteCarloLpNetPct": -92.13690271796176,
+   "deltaPct": 3.811821489772882,
+   "tolerancePct": 8.0,
+   "verdictAgrees": true,
+   "ok": true
+  }
+ ],
+ "verdict": {
+  "clears": [],
+  "fails": [
+   {
+    "pool": "aero-usdc-weth-5",
+    "setting": "sheltered",
+    "lpNetPct": -21.85745870528697,
+    "reason": "net_below_borrow"
+   },
+   {
+    "pool": "aero-usdc-weth-5",
+    "setting": "steady",
+    "lpNetPct": -51.06998290649497,
+    "reason": "net_below_borrow"
+   },
+   {
+    "pool": "aero-usdc-weth-5",
+    "setting": "working",
+    "lpNetPct": -80.82078691603263,
+    "reason": "net_below_borrow"
+   },
+   {
+    "pool": "aero-cbbtc-usdc",
+    "setting": "sheltered",
+    "lpNetPct": -5.289065797515173,
+    "reason": "net_below_borrow"
+   },
+   {
+    "pool": "aero-cbbtc-usdc",
+    "setting": "steady",
+    "lpNetPct": -14.115549427410418,
+    "reason": "net_below_borrow"
+   },
+   {
+    "pool": "aero-cbbtc-usdc",
+    "setting": "working",
+    "lpNetPct": -32.24369616226197,
+    "reason": "net_below_borrow"
+   },
+   {
+    "pool": "aero-weth-cbbtc",
+    "setting": "sheltered",
+    "reason": "emissions_below_borrow",
+    "emissionsNetPct": 2.0683420198255016
+   },
+   {
+    "pool": "aero-weth-cbbtc",
+    "setting": "steady",
+    "lpNetPct": -45.116554009765636,
+    "reason": "net_below_borrow"
+   },
+   {
+    "pool": "aero-weth-cbbtc",
+    "setting": "working",
+    "lpNetPct": -88.32508122818888,
+    "reason": "net_below_borrow"
+   },
+   {
+    "pool": "aero-usdt-usdc",
+    "setting": "sheltered",
+    "reason": "emissions_below_borrow",
+    "emissionsNetPct": 0.0029578361954677073
+   },
+   {
+    "pool": "aero-usdt-usdc",
+    "setting": "steady",
+    "reason": "emissions_below_borrow",
+    "emissionsNetPct": 0.009096663693997125
+   },
+   {
+    "pool": "aero-usdt-usdc",
+    "setting": "working",
+    "reason": "emissions_below_borrow",
+    "emissionsNetPct": 0.04794244422123783
+   },
+   {
+    "pool": "cbeth-weth",
+    "setting": "sheltered",
+    "reason": "emissions_below_borrow",
+    "emissionsNetPct": 0.0017068649790697684
+   },
+   {
+    "pool": "cbeth-weth",
+    "setting": "steady",
+    "reason": "emissions_below_borrow",
+    "emissionsNetPct": 0.00524937003254298
+   },
+   {
+    "pool": "cbeth-weth",
+    "setting": "working",
+    "reason": "emissions_below_borrow",
+    "emissionsNetPct": 0.02766592659107584
+   },
+   {
+    "pool": "aero-aero-weth",
+    "setting": "sheltered",
+    "reason": "no_emissions"
+   },
+   {
+    "pool": "aero-aero-weth",
+    "setting": "steady",
+    "reason": "no_emissions"
+   },
+   {
+    "pool": "aero-aero-weth",
+    "setting": "working",
+    "reason": "no_emissions"
+   },
+   {
+    "pool": "aero-cbzec-usdc",
+    "setting": "sheltered",
+    "reason": "no_emissions"
+   },
+   {
+    "pool": "aero-cbzec-usdc",
+    "setting": "steady",
+    "reason": "no_emissions"
+   },
+   {
+    "pool": "aero-cbzec-usdc",
+    "setting": "working",
+    "reason": "no_emissions"
+   }
+  ],
+  "notEvaluated": [
+   {
+    "pool": "aero-weth-link",
+    "setting": "sheltered",
+    "reason": "no_volatility_input",
+    "emissionsNetPct": 13.353678717592631,
+    "breakEvenSigma": 0.28365319500750297
+   },
+   {
+    "pool": "aero-weth-link",
+    "setting": "steady",
+    "reason": "no_volatility_input",
+    "emissionsNetPct": 42.17350031401622,
+    "breakEvenSigma": 0.33387525012458663
+   },
+   {
+    "pool": "aero-weth-link",
+    "setting": "working",
+    "reason": "no_volatility_input",
+    "emissionsNetPct": 214.3704190944592,
+    "breakEvenSigma": 0.34972789029104123
+   },
+   {
+    "pool": "aero-aero-cbbtc",
+    "setting": "sheltered",
+    "reason": "no_volatility_input",
+    "emissionsNetPct": 17.717775150361987,
+    "breakEvenSigma": 0.34874627939996683
+   },
+   {
+    "pool": "aero-aero-cbbtc",
+    "setting": "steady",
+    "reason": "no_volatility_input",
+    "emissionsNetPct": 55.95616097031328,
+    "breakEvenSigma": 0.39055482563851707
+   },
+   {
+    "pool": "aero-aero-cbbtc",
+    "setting": "working",
+    "reason": "no_volatility_input",
+    "emissionsNetPct": 284.42850578699694,
+    "breakEvenSigma": 0.403574546391824
+   }
+  ]
+ }
+}

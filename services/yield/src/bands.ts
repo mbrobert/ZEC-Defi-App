@@ -1,33 +1,29 @@
 /**
- * Band assembly: engine-net cohort bands → user-net APY bands.
+ * Band assembly: engine-net cohort bands → user-net APR bands.
  *
- * user_apy(pXX) = SUPPLY_APY + LTV × (kept(engineNet_pXX) − BORROW_APR)
- *   where kept(x) = x × OILSKIN_KEEP for x > 0, x otherwise — the
- *   performance fee applies to GAINS ONLY (losses are not shared, so a
- *   negative percentile passes through undamped).
+ * user_apr(pXX) = collateralSupplyApr + LTV × (engineNet_pXX × OILSKIN_KEEP − borrowApr)
  *
- * Fee semantics (IMPORTANT — differs from the demo's gross-path constant):
- *   • Empirical engine-net flows are measured AFTER the engine's 15%
- *     performance fee (it is skimmed before owner payouts), so only
- *     Oilskin's 10% applies here: OILSKIN_KEEP = 1 − PLATFORM_FEE
- *     .performanceBps/10000 = 0.90.
- *   • The demo's static path multiplies GROSS fee APR by 0.765
- *     (= 0.90 × 0.85) because a gross sample nets NEITHER fee yet.
- *   Both paths therefore state the same economics; tests pin this.
+ * Fee semantics (IMPORTANT — differs from the model path):
+ *   • Empirical engine-net flows are measured AFTER the engine's performance
+ *     fee (it is skimmed before owner payouts), so only Oilskin's
+ *     performance fee applies here: OILSKIN_KEEP = 1 − FEES.performanceBps/10000.
+ *   • The MODEL path (src/model.ts keepFactor) starts from GROSS gauge
+ *     emissions and applies the engine fee first, then Oilskin's — the two
+ *     paths therefore state the same economics; tests pin this.
  *
- * Monotonicity note: kept() is continuous and strictly increasing, so
- * user_apy is increasing in engineNet and applying the map per-percentile
- * preserves percentile order — banding commutes with the fee/LTV transform.
+ * Supply and borrow are the LIVE Aave figures for the chosen collateral —
+ * there is no fallback constant (audit Lens F: a hard-coded 0.8 % once
+ * stood in for a measured 0.04 %).
+ *
+ * Monotonicity note: user_apr is increasing in engineNet, so applying the
+ * affine map per-percentile preserves percentile order — banding commutes
+ * with the fee/LTV transform.
  */
 
-import { PLATFORM_FEE } from "@zyo/shared";
+import { FEES } from "@zyo/shared";
 import type { CohortBand } from "./types.js";
-import { MIN_COHORT_N } from "./types.js";
 
-/** ZEC supply APY on Rhea, percent (same base the demo uses). */
-export const SUPPLY_APY_PCT = 0.8;
-
-export const OILSKIN_KEEP = 1 - PLATFORM_FEE.performanceBps / 10_000; // 0.90
+export const OILSKIN_KEEP = 1 - FEES.performanceBps / 10_000;
 
 export interface UserBand {
   ltv: number;
@@ -42,13 +38,9 @@ export function userNetPct(
   engineNetPct: number,
   ltv: number,
   borrowAprPct: number,
-  supplyApyPct = SUPPLY_APY_PCT
+  supplyAprPct: number
 ): number {
-  // Performance fee applies to GAINS ONLY. Oilskin does not share losses, so
-  // multiplying a negative percentile by 0.90 would UNDERSTATE the downside
-  // shown to users (−40% engine-net is −40% to the user, not −36%).
-  const kept = engineNetPct > 0 ? engineNetPct * OILSKIN_KEEP : engineNetPct;
-  return round2(supplyApyPct + ltv * (kept - borrowAprPct));
+  return round2(supplyAprPct + ltv * (engineNetPct * OILSKIN_KEEP - borrowAprPct));
 }
 
 /**
@@ -62,15 +54,13 @@ export function mixUserBand(
   bands: CohortBand[],
   ltv: number,
   borrowAprPct: number,
-  supplyApyPct = SUPPLY_APY_PCT
+  supplyAprPct: number
 ): UserBand | null {
-  // Only bands with real percentiles participate: insufficient-sample
-  // windows carry nulls (n < MIN_COHORT_N) and must not poison the mean.
-  const usable = bands.filter((b) => b.n >= MIN_COHORT_N && b.p50 !== null);
+  const usable = bands.filter((b) => b.n > 0);
   if (!usable.length) return null;
-  const mean = (pick: (b: CohortBand) => number | null) =>
-    usable.reduce((s, b) => s + (pick(b) ?? 0), 0) / usable.length;
-  const u = (engineNetPct: number) => userNetPct(engineNetPct, ltv, borrowAprPct, supplyApyPct);
+  const mean = (pick: (b: CohortBand) => number) =>
+    usable.reduce((s, b) => s + pick(b), 0) / usable.length;
+  const u = (engineNetPct: number) => userNetPct(engineNetPct, ltv, borrowAprPct, supplyAprPct);
   return {
     ltv,
     p10: u(mean((b) => b.p10)),

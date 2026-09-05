@@ -26,7 +26,7 @@ Simple positions upgrade to Full in place. Withdrawals are never pausable.
 | Path | What | Status |
 |------|------|--------|
 | `contracts/` | Foundry — PositionVault, RewardRouter, LP adapters + mocks | ✅ 57 tests + 9 live-engine fork tests |
-| `agent/` | Zero-dependency Node daemon — monitors, decision engines, 1-Click client, executors | ✅ 62 tests incl. adversarial suite |
+| `agent/` | Keeper daemon (viem) — watches every OilskinAccount's Aave v3 health, runs the shared HF ladder, acts only via `execAsKeeper` inside the user's grant | ✅ 137 tests incl. property + real-process liveness; `verify-abi` 36/36 against `contracts/out` |
 | `web/` | Next.js app — deposit wizard, dashboard, BFF stubs | source ready, `npm i` to run |
 | `services/yield/` | Live rates + EMPIRICAL realized-APR bands from the engine's on-chain history — HTTP API + backfill CLI | ✅ 41 tests on real captured fixtures |
 | `prototype/` | `simple.html` = Oilskin v1 · `index.html` = power-user build (⇄ toggle switches) | ✅ open in a browser |
@@ -43,9 +43,10 @@ git clone --depth 1 --branch v5.7.0 https://github.com/OpenZeppelin/openzeppelin
 git clone --depth 1 --branch v1.16.2 https://github.com/foundry-rs/forge-std lib/forge-std
 forge test -vv
 
-# agent — zero deps; Node ≥ 20
-cd agent && npm run test        # tsc + node:test
-RHEA_MODE=mock npm run dev      # run the daemon in mock mode
+# keeper (agent/) — viem + @zyo/shared; Node ≥ 22
+cd agent && npm run test        # tsc + verify-abi (diffs encoders against contracts/out) + node:test
+BASE_RPC_URL=<base-rpc> ACCOUNT_FACTORY_ADDRESS=<factory> STORE_PATH=/abs/path/keeper.json npm run dev
+#   observe-only without KEEPER_PRIVATE_KEY; add KEEPER_PRIVATE_KEY + STRATEGY_ROUTER_ADDRESS to act via execAsKeeper
 
 # web
 npm install                     # workspace root
@@ -72,12 +73,17 @@ Zcash wallet ──ZEC──▶ Rhea MCA ──supply──▶ ZEC collateral
                         └─route──▶ 1-Click ──native ZEC──▶ your Zcash wallet
 ```
 
-The off-chain agent watches Rhea health factors (warn 1.5 / critical 1.2 /
-emergency 1.05), tracks LP range status, and claims rewards only when they
-clear gas + bridge costs by a configurable multiple (default 3×, $5 floor,
-30-day max hold). Before any send-to-Zcash transaction it hard-verifies the
-1-Click quote: recipient must equal the stored Zcash address, destination must
-be native ZEC, and the quote hash is emitted on-chain for auditability.
+The keeper (`agent/`) discovers accounts from the factory's `AccountCreated`
+logs, values each one fail-closed (Aave `getUserAccountData` cross-checked
+against per-reserve rows, live liquidation thresholds and an independent
+Chainlink read — any unreadable, zero or disagreeing input is UNKNOWN, never
+"healthy"), runs the ladder from `packages/shared` with hysteresis and re-arm,
+and acts only through `OilskinAccount.execAsKeeper` within a grant it can read
+on-chain: close a fraction of the account's LP ids and repay USDC. It never
+withdraws collateral. Dispatch is idempotent (`account:episode:seq:action`
+from a persisted counter, written before anything is sent), the daemon is
+guarded by a progress watchdog (never elapsed time), and its store is
+crash-safe (temp-file + `link()` lock, external-edit detection).
 
 ## Privacy posture
 

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Oilskin yield service: empirical realized-APR bands from the live Snuggle engine's on-chain position history, live pool fee-APR sampling, and Rhea borrow/supply rates — served over a small HTTP API. Zero runtime dependencies by design.",
+  "description": "Oilskin yield service (Base-first): live Aave v3 USDC borrow + collateral supply/LT from the PoolDataProvider, Aerodrome gauge emissions per range width, the IL-drag yield gate, and empirical realized-APR bands from the Snuggle engine's on-chain history — served over a small HTTP API. Zero runtime dependencies by design.",
   "main": "./dist/src/index.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -11,7 +11,9 @@
     "start": "node dist/src/index.js",
     "backfill": "tsx src/backfill.ts",
     "test": "tsc -p tsconfig.json && node --test \"dist/test/*.test.js\"",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "model-inputs": "tsc -p tsconfig.json && node scripts/model-inputs.mjs",
+    "model": "npm run model-inputs && python3 scripts/lp-sim.py --sample samples/gauge-emissions-2026-09-05-composite.json --vol samples/volatility.json --inputs samples/model-inputs.json --borrow 4.828 --borrow-source 'Aave v3 Base PoolDataProvider getReserveData(USDC) variableBorrowRate, read live 2026-09-05 ~01:00Z (docs/VERIFIED-BASE-FACTS.md)' --supply cbBTC=0.012,WETH=1.843 --lt cbBTC=7800,WETH=8300 --out samples/lp-model-2026-09-05.json --md samples/MODEL-NUMBERS.md"
   },
   "dependencies": {
     "@zyo/shared": "*"

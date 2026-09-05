@@ -11,21 +11,29 @@
  *   verify-events  recompute the event map from the verified ABI on
  *               Blockscout and diff against our constants (run after any
  *               engine upgrade; requires BLOCKSCOUT_PRO_API_KEY)
+ *   sample      read every Aerodrome pool's gauge + Aave rates LIVE and
+ *               write samples/gauge-emissions-<date>.json in the shape
+ *               scripts/lp-sim.py consumes (the model re-run input)
  *   all         scan → timestamps → receipts → cohorts
  *
  * Usage: npm run backfill -- <subcommand> [--to-block N]
  */
 
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { CURATED_POOLS } from "@zyo/shared";
 import { loadConfig } from "./config.js";
 import { buildCohortBand, valueLifecycle } from "./cohorts.js";
-import { atomicWriteFileSync, EngineIndexer, EventStore } from "./engine/indexer.js";
+import { EngineIndexer, EventStore } from "./engine/indexer.js";
 import { foldLifecycles } from "./engine/lifecycles.js";
 import { syncEngineRegistry } from "./engine/registry.js";
 import { TOPICS } from "./engine/events.js";
 import { PriceBook } from "./prices.js";
+import { priceForToken } from "./server.js";
+import { AaveSource } from "./sources/aave.js";
 import { BlockscoutSource } from "./sources/blockscout.js";
 import { GeckoSource } from "./sources/gecko.js";
+import { AERO_ADDRESS, AERODROME_VOTER, GaugeSource, onchainToken1 } from "./sources/gauges.js";
 import { RpcClient } from "./sources/rpc.js";
 import type { Address, PoolBands } from "./types.js";
 
@@ -46,10 +54,7 @@ function makeBlockscout(): BlockscoutSource | undefined {
 async function scan(toBlock?: number): Promise<void> {
   const rpc = makeRpc();
   const store = new EventStore(cfg.dataDir, cfg.engineVault as Address);
-  const indexer = new EngineIndexer(rpc, store, cfg.engineVault as Address, {
-    logChunk: cfg.logChunk,
-    startBlock: cfg.startBlock,
-  });
+  const indexer = new EngineIndexer(rpc, store, cfg.engineVault as Address, cfg.logChunk);
   const t0 = Date.now();
   const r = await indexer.scan(toBlock, (p) => {
     if (p.scanned % (cfg.logChunk * 20) < cfg.logChunk) {
@@ -58,7 +63,7 @@ async function scan(toBlock?: number): Promise<void> {
       );
     }
   });
-  console.log(`scan done: blocks ${r.from}–${r.to}, ${r.events} events appended`);
+  console.log(`scan done: blocks ${r.from}–${r.to}, ${r.events} events appended, ${r.malformed} malformed logs skipped`);
 }
 
 async function timestamps(): Promise<void> {
@@ -94,12 +99,8 @@ async function cohorts(): Promise<void> {
   for (const m of mismatches) console.warn(`registry: ${m}`);
 
   const { lifecycles, orphanEvents } = foldLifecycles(events, tokenMap);
-  const internalHarvests = lifecycles.reduce((s, l) => s + l.internalHarvests, 0);
-  const unattributed = lifecycles.filter((l) => l.unattributed).length;
   console.log(
-    `folded ${lifecycles.length} lifecycles (${lifecycles.filter((l) => l.closedAt).length} closed, ` +
-      `${orphanEvents} orphan events from pre-backfill history, ` +
-      `${internalHarvests} internal (non-owner) harvests, ${unattributed} unattributed lifecycles)`
+    `folded ${lifecycles.length} lifecycles (${lifecycles.filter((l) => l.closedAt).length} closed, ${orphanEvents} orphan events from pre-backfill history)`
   );
 
   const prices = new PriceBook(new GeckoSource());
@@ -114,7 +115,7 @@ async function cohorts(): Promise<void> {
     enginePoolId: p.enginePoolId,
     computedAt: new Date().toISOString(),
     asOfBlock: head - 1,
-    methodology: "closed-position-flows-v1",
+    methodology: "closed-position-flows-v2",
     bands: cfg.cohortWindows.map((w) =>
       buildCohortBand(valued, p.enginePoolId, {
         windowDays: w,
@@ -125,11 +126,11 @@ async function cohorts(): Promise<void> {
   }));
 
   const path = join(cfg.dataDir, "bands.json");
-  atomicWriteFileSync(path, JSON.stringify(out, null, 2)); // tmp+fsync+rename — the server may read concurrently
+  writeFileSync(path, JSON.stringify(out, null, 2));
   for (const b of out) {
     const w = b.bands.find((x) => x.windowDays === 30) ?? b.bands[0];
     console.log(
-      `${b.poolId}: 30d n=${w?.n ?? 0} p25=${w?.p25} p50=${w?.p50} p75=${w?.p75} (excluded ${w?.excluded})`
+      `${b.poolId}: 30d n=${w?.n ?? 0} p25=${w?.p25} p50=${w?.p50} p75=${w?.p75} (excluded ${w?.excluded}: ${JSON.stringify(w?.excludedReasons)})`
     );
   }
   console.log(`bands → ${path}`);
@@ -174,19 +175,58 @@ async function verifyEvents(): Promise<void> {
   if (!ok) process.exitCode = 1;
 }
 
-const [cmd, ...rest] = process.argv.slice(2);
-let toBlockArg: number | undefined;
-if (rest.includes("--to-block")) {
-  const raw = rest[rest.indexOf("--to-block") + 1];
-  const parsed = Number(raw);
-  if (raw === undefined || !Number.isInteger(parsed) || parsed <= 0) {
-    // `--to-block abc` used to become NaN and silently scan NOTHING while
-    // claiming success. A bad bound is an error, not an empty run.
-    console.error(`--to-block: not a positive integer: ${raw}`);
-    process.exit(2);
+/**
+ * Live sample of every Aerodrome pool's gauge + the Aave rates, in the
+ * shape scripts/lp-sim.py reads. Every number is a raw chain word or a
+ * priced value with its source; nothing is typed.
+ */
+async function sample(): Promise<void> {
+  const rpc = makeRpc();
+  const gecko = new GeckoSource();
+  const gauges = new GaugeSource(rpc);
+  const aave = new AaveSource(rpc);
+  const head = await rpc.blockNumber();
+  const rates = await aave.sample();
+  const live = new Map<string, Awaited<ReturnType<GeckoSource["liveSample"]>>>();
+  for (const p of CURATED_POOLS) {
+    if (!p.poolAddress) continue;
+    live.set(p.id, await gecko.liveSample(p.id, p.poolAddress as Address, p.feeTierBps));
   }
-  toBlockArg = parsed;
+  let aeroUsd: number | undefined;
+  for (const s of live.values()) aeroUsd ??= priceForToken(s, AERO_ADDRESS);
+  if (aeroUsd === undefined) throw new Error("no AERO/USD price in live samples");
+  const pools: Record<string, unknown> = {};
+  for (const p of CURATED_POOLS.filter((x) => x.dex === "AERODROME" && x.poolAddress)) {
+    const l = live.get(p.id)!;
+    const t1 = onchainToken1(p.token0, p.token1);
+    if (!t1) throw new Error(`${p.id}: unknown token pair`);
+    const token1Usd = priceForToken(l, t1.address);
+    if (token1Usd === undefined) throw new Error(`${p.id}: no token1 price`);
+    const e = await gauges.sample(p.id, p.poolAddress as Address, {
+      aeroUsd, poolTvlUsd: l.tvlUsd, token1Usd, token1Decimals: t1.decimals,
+    }, p.gauge as Address | undefined);
+    pools[p.id] = {
+      pool: e.pool, gauge: e.gauge, rewardRateWeiPerSec: e.rewardRateWeiPerSec, periodFinish: e.periodFinish,
+      epochActive: e.epochActive, poolTvlUsd: l.tvlUsd, vol24Usd: l.volume24hUsd, wholePoolAprPct: e.wholePoolAprPct,
+      sqrtPriceX96: e.sqrtPriceX96, feeBpsLive: e.feePips / 100, token1: t1.address, dec1: t1.decimals, token1Usd,
+      stakedLiquidity: e.stakedLiquidity, aprByWidthPct: e.aprByWidthPct, protocol: p.protocol, pairClass: p.pairClass,
+    };
+    console.log(`${p.id}: epochActive=${e.epochActive} wholePool=${e.wholePoolAprPct}% staked=${e.stakedLiquidity}`);
+  }
+  const out = {
+    sampledAt: rates.sampledAt, block: head, aeroUsd, voter: AERODROME_VOTER,
+    method: "APR(bps)=rewardRate*yr*AEROusd / V_staked(w); w=1.0001^(bps/2)-1; V_staked(w)=stakedLiquidity*sqrtP*(2-sqrt(1-w)-1/sqrt(1+w))/10^dec1*token1Usd (marginal, in-range, staked); wholePool=rewardRate*yr*AEROusd/poolTVL",
+    aave: rates, pools,
+  };
+  const path = join(cfg.samplesDir, `gauge-emissions-${rates.sampledAt.slice(0, 10)}.json`);
+  writeFileSync(path, JSON.stringify(out, null, 1));
+  console.log(`sample → ${path} (borrow ${rates.borrow.variableBorrowAprPct}%)`);
 }
+
+const [cmd, ...rest] = process.argv.slice(2);
+const toBlockArg = rest.includes("--to-block")
+  ? Number(rest[rest.indexOf("--to-block") + 1])
+  : undefined;
 
 const run = async () => {
   switch (cmd) {
@@ -195,13 +235,14 @@ const run = async () => {
     case "receipts": return receipts();
     case "cohorts": return cohorts();
     case "verify-events": return verifyEvents();
+    case "sample": return sample();
     case "all":
       await scan(toBlockArg);
       await timestamps();
       await receipts();
       return cohorts();
     default:
-      console.log("usage: npm run backfill -- <scan|timestamps|receipts|cohorts|verify-events|all> [--to-block N]");
+      console.log("usage: npm run backfill -- <scan|timestamps|receipts|cohorts|verify-events|sample|all> [--to-block N]");
       process.exitCode = 2;
   }
 };

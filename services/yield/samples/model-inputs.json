@@ -1,0 +1,100 @@
+{
+ "generatedFrom": "@zyo/shared + services/yield/src/model.ts (scripts/model-inputs.mjs)",
+ "settings": [
+  {
+   "id": "sheltered",
+   "preset": "CONSERVATIVE",
+   "rangeWidthBps": {
+    "UNCORRELATED": 4500,
+    "CORRELATED": 2356
+   },
+   "rebalanceDelayHours": 48
+  },
+  {
+   "id": "steady",
+   "preset": "MODERATE",
+   "rangeWidthBps": {
+    "UNCORRELATED": 1500,
+    "CORRELATED": 784
+   },
+   "rebalanceDelayHours": 12
+  },
+  {
+   "id": "working",
+   "preset": "AGGRESSIVE",
+   "rangeWidthBps": {
+    "UNCORRELATED": 300,
+    "CORRELATED": 150
+   },
+   "rebalanceDelayHours": 2
+  }
+ ],
+ "fees": {
+  "performanceBps": 1000,
+  "engineFeeBps": 1500
+ },
+ "ltv": {
+  "entryHfFloor": 1.55,
+  "maxOfferedLtvCapBps": 5000,
+  "fixedBps": {
+   "p30": 3000,
+   "p40": 4000
+  }
+ },
+ "pools": {
+  "aero-cbbtc-usdc": {
+   "protocol": "SNUGGLEFI",
+   "pairClass": "UNCORRELATED",
+   "token0": "USDC",
+   "token1": "cbBTC"
+  },
+  "aero-usdc-weth-5": {
+   "protocol": "SNUGGLEFI",
+   "pairClass": "UNCORRELATED",
+   "token0": "WETH",
+   "token1": "USDC"
+  },
+  "aero-weth-cbbtc": {
+   "protocol": "SNUGGLEFI",
+   "pairClass": "CORRELATED",
+   "token0": "WETH",
+   "token1": "cbBTC"
+  },
+  "aero-weth-link": {
+   "protocol": "SNUGGLEFI",
+   "pairClass": "UNCORRELATED",
+   "token0": "WETH",
+   "token1": "LINK"
+  },
+  "aero-usdt-usdc": {
+   "protocol": "SNUGGLEFI",
+   "pairClass": "CORRELATED",
+   "token0": "USDT",
+   "token1": "USDC"
+  },
+  "cbeth-weth": {
+   "protocol": "SNUGGLEFI",
+   "pairClass": "CORRELATED",
+   "token0": "cbETH",
+   "token1": "WETH"
+  },
+  "aero-aero-weth": {
+   "protocol": "SNUGGLEFI",
+   "pairClass": "UNCORRELATED",
+   "token0": "WETH",
+   "token1": "AERO"
+  },
+  "aero-aero-cbbtc": {
+   "protocol": "SNUGGLEFI",
+   "pairClass": "UNCORRELATED",
+   "token0": "AERO",
+   "token1": "cbBTC"
+  },
+  "aero-cbzec-usdc": {
+   "protocol": "DIRECT",
+   "pairClass": "UNCORRELATED",
+   "token0": "USDC",
+   "token1": "cbZEC"
+  }
+ }
+}

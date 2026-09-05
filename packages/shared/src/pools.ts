@@ -1,4 +1,5 @@
 import type { CuratedPool } from "./types.js";
+import { AERODROME } from "./base.js";
 
 /**
  * Curated pool registry (v4 — every entry VERIFIED against the live engine).
@@ -38,6 +39,7 @@ export const CURATED_POOLS: CuratedPool[] = [
     feeTierBps: 5,
     entryAsset: "USDC",
     riskTag: "BLUE_CHIP",
+    pairClass: "UNCORRELATED",
     description:
       "The deepest pool on Base (~$114M TVL, ~$46M/day). Workhorse ETH exposure with maximum depth.",
     poolAddress: "0xd0b53d9277642d899df5c87a3966a349a798f224",
@@ -52,6 +54,7 @@ export const CURATED_POOLS: CuratedPool[] = [
     feeTierBps: 4.4, // dynamic — on-chain fee() 0.044%, sampled 2026-08-27
     entryAsset: "USDC",
     riskTag: "BLUE_CHIP",
+    pairClass: "UNCORRELATED",
     description:
       "Hardest-working BTC pool on Base ($5.7M TVL, $21.1M/day sampled 2026-08-27) — outstanding fee capture per dollar.",
     poolAddress: "0x4e962bb3889bf030368f56810a9c96b83cb3e778",
@@ -66,6 +69,7 @@ export const CURATED_POOLS: CuratedPool[] = [
     feeTierBps: 5.6, // dynamic — on-chain fee() 0.056%, sampled 2026-08-27
     entryAsset: "USDC",
     riskTag: "BLUE_CHIP",
+    pairClass: "UNCORRELATED",
     description:
       "Aerodrome's flagship ETH pool ($8.8M TVL, $31.8M/day sampled 2026-08-27). High volume-to-TVL ratio.",
     poolAddress: "0xb2cc224c1c9fee385f8ad6a55b4d94e92359dc59",
@@ -80,6 +84,7 @@ export const CURATED_POOLS: CuratedPool[] = [
     feeTierBps: 30,
     entryAsset: "cbBTC",
     riskTag: "BLUE_CHIP",
+    pairClass: "CORRELATED",
     description:
       "ETH/BTC ratio pair (~$5M TVL, ~$13M/day) — correlated majors, softer IL profile.",
     poolAddress: "0x8c7080564b5a792a33ef2fd473fba6364d5495e5",
@@ -94,6 +99,7 @@ export const CURATED_POOLS: CuratedPool[] = [
     feeTierBps: 30,
     entryAsset: "USDC",
     riskTag: "BLUE_CHIP",
+    pairClass: "UNCORRELATED",
     description:
       "Secondary Uni ETH pool (~$10M TVL, ~$9M/day) at the 0.30% tier — higher fee per trade.",
     poolAddress: "0x6c561b446416e1a00e8e93e221854d6ea4171372",
@@ -108,6 +114,7 @@ export const CURATED_POOLS: CuratedPool[] = [
     feeTierBps: 30,
     entryAsset: "USDC",
     riskTag: "BLUE_CHIP",
+    pairClass: "UNCORRELATED",
     description:
       "0.30% BTC pool — wider effective ranges, calmer companion to the tight cbBTC venue.",
     poolAddress: "0xec558e484cc9f2210714e345298fdc53b253c27d",
@@ -122,6 +129,7 @@ export const CURATED_POOLS: CuratedPool[] = [
     feeTierBps: 25.3, // dynamic — on-chain fee() 0.253%, sampled 2026-08-27
     entryAsset: "cbBTC",
     riskTag: "BLUE_CHIP",
+    pairClass: "CORRELATED",
     description:
       "ETH/BTC ratio pair ($15.4M TVL, $5.5M/day sampled 2026-08-27) — correlated majors, softer IL profile.",
     poolAddress: "0x70acdf2ad0bf2402c957154f944c19ef4e1cbae1",
@@ -136,6 +144,7 @@ export const CURATED_POOLS: CuratedPool[] = [
     feeTierBps: 25, // dynamic — on-chain fee() 0.25%, sampled 2026-08-27
     entryAsset: "WETH",
     riskTag: "BLUE_CHIP",
+    pairClass: "UNCORRELATED",
     description:
       "Top-15 LINK against ETH ($1.7M TVL, $0.6M/day sampled 2026-08-27) — the only blue-chip LINK venue the engine supports.",
     poolAddress: "0x72be417afb0abea66913141c605d313bb389b59c",
@@ -150,6 +159,7 @@ export const CURATED_POOLS: CuratedPool[] = [
     feeTierBps: 0.1, // dynamic — on-chain fee() 0.001%, sampled 2026-08-27
     entryAsset: "USDC",
     riskTag: "STABLE",
+    pairClass: "CORRELATED",
     description:
       "Stable/stable ($1.3M TVL, $3.7M/day sampled 2026-08-27) — minimal IL, thin fees.",
     poolAddress: "0xa41bc0affba7fd420d186b84899d7ab2ac57fcd1",
@@ -164,6 +174,7 @@ export const CURATED_POOLS: CuratedPool[] = [
     feeTierBps: 0.7, // dynamic — on-chain fee() 0.007%, sampled 2026-08-27
     entryAsset: "WETH",
     riskTag: "STABLE",
+    pairClass: "CORRELATED",
     description:
       "Correlated LST pair ($3.7M TVL, $5.9M/day sampled 2026-08-27) — tracks the staking rate, near-zero IL. Conservative WETH entry.",
     poolAddress: "0x47ca96ea59c13f72745928887f84c9f52c3d7348",
@@ -178,6 +189,7 @@ export const CURATED_POOLS: CuratedPool[] = [
     feeTierBps: 30, // dynamic — on-chain fee() 0.30%, sampled 2026-08-27 (the old "1%" label was wrong)
     entryAsset: "WETH",
     riskTag: "VOLATILE",
+    pairClass: "UNCORRELATED",
     description:
       "The venue's own token ($1.4M TVL, $1.1M/day sampled 2026-08-27) — big sampled fees, brutal IL.",
     poolAddress: "0x82321f3beb69f503380d6b233857d5c43562e2d0",
@@ -192,12 +204,52 @@ export const CURATED_POOLS: CuratedPool[] = [
     feeTierBps: 7.5, // dynamic — on-chain fee() 0.075%, sampled 2026-08-27 (the old "0.6%" label was wrong)
     entryAsset: "cbBTC",
     riskTag: "VOLATILE",
+    pairClass: "UNCORRELATED",
     description:
       "AERO against BTC ($1.3M TVL, $3.9M/day sampled 2026-08-27) — extreme sampled fees on thin TVL, brutal IL.",
     poolAddress: "0xdfe5f275020def30993f042174fc2d335678b626",
     enginePoolId: "0xa893d6d3bc3a29d7424223766ebfb8aed8d3b1ec5329d3ae1d7624b0e96d9bfc",
   },
+  {
+    /**
+     * TRACKED, NOT OFFERED. Verified 2026-09-05 (docs/VERIFIED-BASE-FACTS.md):
+     * gauge exists but rewardRate() = 0 / periodFinish() = 0 — never voted.
+     * The yield gate must read the gauge live; with zero emissions this pool
+     * can never clear the borrow rate and must not appear as a yield option.
+     * Not in the Snuggle engine registry (no enginePoolId) → DIRECT only.
+     */
+    id: "aero-cbzec-usdc",
+    protocol: "DIRECT",
+    dex: "AERODROME",
+    token0: AERODROME.pools.cbZEC_USDC.token0,
+    token1: AERODROME.pools.cbZEC_USDC.token1,
+    feeTierBps: AERODROME.pools.cbZEC_USDC.feePips / 100, // 2000 pips = 0.2% = 20 bps; dynamic — read fee() live
+    entryAsset: "USDC",
+    riskTag: "VOLATILE",
+    pairClass: "UNCORRELATED",
+    description:
+      "cbZEC against USDC on Aerodrome Slipstream. Gauge created but unvoted — earns no AERO until an emissions vote lands.",
+    poolAddress: AERODROME.pools.cbZEC_USDC.address,
+    gauge: AERODROME.pools.cbZEC_USDC.gauge,
+    tickSpacing: AERODROME.pools.cbZEC_USDC.tickSpacing,
+    note: "No emissions today: gauge rewardRate is 0. Shown for spot/LP awareness only; never offered as yield until the gauge is voted.",
+  },
 ];
+
+/** Pools the engine (Snuggle/MaxFi) can deposit into — every entry has an enginePoolId. */
+export function enginePools(): CuratedPool[] {
+  return CURATED_POOLS.filter((p) => p.protocol !== "DIRECT" && !!p.enginePoolId);
+}
+
+/** Pools we hold directly on Aerodrome (no engine). */
+export function directPools(): CuratedPool[] {
+  return CURATED_POOLS.filter((p) => p.protocol === "DIRECT");
+}
+
+/** The v1 product menu: Aerodrome pools reachable through the engine. */
+export function offerablePools(): CuratedPool[] {
+  return CURATED_POOLS.filter((p) => p.dex === "AERODROME" && p.protocol !== "DIRECT" && !!p.enginePoolId);
+}
 
 /**
  * Registry-wide facts from the 2026-08-27 re-enumeration (Multicall3-batched):

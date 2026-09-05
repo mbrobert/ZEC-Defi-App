@@ -22,7 +22,6 @@ import {
   topicToAddress,
   topicToBigint,
   word,
-  wordToAddress,
   wordToBigint,
   wordToBool,
   wordToInt24,
@@ -60,31 +59,86 @@ export const INDEXED_TOPICS: Hex[] = [
   TOPICS.SnuggleRebalanced,
 ];
 
+/** Exact data word counts per indexed event (STRICT decoding). */
+export const DATA_WORDS: Record<keyof typeof TOPICS, number> = {
+  PositionCreated: 4,
+  PositionWithdrawn: 2,
+  FeesHarvested: 2,
+  StakingRewardsClaimed: 1,
+  PerformanceFeeCollected: 3,
+  SnuggleRebalanced: 6,
+};
+
+/** Exact topic counts per indexed event (topic0 + indexed args). */
+export const TOPIC_COUNTS: Record<keyof typeof TOPICS, number> = {
+  PositionCreated: 4,
+  PositionWithdrawn: 3,
+  FeesHarvested: 3,
+  StakingRewardsClaimed: 4,
+  PerformanceFeeCollected: 3,
+  SnuggleRebalanced: 4,
+};
+
+/**
+ * A log whose topic0 IS one we index but whose shape is wrong. Never
+ * decoded to zeros (audit Lens F: a short PositionWithdrawn decoded to
+ * amount0 = amount1 = 0 and was served as a −3650 % band). The indexer
+ * counts these and moves on; nothing is booked.
+ */
+export class MalformedLogError extends Error {
+  constructor(
+    readonly kind: keyof typeof TOPICS,
+    readonly log: RawLog,
+    detail: string
+  ) {
+    super(`malformed ${kind} log ${log.transactionHash}:${log.logIndex}: ${detail}`);
+    this.name = "MalformedLogError";
+  }
+}
+
+const TOPIC_TO_KIND = new Map<Hex, keyof typeof TOPICS>(
+  (Object.entries(TOPICS) as [keyof typeof TOPICS, Hex][]).map(([k, v]) => [v, k])
+);
+
+function requireShape(log: RawLog, kind: keyof typeof TOPICS, data: string): void {
+  if (log.topics.length !== TOPIC_COUNTS[kind]) {
+    throw new MalformedLogError(kind, log, `expected ${TOPIC_COUNTS[kind]} topics, got ${log.topics.length}`);
+  }
+  if (!/^[0-9a-fA-F]*$/.test(data) || data.length !== DATA_WORDS[kind] * 64) {
+    throw new MalformedLogError(kind, log, `expected ${DATA_WORDS[kind]} data words, got ${data.length / 64}`);
+  }
+  for (let i = 1; i < log.topics.length; i++) {
+    if (!/^0x[0-9a-fA-F]{64}$/.test(log.topics[i]!)) {
+      throw new MalformedLogError(kind, log, `topic ${i} is not a 32-byte word`);
+    }
+  }
+}
+
 /**
  * Decode one raw vault log into an EngineEvent, or null when the topic is
- * not one we index (Paused, ReferralPaid, keeper churn, …).
+ * not one we index (Paused, ReferralPaid, keeper churn, …). Throws
+ * MalformedLogError when the topic IS indexed but the shape is wrong.
  */
 export function decodeEngineLog(log: RawLog): EngineEvent | null {
   const t0 = log.topics[0];
+  const kind = t0 === undefined ? undefined : TOPIC_TO_KIND.get(t0);
+  if (!kind) return null;
   const base = {
     blockNumber: log.blockNumber,
     transactionHash: log.transactionHash,
     logIndex: log.logIndex,
   };
   const data = strip0x(log.data);
+  requireShape(log, kind, data);
 
   switch (t0) {
     case TOPICS.PositionCreated: {
-      if (log.topics.length !== 4) return null;
       return {
         kind: "PositionCreated",
         ...base,
-        tokenId: topicToBigint(log.topics[1]!).toString(),
-        owner: topicToAddress(log.topics[2]!),
-        // Lowercase at the decode boundary: poolId is compared against the
-        // registry map's (lowercased) keys — a checksummed/uppercase topic
-        // from a provider must never silently unattribute a lifecycle.
-        poolId: log.topics[3]!.toLowerCase() as Hex,
+        tokenId: topicToBigint(log.topics[1]).toString(),
+        owner: topicToAddress(log.topics[2]),
+        poolId: log.topics[3],
         tickLower: wordToInt24(word(data, 0)),
         tickUpper: wordToInt24(word(data, 1)),
         liquidity: wordToBigint(word(data, 2)).toString(),
@@ -92,58 +146,53 @@ export function decodeEngineLog(log: RawLog): EngineEvent | null {
       };
     }
     case TOPICS.PositionWithdrawn: {
-      if (log.topics.length !== 3) return null;
       return {
         kind: "PositionWithdrawn",
         ...base,
-        tokenId: topicToBigint(log.topics[1]!).toString(),
-        owner: topicToAddress(log.topics[2]!),
+        tokenId: topicToBigint(log.topics[1]).toString(),
+        owner: topicToAddress(log.topics[2]),
         amount0: wordToBigint(word(data, 0)).toString(),
         amount1: wordToBigint(word(data, 1)).toString(),
       };
     }
     case TOPICS.FeesHarvested: {
-      if (log.topics.length !== 3) return null;
       return {
         kind: "FeesHarvested",
         ...base,
-        tokenId: topicToBigint(log.topics[1]!).toString(),
-        recipient: topicToAddress(log.topics[2]!),
+        tokenId: topicToBigint(log.topics[1]).toString(),
+        recipient: topicToAddress(log.topics[2]),
         amount0: wordToBigint(word(data, 0)).toString(),
         amount1: wordToBigint(word(data, 1)).toString(),
       };
     }
     case TOPICS.StakingRewardsClaimed: {
-      if (log.topics.length !== 4) return null;
       return {
         kind: "StakingRewardsClaimed",
         ...base,
-        tokenId: topicToBigint(log.topics[1]!).toString(),
-        recipient: topicToAddress(log.topics[2]!),
-        rewardToken: topicToAddress(log.topics[3]!),
+        tokenId: topicToBigint(log.topics[1]).toString(),
+        recipient: topicToAddress(log.topics[2]),
+        rewardToken: topicToAddress(log.topics[3]),
         amount: wordToBigint(word(data, 0)).toString(),
       };
     }
     case TOPICS.PerformanceFeeCollected: {
-      if (log.topics.length !== 3) return null;
       return {
         kind: "PerformanceFeeCollected",
         ...base,
-        tokenId: topicToBigint(log.topics[1]!).toString(),
-        token: topicToAddress(log.topics[2]!),
+        tokenId: topicToBigint(log.topics[1]).toString(),
+        token: topicToAddress(log.topics[2]),
         amountA: wordToBigint(word(data, 0)).toString(),
         amountB: wordToBigint(word(data, 1)).toString(),
         amountC: wordToBigint(word(data, 2)).toString(),
       };
     }
     case TOPICS.SnuggleRebalanced: {
-      if (log.topics.length !== 4) return null;
       return {
         kind: "SnuggleRebalanced",
         ...base,
-        tokenId: topicToBigint(log.topics[1]!).toString(),
-        newTokenId: topicToBigint(log.topics[2]!).toString(),
-        pool: topicToAddress(log.topics[3]!),
+        tokenId: topicToBigint(log.topics[1]).toString(),
+        newTokenId: topicToBigint(log.topics[2]).toString(),
+        pool: topicToAddress(log.topics[3]),
         tickLower: wordToInt24(word(data, 0)),
         tickUpper: wordToInt24(word(data, 1)),
         amount0: wordToBigint(word(data, 2)).toString(),

@@ -1,0 +1,26 @@
+{
+  "asOf": "2026-08-31",
+  "method": "Annualized realized volatility of the pool's price ratio (token1 per token0): daily log-return standard deviation × √365 over GeckoTerminal OHLCV 2026-03-01 → 2026-08-31 (ETH/BTC ratio: hourly/daily blend). The IL-drag model is drag(σ, w) = −100·(1 − exp(−σ²/(4·f(w)))), validated by scripts/lp-sim.py Monte Carlo on every run. A pool ABSENT from `pools` has no σ and the gate refuses it with `no_volatility_input` — never a default.",
+  "pools": {
+    "aero-usdc-weth-5": {
+      "sigma": 0.55,
+      "provenance": "ETH/USD realized 0.56 (Gecko OHLCV daily 2026-03-01→08-31); model rounds to 0.55. docs/YIELD-REALITY-2026-08-31.md"
+    },
+    "aero-cbbtc-usdc": {
+      "sigma": 0.40,
+      "provenance": "BTC/USD realized 0.39 (Gecko OHLCV daily 2026-03-01→08-31); model rounds to 0.40. docs/YIELD-REALITY-2026-08-31.md"
+    },
+    "aero-weth-cbbtc": {
+      "sigma": 0.33,
+      "provenance": "ETH/BTC realized 0.26–0.43 hourly/daily blend (Gecko OHLCV 2026-03-01→08-31); model uses 0.33. docs/YIELD-REALITY-2026-08-31.md"
+    }
+  },
+  "notCalibrated": {
+    "aero-weth-link": "no realized-vol series taken; pool also fails the $5M depth rule",
+    "aero-usdt-usdc": "stable/stable — emissions alone (≈0.0x%) cannot clear any borrow, so σ is moot",
+    "cbeth-weth": "LST/ETH — emissions alone (≈0.0x%) cannot clear any borrow, so σ is moot",
+    "aero-aero-weth": "venue token; gauge epoch lapsed 2026-05-28 (no emissions)",
+    "aero-aero-cbbtc": "venue token; no realized-vol series taken — the gate reports breakEvenSigma instead",
+    "aero-cbzec-usdc": "gauge never voted (rewardRate 0) — emissions 0, σ moot; 4 days of price history is not a volatility estimate"
+  }
+}

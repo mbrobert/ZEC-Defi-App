@@ -1,17 +1,25 @@
 /**
  * The HTTP API. node:http only — no framework.
  *
- *   GET /healthz            → { ok, uptimeS, lastRefresh, creditsRemaining? }
- *   GET /v1/pools           → PoolsResponse (live samples + emissions + cohort bands + rates)
- *   GET /v1/rates           → RatesSample + { stale } | 503 while never-sampled
- *   GET /v1/band?ltv=0.40&mix=aweth,acbbtc → user-net APY band for a mix
+ *   GET /healthz   → { ok, uptimeS, lastRefresh, sources: {…} }
+ *   GET /v1/pools  → PoolsResponse: live samples + gauge emissions + gate
+ *                    verdicts (every setting × enabled collateral) + cohort
+ *                    bands + Aave rates
+ *   GET /v1/rates  → AaveRatesSample + { stale } | 503 while never-sampled
+ *   GET /v1/gate   → the gate alone: every pool × setting × collateral, or
+ *                    filtered by ?pool=&setting=&collateral=. 503 (fail
+ *                    closed) whenever the rates are absent or stale — a
+ *                    verdict cannot be computed on inputs the gate would
+ *                    refuse anyway.
+ *   GET /v1/band?ltv=0.40&mix=aweth,acbbtc&collateral=cbBTC
+ *                  → empirical user-net band for a mix at an LTV
  *
- * Serving rules: every payload carries generatedAt + per-item sampledAt; a
- * refresh failure KEEPS serving the last good sample flagged stale:true
- * rather than 500ing (stale-while-revalidate) — `stale` is computed from
- * PER-SOURCE sample ages, so dead upstreams actually flip it. Bands come
- * from the cohort store and are null with bandsUnavailableReason until a
- * backfill has run. CORS is open (GET-only, public data).
+ * STALENESS CONTRACT (audit Lens F, round 3): every sample is stored with
+ * its `sampledAt` only. `stale` is DERIVED at serve time from the sample's
+ * age against staleAfterMs — for the rates, for each pool's emissions, and
+ * for the payload as a whole. There is no code path that stores `stale`,
+ * so a source that dies keeps flipping the flag as time passes. The gate
+ * consumes the same serve-time flags and refuses stale inputs.
  *
  * Robustness: the request handler never throws to the server (a malformed
  * request-target like `GET //` is a 400, an internal bug is a 500
@@ -22,28 +30,35 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { CURATED_POOLS } from "@zyo/shared";
-import { mixUserBand, SUPPLY_APY_PCT } from "./bands.js";
-import type { YieldConfig } from "./config.js";
+import {
+  COLLATERAL_SYMBOLS,
+  CURATED_POOLS,
+  isCollateralSymbol,
+  type CollateralSymbol,
+  type CuratedPool,
+} from "@zyo/shared";
+import { mixUserBand } from "./bands.js";
+import { loadVolatility, type VolatilityInputs, type YieldConfig } from "./config.js";
+import { evaluatePool, evaluateGate } from "./gate.js";
+import { SETTINGS, type Setting } from "./model.js";
+import { AaveSource } from "./sources/aave.js";
+import { BlockscoutSource } from "./sources/blockscout.js";
 import { GeckoSource } from "./sources/gecko.js";
 import { AERO_ADDRESS, GaugeSource, onchainToken1 } from "./sources/gauges.js";
-import { BlockscoutSource } from "./sources/blockscout.js";
 import { RpcClient } from "./sources/rpc.js";
-import { RheaRates } from "./rhea.js";
-import { MIN_COHORT_N } from "./types.js";
 import type {
+  AaveRatesSample,
   Address,
   EmissionsSample,
+  GateVerdict,
   PoolBands,
   PoolLiveSample,
   PoolPayload,
   PoolsResponse,
-  RatesSample,
 } from "./types.js";
 
 /** Demo-prototype pool ids ↔ curated registry ids (the demo abbreviates). */
 export const DEMO_ID_MAP: Record<string, string> = {
-  // v1 menu (2026-08-27): 8 Aerodrome pools, single-select in the simple app.
   aweth: "aero-usdc-weth-5",
   acbbtc: "aero-cbbtc-usdc",
   wbtc: "aero-weth-cbbtc",
@@ -52,6 +67,7 @@ export const DEMO_ID_MAP: Record<string, string> = {
   stab: "aero-usdt-usdc",
   aero: "aero-aero-weth",
   abtc: "aero-aero-cbbtc",
+  zec: "aero-cbzec-usdc",
 };
 
 /** Prototype-safe lookup view of DEMO_ID_MAP (no Object.prototype keys). */
@@ -60,6 +76,8 @@ const CURATED_IDS = new Set(CURATED_POOLS.map((p) => p.id));
 
 /** Most pool ids one /v1/band request may mix. */
 const MAX_MIX_IDS = 16;
+
+export const VOLATILITY_FILE = "volatility.json";
 
 interface CacheEntry<T> {
   value: T | null;
@@ -94,43 +112,42 @@ async function runBounded<T>(
 export class YieldServer {
   private live = new Map<string, CacheEntry<PoolLiveSample>>();
   private emissions = new Map<string, CacheEntry<EmissionsSample>>();
-  private rates: CacheEntry<RatesSample> = { value: null, at: 0 };
+  private rates: CacheEntry<AaveRatesSample> = { value: null, at: 0 };
   private bands = new Map<string, PoolBands>(); // curatedId → bands
+  private volatility: VolatilityInputs;
   private startedAt = Date.now();
   private lastRefresh = 0;
   private refreshing = false;
   private readonly refreshDeadlineMs: number;
   private timer?: NodeJS.Timeout;
   private readonly gecko: GeckoSource;
-  private readonly rhea: RheaRates;
+  private readonly aave?: AaveSource;
   private readonly gauges?: GaugeSource;
+  private readonly now: () => number;
 
   constructor(
     private readonly cfg: YieldConfig,
     deps?: {
       gecko?: GeckoSource;
-      rhea?: RheaRates;
+      aave?: AaveSource;
       gauges?: GaugeSource;
+      volatility?: VolatilityInputs;
       /** Whole-refresh time budget (default 90s); injectable for tests. */
       refreshDeadlineMs?: number;
+      /** Injectable clock — staleness tests freeze and advance it. */
+      now?: () => number;
     }
   ) {
+    this.now = deps?.now ?? (() => Date.now());
     this.gecko = deps?.gecko ?? new GeckoSource();
-    this.rhea =
-      deps?.rhea ??
-      new RheaRates(
-        cfg.nearRpcUrl,
-        cfg.rheaLendingContract,
-        cfg.rheaUsdcTokenId,
-        cfg.rheaZecTokenId
-      );
-    this.gauges =
-      deps?.gauges ??
-      (cfg.baseRpcUrl
-        ? new GaugeSource(new RpcClient(cfg.baseRpcUrl))
-        : cfg.blockscoutKey
-          ? new GaugeSource(new BlockscoutSource(cfg.blockscoutKey).rpc)
-          : undefined);
+    const rpc = cfg.baseRpcUrl
+      ? new RpcClient(cfg.baseRpcUrl)
+      : cfg.blockscoutKey
+        ? new BlockscoutSource(cfg.blockscoutKey).rpc
+        : undefined;
+    this.aave = deps?.aave ?? (rpc ? new AaveSource(rpc, this.now) : undefined);
+    this.gauges = deps?.gauges ?? (rpc ? new GaugeSource(rpc) : undefined);
+    this.volatility = deps?.volatility ?? loadVolatility(join(cfg.samplesDir, VOLATILITY_FILE));
     this.refreshDeadlineMs = deps?.refreshDeadlineMs ?? 90_000;
     this.loadBandsFromDisk();
   }
@@ -150,7 +167,9 @@ export class YieldServer {
   /**
    * Refresh all live sources. Re-entrancy guarded (an overlapping timer fire
    * returns immediately instead of stacking loops), bounded by a whole-run
-   * deadline, and pool sampling runs at most 3 requests at a time.
+   * deadline, and pool sampling runs at most 3 requests at a time. A source
+   * that fails keeps its previous value (and its previous `at`, so the
+   * served `stale` flag keeps aging).
    */
   async refresh(): Promise<void> {
     if (this.refreshing) return;
@@ -167,20 +186,16 @@ export class YieldServer {
             pool.feeTierBps,
             deadline
           );
-          this.live.set(pool.id, { value: sample, at: Date.now() });
+          this.live.set(pool.id, { value: sample, at: this.now() });
         } catch (e) {
           const prev = this.live.get(pool.id);
-          this.live.set(pool.id, {
-            value: prev?.value ?? null,
-            at: prev?.at ?? 0,
-            error: (e as Error).message,
-          });
+          this.live.set(pool.id, { value: prev?.value ?? null, at: prev?.at ?? 0, error: (e as Error).message });
         }
       });
 
-      if (!deadline.aborted) {
+      if (!deadline.aborted && this.aave) {
         try {
-          this.rates = { value: await this.rhea.sample(), at: Date.now() };
+          this.rates = { value: await this.aave.sample(), at: this.now() };
         } catch (e) {
           this.rates = { ...this.rates, error: (e as Error).message };
         }
@@ -189,13 +204,13 @@ export class YieldServer {
       await this.refreshEmissions(deadline);
 
       this.loadBandsFromDisk(); // pick up fresh backfills without restart
-      this.lastRefresh = Date.now();
+      this.lastRefresh = this.now();
     } finally {
       this.refreshing = false;
     }
   }
 
-  /** Gauge emissions per AERODROME pool — alongside the live fee sampling. */
+  /** Gauge emissions per AERODROME pool (engine + DIRECT, incl. cbZEC/USDC). */
   private async refreshEmissions(deadline: AbortSignal): Promise<void> {
     if (!this.gauges) return;
     const gauges = this.gauges;
@@ -210,20 +225,16 @@ export class YieldServer {
         const token1Usd = priceForToken(live, t1.address);
         if (aeroUsd === undefined) throw new Error("no AERO/USD price in live samples");
         if (token1Usd === undefined) throw new Error("live sample carries no token1 price");
-        const sample = await gauges.sample(pool.poolAddress as Address, {
-          aeroUsd,
-          poolTvlUsd: live.tvlUsd,
-          token1Usd,
-          token1Decimals: t1.decimals,
-        });
-        this.emissions.set(pool.id, { value: sample, at: Date.now() });
+        const sample = await gauges.sample(
+          pool.id,
+          pool.poolAddress as Address,
+          { aeroUsd, poolTvlUsd: live.tvlUsd, token1Usd, token1Decimals: t1.decimals, nowSeconds: Math.floor(this.now() / 1000) },
+          pool.gauge as Address | undefined
+        );
+        this.emissions.set(pool.id, { value: sample, at: this.now() });
       } catch (e) {
         const prev = this.emissions.get(pool.id);
-        this.emissions.set(pool.id, {
-          value: prev?.value ?? null,
-          at: prev?.at ?? 0,
-          error: (e as Error).message,
-        });
+        this.emissions.set(pool.id, { value: prev?.value ?? null, at: prev?.at ?? 0, error: (e as Error).message });
       }
     });
   }
@@ -239,8 +250,38 @@ export class YieldServer {
     return undefined;
   }
 
+  // ---- serve-time staleness -------------------------------------------------
+
+  private isStale(entry: CacheEntry<unknown>): boolean {
+    return entry.value === null || this.now() - entry.at > this.cfg.staleAfterMs;
+  }
+
+  private ratesForServe(): (AaveRatesSample & { stale: boolean }) | null {
+    return this.rates.value ? { ...this.rates.value, stale: this.isStale(this.rates) } : null;
+  }
+
+  private emissionsForServe(poolId: string): (EmissionsSample & { stale: boolean }) | null {
+    const e = this.emissions.get(poolId);
+    if (!e?.value) return null;
+    const nowS = Math.floor(this.now() / 1000);
+    return {
+      ...e.value,
+      // Re-derived at serve time: a lapsed epoch can never keep serving as active.
+      epochActive: e.value.epochActive && e.value.periodFinish > nowS && BigInt(e.value.rewardRateWeiPerSec) > 0n,
+      stale: this.isStale(e),
+    };
+  }
+
+  private gateFor(pool: CuratedPool, collaterals: readonly CollateralSymbol[] = COLLATERAL_SYMBOLS): GateVerdict[] {
+    return evaluatePool(pool, collaterals, {
+      rates: this.ratesForServe(),
+      emissions: this.emissionsForServe(pool.id),
+      volatility: this.volatility,
+      nowSeconds: Math.floor(this.now() / 1000),
+    });
+  }
+
   private poolsPayload(): PoolsResponse {
-    const now = Date.now();
     const pools: PoolPayload[] = CURATED_POOLS.map((p) => {
       const live = this.live.get(p.id);
       const bands = this.bands.get(p.id) ?? null;
@@ -249,26 +290,80 @@ export class YieldServer {
         name: `${p.token0}/${p.token1}`,
         venue: `${p.dex === "AERODROME" ? "Aerodrome" : "Uniswap"} ${(p.feeTierBps / 100).toFixed(2)}%`,
         riskTag: p.riskTag,
+        protocol: p.protocol,
+        pairClass: p.pairClass,
+        ...(p.note ? { note: p.note } : {}),
         live: live?.value ?? null,
-        emissions: this.emissions.get(p.id)?.value ?? null,
+        emissions: this.emissionsForServe(p.id),
+        gate: p.dex === "AERODROME" ? this.gateFor(p) : [],
         bands,
         ...(bands ? {} : { bandsUnavailableReason: "backfill_pending" }),
       };
     });
     // Per-SOURCE staleness: any sampleable pool whose last good live sample —
     // or the rates sample — is older than staleAfterMs flags the payload.
-    // (A refresh in which every source failed used to reset a global
-    // lastRefresh and hide exactly this.)
     const stale =
-      CURATED_POOLS.filter((p) => p.poolAddress).some(
-        (p) => now - (this.live.get(p.id)?.at ?? 0) > this.cfg.staleAfterMs
-      ) || now - this.rates.at > this.cfg.staleAfterMs;
+      CURATED_POOLS.filter((p) => p.poolAddress).some((p) => this.isStale(this.live.get(p.id) ?? { value: null, at: 0 })) ||
+      this.isStale(this.rates);
     return {
       pools,
-      rates: this.rates.value,
-      generatedAt: new Date().toISOString(),
+      rates: this.ratesForServe(),
+      generatedAt: new Date(this.now()).toISOString(),
       stale,
       methodologyUrl: "https://github.com/mbrobert/ZEC-Defi-App/blob/main/docs/YIELD-SERVICE.md",
+    };
+  }
+
+  private gatePayload(url: URL): Record<string, unknown> & { status?: number } {
+    const rates = this.ratesForServe();
+    // Fail closed: no verdict is computable without fresh rates.
+    if (!rates) return { error: "gate_unavailable", reason: "rates_unavailable", status: 503 };
+    if (rates.stale) return { error: "gate_unavailable", reason: "rates_stale", status: 503 };
+
+    const poolParam = url.searchParams.get("pool");
+    const settingParam = url.searchParams.get("setting");
+    const collateralParam = url.searchParams.get("collateral");
+    const poolId = poolParam ? (DEMO_ID_LOOKUP.get(poolParam) ?? poolParam) : null;
+    if (poolId !== null && !CURATED_IDS.has(poolId)) return { error: "unknown pool id", status: 400 };
+    let settings: readonly Setting[] = SETTINGS;
+    if (settingParam !== null) {
+      const s = SETTINGS.find((x) => x.id === settingParam || x.preset === settingParam);
+      if (!s) return { error: "unknown setting", status: 400 };
+      settings = [s];
+    }
+    let collaterals: readonly CollateralSymbol[] = COLLATERAL_SYMBOLS;
+    if (collateralParam !== null) {
+      if (!isCollateralSymbol(collateralParam)) return { error: "unknown collateral", status: 400 };
+      collaterals = [collateralParam];
+    }
+    const pools = CURATED_POOLS.filter((p) => p.dex === "AERODROME" && (poolId === null || p.id === poolId));
+    const nowSeconds = Math.floor(this.now() / 1000);
+    const verdicts: GateVerdict[] = [];
+    for (const pool of pools) {
+      for (const setting of settings) {
+        for (const collateral of collaterals) {
+          verdicts.push(
+            evaluateGate({
+              pool,
+              setting,
+              collateral,
+              rates,
+              emissions: this.emissionsForServe(pool.id),
+              volatility: this.volatility,
+              nowSeconds,
+            })
+          );
+        }
+      }
+    }
+    return {
+      borrowAprPct: rates.borrow.variableBorrowAprPct,
+      ratesSampledAt: rates.sampledAt,
+      volatilityAsOf: this.volatility.asOf,
+      settings: settings.map((s) => ({ id: s.id, preset: s.preset, rebalanceDelayHours: s.rebalanceDelayHours })),
+      verdicts,
+      qualifying: verdicts.filter((v) => v.qualifies).map((v) => ({ poolId: v.poolId, setting: v.setting, collateral: v.collateral })),
+      generatedAt: new Date(this.now()).toISOString(),
     };
   }
 
@@ -278,6 +373,10 @@ export class YieldServer {
     // produces meaningless quasi-zero leverage math.
     if (!(ltv >= 0.01 && ltv <= 0.5)) {
       return { error: "ltv must be in [0.01, 0.5]", status: 400 };
+    }
+    const collateralParam = url.searchParams.get("collateral") ?? "";
+    if (!isCollateralSymbol(collateralParam)) {
+      return { error: `collateral required (one of ${COLLATERAL_SYMBOLS.join(", ")})`, status: 400 };
     }
     const mixParam = url.searchParams.get("mix") ?? "";
     // Dedupe (a repeated id would double-weight its pool in the mix) and map
@@ -297,38 +396,38 @@ export class YieldServer {
       return { error: `too many pool ids (${ids.length} > ${MAX_MIX_IDS})`, status: 400 };
     }
     const unknown = ids.filter((id) => !CURATED_IDS.has(id));
-    if (unknown.length) {
-      return { error: "unknown pool ids", unknown, status: 400 };
-    }
-    const missing = ids.filter((id) => !this.bands.has(id));
-    const windows = this.cfg.cohortWindows;
-    const borrow = this.rates.value?.borrowAprPct;
-    if (borrow === undefined) return { error: "rates not yet sampled", status: 503 };
-    const supply = this.rates.value?.zecSupplyAprPct ?? SUPPLY_APY_PCT;
+    if (unknown.length) return { error: "unknown pool ids", unknown, status: 400 };
 
-    const perWindow = windows.map((w) => {
+    const rates = this.ratesForServe();
+    if (!rates) return { error: "rates_unavailable", status: 503 };
+    if (rates.stale) return { error: "rates_stale", status: 503 };
+    const reserve = rates.collateral[collateralParam];
+    if (!reserve) return { error: "collateral_not_active", status: 503 };
+    const borrow = rates.borrow.variableBorrowAprPct;
+    const supply = reserve.supplyAprPct;
+
+    const missing = ids.filter((id) => !this.bands.has(id));
+    const perWindow = this.cfg.cohortWindows.map((w) => {
       const bandList = ids
         .map((id) => this.bands.get(id)?.bands.find((b) => b.windowDays === w))
         .filter((b): b is NonNullable<typeof b> => b !== undefined);
-      const band = mixUserBand(bandList, ltv, borrow, supply);
-      const insufficient =
-        band === null && bandList.some((b) => b.reason === "insufficient_sample");
       return {
         windowDays: w,
-        band,
-        poolsWithData: bandList.filter((b) => b.n >= MIN_COHORT_N && b.p50 !== null).length,
-        ...(insufficient ? { reason: "insufficient_sample" as const } : {}),
+        band: mixUserBand(bandList, ltv, borrow, supply),
+        poolsWithData: bandList.filter((b) => b.n > 0).length,
       };
     });
     return {
       ltv,
+      collateral: collateralParam,
       mix: ids,
       missingBands: missing,
       borrowAprPct: borrow,
-      supplyApyPct: supply,
+      collateralSupplyAprPct: supply,
+      ratesSampledAt: rates.sampledAt,
       mixAveraging: "percentile-mean-v1",
       windows: perWindow,
-      generatedAt: new Date().toISOString(),
+      generatedAt: new Date(this.now()).toISOString(),
     };
   }
 
@@ -341,6 +440,12 @@ export class YieldServer {
         "cache-control": "no-store",
       });
       res.end(json);
+    };
+
+    /** Payload builders return an internal `status`; it is the HTTP status, never a body field. */
+    const sendPayload = (payload: Record<string, unknown> & { status?: number }) => {
+      const { status, ...body } = payload;
+      return send(typeof status === "number" ? status : 200, body);
     };
 
     // Node's HTTP parser admits request-targets (`//`, `/\`, `//?x`) that the
@@ -359,25 +464,29 @@ export class YieldServer {
         case "/healthz":
           return send(200, {
             ok: true,
-            uptimeS: Math.round((Date.now() - this.startedAt) / 1000),
+            uptimeS: Math.round((this.now() - this.startedAt) / 1000),
             lastRefresh: this.lastRefresh ? new Date(this.lastRefresh).toISOString() : null,
+            sources: {
+              rates: this.rates.value ? { sampledAt: this.rates.value.sampledAt, stale: this.isStale(this.rates) } : null,
+              emissionsPools: [...this.emissions.values()].filter((e) => e.value).length,
+              livePools: [...this.live.values()].filter((e) => e.value).length,
+              volatilityAsOf: this.volatility.asOf,
+            },
           });
         case "/v1/pools":
           return send(200, this.poolsPayload());
-        case "/v1/rates":
-          return this.rates.value
-            ? send(200, {
-                ...this.rates.value,
-                stale: Date.now() - this.rates.at > this.cfg.staleAfterMs,
-              })
+        case "/v1/rates": {
+          const r = this.ratesForServe();
+          return r
+            ? send(200, r)
             : // Fixed reason enum — never raw upstream error text (provider
               // HTML/JSON snippets leak infrastructure details).
               send(503, { error: "rates_unavailable", reason: "upstream_unavailable" });
-        case "/v1/band": {
-          const body = this.bandPayload(url);
-          const status = "status" in body && typeof body.status === "number" ? body.status : 200;
-          return send(status, body);
         }
+        case "/v1/gate":
+          return sendPayload(this.gatePayload(url));
+        case "/v1/band":
+          return sendPayload(this.bandPayload(url));
         default:
           return send(404, { error: "not found" });
       }
@@ -407,7 +516,7 @@ export class YieldServer {
 }
 
 /** Price of `token` (lowercase address) inside a live sample, if it carries it. */
-function priceForToken(s: PoolLiveSample, token: Address): number | undefined {
+export function priceForToken(s: PoolLiveSample, token: Address): number | undefined {
   const t = token.toLowerCase();
   if (s.baseTokenAddress?.toLowerCase() === t && s.baseTokenPriceUsd !== undefined) {
     return Number.isFinite(s.baseTokenPriceUsd) ? s.baseTokenPriceUsd : undefined;

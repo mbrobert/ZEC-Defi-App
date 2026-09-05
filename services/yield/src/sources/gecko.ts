@@ -27,12 +27,10 @@ export class GeckoSource {
   private async get<T>(path: string, signal?: AbortSignal): Promise<T> {
     let backoff = 1200;
     for (let attempt = 0; attempt < 4; attempt++) {
-      const timeout = AbortSignal.timeout(20_000);
+      if (signal?.aborted) throw new Error("geckoterminal: refresh deadline reached");
       const res = await this.fetchImpl(`${BASE}${path}`, {
         headers: { accept: "application/json", "user-agent": "oilskin-yield/0.1" },
-        // Caller deadline (e.g. the whole-refresh budget) composes with the
-        // per-request timeout: whichever fires first aborts the fetch.
-        signal: signal ? AbortSignal.any([timeout, signal]) : timeout,
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(20_000)]) : AbortSignal.timeout(20_000),
       });
       if (res.status === 429 || res.status >= 500) {
         await new Promise((r) => setTimeout(r, backoff));
@@ -74,12 +72,11 @@ export class GeckoSource {
   }
 
   /**
-   * TODO(dynamic fees): Aerodrome Slipstream fees move with volatility —
-   * pool.fee() (selector 0xddca3f43) is the truth, and the curated list's
-   * feeTierBps is only that value at its last sampling (2026-08-27). The
-   * gauge emissions source (sources/gauges.ts) already eth_calls fee() per
-   * sample; folding that into grossFeeAprPct is the remaining step.
-   * Uniswap tiers are static; only AERODROME entries drift.
+   * Aerodrome Slipstream fees move with volatility — pool.fee() is the
+   * truth (the gauge source eth_calls it per sample and reports feePips);
+   * the curated list's feeTierBps is only that value at its last sampling.
+   * grossFeeAprPct is DISPLAY CONTEXT ONLY — nothing in the gate or the
+   * bands derives from it. Uniswap tiers are static.
    */
   async liveSample(
     curatedId: string,

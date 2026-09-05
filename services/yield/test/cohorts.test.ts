@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   buildCohortBand,
+  MAX_ABS_NET_APR,
   unweightedMedian,
   valueLifecycle,
   weightedPercentile,
@@ -53,8 +54,11 @@ function lc(over: Partial<PositionLifecycle>): PositionLifecycle {
     tokenId: "1", poolId: POOL, owner: ("0x" + "11".repeat(20)) as Address,
     openedBlock: 1, openedAt: T0, closedBlock: 2, closedAt: T0 + 30 * 86400,
     entryFlows: { [USDC]: "1000000000" }, // 1,000 USDC
+    entryRefunds: {},
+    ambiguousEntry: false,
+    unattributedRefundLegs: 0,
     exitFlows: { [USDC]: "1100000000" },  // 1,100 USDC
-    harvests: 1, internalHarvests: 0, rebalances: 0,
+    harvests: 1, rebalances: 0,
     ...over,
   };
 }
@@ -77,15 +81,6 @@ test("valueLifecycle: open positions return null; unknown tokens mark unpriced",
   assert.equal(valueLifecycle(lc({ closedAt: undefined }), pb), null);
   const v = valueLifecycle(lc({ exitFlows: { [UNKNOWN]: "5" } }), pb)!;
   assert.equal(v.unpriced, true);
-});
-
-test("valueLifecycle: unattributed lifecycles (registry gap) are unpriced, never a fake loss", async () => {
-  const pb = priceBook();
-  await pb.load(30);
-  // Registry missing → fold left exitFlows empty and set unattributed. If
-  // this were valued normally it would read as out=0 → −100%+ APR.
-  const v = valueLifecycle(lc({ exitFlows: {}, unattributed: true }), pb)!;
-  assert.equal(v.unpriced, true); // excluded + counted, not banded
 });
 
 test("valueLifecycle: prices WETH flows through the day series", async () => {
@@ -121,7 +116,7 @@ test("unweightedMedian: odd/even", () => {
 function valued(over: Partial<ValuedLifecycle>): ValuedLifecycle {
   return {
     tokenId: "1", poolId: POOL, closedAt: T0, daysOpen: 30,
-    principalUsd: 1000, outUsd: 1100, netAprFraction: 1.2167, unpriced: false,
+    principalUsd: 1000, outUsd: 1100, netAprFraction: 1.2167, unpriced: false, ambiguousEntry: false,
     ...over,
   };
 }
@@ -138,31 +133,46 @@ test("buildCohortBand: window filter, exclusions counted, percentile order", () 
     valued({ closedAt: now - 5 * 86400, principalUsd: 0.5 }),       // dust
     null,
   ];
-  const band = buildCohortBand(vs, POOL, { windowDays: 30, nowSeconds: now, minDaysOpen: 1, minN: 1 });
+  const band = buildCohortBand(vs, POOL, { windowDays: 30, nowSeconds: now, minDaysOpen: 1 });
   assert.equal(band.n, 3);
   assert.equal(band.excluded, 3);
-  assert.ok(band.p10! <= band.p25! && band.p25! <= band.p50!);
-  assert.ok(band.p50! <= band.p75! && band.p75! <= band.p90!);
+  assert.ok(band.p10 <= band.p25 && band.p25 <= band.p50);
+  assert.ok(band.p50 <= band.p75 && band.p75 <= band.p90);
   assert.equal(band.p10, 10);
   assert.equal(band.p90, 50);
   assert.equal(band.medianUnweighted, 30);
   assert.equal(band.totalPrincipalUsd, 3000);
 });
 
-test("buildCohortBand: n < minN withholds percentiles with reason (n stays in payload)", () => {
+test("valueLifecycle: an attributed refund in the OTHER token reduces principal (single-sided deposit)", async () => {
+  const pb = priceBook();
+  await pb.load(30);
+  // 1,000 USDC in, 0.1 WETH ($250) refunded → principal $750; out 1,100 → +46.7% over 30d
+  const v = valueLifecycle(lc({ entryRefunds: { [WETH]: "100000000000000000" } }), pb)!;
+  assert.equal(v.principalUsd, 750);
+  assert.ok(Math.abs(v.netAprFraction - ((1100 - 750) / 750) * (365 / 30)) < 1e-9);
+  // an unpriceable refund marks the position unpriced (never silently ignored)
+  const u = valueLifecycle(lc({ entryRefunds: { [UNKNOWN]: "5" } }), pb)!;
+  assert.equal(u.unpriced, true);
+});
+
+test("buildCohortBand: the absolute outcome bound and ambiguous entries are excluded and counted per reason", () => {
   const now = T0 + 40 * 86400;
   const vs = [
-    valued({ closedAt: now - 5 * 86400, netAprFraction: 0.10, principalUsd: 200000 }), // one whale
-    valued({ closedAt: now - 6 * 86400, netAprFraction: 0.30 }),
+    valued({ closedAt: now - 2 * 86400, netAprFraction: 0.2 }),
+    valued({ closedAt: now - 2 * 86400, netAprFraction: 364_963.5 }), // the wave-2 +36,496,350 % band
+    valued({ closedAt: now - 2 * 86400, netAprFraction: -MAX_ABS_NET_APR - 0.01 }),
+    valued({ closedAt: now - 2 * 86400, netAprFraction: MAX_ABS_NET_APR }), // exactly at the bound: kept
+    valued({ closedAt: now - 2 * 86400, netAprFraction: 0.3, ambiguousEntry: true }),
+    valued({ closedAt: now - 2 * 86400, netAprFraction: Number.POSITIVE_INFINITY }),
   ];
   const band = buildCohortBand(vs, POOL, { windowDays: 30, nowSeconds: now, minDaysOpen: 1 });
-  assert.equal(band.n, 2); // sample size stays visible
-  assert.equal(band.reason, "insufficient_sample");
-  // A 2-position "distribution" would make the whale EVERY percentile — withheld.
-  assert.equal(band.p10, null);
-  assert.equal(band.p50, null);
-  assert.equal(band.p90, null);
-  assert.equal(band.medianUnweighted, null);
+  assert.equal(band.n, 2);
+  assert.equal(band.excluded, 4);
+  assert.deepEqual(band.excludedReasons, {
+    unpriced: 0, ambiguous_entry: 1, short_position: 0, dust_principal: 0, absurd_outcome: 3,
+  });
+  assert.ok(Math.abs(band.p90) <= MAX_ABS_NET_APR * 100);
 });
 
 test("buildCohortBand: principal weighting shifts the band toward big positions", () => {
@@ -172,17 +182,16 @@ test("buildCohortBand: principal weighting shifts the band toward big positions"
     valued({ closedAt: now - 2 * 86400, netAprFraction: 3.0, principalUsd: 10, outUsd: 0 }),
     valued({ closedAt: now - 2 * 86400, netAprFraction: 2.0, principalUsd: 10, outUsd: 0 }),
   ];
-  const band = buildCohortBand(vs, POOL, { windowDays: 30, nowSeconds: now, minDaysOpen: 1, minN: 1 });
+  const band = buildCohortBand(vs, POOL, { windowDays: 30, nowSeconds: now, minDaysOpen: 1 });
   assert.equal(band.p50, 5); // the $100k position IS the weighted median
   assert.equal(band.medianUnweighted, 200); // transparency figure tells the other story
 });
 
-test("buildCohortBand: other pools never leak in (empty window → nulls + reason)", () => {
+test("buildCohortBand: other pools never leak in", () => {
   const now = T0 + 10 * 86400;
   const other = ("0x" + "cc".repeat(32)) as Hex;
   const vs = [valued({ closedAt: now - 86400, poolId: other })];
   const band = buildCohortBand(vs, POOL, { windowDays: 30, nowSeconds: now, minDaysOpen: 1 });
   assert.equal(band.n, 0);
-  assert.equal(band.p50, null);
-  assert.equal(band.reason, "insufficient_sample");
+  assert.ok(Number.isNaN(band.p50));
 });

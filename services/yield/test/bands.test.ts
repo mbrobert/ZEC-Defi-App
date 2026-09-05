@@ -1,12 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { FEES } from "@zyo/shared";
 import { mixUserBand, OILSKIN_KEEP, userNetPct } from "../src/bands.js";
+import { ENGINE_FEE_BPS, keepFactor } from "../src/model.js";
 import type { CohortBand } from "../src/types.js";
 
-test("fee semantics: OILSKIN_KEEP is 0.90 and composes to the demo's 0.765 gross factor", () => {
-  assert.equal(OILSKIN_KEEP, 0.9);
-  // demo static path: gross × 0.765; empirical path: (gross × 0.85 engine-net) × 0.90
-  assert.ok(Math.abs(0.85 * OILSKIN_KEEP - 0.765) < 1e-12);
+test("fee semantics: OILSKIN_KEEP derives from shared FEES and composes to the model path's keep factor", () => {
+  assert.equal(OILSKIN_KEEP, 1 - FEES.performanceBps / 10_000);
+  // empirical path: engine-net (already post-engine-fee) × OILSKIN_KEEP;
+  // model path: gross × (1 − engine) × OILSKIN_KEEP — the same economics.
+  assert.ok(Math.abs((1 - ENGINE_FEE_BPS / 10_000) * OILSKIN_KEEP - keepFactor("SNUGGLEFI")) < 1e-12);
+  assert.ok(Math.abs(OILSKIN_KEEP - keepFactor("DIRECT")) < 1e-12);
 });
 
 test("userNetPct: affine map matches the product formula", () => {
@@ -18,19 +22,10 @@ test("userNetPct: affine map matches the product formula", () => {
   assert.equal(userNetPct(50, 0, 13.2, 0.8), 0.8);
 });
 
-test("performance fee applies to GAINS only — losses pass through undamped", () => {
-  // engineNet −40%: the user eats the FULL loss. Fee-on-losses would show
-  // 0.8 + 0.5 × (−36 − 13) = −23.7 and understate the downside by 2 pts.
-  assert.equal(userNetPct(-40, 0.5, 13, 0.8), 0.8 + 0.5 * (-40 - 13));
-  // exactly zero engine-net: no fee either way
-  assert.equal(userNetPct(0, 0.5, 13, 0.8), 0.8 + 0.5 * (0 - 13));
-  // the kept() map stays monotonic through 0 (band ordering survives)
-  assert.ok(userNetPct(-1, 0.5, 13, 0.8) < userNetPct(1, 0.5, 13, 0.8));
-});
-
 function band(p: [number, number, number, number, number], n = 5): CohortBand {
   return {
     windowDays: 30, n, excluded: 0, totalPrincipalUsd: 1000, meanDaysOpen: 10,
+    excludedReasons: { unpriced: 0, ambiguous_entry: 0, short_position: 0, dust_principal: 0, absurd_outcome: 0 },
     p10: p[0], p25: p[1], p50: p[2], p75: p[3], p90: p[4],
     medianUnweighted: p[2],
   };
@@ -53,7 +48,7 @@ test("mixUserBand: equal-split mix averages percentile points before the transfo
 
 test("mixUserBand: pools without data are skipped; all-empty → null", () => {
   const empty = { ...band([1, 2, 3, 4, 5]), n: 0 };
-  assert.equal(mixUserBand([empty], 0.3, 13.2), null);
+  assert.equal(mixUserBand([empty], 0.3, 13.2, 0.8), null);
   const mixed = mixUserBand([empty, band([10, 20, 30, 40, 50])], 0.3, 13.2, 0.8)!;
   assert.equal(mixed.p50, userNetPct(30, 0.3, 13.2, 0.8));
 });

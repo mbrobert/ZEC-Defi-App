@@ -11,9 +11,6 @@ contracts/cache/
 *.log
 .DS_Store
 agent/data/*.json
-agent/data/*.json.bak
-agent/data/*.tmp
-services/yield/data/
 coverage/
 *.tar.gz
 .demo/

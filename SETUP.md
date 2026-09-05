@@ -26,9 +26,9 @@ take rewards back as native ZEC through NEAR Intents.
 cd contracts && forge test                 # local suite
 FORK_URL=<base-rpc> forge test --match-contract EngineForkTest   # live-engine
 
-# agent (Node ≥ 20, zero deps)
+# keeper (agent/, Node ≥ 22)
 cd agent && npm test
-RHEA_MODE=mock npm run dev
+BASE_RPC_URL=<base-rpc> ACCOUNT_FACTORY_ADDRESS=<factory> STORE_PATH=/abs/path/keeper.json npm run dev
 
 # web
 npm install && npm run dev -w @zyo/web
