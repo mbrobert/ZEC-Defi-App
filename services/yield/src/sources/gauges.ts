@@ -22,10 +22,29 @@
  * against the live 2026-08-31 sample in test/gauges.test.ts.
  *
  * NOISE + OUTLIERS: instantaneous stakedLiquidity moves with every
- * stake/unstake, so a rolling average of the last `maxSamples` readings
- * feeds V_staked. A reading more than OUTLIER_FACTOR× away from the FIRST
- * reading for the pool (either direction) is flagged `outlier` and kept OUT
- * of the average; the gate refuses an outlier sample.
+ * stake/unstake, so a rolling average of the accepted readings feeds
+ * V_staked. The anchor a reading is tested against is the MEDIAN of that
+ * accepted history, and it is only trusted once MIN_STAKED_SAMPLES
+ * independent readings have agreed on it. A reading more than
+ * OUTLIER_FACTOR× away from the anchor (either direction) is flagged
+ * `outlier` and kept OUT of the average; the gate refuses it.
+ *
+ * WHY NOT THE FIRST READING (wave-1 lens D HIGH-2). The filter used to
+ * compare every reading against the FIRST reading ever taken for the pool.
+ * The first reading is then BY CONSTRUCTION never an outlier, and it became
+ * the permanent anchor. stakedLiquidity is an instantaneous uint128 that
+ * moves with every stake/unstake, so one sample taken during a mass unstake
+ * — or simply on a gauge whose staked share is momentarily tiny — anchored
+ * the filter at the anomaly. Emissions APR is inversely proportional to the
+ * staked base, so a 1,000× low first reading produced a 1,000× high APR,
+ * served with `outlier:false` because there was nothing to compare it to
+ * (measured: 7,599.64 % against a true 3.80 %). Every subsequent CORRECT
+ * reading was then rejected as an outlier and kept out of the history, so
+ * the average stayed pinned to the anomaly for the life of the process.
+ * Two changes close it: no APR is published at all until the anchor is
+ * corroborated, and MIN_STAKED_SAMPLES consecutive outliers mean the ANCHOR
+ * is what is wrong — the history is dropped and re-corroborated from
+ * scratch, so a wrong anchor can never stick.
  *
  * STRICT DECODING: every eth_call return must be exactly the declared word
  * count; empty/short returns throw (the pool keeps its previous sample,
@@ -58,8 +77,16 @@ export const SEL = {
 /** slot0() returns 6 words on Slipstream (sqrtPriceX96, tick, obsIndex, card, cardNext, unlocked). */
 const SLOT0_WORDS = 6;
 
-/** A stakedLiquidity reading outside [first/F, first×F] is an outlier. */
+/** A stakedLiquidity reading outside [anchor/F, anchor×F] is an outlier. */
 export const OUTLIER_FACTOR = 5;
+
+/**
+ * Independent readings that must agree before the anchor — and therefore any
+ * APR derived from it — is trusted. Below this the sample is published with
+ * `corroborated:false` and NO APR, and the gate refuses it with
+ * `insufficient_samples`.
+ */
+export const MIN_STAKED_SAMPLES = 3;
 
 /**
  * Token decimals for the Base tokens the curated pools use — keyed by
@@ -140,6 +167,24 @@ function wordAt(raw: string, i: number): string {
   return raw.slice(i * 64, (i + 1) * 64);
 }
 
+/** Median of a non-empty list (average of the middle pair when even). */
+function median(xs: number[]): number {
+  const s = [...xs].sort((a, b) => a - b);
+  const mid = s.length >> 1;
+  return s.length % 2 ? s[mid]! : (s[mid - 1]! + s[mid]!) / 2;
+}
+
+/**
+ * Is `reading` consistent with `anchor`? One definition, used both to flag an
+ * incoming reading and to prune the history — they must never disagree.
+ */
+function agreesWithAnchor(anchor: number, reading: number): boolean {
+  if (anchor > 0 && reading > 0) {
+    return reading <= anchor * OUTLIER_FACTOR && reading >= anchor / OUTLIER_FACTOR;
+  }
+  return anchor === reading; // a zero appearing/disappearing is an outlier too
+}
+
 function strict(pool: string, raw: string | undefined, words: number, what: string): string {
   const hex = (raw ?? "").replace(/^0x/, "");
   if (!hex) throw new GaugeDecodeError(pool, what, "empty return (reverted or wrong address)");
@@ -155,8 +200,8 @@ export class GaugeSource {
   private gaugeCache = new Map<string, Address>();
   /** pool (lowercase) → recent NON-outlier stakedLiquidity readings (as Number). */
   private stakedHistory = new Map<string, number[]>();
-  /** pool (lowercase) → the first reading ever taken (outlier anchor). */
-  private firstStaked = new Map<string, number>();
+  /** pool (lowercase) → consecutive readings rejected against the current anchor. */
+  private outlierStreak = new Map<string, number>();
 
   constructor(
     private readonly rpc: RpcClient,
@@ -223,25 +268,48 @@ export class GaugeSource {
     const sampledAt = new Date(now * 1000).toISOString();
     const epochActive = rewardRate > 0n && periodFinish > now;
 
-    // Outlier gate against the FIRST reading, then rolling average of the
-    // accepted readings (instantaneous values are noisy).
+    // Outlier gate against the MEDIAN of the corroborated history, then
+    // rolling average of the accepted readings (instantaneous values are
+    // noisy). Never against the first reading — see the header.
     const key = pool.toLowerCase();
     const reading = Number(stakedLiquidity);
-    const first = this.firstStaked.get(key);
+    let history = this.stakedHistory.get(key) ?? [];
+    let streak = this.outlierStreak.get(key) ?? 0;
     let outlier = false;
-    if (first === undefined) {
-      this.firstStaked.set(key, reading);
-    } else if (first > 0 && reading > 0) {
-      outlier = reading > first * OUTLIER_FACTOR || reading < first / OUTLIER_FACTOR;
-    } else {
-      outlier = first !== reading; // a zero appearing/disappearing is an outlier too
+    if (history.length >= MIN_STAKED_SAMPLES) {
+      outlier = !agreesWithAnchor(median(history), reading);
     }
-    const history = this.stakedHistory.get(key) ?? [];
+    if (outlier) {
+      streak += 1;
+      if (streak >= MIN_STAKED_SAMPLES) {
+        // MIN_STAKED_SAMPLES readings in a row disagree with the anchor: the
+        // ANCHOR is the anomaly, not the readings. Drop it and re-corroborate
+        // from scratch — until then nothing is published (fail closed), so a
+        // bad anchor can neither be trusted nor stick.
+        history = [];
+        streak = 0;
+        outlier = false;
+      }
+    } else {
+      streak = 0;
+    }
     if (!outlier) {
       history.push(reading);
       while (history.length > this.maxSamples) history.shift();
-      this.stakedHistory.set(key, history);
     }
+    // Prune the history against its OWN anchor. The corroborating window is
+    // filled before any anchor exists, so an anomalous early reading would
+    // otherwise sit inside the average it is supposed to be excluded from —
+    // one 2,000×-low first reading still pulled the served APR 17 % high.
+    // Dropping below MIN_STAKED_SAMPLES here simply means the pool is not
+    // corroborated yet, which is the fail-closed direction.
+    if (history.length >= MIN_STAKED_SAMPLES) {
+      const anchor = median(history);
+      history = history.filter((x) => agreesWithAnchor(anchor, x));
+    }
+    this.stakedHistory.set(key, history);
+    this.outlierStreak.set(key, streak);
+    const corroborated = history.length >= MIN_STAKED_SAMPLES;
     const stakedAvg = history.length ? history.reduce((s, x) => s + x, 0) / history.length : reading;
 
     const base = {
@@ -253,6 +321,7 @@ export class GaugeSource {
       epochActive,
       stakedLiquidity: stakedLiquidity.toString(),
       samples: history.length,
+      corroborated,
       outlier,
       sqrtPriceX96: sqrtPriceX96.toString(),
       feePips,
@@ -269,8 +338,17 @@ export class GaugeSource {
       return { ...base, wholePoolAprPct: 0, aprByWidthPct: zeros };
     }
 
+    if (!corroborated || outlier) {
+      // Uncorroborated: the anchor is not yet trusted, so neither is anything
+      // divided by it — publishing an APR here is exactly how a 2,000×-
+      // overstated figure reached a user with `outlier:false` (lens D HIGH-2).
+      // Outlier: this reading and the anchor disagree and it is not yet known
+      // which is right, so withhold rather than pick. The gate refuses either
+      // way; before this change `/v1/pools` kept publishing regardless.
+      return { ...base, wholePoolAprPct: null, aprByWidthPct: null };
+    }
+
     const usdPerYear = (Number(rewardRate) / 1e18) * SECONDS_PER_YEAR * prices.aeroUsd;
-    const wholePoolAprPct = round2((usdPerYear / prices.poolTvlUsd) * 100);
 
     let aprByWidthPct: Record<string, number> | null = {};
     for (const bps of modelWidthsBps()) {
@@ -289,6 +367,10 @@ export class GaugeSource {
       }
       aprByWidthPct[String(bps)] = round2(apr);
     }
+    // With no staked liquidity there is no marginal APR AND no whole-pool APR
+    // anybody can earn — publishing 513 % beside `aprByWidthPct: null` invited
+    // exactly the wrong read (wave-1 lens D LOW-6).
+    const wholePoolAprPct = aprByWidthPct === null ? null : round2((usdPerYear / prices.poolTvlUsd) * 100);
     return { ...base, wholePoolAprPct, aprByWidthPct };
   }
 }

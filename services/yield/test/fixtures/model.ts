@@ -6,6 +6,7 @@
 
 import { readFileSync } from "node:fs";
 import { AAVE_V3, BASE_TOKENS } from "@zyo/shared";
+import { calibrationIndex, loadMcCalibration, type McCalibration, type McCalibrationCell } from "../../src/mc-calibration.js";
 import type { VolatilityInputs } from "../../src/config.js";
 import type { AaveRatesSample, AaveReserve, Address, EmissionsSample } from "../../src/types.js";
 
@@ -26,6 +27,7 @@ export function reserve(symbol: string, over: Partial<AaveReserve> = {}): AaveRe
     borrowingEnabled: true,
     isActive: true,
     isFrozen: false,
+    isPaused: false,
     ...over,
   };
 }
@@ -57,7 +59,10 @@ export function emissionsFixture(
     wholePoolAprPct: 65,
     aprByWidthPct,
     stakedLiquidity: "5678459724668201957",
-    samples: 1,
+    // A corroborated anchor: MIN_STAKED_SAMPLES independent readings have
+    // agreed. Below that the gate refuses with `insufficient_samples`.
+    samples: 3,
+    corroborated: true,
     outlier: false,
     sqrtPriceX96: "3897149340279738881397267",
     feePips: 364,
@@ -69,4 +74,22 @@ export function emissionsFixture(
 
 export function volatilityFixture(): VolatilityInputs {
   return JSON.parse(readFileSync(new URL("../../../samples/volatility.json", import.meta.url), "utf8")) as VolatilityInputs;
+}
+
+/**
+ * The committed Monte-Carlo calibration (samples/mc-calibration.json), indexed
+ * as the gate consumes it. `evaluateGate` requires this — with an empty index
+ * every cell refuses `mc_calibration_unavailable`, which is the fail-closed
+ * direction and is itself pinned in gate.test.ts.
+ */
+export function mcCalibrationFixture(): Map<string, McCalibrationCell> {
+  return calibrationIndex(mcCalibrationDocFixture());
+}
+
+/** The calibration document itself, as the server loads it from samplesDir. */
+export function mcCalibrationDocFixture(): McCalibration {
+  const path = new URL("../../../samples/mc-calibration.json", import.meta.url).pathname;
+  const doc = loadMcCalibration(path);
+  if (!doc) throw new Error(`samples/mc-calibration.json missing — run \`npm run model\``);
+  return doc;
 }

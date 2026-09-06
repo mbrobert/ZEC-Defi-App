@@ -13,7 +13,14 @@ collateral on Aave v3, borrows USDC at the live rate, and deploys it into an Aer
 Snuggle/MaxFi engine — or simply holds, or swaps spot via CoW. Positions are OWNED BY THE USER. Earnings are
 claimable to the user's wallet. cbZEC: usable in spot and (once its gauge is voted) LP; as COLLATERAL it is
 v1.1 and ships `enabled:false` with the reason shown. No NEAR, no Rhea, no 1-Click, no ZEC addresses in the
-money path, no operator custody.
+money path, and no Oilskin contract ever holds a user's funds.
+
+> **Correction, 2026-09-06.** This line originally ended with a custody claim that the wave-1 audit
+> falsified (A-HIGH-2). The claim is retracted and the phrasing must not come back: the
+> `CollateralRegistry` owner can disable any asset instantly, move the entry health-factor floor
+> instantly, and — after an immutable on-chain delay, 2 days as deployed — replace the venue contract an
+> asset points at, which then receives every calling account's peripheral rights. The delay is a warning,
+> not a prohibition. See `RISKS.md` §16 and `AUDIT-2026-09-06.md`.
 
 ## Ownership model (replaces PositionVault/RewardRouter/PositionHolder — delete them)
 - `OilskinAccount` — EIP-1167 clone per user; `owner` = the user's wallet address (immutable after init).
@@ -27,7 +34,9 @@ money path, no operator custody.
   anyone may call (deploys for that owner only). Emits `AccountCreated(owner, account)`.
 - Positions on Aave live under the ACCOUNT address (account is `onBehalfOf`); Snuggle positions are minted to
   the account (it is `msg.sender` to the engine). The user can always `exec` anything from their own account —
-  full self-custody, no lock-in.
+  no Oilskin contract, grant or registry state can stand between the user and their own positions, and (since
+  2026-09-06) `exec` is a PLAIN call that grants its target nothing. That is the exit guarantee; it is not a
+  claim that Oilskin has no privileged roles — see the correction above.
 
 ## Venues
 - `ICollateralVenue { supply, withdraw, borrow, repay, healthFactor(account), liquidationThresholdBps(asset),
@@ -47,7 +56,9 @@ money path, no operator custody.
   (creating it if absent): Permit2 pull → venue.supply → venue.borrow(USDC) → swap to the LP entry token if
   needed (via a minimal `ISwapAdapter`; v1 implementation = direct Aerodrome router call with minOut+deadline;
   CoW is off-chain and handled in web) → lpVenue.open. `unwind(...)` is the mirror. Every hop has deadline
-  and minOut. Router holds NOTHING between transactions and has NO owner powers over user funds.
+  and minOut. The router has no owner and no storage; as built, its balance of every token it touches is
+  UNCHANGED across every call (a delta, not a zero — asserting a zero was the wave-1 Critical, B-CRIT-1).
+  Oilskin as a whole does have one privileged role: the registry owner (see the correction above).
 - `PythOracleAdapter` (v1.1, build now, ship unused): Morpho `IOracle.price()`; requires a fresh Pyth update
   posted in the same tx (`updatePriceFeeds` with fee) and enforces `maxAge`; peg circuit breaker compares the
   Aerodrome cbZEC/USDC pool TWAP against Pyth ZEC/USD and reverts `PegBreak` beyond `maxDeviationBps`.

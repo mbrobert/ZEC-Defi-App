@@ -1,0 +1,117 @@
+{
+ "generatedAt": "2026-09-06T04:16:02+00:00",
+ "method": "Per pool \u00d7 setting Monte Carlo of the served position (scripts/lp-sim.py): zero-drift GBM at the pool's \u03c3, hourly, one year, re-centred after the preset's rebalance delay with (pool fee + 5 bps slippage) charged on the swapped half. mcLpNet = emissionsNetPct \u00d7 inRangeEmissionsFactor + mcDragPct \u2014 affine in the emissions rate because neither the in-range indicator nor the mint value depends on it, so these two coefficients price the cell at every emissions level.",
+ "asOf": "2026-08-31T01:34:32+00:00",
+ "paths": 6000,
+ "seed": 7,
+ "cells": [
+  {
+   "poolId": "aero-usdc-weth-5",
+   "setting": "sheltered",
+   "rangeWidthBps": 4500,
+   "rebalanceDelayHours": 48,
+   "sigma": 0.55,
+   "feeBps": 3.64,
+   "inRangeEmissionsFactor": 0.8538129917459252,
+   "mcDragPct": -26.909918312279864,
+   "timeInRange": 0.9695052891933029,
+   "rebalancesPerYear": 3.0843333333333334
+  },
+  {
+   "poolId": "aero-usdc-weth-5",
+   "setting": "steady",
+   "rangeWidthBps": 1500,
+   "rebalanceDelayHours": 12,
+   "sigma": 0.55,
+   "feeBps": 3.64,
+   "inRangeEmissionsFactor": 0.6084475495404585,
+   "mcDragPct": -61.23619159432736,
+   "timeInRange": 0.9341483447488584,
+   "rebalancesPerYear": 29.647
+  },
+  {
+   "poolId": "aero-usdc-weth-5",
+   "setting": "working",
+   "rangeWidthBps": 300,
+   "rebalanceDelayHours": 2,
+   "sigma": 0.55,
+   "feeBps": 3.64,
+   "inRangeEmissionsFactor": 0.17866678047824325,
+   "mcDragPct": -99.00011345763076,
+   "timeInRange": 0.8321174467275495,
+   "rebalancesPerYear": 604.7615
+  },
+  {
+   "poolId": "aero-cbbtc-usdc",
+   "setting": "sheltered",
+   "rangeWidthBps": 4500,
+   "rebalanceDelayHours": 48,
+   "sigma": 0.4,
+   "feeBps": 2.36,
+   "inRangeEmissionsFactor": 0.9278086753600098,
+   "mcDragPct": -15.24402581443906,
+   "timeInRange": 0.9831953196347031,
+   "rebalancesPerYear": 1.6863333333333332
+  },
+  {
+   "poolId": "aero-cbbtc-usdc",
+   "setting": "steady",
+   "rangeWidthBps": 1500,
+   "rebalanceDelayHours": 12,
+   "sigma": 0.4,
+   "feeBps": 2.36,
+   "inRangeEmissionsFactor": 0.754940208431314,
+   "mcDragPct": -40.20101811134584,
+   "timeInRange": 0.9604234969558599,
+   "rebalancesPerYear": 17.794166666666666
+  },
+  {
+   "poolId": "aero-cbbtc-usdc",
+   "setting": "working",
+   "rangeWidthBps": 300,
+   "rebalanceDelayHours": 2,
+   "sigma": 0.4,
+   "feeBps": 2.36,
+   "inRangeEmissionsFactor": 0.32110693271644913,
+   "mcDragPct": -92.36259323625336,
+   "timeInRange": 0.8923115106544901,
+   "rebalancesPerYear": 387.97116666666665
+  },
+  {
+   "poolId": "aero-weth-cbbtc",
+   "setting": "sheltered",
+   "rangeWidthBps": 2356,
+   "rebalanceDelayHours": 48,
+   "sigma": 0.33,
+   "feeBps": 25.0,
+   "inRangeEmissionsFactor": 0.8654699594196645,
+   "mcDragPct": -20.106886181614698,
+   "timeInRange": 0.9566429223744292,
+   "rebalancesPerYear": 4.397166666666666
+  },
+  {
+   "poolId": "aero-weth-cbbtc",
+   "setting": "steady",
+   "rangeWidthBps": 784,
+   "rebalanceDelayHours": 12,
+   "sigma": 0.33,
+   "feeBps": 25.0,
+   "inRangeEmissionsFactor": 0.6653976755590356,
+   "mcDragPct": -49.749318693118084,
+   "timeInRange": 0.9168503044140031,
+   "rebalancesPerYear": 37.42516666666667
+  },
+  {
+   "poolId": "aero-weth-cbbtc",
+   "setting": "working",
+   "rangeWidthBps": 150,
+   "rebalanceDelayHours": 2,
+   "sigma": 0.33,
+   "feeBps": 25.0,
+   "inRangeEmissionsFactor": 0.18728373342810029,
+   "mcDragPct": -98.41612812062993,
+   "timeInRange": 0.7872646118721461,
+   "rebalancesPerYear": 766.0711666666666
+  }
+ ]
+}

@@ -1,8 +1,10 @@
 # Oilskin — setup
 
-Base-first v1 (2026-09-05). What is in the tree, how to build it, how to run
-it. Status and risks: `README.md`, `docs/RISKS.md`. Nothing here is deployed;
-every "live" path below needs addresses that do not exist yet.
+Base-first v1 (2026-09-06, after the wave-1 audit fix round). What is in the
+tree, how to build it, how to run it. Status and risks: `README.md`,
+`docs/RISKS.md`; what the audit found and changed: `docs/AUDIT-2026-09-06.md`.
+Nothing here is deployed; every "live" path below needs addresses that do not
+exist yet.
 
 Abbreviations: EVM = Ethereum Virtual Machine; ABI = application binary
 interface; RPC = remote procedure call (a chain node endpoint); LP = liquidity
@@ -33,18 +35,28 @@ forge build
 
 The compiled artifacts feed two ABI (application binary interface) seams:
 `node scripts/verify-abi.mjs --write` regenerates `contracts/abi/oilskin-abi.json`
-(266 selectors / topics / errors across 17 contracts); `web/scripts/sync-abi.mjs`
+(**303** selectors / topics / errors across 17 contracts); `web/scripts/sync-abi.mjs`
 generates `web/lib/abi/oilskin.generated.ts` from that bundle; the agent's
 `scripts/verify-abi.mjs` checks its hand-written encoders against
-`contracts/out` (36 checks; runs inside `npm test -w @zyo/agent`; set
+`contracts/out` (**54** checks, including two structural ones — the keeper must
+plan exactly one grant selector, and it must be `StrategyRouter.unwind` with
+`allowCallback: true`; runs inside `npm test -w @zyo/agent`; set
 `VERIFY_ABI_STRICT=1` in CI so a missing artifact is fatal instead of a loud skip).
+
+The 2026-09-06 ABI is **not** compatible with anything encoded before it: `Call`
+carries a `callback` flag, `exec` is a plain call with `execWithCallback` as the
+opt-in, `Permission` carries `allowCallback`, `unwind` takes a `SwapQuote`, and
+`openBorrowOnly` replaces the hand-built hold batch. `docs/CONTRACT-ABI.md` §0
+is the short version; encode from the JSON, never from prose.
 
 ## Test everything
 
 See `README.md` ("Run every suite") for the commands and `docs/TESTING.md`
-for what each suite proves. Summary for this tree: contracts 181 pass / 8
-fork tests skipped without `FORK_URL`; agent 139; yield 105; web 89 unit +
-12 Playwright; shared 52; prototypes 216 checks.
+for what each suite proves. Summary for this tree, all counted by running them
+on 2026-09-06: contracts **244** pass / 8 fork tests skipped without `FORK_URL`;
+agent **171**; yield **131**; web **125** unit + **12** Playwright; shared
+**53**; prototypes **118 + 109 + 56** checks + **6** fuzz; root ABI seam
+**303**; agent ABI seam **54/54**.
 
 ## Run
 
@@ -63,15 +75,39 @@ every one strictly parsed, floors > 0): `CHAIN_ID` (8453), `HEALTH_POLL_MS`,
 `TX_DEADLINE_S`, `LOG_LEVEL`. There is no health-factor, LTV (loan-to-value)
 or width knob: the ladder comes from `packages/shared/src/health.ts`.
 
+**New since the fix round** (all validated, all defaulted): `PRICE_MAX_AGE_S` is
+now only the fallback for a feed whose cadence cannot be measured — the keeper
+walks each Chainlink feed's own `getRoundData` history and enforces a per-feed
+bound. `PRICE_MAX_AGE_S_<SYMBOL>` overrides one feed deliberately;
+`FEED_HEARTBEAT_SLACK` (2), `FEED_HEARTBEAT_ROUNDS` (6), `FEED_MIN_MAX_AGE_S`
+(300) shape the measurement; **`FEED_SELFCHECK` (`fatal` by default) makes a
+staleness policy that would leave every account UNKNOWN a startup failure
+rather than a silent no-op** — set it to `warn` only deliberately. Also:
+`SWAP_MAX_SLIPPAGE_BPS` (100, hard-capped at the adapter's 500),
+`BAND_MAX_TOLERANCE_BPS` (500), `MAX_VALUE_PROBES` (24), `GRANT_EXPIRY_WARN_S`
+(7 d), `DISPATCH_DEADLINE_MS` (60 s, ≥ `RPC_DEADLINE_MS`), `MAX_RESUME_PER_TICK`
+(25), `MAX_RECORD_STALLS` (3), `MAX_RUNG_REFIRES` (2), `CLOCK_DRIFT_MAX_S`
+(120), `NOTIFY_WEBHOOK_URL` / `NOTIFY_WEBHOOK_TOKEN` / `NOTIFY_DEADLINE_MS`
+(10 s), `STORE_KEEP_TERMINAL_PER_ACCOUNT` (50), `STORE_LOCK_STALE_MS` (5 min).
+The store format is **v3**; a v2 store is migrated in place on load.
+
+Without `NOTIFY_WEBHOOK_URL` the keeper's only channel is its own log. Every
+rung and escalation is still produced — but nothing reaches a user
+(`docs/RISKS.md` §10).
+
 ```bash
 cd agent && npm run build && node dist/src/index.js      # or: npm run dev
 ```
 
 The keeper address is `privateKeyToAccount(KEEPER_PRIVATE_KEY).address`, logged
 at startup as `keeper`. The web needs it as `NEXT_PUBLIC_OILSKIN_KEEPER` to
-offer the protection grant. Note the grant gap in `docs/RISKS.md`
-("Keeper dependence"): the web grants only `StrategyRouter.unwind`, while the
-keeper also plans `SnuggleLpVenue.closeMany` and refuses without that grant.
+offer the protection grant. The web/keeper grant seam that used to leave LP
+positions unprotected is closed: the keeper now plans **one** root
+`StrategyRouter.unwind` per pool, which is exactly the single `Permission` the
+web asks users to sign, and `agent/scripts/verify-abi.mjs` fails the build if
+that ever stops being true. The grant must carry `allowCallback: true` — without
+it every dispatch reverts `NotActivePeripheral` inside the router while the UI
+shows the protection as live (`docs/FLOWS.md` §5).
 
 ### Yield service (`services/yield/`)
 
@@ -121,13 +157,23 @@ probe). The yield API the script starts is there for the web app and for
 
 `contracts/script/Deploy.s.sol` refuses to run unless: chain id is 8453 with
 `CONFIRM_BASE_MAINNET=true` (or `ALLOW_ANY_CHAIN=true` for a local chain);
-`TREASURY`, `REGISTRY_OWNER` (a Safe) and `AERODROME_SWAP_ROUTER` are set —
-the SwapRouter address is **not** in `docs/VERIFIED-BASE-FACTS.md` and must be
-probed first; every dependency address holds code; and Aave's
-`PoolAddressesProvider` still resolves to the verified pool / data provider /
-oracle (`AaveProviderDrift` otherwise). It then registers cbBTC and WETH as
-enabled, cbZEC as disabled with its note, and hands the registry to
-`REGISTRY_OWNER` in two steps (`acceptOwnership` is a separate transaction).
+`TREASURY`, `REGISTRY_OWNER` and `AERODROME_SWAP_ROUTER` are set — the
+SwapRouter is now code-verified as
+`0xBE6D8f0d05cC4be24d5167a3eF062215bE6D18a5` in the 2026-09-06 addendum to
+`docs/VERIFIED-BASE-FACTS.md`, and the circulating "UniversalRouter"
+`0x6Cb442acF35158D5eDa88fe602Ef9Cf89694fFEa` has **no code on Base**; every
+dependency address holds code; and Aave's `PoolAddressesProvider` still resolves
+to the verified pool / data provider / oracle (`AaveProviderDrift` otherwise).
+
+Deploy order is **registry → venue → assets**: `AaveV3Venue` now takes the
+registry at construction so it can enforce the offer and the entry
+health-factor floor itself. `REGISTRY_TIMELOCK_DELAY` (default 172800 = 2 days,
+bounded [1 h, 30 d]) is the **immutable** delay on replacing the venue an asset
+points at; it is the only owner power that waits. The script then registers
+cbBTC and WETH as enabled, cbZEC as disabled with its note, and hands the
+registry to `REGISTRY_OWNER` in two steps (`acceptOwnership` is a separate
+transaction). **Make `REGISTRY_OWNER` a multisig**: nothing on chain requires
+it, and the powers that owner keeps are set out in `docs/RISKS.md` §16.
 Optional: `DEPLOY_PYTH_ADAPTER=true` deploys the v1.1 oracle adapter, unused.
 
 ## CI

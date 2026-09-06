@@ -5,13 +5,14 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { CURATED_POOLS, poolById } from "@zyo/shared";
 import { DEMO_ID_MAP, YieldServer } from "../src/server.js";
+import { ENGINE_FEE_BPS } from "../src/model.js";
 import { onchainToken1 } from "../src/sources/gauges.js";
 import type { YieldConfig } from "../src/config.js";
 import type { AaveSource } from "../src/sources/aave.js";
 import type { GaugeSource } from "../src/sources/gauges.js";
 import type { GeckoSource } from "../src/sources/gecko.js";
 import type { EmissionsSample, GateVerdict, PoolBands, PoolsResponse } from "../src/types.js";
-import { emissionsFixture, NOW_MS, ratesFixture, volatilityFixture } from "./fixtures/model.js";
+import { emissionsFixture, mcCalibrationDocFixture, NOW_MS, ratesFixture, volatilityFixture } from "./fixtures/model.js";
 
 const STALE_AFTER = 600_000;
 
@@ -112,7 +113,7 @@ test("/v1/pools: live samples, emissions, gate verdicts per setting × collatera
   await withServer(async (dir, track) => {
     writeFileSync(join(dir, "bands.json"), JSON.stringify(bandsFixture()));
     const c = clock();
-    const server = new YieldServer(cfg(dir), { gecko: geckoStub, aave: aaveStub(c), gauges: gaugesStub(c), volatility: volatilityFixture(), now: c.now });
+    const server = new YieldServer(cfg(dir), { gecko: geckoStub, aave: aaveStub(c), gauges: gaugesStub(c), volatility: volatilityFixture(), mcCalibration: mcCalibrationDocFixture(), now: c.now });
     const http = await server.start();
     track(server, http);
     const port = (http.address() as { port: number }).port;
@@ -165,7 +166,7 @@ test("STALENESS CONTRACT: a dead source can never serve as fresh — stale is de
   await withServer(async (dir, track) => {
     const c = clock();
     const fail = { v: false };
-    const server = new YieldServer(cfg(dir), { gecko: geckoStub, aave: aaveStub(c, fail), gauges: gaugesStub(c, fail), volatility: volatilityFixture(), now: c.now });
+    const server = new YieldServer(cfg(dir), { gecko: geckoStub, aave: aaveStub(c, fail), gauges: gaugesStub(c, fail), volatility: volatilityFixture(), mcCalibration: mcCalibrationDocFixture(), now: c.now });
     const http = await server.start();
     track(server, http);
     const port = (http.address() as { port: number }).port;
@@ -219,7 +220,7 @@ test("STALENESS CONTRACT: a lapsed gauge epoch can never keep serving as active 
   await withServer(async (dir, track) => {
     const c = clock();
     const fail = { v: false };
-    const server = new YieldServer(cfg(dir), { gecko: geckoStub, aave: aaveStub(c, fail), gauges: gaugesStub(c, fail), volatility: volatilityFixture(), now: c.now });
+    const server = new YieldServer(cfg(dir), { gecko: geckoStub, aave: aaveStub(c, fail), gauges: gaugesStub(c, fail), volatility: volatilityFixture(), mcCalibration: mcCalibrationDocFixture(), now: c.now });
     await server.refresh();
     fail.v = true; // gauge RPC dies with an epochActive:true sample in hand
     const http = await server.start();
@@ -236,7 +237,7 @@ test("STALENESS CONTRACT: a lapsed gauge epoch can never keep serving as active 
 test("/v1/rates is 503 while never sampled (fail closed), with a fixed reason enum — no upstream text", async () => {
   await withServer(async (dir, track) => {
     const c = clock();
-    const server = new YieldServer(cfg(dir), { gecko: geckoStub, aave: aaveStub(c, { v: true }), gauges: gaugesStub(c), volatility: volatilityFixture(), now: c.now });
+    const server = new YieldServer(cfg(dir), { gecko: geckoStub, aave: aaveStub(c, { v: true }), gauges: gaugesStub(c), volatility: volatilityFixture(), mcCalibration: mcCalibrationDocFixture(), now: c.now });
     const http = await server.start();
     track(server, http);
     const port = (http.address() as { port: number }).port;
@@ -258,7 +259,7 @@ test("/v1/rates is 503 while never sampled (fail closed), with a fixed reason en
 test("/v1/gate: every pool × setting × collateral, filterable; qualifying list is empty at 4.828 % with the recorded sample", async () => {
   await withServer(async (dir, track) => {
     const c = clock();
-    const server = new YieldServer(cfg(dir), { gecko: geckoStub, aave: aaveStub(c), gauges: gaugesStub(c), volatility: volatilityFixture(), now: c.now });
+    const server = new YieldServer(cfg(dir), { gecko: geckoStub, aave: aaveStub(c), gauges: gaugesStub(c), volatility: volatilityFixture(), mcCalibration: mcCalibrationDocFixture(), now: c.now });
     const http = await server.start();
     track(server, http);
     const port = (http.address() as { port: number }).port;
@@ -293,7 +294,7 @@ test("/v1/band: requires a collateral; supply and borrow are the LIVE Aave figur
   await withServer(async (dir, track) => {
     writeFileSync(join(dir, "bands.json"), JSON.stringify(bandsFixture()));
     const c = clock();
-    const server = new YieldServer(cfg(dir), { gecko: geckoStub, aave: aaveStub(c), gauges: gaugesStub(c), volatility: volatilityFixture(), now: c.now });
+    const server = new YieldServer(cfg(dir), { gecko: geckoStub, aave: aaveStub(c), gauges: gaugesStub(c), volatility: volatilityFixture(), mcCalibration: mcCalibrationDocFixture(), now: c.now });
     const http = await server.start();
     track(server, http);
     const port = (http.address() as { port: number }).port;
@@ -319,11 +320,165 @@ test("/v1/band: requires a collateral; supply and borrow are the LIVE Aave figur
 test("handler robustness: bad request-targets are 400, unknown paths 404, non-GET 405", async () => {
   await withServer(async (dir, track) => {
     const c = clock();
-    const server = new YieldServer(cfg(dir), { gecko: geckoStub, aave: aaveStub(c), gauges: gaugesStub(c), volatility: volatilityFixture(), now: c.now });
+    const server = new YieldServer(cfg(dir), { gecko: geckoStub, aave: aaveStub(c), gauges: gaugesStub(c), volatility: volatilityFixture(), mcCalibration: mcCalibrationDocFixture(), now: c.now });
     const http = await server.start();
     track(server, http);
     const port = (http.address() as { port: number }).port;
     assert.equal((await get(port, "/nope")).status, 404);
     const post = await fetch(`http://127.0.0.1:${port}/v1/pools`, { method: "POST" });
     assert.equal(post.status, 405);  });
+});
+
+test("FIX D-MED-5: /v1/pools payload staleness includes EMISSIONS, and each pool's live sample carries its own stale flag", async () => {
+  await withServer(async (dir, track) => {
+    const c = clock();
+    const gaugesFail = { v: false };
+    const server = new YieldServer(cfg(dir), {
+      gecko: geckoStub, aave: aaveStub(c), gauges: gaugesStub(c, gaugesFail),
+      volatility: volatilityFixture(), mcCalibration: mcCalibrationDocFixture(), now: c.now,
+    });
+    const http = await server.start();
+    track(server, http);
+    const port = (http.address() as { port: number }).port;
+
+    let p = (await get(port, "/v1/pools")).body as PoolsResponse;
+    assert.equal(p.stale, false);
+    const cbbtc0 = p.pools.find((x) => x.id === "aero-cbbtc-usdc")!;
+    assert.equal((cbbtc0.live as unknown as { stale: boolean }).stale, false, "each live sample carries its own stale");
+
+    // Only the GAUGES die. The rates and live samples keep refreshing, so the
+    // old payload-level `stale` (rates + live only) read false while the
+    // per-pool emissions.stale said true — the headline lied.
+    gaugesFail.v = true;
+    c.advance(STALE_AFTER + 1);
+    await server.refresh();
+    p = (await get(port, "/v1/pools")).body as PoolsResponse;
+    const cbbtc = p.pools.find((x) => x.id === "aero-cbbtc-usdc")!;
+    assert.equal(cbbtc.emissions!.stale, true, "the emissions sample is stale");
+    assert.equal(p.rates!.stale, false, "the rates are still fresh");
+    assert.equal((cbbtc.live as unknown as { stale: boolean }).stale, false, "the live sample is still fresh");
+    assert.equal(p.stale, true, "the headline flag must reflect the stale emissions");
+  });
+});
+
+test("FIX D-MED-5: /healthz fails when the sources are dead, and reports per-source fresh/stale counts", async () => {
+  await withServer(async (dir, track) => {
+    const c = clock();
+    const fail = { v: false };
+    // A gecko that dies with the rest — otherwise the live samples keep
+    // refreshing and "every source is dead" is not the scenario under test.
+    const gecko = {
+      liveSample: async (...args: Parameters<GeckoSource["liveSample"]>) => {
+        if (fail.v) throw new Error("gecko down");
+        return geckoStub.liveSample(...args);
+      },
+    } as unknown as GeckoSource;
+    const server = new YieldServer(cfg(dir), {
+      gecko, aave: aaveStub(c, fail), gauges: gaugesStub(c, fail),
+      volatility: volatilityFixture(), mcCalibration: mcCalibrationDocFixture(), now: c.now,
+    });
+    const http = await server.start();
+    track(server, http);
+    const port = (http.address() as { port: number }).port;
+
+    let h = await get(port, "/healthz");
+    assert.equal(h.status, 200);
+    assert.equal(h.body.ok, true);
+    assert.deepEqual(h.body.degraded, []);
+    assert.ok(h.body.sources.livePools.fresh > 0 && h.body.sources.livePools.stale === 0);
+    assert.ok(h.body.sources.emissionsPools.fresh > 0);
+    assert.ok(h.body.uptimeS >= 0, "uptime is read from the injected clock, never Date.now()");
+
+    // everything dead for five hours
+    fail.v = true;
+    c.advance(5 * 60 * 60 * 1000);
+    await server.refresh();
+    h = await get(port, "/healthz");
+    assert.equal(h.status, 503, "a monitor must be able to see a dead service");
+    assert.equal(h.body.ok, false);
+    for (const d of ["rates_stale", "live_samples_stale", "emissions_stale"]) {
+      assert.ok((h.body.degraded as string[]).includes(d), `degraded should name ${d}: ${h.body.degraded}`);
+    }
+    assert.equal(h.body.sources.rates.stale, true);
+    assert.equal(h.body.sources.livePools.fresh, 0);
+    assert.ok(h.body.sources.livePools.stale > 0, "stale entries are counted, not just 'has a value'");
+    assert.equal(h.body.sources.emissionsPools.fresh, 0);
+    assert.ok(h.body.uptimeS >= 5 * 3600);
+  });
+});
+
+test("FIX D-MED-5: a missing MC calibration is a DEGRADED service — the gate can offer nothing", async () => {
+  await withServer(async (dir, track) => {
+    const c = clock();
+    const server = new YieldServer(cfg(dir), {
+      gecko: geckoStub, aave: aaveStub(c), gauges: gaugesStub(c),
+      volatility: volatilityFixture(), mcCalibration: null, now: c.now,
+    });
+    const http = await server.start();
+    track(server, http);
+    const port = (http.address() as { port: number }).port;
+    const h = await get(port, "/healthz");
+    assert.equal(h.status, 503);
+    assert.ok((h.body.degraded as string[]).includes("mc_calibration_unavailable"));
+    const g = await get(port, "/v1/gate");
+    assert.equal(g.status, 200);
+    assert.deepEqual(g.body.qualifying, []);
+  });
+});
+
+test("FIX D-MED-6: /v1/gate emits stale, emissionsSampledAt and engineFeeBps — the three fields web/lib/gate.ts has always read", async () => {
+  await withServer(async (dir, track) => {
+    const c = clock();
+    const gaugesFail = { v: false };
+    const server = new YieldServer(cfg(dir), {
+      gecko: geckoStub, aave: aaveStub(c), gauges: gaugesStub(c, gaugesFail),
+      volatility: volatilityFixture(), mcCalibration: mcCalibrationDocFixture(), now: c.now,
+    });
+    const http = await server.start();
+    track(server, http);
+    const port = (http.address() as { port: number }).port;
+
+    const g = (await get(port, "/v1/gate")).body;
+    // Without these the client's staleness banner never fires and the
+    // `&& !stale` term in its own qualifies re-derivation is dead code.
+    assert.equal(typeof g.stale, "boolean");
+    assert.equal(g.stale, false);
+    assert.equal(typeof g.emissionsSampledAt, "string");
+    assert.equal(g.engineFeeBps, ENGINE_FEE_BPS);
+    // every key normalizeGate reads is present
+    for (const k of ["borrowAprPct", "ratesSampledAt", "emissionsSampledAt", "volatilityAsOf", "engineFeeBps", "stale", "settings", "verdicts", "generatedAt"]) {
+      assert.ok(k in g, `/v1/gate payload is missing ${k}`);
+    }
+
+    // Emissions staleness is the ONE kind /v1/gate does not 503 on, so it must
+    // surface here or it surfaces nowhere.
+    gaugesFail.v = true;
+    c.advance(STALE_AFTER + 1);
+    await server.refresh();
+    const s = (await get(port, "/v1/gate")).body;
+    assert.equal(s.stale, true, "stale emissions must reach the client");
+    assert.ok(s.verdicts.every((v: GateVerdict) => !v.qualifies));
+    assert.ok(s.verdicts.some((v: GateVerdict) => v.reason === "emissions_stale"));
+  });
+});
+
+test("FIX D-HIGH-1: /v1/gate serves mcLpNetPct alongside the published lpNetPct on every priced cell", async () => {
+  await withServer(async (dir, track) => {
+    const c = clock();
+    const server = new YieldServer(cfg(dir), {
+      gecko: geckoStub, aave: aaveStub(c), gauges: gaugesStub(c),
+      volatility: volatilityFixture(), mcCalibration: mcCalibrationDocFixture(), now: c.now,
+    });
+    const http = await server.start();
+    track(server, http);
+    const port = (http.address() as { port: number }).port;
+    const g = (await get(port, "/v1/gate")).body;
+    const priced = (g.verdicts as GateVerdict[]).filter((v) => v.lpNetPct !== null);
+    assert.ok(priced.length > 0);
+    for (const v of priced) {
+      assert.ok(v.mcLpNetPct !== null, `${v.poolId}/${v.setting}: priced without an MC number`);
+      if (v.qualifies) assert.ok(v.mcLpNetPct! > v.borrowAprPct!);
+    }
+    assert.equal(typeof g.mcCalibrationGeneratedAt, "string");
+  });
 });

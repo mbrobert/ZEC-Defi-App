@@ -89,6 +89,9 @@ USDC → `0xf52d010c7d4ecbfda92c2509900593ce34535d86` (these are Aave's adapters
 
 ## Not verified by this read (probe before use — `AUDIT-SCOPE.md` "Not verified")
 
+> **Two of these were probed on 2026-09-06 — see the Addendum below.** The Aerodrome Slipstream
+> SwapRouter and Multicall3 are now code-verified; the rest of this list still stands.
+
 - **Aerodrome Slipstream SwapRouter** — address not read; `contracts/script/Deploy.s.sol` requires it from `AERODROME_SWAP_ROUTER` and refuses mainnet without it; `exactInputSingle` shape unprobed.
 - **Multicall3** `0xcA11bde05977b3631167028862bE2a173976CA11` — not read; the web uses viem's `base` chain definition with a per-call fallback; the keeper does one `eth_call` per read.
 - **Morpho Blue market ids** for cbBTC/USDC and WETH/USDC — not discovered; `MorphoBlueVenue` ships disabled.
@@ -96,3 +99,21 @@ USDC → `0xf52d010c7d4ecbfda92c2509900593ce34535d86` (these are Aave's adapters
 - **The engine's live end-of-list revert shape** for `userPositions(address,uint256)` — logged by `test_fork_engineIndexGetterShape` when the fork suite runs with `FORK_URL`; never recorded here.
 - **cbZEC B20 policy state** (blocklist, pause) — `owner()` / `paused()` revert on the precompile; only `multiplier()` was read (1e18).
 - **Gauge emissions** for the curated pools other than cbZEC/USDC — the yield model's inputs are the 2026-08-31 words (block 50675328), not this read.
+
+## Addendum — probed 2026-09-06 (the "Not verified" items from the first pass)
+
+| Contract | Address | Evidence |
+|---|---|---|
+| **Aerodrome Slipstream SwapRouter** | `0xBE6D8f0d05cC4be24d5167a3eF062215bE6D18a5` | code present (19,818 B); `factory()` = `0x5e7bb104d84c7cb9b682aac2f3d509f5f406809a`; `WETH9()` = the canonical WETH predeploy |
+| Slipstream NonfungiblePositionManager | `0x827922686190790b37229fd06084350E74485b72` | code present (49,086 B); `factory()` = the SAME `0x5e7b…09a`, which is what confirms both belong to one Slipstream deployment |
+| Slipstream CLFactory | `0x5e7BB104d84c7CB9B682AaC2F3d509f5F406809A` | derived from both `factory()` reads above |
+| Aerodrome v2 Router (non-CL) | `0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43` | code present (47,164 B); not used by v1 |
+| Multicall3 | `0xcA11bde05977b3631167028862bE2a173976CA11` | code present (7,618 B); `getCurrentBlockTimestamp()` answers |
+
+**Negative result worth recording:** `0x6Cb442acF35158D5eDa88fe602Ef9Cf89694fFEa`, which circulates as an
+Aerodrome "UniversalRouter", returns **`0x` — no code on Base**. Do not use it.
+
+Still unverified and still gated: Morpho Blue market ids (no cbZEC market exists; cbBTC/WETH ids must be
+discovered from `CreateMarket` events before `MorphoBlueVenue` is enabled), the CoW vault relayer, the live
+engine's out-of-range revert *shape* (the enumeration canary measures it at runtime precisely because it is
+unknown), and cbZEC's B20 policy state (`owner()`/`paused()` revert; only `multiplier()` reads, currently 1e18).

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { FEES } from "@zyo/shared";
-import { mixUserBand, OILSKIN_KEEP, userNetPct } from "../src/bands.js";
+import { keptEngineNetPct, mixUserBand, OILSKIN_KEEP, userNetPct } from "../src/bands.js";
 import { ENGINE_FEE_BPS, keepFactor } from "../src/model.js";
 import type { CohortBand } from "../src/types.js";
 
@@ -51,4 +51,43 @@ test("mixUserBand: pools without data are skipped; all-empty → null", () => {
   assert.equal(mixUserBand([empty], 0.3, 13.2, 0.8), null);
   const mixed = mixUserBand([empty, band([10, 20, 30, 40, 50])], 0.3, 13.2, 0.8)!;
   assert.equal(mixed.p50, userNetPct(30, 0.3, 13.2, 0.8));
+});
+
+test("FIX D-MED-2: the 10 % performance fee is applied to GAINS ONLY — a losing band is never flattered", () => {
+  // Multiplying a loss by OILSKIN_KEEP shrinks it, and the bad-case number is
+  // the one a first-time user most needs to be true. Fee-free on the downside:
+  //   userNet = supply + ltv × (engineNet − borrow)   for engineNet ≤ 0
+  const borrow = 4.828;
+  const supply = 0.012;
+  const cases: [number, number, number][] = [
+    // engineNet, ltv, the fee-free answer
+    [-40, 0.4, supply + 0.4 * (-40 - borrow)],
+    [-40, 0.5, supply + 0.5 * (-40 - borrow)],
+    [-60, 0.5, supply + 0.5 * (-60 - borrow)],
+    [-0.01, 0.3, supply + 0.3 * (-0.01 - borrow)],
+    [0, 0.5, supply + 0.5 * (0 - borrow)],
+  ];
+  for (const [engineNet, ltv, expected] of cases) {
+    assert.equal(keptEngineNetPct(engineNet), engineNet, `keep must not touch ${engineNet}`);
+    assert.equal(userNetPct(engineNet, ltv, borrow, supply), Math.round(expected * 100) / 100, `${engineNet} @ ${ltv}`);
+  }
+  // The audit's exact figures: −20.40 % was served where −22.40 % is true.
+  assert.equal(userNetPct(-40, 0.5, borrow, supply), Math.round((supply + 0.5 * (-40 - borrow)) * 100) / 100);
+  assert.ok(userNetPct(-40, 0.5, borrow, supply) < -22, "the loss must not shrink");
+  // Gains are unchanged: the fee IS charged on performance.
+  assert.equal(keptEngineNetPct(30), 30 * OILSKIN_KEEP);
+  assert.equal(userNetPct(30, 0.4, borrow, supply), Math.round((supply + 0.4 * (30 * OILSKIN_KEEP - borrow)) * 100) / 100);
+});
+
+test("FIX D-MED-2: a mixed band's DOWNSIDE percentiles are fee-free while its upside is not", () => {
+  const band = (p: Partial<CohortBand>): CohortBand => ({
+    windowDays: 30, n: 12, excluded: 0, totalPrincipalUsd: 1, meanDaysOpen: 9,
+    excludedReasons: { unpriced: 0, ambiguous_entry: 0, short_position: 0, dust_principal: 0, absurd_outcome: 0 },
+    p10: -40, p25: 5, p50: 30, p75: 60, p90: 120, medianUnweighted: 30, ...p,
+  });
+  const u = mixUserBand([band({})], 0.5, 4.828, 0.012)!;
+  assert.equal(u.p10, Math.round((0.012 + 0.5 * (-40 - 4.828)) * 100) / 100); // fee-free
+  assert.equal(u.p90, Math.round((0.012 + 0.5 * (120 * OILSKIN_KEEP - 4.828)) * 100) / 100); // fee charged
+  // percentile order still survives the transform
+  assert.ok(u.p10 < u.p25 && u.p25 < u.p50 && u.p50 < u.p75 && u.p75 < u.p90);
 });

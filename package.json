@@ -2,7 +2,7 @@
   "name": "zec-yield-orchestrator",
   "version": "0.1.0",
   "private": true,
-  "description": "ZEC Yield Orchestrator — earn yield on native ZEC via Rhea Finance lending and Base concentrated-liquidity strategies (MaxFi/SnuggleFi), with rewards deliverable back to a native Zcash wallet via NEAR Intents.",
+  "description": "Oilskin \u2014 a Base-chain DeFi app for ZEC holders: use cbBTC, WETH or (when a market exists) cbZEC as collateral on Aave v3, borrow USDC, and deploy it into Aerodrome liquidity, with every position owned by the user's own smart account.",
   "workspaces": [
     "packages/shared",
     "agent",

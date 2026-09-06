@@ -115,6 +115,19 @@ check("position: entry HF shown 2.60 and the ladder fully armed", (await page.te
   await page.evaluate(() => { const o = window.__oil; o.dispatch({ type: "setMult", mult: 1 }); for (let i = 0; i < 24 * 30; i++) o.S = o.reduce(o.S, { type: "tick", dt: o.MAX_TICK_S }); o.renderAll(); });
   check("accrual: 30 days at today's numbers — the gated pool loses money and net so far is negative", (await page.evaluate(() => window.__oil.netSoFar(window.__oil.S.pos))) < 0);
   check("sign discipline: negative net so far is rendered with a leading minus and the .neg class", (await page.textContent("#pEarned")).startsWith("−") && await page.$eval("#pEarned", e => e.classList.contains("neg")));
+  /* grant expiry is real: 30 demo days is exactly the life of the grant the
+     wizard signs, so after that accrual the keeper may no longer act. */
+  const gexp = await page.evaluate((px0) => { const o = window.__oil; const g = o.grantOf(o.S.pos); const n0 = o.S.activity.length;
+    o.dispatch({ type: "setPrice", asset: "cbBTC", px: px0 * 0.5 });
+    const fired = Object.values(o.S.pos.ladder).filter(v => !v).length;
+    const logged = o.S.activity.map(a => a.t); const newLogs = o.S.activity.length - n0;
+    o.dispatch({ type: "setPrice", asset: "cbBTC", px: px0 });
+    return { expired: g.expired, remainingS: g.remainingS, expiryS: o.GRANT_EXPIRY_S, fired, newLogs, logged: logged.filter(x => /Keeper permission/.test(x)), chip: document.querySelector("#grantChip").textContent }; }, (await o("S")).price.cbBTC);
+  check("grant: after 30 demo days the keeper permission has expired, the ladder refuses to act, and the card says so", gexp.expired && gexp.remainingS <= 0 && gexp.fired === 0 && gexp.newLogs === 0 && gexp.logged.some(t => /Keeper permission expired/.test(t)) && /Expired/.test(gexp.chip), JSON.stringify(gexp));
+  const gflat = await page.evaluate((px0) => { const o = window.__oil; const n0 = o.S.activity.length; for (let i = 0; i < 50; i++) o.dispatch({ type: "setPrice", asset: "cbBTC", px: px0 * (0.5 + i * 1e-6) }); const n1 = o.S.activity.length; o.dispatch({ type: "setPrice", asset: "cbBTC", px: px0 }); return n1 - n0; }, (await o("S")).price.cbBTC);
+  check("grant: an expired grant is announced exactly once, never once per price tick", gflat === 0, `logged ${gflat}`);
+  const gren = await page.evaluate(() => { const o = window.__oil; o.dispatch({ type: "renewGrant" }); const g = o.grantOf(o.S.pos); return { live: g.live, remainingS: g.remainingS, days: g.remainingDays, chip: document.querySelector("#grantChip").textContent, budgets: g.budgets.map(b => b.token) }; });
+  check("grant: renewing restores the full 30-day permission and protection resumes", gren.live && Math.abs(gren.days - 30) < 1e-9 && /Live/.test(gren.chip) && gren.budgets.includes("USDC"), JSON.stringify(gren));
   // ladder: crash in steps, expect rungs to fire in order, exactly once, and re-arm after recovery
   const px0 = (await o("S")).price.cbBTC;
   const seq = await page.evaluate((px0) => { const o = window.__oil; const out = []; const first = re => { const i = [...o.S.activity].reverse().findIndex(a => re.test(a.t + " " + a.d)); return i; };
@@ -206,6 +219,111 @@ check("position: entry HF shown 2.60 and the ladder fully armed", (await page.te
   check("sim: out of range pauses emissions; rebalance resumes them; status reads 'in range · earning'", r3.paused && r3.resumed);
   check("sim: page still has zero console errors after every simulation", p2.__errors.length === 0, p2.__errors.join(" | "));
   await p2.close();
+}
+
+/* ── 9. the fix round: the two-model gate, the new refusals, the entry floor,
+   the swap floor, the keeper's grant and the honest custody language ── */
+{
+  const CLAIMS = [/no operator custody/i, /No operator custody/, /no owner powers/i, /At no point does an operator custody/, /\bnon-custodial\b/i];
+  check("custody: the page never claims 'no operator custody' or 'no owner powers' anywhere", CLAIMS.every(re => !re.test(html)), CLAIMS.filter(re => re.test(html)).map(String).join(", "));
+  const C = await o("CONTRACTS");
+  check("custody: the operator's remaining powers are enumerated (disable an asset, move the entry floor, replace a venue after the delay) and stated as a residual", C.registry.ownerCanStill.length === 3 && /instantly/.test(C.registry.ownerCanStill[0]) && /entry health-factor floor/.test(C.registry.ownerCanStill[1]) && /delay/.test(C.registry.ownerCanStill[2]) && /still an owner|does not claim|not claim/i.test(C.registry.residual + html));
+  const own = await page.evaluate(() => ({ can: [...document.querySelectorAll("#docOwnerCan li")].length, cannot: [...document.querySelectorAll("#docOwnerCannot li")].length, resid: document.querySelector("#docOwnerResidual").textContent, faqCan: [...document.querySelectorAll("#faqOwnerCan li")].length }));
+  check("custody: Docs and the FAQ both render what the owner can and cannot do, with the timelock delay named", own.can === 3 && own.cannot === 3 && own.faqCan === 3 && /2 days/.test(own.resid) && /announced|watcher/.test(own.resid), JSON.stringify(own).slice(0, 240));
+
+  /* the boundary guard */
+  const bnd = await page.evaluate(() => { const oil = window.__oil; return oil.MODEL.boundary.map(([id, w, gb, cl, mc]) => { const pl = oil.poolById(id); const m = gb / pl.emissions[w]; const g0 = oil.gate(pl, 4.828, w, m);
+    // the exact multiple at which the CLOSED form crosses the borrow, from the page's own math
+    let lo = 0.01, hi = 500; for (let i = 0; i < 200; i++) { const mid = (lo + hi) / 2; (oil.lpNetPct(pl, w, mid) > 4.828) ? hi = mid : lo = mid; }
+    const g1 = oil.gate(pl, 4.828, w, hi * (1 + 1e-9));
+    return { id, w, cl, mc, gotCl: g0.net, gotMc: g0.mcNet, be: hi, docMult: m, reason: g1.reason, ok: g1.ok }; }); });
+  check("model: the 8 boundary cells reproduce both forms from the pinned coefficients (closed and Monte Carlo, to 0.02 pt)", bnd.length === 8 && bnd.every(r => near(r.gotCl, r.cl, 0.02) && near(r.gotMc, r.mc, 0.02)), JSON.stringify(bnd.filter(r => !near(r.gotCl, r.cl, 0.02) || !near(r.gotMc, r.mc, 0.02))));
+  check("gate: just above each published break-even, 7 of the 8 cells are refused within_model_uncertainty and only cbBTC/USDC sheltered — where the forms agree — is offered", bnd.every(r => near(r.be, r.docMult, 0.002)) && bnd.filter(r => r.reason === "within_model_uncertainty").length === 7 && bnd.filter(r => r.ok).length === 1 && bnd.find(r => r.ok).id === "aero-cbbtc-usdc" && bnd.find(r => r.ok).w === 4500, JSON.stringify(bnd.map(r => [r.id, r.w, r.reason])));
+  const worst = bnd.reduce((a, r) => Math.max(a, r.cl - r.mc), 0);
+  check("gate: the worst boundary optimism is ~32 pt — several times the borrow rate the verdict is compared against", near(worst, 32.02, 0.05) && worst > 4.828 * 6, String(worst));
+  const affine = await page.evaluate(() => { const oil = window.__oil; const pl = oil.poolById("aero-cbbtc-usdc"), w = 1500; const c = oil.MODEL.mc.cells.find(x => x[0] === "aero-cbbtc-usdc" && x[1] === w); const out = []; for (const m of [0.5, 1, 2, 3.7, 8, 40]) { const net = oil.grossEmissionsPct(pl, w, m) * oil.feeKeep(pl); out.push([oil.mcLpNetPct(pl, w, m), net * c[4] + c[5]]); } return out; });
+  check("model: mcLpNet is exactly affine in the emissions rate — two pinned coefficients price the cell at every level", affine.every(([a, c]) => near(a, c, 1e-9)), JSON.stringify(affine));
+  const sweep = await page.evaluate(() => { const oil = window.__oil; const bad = []; for (const pl of oil.MODEL.pools) for (const w of [150, 300, 784, 1500, 2356, 4500]) for (let m = 1; m <= 60; m += 0.25) { const g = oil.gate(pl, 4.828, w, m); if (g.ok && !(g.mcNet > 4.828)) bad.push([pl.id, w, m, g.net, g.mcNet]); } return bad; });
+  check("gate: across 9 pools × 6 widths × 237 emissions multiples, the served gate is never more permissive than the Monte-Carlo form", sweep.length === 0, JSON.stringify(sweep.slice(0, 3)));
+
+  /* the new refusals, driven through the tester's kit */
+  const p4 = await openPage(b, srv.url("simple.html"));
+  await p4.evaluate(() => { const oil = window.__oil; oil.dispatch({ type: "connect", provider: "coinbase" }); });
+  const band = await p4.evaluate(() => { const oil = window.__oil; oil.dispatch({ type: "setMult", mult: 6.35 }); const pl = oil.poolById("aero-usdc-weth-5"); const g = oil.gate(pl, oil.S.borrowPct, oil.widthFor(pl), 6.35, oil.gopt({ collateral: "cbBTC" })); const card = [...document.querySelectorAll("#poolSeg .poolb")].map(e => e.textContent).find(x => /WETH\/USDC/.test(x)) || ""; return { reason: g.reason, net: g.net, mc: g.mcNet, why: g.why, card }; });
+  check("gate: WHAT-IF ×6.35 puts WETH/USDC inside the band the two models disagree about — refused within_model_uncertainty, with both numbers shown", band.reason === "within_model_uncertainty" && band.net > 4.828 && band.mc < 4.828 && /closed form/.test(band.why) && /Monte Carlo/.test(band.why) && /within_model_uncertainty|closed form/.test(band.card), JSON.stringify(band).slice(0, 300));
+  const impl = await p4.evaluate(() => { const oil = window.__oil; oil.dispatch({ type: "setMult", mult: 1 }); oil.dispatch({ type: "sim", kind: "revote", on: true }); const pl = oil.poolById("aero-aero-weth"); const g = oil.gate(pl, oil.S.borrowPct, oil.widthFor(pl), 1, oil.gopt()); const off = oil.gate(pl, oil.S.borrowPct, oil.widthFor(pl), 1); oil.dispatch({ type: "sim", kind: "revote", on: false }); return { reason: g.reason, gross: g.gross, why: g.why, ceiling: oil.MODEL.bounds.maxEmissionsAprPct, lapsed: off.reason }; });
+  check("gate: the AERO/WETH gauge's own recorded reading (≈5,460% at ±25%) is refused emissions_implausible above the 1,000% ceiling — and reads no_emissions while its epoch is lapsed", impl.reason === "emissions_implausible" && impl.gross > impl.ceiling && impl.lapsed === "no_emissions" && /plausibility ceiling/.test(impl.why), JSON.stringify(impl).slice(0, 240));
+  const uncorr = await p4.evaluate(() => { const oil = window.__oil; oil.dispatch({ type: "sim", kind: "corroborated", on: false }); const rs = oil.MODEL.pools.map(pl => oil.gate(pl, oil.S.borrowPct, oil.widthFor(pl), 4, oil.gopt()).reason); oil.dispatch({ type: "sim", kind: "corroborated", on: true }); return rs; });
+  check("gate: an uncorroborated staked-liquidity anchor refuses every pool that has emissions with insufficient_samples — no APR is published at all", uncorr.filter(r => r === "insufficient_samples").length >= 6 && uncorr.every(r => r === "insufficient_samples" || r === "no_emissions"), JSON.stringify(uncorr));
+  const paused = await p4.evaluate(() => { const oil = window.__oil; oil.dispatch({ type: "sim", kind: "paused", asset: "cbBTC", on: true }); const coll = oil.MODEL.pools.map(pl => oil.gate(pl, oil.S.borrowPct, oil.widthFor(pl), 4, oil.gopt({ collateral: "cbBTC" })).reason); const cta = document.querySelector("#startBtn").disabled;
+    oil.dispatch({ type: "sim", kind: "paused", asset: "cbBTC", on: false }); oil.dispatch({ type: "sim", kind: "paused", asset: "USDC", on: true });
+    const bor = oil.MODEL.pools.map(pl => oil.gate(pl, oil.S.borrowPct, oil.widthFor(pl), 4, oil.gopt({ collateral: "cbBTC" })).reason); const why = oil.gate(oil.MODEL.pools[0], oil.S.borrowPct, 4500, 4, oil.gopt({ collateral: "cbBTC" })).why;
+    oil.dispatch({ type: "sim", kind: "paused", asset: "USDC", on: false });
+    return { coll, bor, cta, why }; });
+  check("gate: a guardian pause on the collateral reserve refuses every pool with collateral_paused and blocks the CTA", paused.coll.every(r => r === "collateral_paused") && paused.cta === true);
+  check("gate: a guardian pause on USDC borrowing refuses every pool with borrow_paused and says the loan half cannot be opened", paused.bor.every(r => r === "borrow_paused") && /guardian has paused USDC borrowing/.test(paused.why), JSON.stringify(paused.bor.slice(0, 3)));
+  const oob = await p4.evaluate(() => { const oil = window.__oil; const pl = oil.poolById("aero-cbbtc-usdc"), w = 4500;
+    const lifted = oil.gate(pl, 4.828, w, 400, { maxEmissionsAprPct: 1e9, maxAbsNetPct: 100 });
+    const shipped = oil.gate(pl, 4.828, w, 400);
+    let reachable = false; for (let m = 1; m <= 100; m += 0.5) for (const pool of oil.MODEL.pools) for (const ww of [150, 300, 784, 1500, 2356, 4500]) if (oil.gate(pool, 4.828, ww, m).reason === "net_out_of_bounds") reachable = true;
+    return { lifted: lifted.reason, shipped: shipped.reason, reachable, why: oil.GATE_WHY.net_out_of_bounds };
+  });
+  check("gate: net_out_of_bounds is a real refusal branch (fires when the arithmetic leaves the bound) and the emissions ceiling makes it unreachable on any live input", oob.lifted === "net_out_of_bounds" && oob.shipped === "emissions_implausible" && oob.reachable === false && /broken input, not a yield/.test(oob.why), JSON.stringify(oob).slice(0, 200));
+  const cat = await p4.evaluate(() => { const rows = [...document.querySelectorAll("#docReasons tr")].slice(1).map(r => [r.children[0].textContent, r.children[1].textContent]); return rows; });
+  check("docs: every gate refusal is catalogued with a plain-English sentence (13 reasons, none shorter than a sentence)", cat.length === 13 && cat.every(([k, v]) => k.length > 5 && v.length > 40) && cat.some(([k]) => k === "within_model_uncertainty") && cat.some(([k]) => k === "net_out_of_bounds"), JSON.stringify(cat.map(c => c[0])));
+  const bt = await p4.evaluate(() => ({ rows: [...document.querySelectorAll("#docBoundary tr")].length, note: document.querySelector("#docBoundaryNote").textContent }));
+  check("docs: the boundary table renders all 8 cells and states the worst optimism and the calibration provenance", bt.rows === 9 && /32\.02 points/.test(bt.note) && /6000 paths/.test(bt.note) && /2026-09-06/.test(bt.note), JSON.stringify(bt).slice(0, 240));
+  const btv = await p4.evaluate(() => [...document.querySelectorAll("#docBoundary tr")].slice(1).map(r => r.lastElementChild.textContent.trim()));
+  check("docs: the boundary table's own served-gate column shows 7 refusals and the single cell where the two forms agree — the table is evaluated, not narrated", btv.filter(x => /within_model_uncertainty/.test(x)).length === 7 && btv.filter(x => /offered/.test(x)).length === 1 && /one that remains is where the two forms genuinely agree/.test(bt.note), JSON.stringify(btv));
+
+  /* the entry health floor: the pre-fix raw batch is refused at the venue */
+  const raw = await p4.evaluate(() => { const oil = window.__oil; oil.dispatch({ type: "setMult", mult: 4 }); oil.dispatch({ type: "setAmount", amount: 0.05 });
+    document.querySelector("#tkBtn").click(); document.querySelector('[data-tk="rawbatch"]').click();
+    const why = oil.S.sim.failNext.why;
+    oil.dispatch({ type: "beginDeposit" }); const id = oil.S.flow.id; for (let i = 0; i < 6; i++) oil.dispatch({ type: "flowAdvance", id }); oil.dispatch({ type: "flowComplete", id });
+    return { why, status: oil.S.flow.status, pos: oil.S.pos, credited: oil.S.credited.length, floor: oil.LADDER.entryHfFloor, ltBps: oil.ltBpsOf("cbBTC"), ltvBps: oil.CHAIN_READ.aaveReserves.cbBTC.ltvBps }; });
+  const hfRaw = raw.ltBps / raw.ltvBps;
+  check("entry floor: the pre-fix raw execBatch is refused at the venue — EntryHfTooLow(1.07, 1.55), computed from the live LT and Aave's own LTV, nothing credited", /EntryHfTooLow\(1\.07, 1\.55\)/.test(raw.why) && near(hfRaw, 1.07, 0.005) && raw.floor === 1.55 && raw.status === "failed" && raw.pos === null && raw.credited === 0, JSON.stringify({ why: raw.why.slice(0, 120), hfRaw }));
+  check("entry floor: the refusal names where the floor now lives and what the product builds instead", /AaveV3Venue\.borrow/.test(raw.why) && /openBorrowOnly|openLeveragedLp/.test(raw.why) && /never touched the router/.test(raw.why));
+  const rev = await p4.evaluate(() => { const oil = window.__oil; const rows = document.querySelector("#revList"); oil.dispatch({ type: "flowDismiss" }); return { html: (oil.S, "") }; });
+  await p4.evaluate(() => { const oil = window.__oil; oil.dispatch({ type: "setAmount", amount: 0.05 }); oil.dispatch({ type: "beginDeposit" }); const id = oil.S.flow.id; for (let i = 0; i < 6; i++) oil.dispatch({ type: "flowAdvance", id }); oil.dispatch({ type: "flowComplete", id }); oil.dispatch({ type: "flowDismiss" }); });
+
+  /* the swap floor on the way out */
+  const leg = await p4.evaluate(() => { const oil = window.__oil; const p = oil.S.pos, pool = oil.poolById(p.pool);
+    const l = oil.swapLegFor(pool, p.lp + p.idle);
+    const direct = oil.minOutFor(l.amountIn, l.quotedIn, l.quotedOut, l.maxSlippageBps);
+    const bigger = oil.swapLegFor(pool, p.lp + p.idle, 50, { sizeFactor: 1.4 });
+    const sandwiched = oil.swapLegFor(pool, p.lp + p.idle, 50, { priceFactor: 0.6 });
+    const tooLoose = oil.swapLegFor(pool, p.lp + p.idle, oil.CONTRACTS.swap.maxSlippageBpsCap + 1);
+    const zero = oil.minOutFor(1, 0, 1, 50);
+    return { minOut: l.minOut, direct: direct.minOut, quotedOut: l.quotedOut, cap: l.cap, slip: l.maxSlippageBps, biggerReverts: bigger.reverts, sandReverts: sandwiched.reverts, sandErr: sandwiched.revertError, looseErr: tooLoose.error, zeroErr: zero.error }; });
+  check("swap: the withdrawal's floor is the adapter's own formula — quote × (1 − tolerance), tolerance 0.50% under an on-chain cap of 5.00%", near(leg.minOut, leg.direct, 1e-12) && near(leg.minOut, leg.quotedOut * (1 - leg.slip / 10000), 1e-9) && leg.cap === 500 && leg.slip === 50);
+  check("swap: a leg that settles 40% larger is still protected in proportion; an adverse price is not, so it reverts InsufficientOutput", leg.biggerReverts === false && leg.sandReverts === true && leg.sandErr === "InsufficientOutput()");
+  check("swap: a tolerance above the on-chain cap and a zero quote are both refused, so 'accept one base unit' cannot be expressed", /SlippageTooHigh\(501, 500\)/.test(leg.looseErr) && leg.zeroErr === "ZeroQuote()");
+  const sand = await p4.evaluate(() => { const oil = window.__oil; oil.dispatch({ type: "sim", kind: "sandwich", on: true });
+    document.querySelector("#wdBtn").click(); const before = JSON.parse(JSON.stringify(oil.S.pos)); const swapTxt = document.querySelector("#wdSwap").textContent; const revShown = document.querySelector("#wdRevert").style.display;
+    document.querySelector("#wdConfirm").click(); const after = oil.S.pos; const act = oil.S.activity[0];
+    oil.dispatch({ type: "sim", kind: "sandwich", on: false });
+    return { swapTxt, revShown, moved: Math.abs(after.coll - before.coll) + Math.abs(after.debt - before.debt) + Math.abs(after.lp - before.lp), act: act.t + " " + act.d }; });
+  check("swap: a sandwiched unwind reverts — the modal shows the floor, the confirm moves nothing, and the activity says the call was atomic", /reverts below/.test(sand.swapTxt) && /slippage cap/.test(sand.swapTxt) && sand.revShown === "block" && sand.moved < 1e-9 && /Withdrawal reverted/.test(sand.act) && /atomic/.test(sand.act), JSON.stringify({ moved: sand.moved, act: sand.act.slice(0, 120) }));
+
+  /* the keeper's grant matches the plan, and its expiry is visible */
+  const gr = await p4.evaluate(() => { const oil = window.__oil; const g = oil.grantOf(oil.S.pos); const kv = document.querySelector("#grantKv").textContent; const chip = document.querySelector("#grantChip").textContent; const note = document.querySelector("#grantNote").textContent;
+    return { g, kv, chip, note, C: oil.CONTRACTS.grant }; });
+  check("grant: the card states one target, one function, the per-token daily limits, the period and the expiry — and the chip counts the expiry down", /StrategyRouter\.unwind\(\)/.test(gr.kv) && /one root call, nothing else/.test(gr.kv) && /USDC/.test(gr.kv) && /24 hours/.test(gr.kv) && /Live · expires in \d+ days/.test(gr.chip) && gr.g.remainingDays > 29, JSON.stringify({ chip: gr.chip, kv: gr.kv.slice(0, 200) }));
+  check("grant: the grant matches what the keeper actually plans — exactly one root call to StrategyRouter.unwind", gr.C.rootCalls === 1 && gr.C.target === "StrategyRouter" && gr.C.selector === "unwind" && gr.g.budgets.length === 3 && gr.g.budgets[0].token === "USDC");
+  check("grant: the card says out loud what the per-day limits do NOT bound, and lists the movers refused from a keeper grant outright", /trusted code chosen by Oilskin/.test(gr.note) && /Permit2/.test(gr.note) && /ERC-777/.test(gr.note) && /UnbudgetableSelector/.test(gr.note));
+  const revoke = await p4.evaluate(() => { const oil = window.__oil; const px = oil.S.price.cbBTC; oil.dispatch({ type: "revokeGrant" });
+    oil.dispatch({ type: "setPrice", asset: "cbBTC", px: px * 0.5 }); const fired = Object.values(oil.S.pos.ladder).filter(v => !v).length; const chip = document.querySelector("#grantChip").textContent; const logged = oil.S.activity.some(a => /Keeper permission revoked/.test(a.t));
+    oil.dispatch({ type: "renewGrant" }); const firedAfter = Object.values(oil.S.pos.ladder).filter(v => !v).length; oil.dispatch({ type: "setPrice", asset: "cbBTC", px }); 
+    return { fired, chip, logged, firedAfter, live: oil.grantOf(oil.S.pos).live }; });
+  check("grant: revoking stops the ladder dead (no rung fires, the chip says so, the activity records it) and renewing brings protection straight back", revoke.fired === 0 && /Revoked/.test(revoke.chip) && revoke.logged === true && revoke.firedAfter > 0 && revoke.live === true, JSON.stringify(revoke));
+  await p4.setViewportSize({ width: 390, height: 800 }); await p4.waitForTimeout(150);
+  const sw2 = await p4.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
+  check("390px: the position view with the keeper-permission card still has no horizontal overflow", sw2[0] <= sw2[1], sw2.join("/"));
+  check("tester's kit: the new levers are all present (pauses, corroboration, gauge re-vote, raw batch, sandwich, grant revoke/renew/expire, the disagreement band)", ["pause:collateral","pause:borrow","pause:off","corr:off","corr:on","revote:on","revote:off","rawbatch","sandwich:on","sandwich:off","grant:revoke","grant:renew","grant:expire","mult:6.35"].every(k => html.includes(`data-tk="${k}"`)));
+  check("sim: zero console errors across every new simulation", p4.__errors.length === 0, p4.__errors.join(" | "));
+  await p4.close();
 }
 
 check("end: zero console errors on the main page across the whole suite", page.__errors.length === 0, page.__errors.join(" | "));

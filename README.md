@@ -15,15 +15,31 @@ enabled=false, "no collateral market on Base yet")` in
 Every position is owned by the user's own `OilskinAccount` — an EIP-1167 clone
 whose `owner` is the wallet that created it and can never change
 (`contracts/src/account/OilskinAccount.sol`). Oilskin's contracts hold nothing
-between transactions; the router asserts its own balance is zero at the end of
-every call (`StrategyRouter._assertHoldsNothing`). A keeper may act on an
-account only within a grant the owner signed and can revoke
-(`OilskinAccount.grant` / `revoke` / `revokeAll`).
+between transactions: the router's balance of every token it touches is
+**unchanged** across every call, asserted as a delta rather than a zero
+(`StrategyRouter._assertUnchanged` — asserting a zero on a public address was
+the audit's Critical, because one base unit sent by anybody would have bricked
+the protocol permanently). A keeper may act on an account only within a grant
+the owner signed and can revoke (`OilskinAccount.grant` / `revoke` /
+`revokeAll`), and since 2026-09-06 that grant is a single root call
+(`StrategyRouter.unwind`) whose peripheral rights only the owner can enable.
+
+**Oilskin does have one privileged role, and says so.** The `CollateralRegistry`
+owner chooses which asset is offered at which venue contract. It can disable any
+asset **instantly**, move the entry health-factor floor **instantly** within
+(1.0, 10.0], and replace a venue **after an immutable on-chain delay** (2 days
+as deployed) — after which that new contract receives every calling account's
+peripheral rights. The delay and its events are a warning, not a prohibition.
+The product therefore makes no claim of being free of operator powers — the
+phrasings that used to appear in the UI copy are now in a banned-words list and
+grep-tested in `web/test/copy.test.ts` and `prototype/test/verify-toggle.mjs`.
+See `docs/RISKS.md` §16.
 
 **This is a demo-status build.** Nothing is deployed on Base, no transaction has
-been signed or broadcast, and no external audit has been done. The web app runs
-in demo mode until a deployment's addresses are configured
-(`web/lib/env.ts: contractsConfigured()`).
+been signed or broadcast, and no external audit has been done — an internal
+adversarial audit (wave 1, four lenses) and its fix round are recorded in
+`docs/AUDIT-2026-09-06.md`. The web app runs in demo mode until a deployment's
+addresses are configured (`web/lib/env.ts: contractsConfigured()`).
 
 Abbreviations used below: LP = liquidity provision; LTV = loan-to-value; RPC =
 remote procedure call (a chain node endpoint); ABI = application binary
@@ -44,6 +60,13 @@ recorded volatility; it would need **2.02×** today's net emissions to clear.
 The cbZEC/USDC gauge has `rewardRate() = 0` (never voted, read 2026-09-05), so
 cbZEC LP earns nothing today and is never offered.
 
+Since the audit the gate prices every cell **twice** — the published closed form
+and a Monte-Carlo-calibrated form — and offers only when both clear the borrow.
+At the boundary where the closed form used to flip, it was 0.2–32 points
+optimistic; seven of the eight cells it would have offered at their own
+published break-even are now refused as `within_model_uncertainty`
+(`docs/MODEL-NUMBERS-2026-09-05.md`).
+
 Gauge-emission inputs are the 2026-08-31 words (block 50675328): the build
 container has no chain RPC. Re-run `npm run backfill -- sample` and
 `npm run model` in `services/yield` with a live RPC before believing any number.
@@ -56,16 +79,16 @@ until the gate flips. The gate is computed, never curated
 
 ## Repo layout
 
-| Path | What | Verified state (2026-09-05, this tree) |
+| Path | What | Verified state (2026-09-06, this tree) |
 |---|---|---|
-| `contracts/` | Foundry — `OilskinAccount` + factory, `StrategyRouter`, `AaveV3Venue`, `SnuggleLpVenue`, `CollateralRegistry`, `AerodromeSwapAdapter`, `MorphoBlueVenue` (disabled skeleton), `PythOracleAdapter` (v1.1, unused) | 181 passed / 0 failed / 8 skipped (fork tests need `FORK_URL`), 13 suites |
-| `agent/` | Keeper daemon (viem) — discovers accounts, values Aave health fail-closed, runs the shared ladder, acts only via `execAsKeeper` inside the user's grant | 139 tests / 29 suites; `verify-abi` 36/36 |
-| `services/yield/` | Live Aave rates, Aerodrome gauge emissions, the yield gate, the LP model, empirical bands — HTTP API + backfill CLI | 105 tests |
-| `web/` | Next.js 14 — wallet connect, cbZEC onboarding, wizard, chain-read dashboard, CoW spot; demo mode without a wallet | 89 unit tests; Playwright 12/12 |
-| `packages/shared/` | The one source for addresses, fees, the health-factor ladder, LTV presets, widths, pools | 52 tests |
-| `prototype/` | `simple.html` and `index.html` — dependency-free walkthroughs pinned to the same facts and model numbers | 216 checks (85 + 80 + 45 + 6) |
-| `scripts/verify-abi.mjs` | Generates / diffs `contracts/abi/oilskin-abi.json` from `contracts/out` | 266/266 |
-| `docs/` | `ARCHITECTURE` · `FLOWS` · `RISKS` · `AUDIT` · `AUDIT-SCOPE` · `TESTING` · `PRIVACY` · `CONTRACT-ABI` · `VERIFIED-BASE-FACTS` · `BASE-PIVOT-2026-09` · `BUILD-SPEC-2026-09` · `YIELD-SERVICE` · `MODEL-NUMBERS-2026-09-05` · `CHANGELOG` | this build |
+| `contracts/` | Foundry — `OilskinAccount` + factory, `StrategyRouter`, `AaveV3Venue`, `SnuggleLpVenue`, `CollateralRegistry`, `AerodromeSwapAdapter`, `MorphoBlueVenue` (disabled skeleton), `PythOracleAdapter` (v1.1, unused) | 244 passed / 0 failed / 8 skipped (fork tests need `FORK_URL`), 18 suites |
+| `agent/` | Keeper daemon (viem) — discovers accounts, values Aave health fail-closed with per-feed staleness, runs the shared ladder, acts only via one root `StrategyRouter.unwind` inside the user's grant, and notifies | 171 tests / 36 suites; `verify-abi` 54/54 |
+| `services/yield/` | Live Aave rates, Aerodrome gauge emissions, the two-model yield gate, the LP model, empirical bands — HTTP API + backfill CLI | 131 tests |
+| `web/` | Next.js 14 — wallet connect, cbZEC onboarding, wizard, chain-read dashboard with a keeper panel and a pending-venue banner, CoW spot; demo mode without a wallet | 125 unit tests; Playwright 12/12 |
+| `packages/shared/` | The one source for addresses, fees, the health-factor ladder, LTV presets, widths, pools | 53 tests |
+| `prototype/` | `simple.html` and `index.html` — dependency-free walkthroughs pinned to the same facts and model numbers | 289 checks (118 + 109 + 56) + 6 fuzz |
+| `scripts/verify-abi.mjs` | Generates / diffs `contracts/abi/oilskin-abi.json` from `contracts/out` | 303/303 |
+| `docs/` | `ARCHITECTURE` · `FLOWS` · `RISKS` · `AUDIT` · `AUDIT-SCOPE` · `AUDIT-2026-09-06` · `TESTING` · `PRIVACY` · `CONTRACT-ABI` · `VERIFIED-BASE-FACTS` · `BASE-PIVOT-2026-09` · `BUILD-SPEC-2026-09` · `YIELD-SERVICE` · `MODEL-NUMBERS-2026-09-05` · `CHANGELOG` | this build |
 
 ## Run every suite
 
@@ -74,7 +97,7 @@ until the gate flips. The gate is computed, never curated
 cd contracts
 git clone --depth 1 --branch v5.7.0 https://github.com/OpenZeppelin/openzeppelin-contracts lib/openzeppelin-contracts
 git clone --depth 1 --branch v1.16.2 https://github.com/foundry-rs/forge-std lib/forge-std
-forge test                                   # 181 pass, 8 fork tests SKIPPED without FORK_URL
+forge test                                   # 244 pass, 8 fork tests SKIPPED without FORK_URL
 FORK_URL=<Base RPC> forge test --match-path test/fork/BaseFork.t.sol -vv   # the 8 fork tests
 # (offline container with a pre-fetched solc: FOUNDRY_PROFILE=local forge test)
 
@@ -83,14 +106,14 @@ node scripts/verify-abi.mjs                  # exits 1 on drift; --write to rege
 
 # Node workspaces (Node ≥ 22). Build shared first; every consumer imports its dist/.
 npm install
-npm test -w @zyo/shared                      # 52
-npm test -w @zyo/agent                       # tsc + verify-abi (36/36) + 139 tests
-npm test -w @zyo/yield                       # tsc + 105 tests (RPC mocked with recorded chain words)
-npm test -w @zyo/web                         # 89 unit tests (ABI drift + MODEL-NUMBERS pin run, not skipped)
+npm test -w @zyo/shared                      # 53
+npm test -w @zyo/agent                       # tsc + verify-abi (54/54) + 171 tests
+npm test -w @zyo/yield                       # tsc + 131 tests (RPC mocked with recorded chain words)
+npm test -w @zyo/web                         # 125 unit tests (ABI drift + both MODEL-NUMBERS pins run, not skipped)
 cd web && PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npx playwright test   # 12 (6 scenarios × 2 viewports)
 
 # Prototypes (Playwright + Chromium)
-CHROMIUM_PATH=/opt/pw-browsers/chromium node prototype/test/run-all.mjs   # 85 + 80 + 45 + 6
+CHROMIUM_PATH=/opt/pw-browsers/chromium node prototype/test/run-all.mjs   # 118 + 109 + 56 + 6
 ```
 
 `docs/TESTING.md` says what each suite proves and how the counts were obtained.
@@ -117,7 +140,9 @@ npm run web
 Real, in this tree: the contracts above with their tests; the keeper; the
 yield service and model; the web app in demo mode; the prototypes.
 
-Plans, not shipped: a deployment on Base; an external audit; the cbZEC
+Plans, not shipped: a deployment on Base; an external audit; a multisig
+registry owner and a watcher on `VenueChangeProposed`; a keeper notification
+channel that actually reaches a person; the cbZEC
 collateral market and the Pyth oracle adapter in use (v1.1, `docs/BASE-PIVOT-2026-09.md`
 §3); a Morpho Blue venue (skeleton reverts `VenueDisabled`); the perps and
 tokenized-stock lines (v1.2). `docs/RISKS.md` states every risk with what

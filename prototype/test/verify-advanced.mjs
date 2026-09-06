@@ -211,6 +211,112 @@ await page.evaluate(() => { const o = window.__oil; o.S.positions.forEach(p => p
   await p2.close();
 }
 
+/* ── 10. the fix round: the two-model gate, the new refusals, openBorrowOnly
+   and the entry floor, the swap floor, the keeper's grant, honest custody ── */
+{
+  const CLAIMS = [/no operator custody/i, /No operator custody/, /no owner powers/i, /has no power over your funds/i, /\bnon-custodial\b/i];
+  check("custody: the page never claims 'no operator custody', 'no owner powers' or that the router has no power over funds", CLAIMS.every(re => !re.test(html)), CLAIMS.filter(re => re.test(html)).map(String).join(", "));
+  const C = await o("CONTRACTS");
+  check("custody: the operator's remaining powers are enumerated and stated as a residual a watcher only partly mitigates", C.registry.ownerCanStill.length === 3 && C.registry.ownerCannot.length === 3 && /still an owner|not claim/i.test(C.registry.residual) && C.registry.timelockDelayS === 172800);
+  const own = await page.evaluate(() => ({ can: [...document.querySelectorAll("#docOwnerCan li")].length, cannot: [...document.querySelectorAll("#docOwnerCannot li")].length, resid: document.querySelector("#docOwnerResidual").textContent, per: document.querySelector("#docPeripheral").textContent }));
+  check("custody: Ownership & the keeper renders what the owner can and cannot do, names the delay, and explains that peripheral rights are opt-in per call", own.can === 3 && own.cannot === 3 && /2 days/.test(own.resid) && /plain call/.test(own.per) && /allowCallback/.test(own.per) && /bounded at 8/.test(own.per), JSON.stringify(own).slice(0, 260));
+  check("router: the balance claim is the delta form, not an absolute zero", /balance of every token it will touch/.test(html) && /unchanged/.test(html) && C.routerBalance.assertion === "delta" && /RouterBalanceChanged/.test(C.routerBalance.error));
+
+  /* the boundary guard, at custom widths too */
+  const bnd = await page.evaluate(() => { const oil = window.__oil; return oil.MODEL.boundary.map(([id, w, gb, cl, mc]) => { const pl = oil.poolById(id); const g0 = oil.gate(pl, 4.828, w, gb / pl.emissions[w]);
+    let lo = 0.01, hi = 500; for (let i = 0; i < 200; i++) { const mid = (lo + hi) / 2; (oil.lpNetPct(pl, w, mid) > 4.828) ? hi = mid : lo = mid; }
+    const g1 = oil.gate(pl, 4.828, w, hi * (1 + 1e-9)); return { id, w, cl, mc, gotCl: g0.net, gotMc: g0.mcNet, reason: g1.reason, ok: g1.ok }; }); });
+  check("model: all 8 boundary cells reproduce both forms from the pinned coefficients, and 7 of 8 are refused within_model_uncertainty just above their break-even", bnd.length === 8 && bnd.every(r => near(r.gotCl, r.cl, 0.02) && near(r.gotMc, r.mc, 0.02)) && bnd.filter(r => r.reason === "within_model_uncertainty").length === 7 && bnd.filter(r => r.ok).length === 1, JSON.stringify(bnd.map(r => [r.id, r.w, r.reason])));
+  const custom = await page.evaluate(() => { const oil = window.__oil; const pl = oil.poolById("aero-cbbtc-usdc"); const g = oil.gate(pl, 4.828, 1000, 12); const gp = oil.gate(pl, 4.828, 1500, 12); const none = oil.gate(oil.poolById("aero-weth-link"), 4.828, 4500, 12); return { custom: g.reason, why: g.why, preset: gp.reason, none: none.reason }; });
+  check("gate: a width the Monte Carlo has never been run at is refused mc_calibration_stale — the advanced build cannot offer a cell the second model has not priced", custom.custom === "mc_calibration_stale" && /re-run/.test(custom.why) && custom.preset === "ok", JSON.stringify(custom).slice(0, 260));
+  check("gate: a pool with no calibration at all is refused rather than falling back to the closed form", custom.none === "no_volatility_input" || custom.none === "mc_calibration_unavailable");
+  const sweep = await page.evaluate(() => { const oil = window.__oil; const bad = []; for (const pl of oil.MODEL.pools) for (let w = 150; w <= 5000; w += 50) for (const m of [1, 2, 4, 6.35, 12, 30, 60]) { const g = oil.gate(pl, 4.828, w, m); if (g.ok && !(g.mcNet > 4.828)) bad.push([pl.id, w, m]); } return bad; });
+  check("gate: across every pool × every width in the engine's bounds × 7 emissions multiples, the served gate is never more permissive than the Monte-Carlo form", sweep.length === 0, JSON.stringify(sweep.slice(0, 3)));
+
+  const p3 = await openPage(b, srv.url("index.html"));
+  await p3.evaluate(() => { const oil = window.__oil; oil.dispatch({ type: "connect", provider: "coinbase" }); });
+  const refusals = await p3.evaluate(() => { const oil = window.__oil; const out = {};
+    const band = oil.gate(oil.poolById("aero-weth-cbbtc"), oil.S.borrowPct, 150, 12); out.band = { reason: band.reason, net: band.net, mc: band.mcNet, why: band.why };
+    oil.dispatch({ type: "sim", kind: "revote", on: true }); const im = oil.gate(oil.poolById("aero-aero-weth"), oil.S.borrowPct, 4500, 1, oil.gopt()); out.impl = { reason: im.reason, gross: im.gross, why: im.why }; oil.dispatch({ type: "sim", kind: "revote", on: false });
+    oil.dispatch({ type: "sim", kind: "corroborated", on: false }); out.uncorr = oil.MODEL.pools.map(pl => oil.gate(pl, oil.S.borrowPct, 4500, 12, oil.gopt()).reason); oil.dispatch({ type: "sim", kind: "corroborated", on: true });
+    oil.dispatch({ type: "sim", kind: "paused", asset: "cbBTC", on: true }); out.collPaused = oil.gate(oil.poolById("aero-cbbtc-usdc"), oil.S.borrowPct, 4500, 12, oil.gopt({ collateral: "cbBTC" })).reason; out.wiz = oil.wizDecision(oil.S).why; oil.dispatch({ type: "sim", kind: "paused", asset: "cbBTC", on: false });
+    oil.dispatch({ type: "sim", kind: "paused", asset: "USDC", on: true }); out.borrowPaused = oil.gate(oil.poolById("aero-cbbtc-usdc"), oil.S.borrowPct, 4500, 12, oil.gopt({ collateral: "cbBTC" })).reason; oil.dispatch({ type: "sim", kind: "paused", asset: "USDC", on: false });
+    const oob = oil.gate(oil.poolById("aero-cbbtc-usdc"), 4.828, 4500, 400, { maxEmissionsAprPct: 1e9, maxAbsNetPct: 100 }); out.oob = oob.reason;
+    let reachable = false; for (let m = 1; m <= 100; m += 0.5) for (const pool of oil.MODEL.pools) for (const ww of [150, 300, 784, 1500, 2356, 4500]) if (oil.gate(pool, 4.828, ww, m).reason === "net_out_of_bounds") reachable = true; out.reachable = reachable;
+    return out; });
+  check("gate: WHAT-IF ×12 puts WETH/cbBTC at its tightest width inside the disagreement band — refused within_model_uncertainty with both numbers in the sentence", refusals.band.reason === "within_model_uncertainty" && refusals.band.net > 4.828 && refusals.band.mc < 4.828 && /closed form/.test(refusals.band.why) && /Monte Carlo/.test(refusals.band.why), JSON.stringify(refusals.band).slice(0, 260));
+  check("gate: the AERO/WETH gauge's own recorded reading is refused emissions_implausible above the 1,000% ceiling", refusals.impl.reason === "emissions_implausible" && refusals.impl.gross > 1000 && /plausibility ceiling/.test(refusals.impl.why));
+  check("gate: an uncorroborated staked-liquidity anchor refuses every gauge that has emissions with insufficient_samples", refusals.uncorr.filter(r => r === "insufficient_samples").length >= 6 && refusals.uncorr.every(r => r === "insufficient_samples" || r === "no_emissions"));
+  check("gate: guardian pauses surface as collateral_paused / borrow_paused, and the wizard refuses to continue", refusals.collPaused === "collateral_paused" && refusals.borrowPaused === "borrow_paused", JSON.stringify(refusals).slice(0, 200));
+  check("gate: net_out_of_bounds is a real branch, and the emissions ceiling makes it unreachable on any live input", refusals.oob === "net_out_of_bounds" && refusals.reachable === false);
+  const docs = await p3.evaluate(() => ({ reasons: [...document.querySelectorAll("#docReasons tbody tr")].map(r => [r.children[0].textContent, r.children[1].textContent]), bnd: [...document.querySelectorAll("#docBoundary tbody tr")].length, note: document.querySelector("#docBoundaryNote").textContent, grant: [...document.querySelectorAll("#docGrant tbody tr")].length, floor: document.querySelector("#docFloorP").textContent, swap: document.querySelector("#docSwapP").textContent }));
+  const btv = await p3.evaluate(() => [...document.querySelectorAll("#docBoundary tbody tr")].map(r => r.lastElementChild.textContent.trim()));
+  check("docs: the boundary table's own served-gate column shows 7 refusals and the single cell where the two forms agree — the table is evaluated, not narrated", btv.filter(x => /within_model_uncertainty/.test(x)).length === 7 && btv.filter(x => /offered/.test(x)).length === 1, JSON.stringify(btv));
+  check("docs: all 13 gate refusals are catalogued with a plain-English sentence, and the boundary table renders its 8 cells with the worst optimism named", docs.reasons.length === 13 && docs.reasons.every(([k, v]) => v.length > 40) && docs.bnd === 8 && /32\.02 points/.test(docs.note) && /6000 paths/.test(docs.note), JSON.stringify({ n: docs.reasons.length, bnd: docs.bnd }));
+  check("docs: the keeper's grant is tabulated field by field, and the entry-floor and swap-floor sections name the contract that enforces each", docs.grant === 6 && /AaveV3Venue\.borrow/.test(docs.floor) && /EntryHfTooLow/.test(docs.floor) && /1\.07/.test(docs.floor) && /minOutFor/.test(docs.swap) && /maxSlippageBps/.test(docs.swap));
+
+  /* borrow-and-hold now goes through openBorrowOnly, and the floor is enforced */
+  const hold = await p3.evaluate(() => { const oil = window.__oil; oil.dispatch({ type: "wiz", key: "mode", value: "HOLD" }); oil.dispatch({ type: "wiz", key: "amount", value: 0.1 }); oil.dispatch({ type: "wiz", key: "ltv", value: 50 }); oil.dispatch({ type: "wiz", key: "step", value: 4 }); oil.renderAll();
+    const steps = document.querySelector("#revTx").textContent; const rev = document.querySelector("#revList").textContent;
+    return { steps, rev, decision: oil.wizDecision(oil.S) }; });
+  check("hold: the borrow-and-hold flow is one openBorrowOnly router call, not a hand-built execBatch, and the review names the entry floor and where it is enforced", /openBorrowOnly/.test(hold.steps + hold.rev) && !/execBatch\(\[permit2/.test(hold.steps) && /AaveV3Venue\.borrow/.test(hold.rev) && /EntryHfTooLow/.test(hold.rev) && hold.decision.ok, JSON.stringify({ ok: hold.decision.ok }).slice(0, 120));
+  const floorBlock = await p3.evaluate(() => { const oil = window.__oil; const r = oil.CHAIN_READ.aaveReserves.cbBTC; const hfRaw = r.liquidationThresholdBps / r.ltvBps;
+    document.querySelector("#tkBtn").click(); document.querySelector('[data-tk="rawbatch"]').click();
+    const why = oil.S.sim.failNext.why;
+    oil.dispatch({ type: "beginFlow" }); const id = oil.S.flow.id; for (let i = 0; i < 6; i++) oil.dispatch({ type: "flowAdvance", id }); oil.dispatch({ type: "flowComplete", id });
+    const out = { why, hfRaw, status: oil.S.flow.status, n: oil.S.positions.length, credited: oil.S.credited.length }; oil.dispatch({ type: "flowDismiss" }); return out; });
+  check("entry floor: the pre-fix raw execBatch at Aave's full LTV is refused — EntryHfTooLow(1.07, 1.55), computed, atomic, nothing opened", /EntryHfTooLow\(1\.07, 1\.55\)/.test(floorBlock.why) && near(floorBlock.hfRaw, 1.07, 0.005) && floorBlock.status === "failed" && floorBlock.n === 0 && floorBlock.credited === 0, JSON.stringify({ why: floorBlock.why.slice(0, 100) }));
+  const opened = await p3.evaluate(() => { const oil = window.__oil; oil.dispatch({ type: "wiz", key: "mode", value: "HOLD" }); oil.dispatch({ type: "wiz", key: "amount", value: 0.1 }); oil.dispatch({ type: "beginFlow" }); const id = oil.S.flow.id; for (let i = 0; i < 6; i++) oil.dispatch({ type: "flowAdvance", id }); oil.dispatch({ type: "flowComplete", id }); oil.dispatch({ type: "flowDismiss" });
+    const p = oil.S.positions[0]; return { kind: p.kind, hf: oil.accountHf(oil.S, oil.S.wallet.addr), floor: oil.LADDER.entryHfFloor, grant: oil.grantOf(oil.S, oil.S.wallet.addr) }; });
+  check("hold: a hold position really opens at or above the advertised floor, and signing it grants the keeper its permission", opened.kind === "HOLD" && opened.hf >= opened.floor - 1e-9 && opened.grant.live && Math.abs(opened.grant.remainingDays - 30) < 1e-9, JSON.stringify({ hf: opened.hf, days: opened.grant.remainingDays }));
+
+  /* the swap floor on an LP unwind */
+  const lp = await p3.evaluate(() => { const oil = window.__oil; oil.dispatch({ type: "setMult", mult: 4 }); oil.dispatch({ type: "wiz", key: "mode", value: "LP" }); oil.dispatch({ type: "wiz", key: "pool", value: "aero-cbbtc-usdc" }); oil.dispatch({ type: "wiz", key: "amount", value: 0.1 }); oil.dispatch({ type: "beginFlow" }); const id = oil.S.flow.id; for (let i = 0; i < 6; i++) oil.dispatch({ type: "flowAdvance", id }); oil.dispatch({ type: "flowComplete", id }); oil.dispatch({ type: "flowDismiss" });
+    const p = oil.S.positions.find(x => x.kind === "LP"); const pool = oil.poolById(p.pool);
+    const l = oil.swapLegFor(pool, p.lp + p.idle);
+    return { minOut: l.minOut, quotedOut: l.quotedOut, slip: l.maxSlippageBps, cap: l.cap,
+      direct: oil.minOutFor(l.amountIn, l.quotedIn, l.quotedOut, l.maxSlippageBps).minOut,
+      bigger: oil.swapLegFor(pool, p.lp + p.idle, 50, { sizeFactor: 1.4 }).reverts,
+      sand: oil.swapLegFor(pool, p.lp + p.idle, 50, { priceFactor: 0.6 }).reverts,
+      loose: oil.swapLegFor(pool, p.lp + p.idle, 501).error, zero: oil.minOutFor(1, 0, 1, 50).error, id: p.id }; });
+  check("swap: the unwind's floor is the adapter's own formula, the tolerance is 0.50% under an on-chain cap of 5.00%, and a bare minimum-out cannot be expressed", near(lp.minOut, lp.direct, 1e-12) && near(lp.minOut, lp.quotedOut * (1 - lp.slip / 10000), 1e-9) && lp.cap === 500 && /SlippageTooHigh\(501, 500\)/.test(lp.loose) && lp.zero === "ZeroQuote()");
+  check("swap: a leg that settles larger is protected in proportion; an adverse price is not, so the swap reverts", lp.bigger === false && lp.sand === true);
+  const sandAdv = await p3.evaluate((id) => { const oil = window.__oil; oil.dispatch({ type: "sim", kind: "sandwich", on: true });
+    oil.S = oil.reduce(oil.S, { type: "tick", dt: oil.MAX_TICK_S }); oil.renderAll();   // clear the engine's 60s hold so the LP is withdrawable
+    const before = JSON.parse(JSON.stringify(oil.S.positions));
+    const card = [...document.querySelectorAll("#posList .pos, #posList .card, #posList > div")].find(el => /cbBTC\/USDC/.test(el.textContent));
+    const btn = card ? card.querySelector("[data-act='withdraw']") : null;
+    if (!btn || btn.disabled) return { skipped: true, why: btn ? "disabled" : "no button" };
+    btn.click();
+    const swapTxt = document.querySelector("#wdSwap").textContent; const shown = document.querySelector("#wdRevert").style.display;
+    document.querySelector("#wdConfirm").click();
+    const moved = JSON.stringify(oil.S.positions) !== JSON.stringify(before); const act = oil.S.activity[0];
+    oil.dispatch({ type: "sim", kind: "sandwich", on: false }); document.querySelector("#wdOverlay").classList.remove("on");
+    return { swapTxt, shown, moved, act: act.t + " " + act.d }; }, lp.id);
+  check("swap: a sandwiched unwind reverts in the UI — the modal shows the enforced floor and the confirm moves nothing", !sandAdv.skipped && /reverts below/.test(sandAdv.swapTxt) && sandAdv.shown === "block" && sandAdv.moved === false && /Withdrawal reverted/.test(sandAdv.act), JSON.stringify(sandAdv).slice(0, 240));
+
+  /* the keeper's grant */
+  const gr = await p3.evaluate(() => { const oil = window.__oil; oil.renderAll(); return { kv: document.querySelector("#grantKv").textContent, chip: document.querySelector("#grantChip").textContent, note: document.querySelector("#grantNote").textContent, shown: document.querySelector("#grantCard").style.display, C: oil.CONTRACTS.grant, g: oil.grantOf(oil.S, oil.S.wallet.addr) }; });
+  check("grant: the account card names one target, one function, the daily limits, the 24h period and a live expiry countdown", gr.shown === "block" && /StrategyRouter\.unwind\(\)/.test(gr.kv) && /1 root call, nothing else/.test(gr.kv) && /24h/.test(gr.kv) && /Live · expires in \d+ days/.test(gr.chip) && gr.g.remainingDays > 29, JSON.stringify({ chip: gr.chip }).slice(0, 160));
+  check("grant: it matches what the keeper plans (one root unwind) and says out loud what the per-day limits do not bound", gr.C.rootCalls === 1 && gr.C.selector === "unwind" && /trusted code chosen by Oilskin/.test(gr.note) && /UnbudgetableSelector/.test(gr.note) && /Permit2/.test(gr.note));
+  const life = await p3.evaluate(() => { const oil = window.__oil; const px = oil.S.price.cbBTC; const own = oil.S.wallet.addr;
+    oil.dispatch({ type: "expireGrant" }); oil.dispatch({ type: "setPrice", asset: "cbBTC", px: px * 0.45 });
+    const firedExpired = Object.values(oil.ladderOf(oil.S, own)).filter(v => !v).length; const chip = document.querySelector("#grantChip").textContent; const logged = oil.S.activity.some(a => /Keeper permission expired/.test(a.t));
+    const n0 = oil.S.activity.length; for (let i = 0; i < 30; i++) oil.dispatch({ type: "setPrice", asset: "cbBTC", px: px * (0.45 + i * 1e-7) }); const churn = oil.S.activity.length - n0;
+    const n1 = oil.S.activity.length; oil.dispatch({ type: "renewGrant" }); const acted = oil.S.activity.slice(0, oil.S.activity.length - n1).some(a => /Heads-up|Protection ladder|Earnings repaid/.test(a.t));
+    oil.dispatch({ type: "setPrice", asset: "cbBTC", px }); oil.dispatch({ type: "renewGrant" });
+    return { firedExpired, chip, logged, churn, acted, days: oil.grantOf(oil.S, own).remainingDays }; });
+  check("grant: an expired permission stops the ladder dead, is announced exactly once, and renewing restores the full 30-day term and protection", life.firedExpired === 0 && /Expired/.test(life.chip) && life.logged === true && life.churn === 0 && life.acted === true && Math.abs(life.days - 30) < 1e-9, JSON.stringify(life));
+  const ff = await p3.evaluate(() => { const oil = window.__oil; for (let i = 0; i < 24 * 30; i++) oil.S = oil.reduce(oil.S, { type: "tick", dt: oil.MAX_TICK_S }); oil.renderAll(); const g = oil.grantOf(oil.S, oil.S.wallet.addr); return { expired: g.expired, remainingS: g.remainingS, chip: document.querySelector("#grantChip").textContent }; });
+  check("grant: 30 demo days of ticks run the permission down to exactly its expiry — the countdown is the real clock, not decoration", ff.expired && ff.remainingS === 0 && /Expired/.test(ff.chip), JSON.stringify(ff));
+  await p3.setViewportSize({ width: 390, height: 800 }); await p3.waitForTimeout(150);
+  const sw3 = await p3.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
+  check("390px: the dashboard with the keeper-permission card has no horizontal overflow", sw3[0] <= sw3[1], sw3.join("/"));
+  check("tester's kit: the new levers are all present (pauses, corroboration, gauge re-vote, raw batch, sandwich, grant revoke/renew/expire, the disagreement band)", ["pause:collateral","pause:borrow","pause:off","corr:off","corr:on","revote:on","revote:off","rawbatch","sandwich:on","sandwich:off","grant:revoke","grant:renew","grant:expire","mult:12"].every(k => html.includes(`data-tk="${k}"`)));
+  check("sim: zero console errors across every new simulation", p3.__errors.length === 0, p3.__errors.join(" | "));
+  await p3.close();
+}
+
 check("end: zero console errors on the main page across the whole suite", page.__errors.length === 0, page.__errors.join(" | "));
 await b.close(); srv.close();
 const out = done();

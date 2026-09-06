@@ -5,6 +5,13 @@
  *   getReserveData(address)              → liquidityRate / variableBorrowRate (ray)
  *   getReserveConfigurationData(address) → LTV / liquidation threshold / bonus (bps),
  *                                          collateral + borrowing flags
+ *   getPaused(address)                   → the guardian pause flag
+ *
+ * `getPaused` is a SEPARATE call on purpose: the 10-word configuration tuple
+ * carries isActive and isFrozen but NOT isPaused, so before it was read a
+ * paused reserve decoded as active-and-unfrozen and the gate kept quoting its
+ * borrow rate while every supply/borrow reverted on chain — fail-closed at
+ * the contract, wrong at the surface (audit wave 1, lens D LOW-1).
  *
  * Addresses come ONLY from @zyo/shared AAVE_V3 / BASE_TOKENS
  * (docs/VERIFIED-BASE-FACTS.md, read live 2026-09-05: USDC variable borrow
@@ -30,10 +37,13 @@ import type { AaveRatesSample, AaveReserve, Address } from "../types.js";
 export const SEL_GET_RESERVE_DATA = "0x35ea6a75";
 /** keccak("getReserveConfigurationData(address)")[:4] — pinned in test/aave.test.ts. */
 export const SEL_GET_RESERVE_CONFIGURATION_DATA = "0x3e150141";
+/** keccak("getPaused(address)")[:4] — pinned in test/aave.test.ts. */
+export const SEL_GET_PAUSED = "0xb55d9904";
 
 /** Word counts the two calls MUST return (strict decoding). */
 export const RESERVE_DATA_WORDS = 12;
 export const RESERVE_CONFIG_WORDS = 10;
+export const PAUSED_WORDS = 1;
 
 const RAY = 10n ** 27n;
 /** ray → percent with 4-decimal precision (4.828% ↔ 0.04828 ray-fraction). */
@@ -84,10 +94,12 @@ export function decodeReserve(
   symbol: string,
   address: Address,
   reserveDataRaw: string | undefined,
-  configRaw: string | undefined
+  configRaw: string | undefined,
+  pausedRaw: string | undefined
 ): AaveReserve {
   const rd = strictWords(reserveDataRaw, RESERVE_DATA_WORDS, `${symbol}.getReserveData`);
   const cf = strictWords(configRaw, RESERVE_CONFIG_WORDS, `${symbol}.getReserveConfigurationData`);
+  const pz = strictWords(pausedRaw, PAUSED_WORDS, `${symbol}.getPaused`);
   // getReserveData: (unbacked, accruedToTreasuryScaled, totalAToken,
   //   totalStableDebt, totalVariableDebt, liquidityRate, variableBorrowRate,
   //   stableBorrowRate, averageStableBorrowRate, liquidityIndex,
@@ -120,6 +132,7 @@ export function decodeReserve(
     borrowingEnabled: boolWord(w(6), `${symbol}.borrowingEnabled`),
     isActive: boolWord(w(8), `${symbol}.isActive`),
     isFrozen: boolWord(w(9), `${symbol}.isFrozen`),
+    isPaused: boolWord(pz, `${symbol}.getPaused`),
   };
 }
 
@@ -163,12 +176,18 @@ export class AaveSource {
           "latest",
         ],
       },
+      {
+        method: "eth_call",
+        params: [{ to: this.dataProvider, data: SEL_GET_PAUSED + encodeAddressArg(r.address) }, "latest"],
+      },
     ]);
     const results = await this.rpc.callMany<string>(calls);
     if (results.length !== calls.length) {
       throw new AaveDecodeError("batch", `expected ${calls.length} results, got ${results.length}`);
     }
-    const decoded = reserves.map((r, i) => decodeReserve(r.symbol, r.address, results[2 * i], results[2 * i + 1]));
+    const decoded = reserves.map((r, i) =>
+      decodeReserve(r.symbol, r.address, results[3 * i], results[3 * i + 1], results[3 * i + 2])
+    );
     const borrow = decoded[0]!;
     if (!borrow.borrowingEnabled || !borrow.isActive || borrow.isFrozen) {
       throw new AaveDecodeError(BORROW_ASSET, "reserve is not borrowable (flags) — refusing to quote a borrow rate");

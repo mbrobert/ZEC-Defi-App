@@ -8,6 +8,7 @@ import {
   AERODROME_VOTER,
   GaugeDecodeError,
   GaugeSource,
+  MIN_STAKED_SAMPLES,
   onchainToken1,
   OUTLIER_FACTOR,
   SEL,
@@ -122,16 +123,22 @@ test("onchainToken1 sorts by address (display order is wrong for USDT/USDC and c
 
 test("gauge APR model reproduces the live 2026-08-31 words at the S4 widths (4500 ≈ 7.63 %, 1500 ≈ 24.08 %, 300 ≈ 122.41 %)", async () => {
   const t = makeTransport();
-  const s = await src(t).sample("aero-usdc-weth-5", POOL, PRICES);
+  const g = src(t);
+  // The anchor has to be corroborated before any APR is published, so read
+  // MIN_STAKED_SAMPLES times; identical readings agree with each other.
+  let s = await g.sample("aero-usdc-weth-5", POOL, PRICES);
+  assert.equal(s.aprByWidthPct, null, "no APR is published on an uncorroborated anchor");
+  for (let i = 1; i < MIN_STAKED_SAMPLES; i++) s = await g.sample("aero-usdc-weth-5", POOL, PRICES);
 
   assert.equal(s.gauge, GAUGE);
   assert.equal(s.poolId, "aero-usdc-weth-5");
   assert.equal(s.epochActive, true);
   assert.equal(s.outlier, false);
-  assert.equal(s.samples, 1);
+  assert.equal(s.corroborated, true);
+  assert.equal(s.samples, MIN_STAKED_SAMPLES);
   assert.equal(s.rewardRateWeiPerSec, AWETH.rewardRateWeiPerSec);
   assert.equal(s.feePips, Number(FEE_PIPS));
-  assert.ok(Math.abs(s.wholePoolAprPct - 64.99) < 0.06, `wholePool ${s.wholePoolAprPct}`);
+  assert.ok(Math.abs(s.wholePoolAprPct! - 64.99) < 0.06, `wholePool ${s.wholePoolAprPct}`);
   // Expected values computed independently by scripts/lp-sim.py from the same words.
   assert.ok(Math.abs(s.aprByWidthPct!["4500"]! - 7.625) < 0.01, `4500 → ${s.aprByWidthPct!["4500"]}`);
   assert.ok(Math.abs(s.aprByWidthPct!["1500"]! - 24.0813) < 0.01, `1500 → ${s.aprByWidthPct!["1500"]}`);
@@ -158,43 +165,48 @@ test("gauge address is cached; a registry-recorded gauge that disagrees with the
 });
 
 test("stakedLiquidity is rolling-averaged across accepted samples (noise damping), samples count exposed", async () => {
-  const first = makeTransport({ stakedLiquidity: STAKED_LIQUIDITY });
-  const g = src(first);
-  const s1 = await g.sample("p", POOL, PRICES);
-  // Second reading doubles (inside the outlier band): average (1x + 2x)/2 = 1.5x → APR falls to 1/1.5.
-  const second = makeTransport({ stakedLiquidity: STAKED_LIQUIDITY * 2n });
-  (g as unknown as { rpc: RpcClient }).rpc = new RpcClient("http://mock.invalid", { fetchImpl: second.fetchImpl, retries: 0 });
+  const g = src(makeTransport({ stakedLiquidity: STAKED_LIQUIDITY }));
+  const swap = (t: ReturnType<typeof makeTransport>) => {
+    (g as unknown as { rpc: RpcClient }).rpc = new RpcClient("http://mock.invalid", { fetchImpl: t.fetchImpl, retries: 0 });
+  };
+  let s1!: Awaited<ReturnType<typeof g.sample>>;
+  for (let i = 0; i < MIN_STAKED_SAMPLES; i++) s1 = await g.sample("p", POOL, PRICES);
+  assert.equal(s1.samples, MIN_STAKED_SAMPLES);
+  // A fourth reading at 2x (inside the outlier band): the average of
+  // [1x, 1x, 1x, 2x] is 1.25x → the APR falls to 1/1.25 of the first.
+  swap(makeTransport({ stakedLiquidity: STAKED_LIQUIDITY * 2n }));
   const s2 = await g.sample("p", POOL, PRICES);
-  assert.equal(s2.samples, 2);
+  assert.equal(s2.samples, MIN_STAKED_SAMPLES + 1);
   assert.equal(s2.outlier, false);
-  const expected = s1.aprByWidthPct!["1500"]! / 1.5;
+  const expected = s1.aprByWidthPct!["1500"]! / 1.25;
   assert.ok(Math.abs(s2.aprByWidthPct!["1500"]! - expected) < 0.05, `averaged APR ${s2.aprByWidthPct!["1500"]} vs ${expected}`);
   assert.equal(s2.wholePoolAprPct, s1.wholePoolAprPct); // TVL-based, unchanged
 });
 
-test("outlier gate: a reading > OUTLIER_FACTOR× away from the FIRST reading is flagged and kept out of the average", async () => {
+test("outlier gate: a reading > OUTLIER_FACTOR× away from the MEDIAN of the corroborated history is flagged and kept out of the average", async () => {
   const g = src(makeTransport());
-  const s1 = await g.sample("p", POOL, PRICES);
   const swap = (t: ReturnType<typeof makeTransport>) => {
     (g as unknown as { rpc: RpcClient }).rpc = new RpcClient("http://mock.invalid", { fetchImpl: t.fetchImpl, retries: 0 });
   };
+  let s1!: Awaited<ReturnType<typeof g.sample>>;
+  for (let i = 0; i < MIN_STAKED_SAMPLES; i++) s1 = await g.sample("p", POOL, PRICES);
   swap(makeTransport({ stakedLiquidity: STAKED_LIQUIDITY * BigInt(OUTLIER_FACTOR) * 2n }));
   const big = await g.sample("p", POOL, PRICES);
   assert.equal(big.outlier, true);
-  assert.equal(big.samples, 1); // not averaged in
-  // the APR still uses the accepted history, so it does not collapse
-  assert.equal(big.aprByWidthPct!["1500"], s1.aprByWidthPct!["1500"]);
+  assert.equal(big.samples, MIN_STAKED_SAMPLES); // not averaged in
+  // an outlier reading publishes NO APR: the number it would produce is the
+  // fabrication the flag exists to catch
+  assert.equal(big.aprByWidthPct, null);
+  assert.equal(big.wholePoolAprPct, null);
   swap(makeTransport({ stakedLiquidity: STAKED_LIQUIDITY / (BigInt(OUTLIER_FACTOR) * 2n) }));
   const small = await g.sample("p", POOL, PRICES);
   assert.equal(small.outlier, true);
-  // a zero appearing after a non-zero first reading is an outlier too
-  swap(makeTransport({ stakedLiquidity: 0n }));
-  assert.equal((await g.sample("p", POOL, PRICES)).outlier, true);
-  // back inside the band → accepted again
+  // back inside the band → accepted again, and the anchor is unchanged
   swap(makeTransport({ stakedLiquidity: (STAKED_LIQUIDITY * 3n) / 2n }));
   const fine = await g.sample("p", POOL, PRICES);
   assert.equal(fine.outlier, false);
-  assert.equal(fine.samples, 2);
+  assert.equal(fine.samples, MIN_STAKED_SAMPLES + 1);
+  assert.ok(fine.aprByWidthPct!["1500"]! < s1.aprByWidthPct!["1500"]!); // bigger base, smaller APR
 });
 
 test("lapsed epoch (periodFinish ≤ now): zeros with epochActive:false, never a stale APR", async () => {
@@ -244,4 +256,76 @@ test("unusable price inputs refuse loudly (no NaN APRs served)", async () => {
   await assert.rejects(() => src(makeTransport()).sample("p", POOL, { ...PRICES, aeroUsd: NaN }), /price inputs/);
   await assert.rejects(() => src(makeTransport()).sample("p", POOL, { ...PRICES, poolTvlUsd: 0 }), /price inputs/);
   await assert.rejects(() => src(makeTransport()).sample("p", POOL, { ...PRICES, token1Usd: -1 }), /price inputs/);
+});
+
+test("FIX D-HIGH-2: the first reading is never an anchor — a tiny first stakedLiquidity publishes NO APR and cannot pin the filter", async () => {
+  // The recorded attack: one first reading 2,000× low anchored the filter at
+  // the anomaly, was served with `outlier:false` because there was nothing to
+  // compare it against (7,599.64 % against a true 3.80 %), and then rejected
+  // every subsequent CORRECT reading as an outlier — for the life of the
+  // process. Two things had to change: no APR until the anchor is corroborated,
+  // and a wrong anchor that keeps being contradicted must be dropped.
+  const TINY = STAKED_LIQUIDITY / 2000n;
+  const g = src(makeTransport({ stakedLiquidity: TINY }));
+  const swap = (t: ReturnType<typeof makeTransport>) => {
+    (g as unknown as { rpc: RpcClient }).rpc = new RpcClient("http://mock.invalid", { fetchImpl: t.fetchImpl, retries: 0 });
+  };
+
+  // 1. The anomalous FIRST reading publishes nothing at all.
+  const first = await g.sample("p", POOL, PRICES);
+  assert.equal(first.corroborated, false);
+  assert.equal(first.samples, 1);
+  assert.equal(first.aprByWidthPct, null, "an uncorroborated anchor may not produce an APR");
+  assert.equal(first.wholePoolAprPct, null);
+  assert.equal(first.outlier, false); // honest: there is nothing to test it against
+
+  // 2. The TRUE readings arrive. They disagree with the anomalous anchor, but
+  //    a run of them proves the ANCHOR is what was wrong: the history is
+  //    dropped and re-corroborated on the readings that agree with each other.
+  swap(makeTransport({ stakedLiquidity: STAKED_LIQUIDITY }));
+  let s!: Awaited<ReturnType<typeof g.sample>>;
+  for (let i = 0; i < 2 * MIN_STAKED_SAMPLES; i++) s = await g.sample("p", POOL, PRICES);
+  assert.equal(s.corroborated, true);
+  assert.equal(s.outlier, false);
+
+  // 3. The published APR is the TRUE one, not the 2,000×-overstated one.
+  const truth = await (async () => {
+    const clean = src(makeTransport({ stakedLiquidity: STAKED_LIQUIDITY }));
+    let t!: Awaited<ReturnType<typeof clean.sample>>;
+    for (let i = 0; i < MIN_STAKED_SAMPLES; i++) t = await clean.sample("q", POOL, PRICES);
+    return t;
+  })();
+  assert.ok(
+    Math.abs(s.aprByWidthPct!["1500"]! - truth.aprByWidthPct!["1500"]!) < 0.01,
+    `served ${s.aprByWidthPct!["1500"]} vs true ${truth.aprByWidthPct!["1500"]}`
+  );
+  // and it is nowhere near the ~2,000× figure the old anchor would have served
+  assert.ok(s.aprByWidthPct!["1500"]! < truth.aprByWidthPct!["1500"]! * 2);
+});
+
+test("FIX D-HIGH-2: a single anomalous reading inside a corroborated history is rejected and cannot move the anchor", async () => {
+  const g = src(makeTransport({ stakedLiquidity: STAKED_LIQUIDITY }));
+  const swap = (t: ReturnType<typeof makeTransport>) => {
+    (g as unknown as { rpc: RpcClient }).rpc = new RpcClient("http://mock.invalid", { fetchImpl: t.fetchImpl, retries: 0 });
+  };
+  let good!: Awaited<ReturnType<typeof g.sample>>;
+  for (let i = 0; i < MIN_STAKED_SAMPLES; i++) good = await g.sample("p", POOL, PRICES);
+  // One flash-unstake reading, then the truth returns before the streak
+  // reaches MIN_STAKED_SAMPLES: the anchor must survive untouched.
+  swap(makeTransport({ stakedLiquidity: STAKED_LIQUIDITY / 2000n }));
+  assert.equal((await g.sample("p", POOL, PRICES)).outlier, true);
+  swap(makeTransport({ stakedLiquidity: STAKED_LIQUIDITY }));
+  const back = await g.sample("p", POOL, PRICES);
+  assert.equal(back.outlier, false);
+  assert.equal(back.corroborated, true);
+  assert.equal(back.aprByWidthPct!["1500"], good.aprByWidthPct!["1500"]);
+});
+
+test("FIX D-LOW-6: no staked liquidity nulls the whole-pool APR too, not just the per-width table", async () => {
+  const g = src(makeTransport({ stakedLiquidity: 0n }));
+  let s!: Awaited<ReturnType<typeof g.sample>>;
+  for (let i = 0; i < MIN_STAKED_SAMPLES; i++) s = await g.sample("p", POOL, PRICES);
+  assert.equal(s.epochActive, true);
+  assert.equal(s.aprByWidthPct, null);
+  assert.equal(s.wholePoolAprPct, null, "a pool APR nobody can earn is not published");
 });

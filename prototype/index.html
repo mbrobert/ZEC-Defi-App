@@ -218,6 +218,8 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
 .proj-apy{font-size:32px;font-weight:750;letter-spacing:-.02em;color:var(--good)}
 .rev-list{display:grid;grid-template-columns:1fr auto;row-gap:9px;font-size:13.8px}
 .rev-list .k{color:var(--ink-2)} .rev-list .v{text-align:right;font-weight:600}
+#grantKv{grid-template-columns:170px 1fr;column-gap:16px}
+@media (max-width:520px){#grantKv{grid-template-columns:110px 1fr;column-gap:10px}}
 .rev-sec{font-weight:700;font-size:12px;letter-spacing:.06em;color:var(--ink-3);text-transform:uppercase;
   grid-column:1/-1;margin-top:14px;padding-bottom:5px;border-bottom:1px solid var(--line-soft)}
 .note{border-left:3px solid var(--info);background:var(--info-bg);border-radius:0 10px 10px 0;
@@ -524,6 +526,17 @@ button:focus-visible,[tabindex]:focus-visible,a:focus-visible,input:focus-visibl
         </div>
         <div class="ladder" id="ladder"></div>
         <div class="tiny faint" style="margin-top:7px" id="ladderLine"></div>
+        <div class="note small" id="grantCard" style="margin-top:14px;display:none">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+            <b>The keeper's permission — exactly what it may do</b><span class="chip chip-good" id="grantChip"><span class="dot"></span>—</span>
+          </div>
+          <div class="rev-list" id="grantKv" style="margin-top:8px"></div>
+          <div class="tiny faint" style="margin-top:8px" id="grantNote"></div>
+          <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+            <button class="btn btn-ghost" id="grantRenew" style="padding:6px 11px;font-size:12.5px">Renew for 30 days</button>
+            <button class="btn btn-ghost" id="grantRevoke" style="padding:6px 11px;font-size:12.5px">Revoke now</button>
+          </div>
+        </div>
       </div>
 
       <div class="section-h"><h2>Your positions</h2><span class="fresh" data-fresh>updated 3s ago</span></div>
@@ -791,9 +804,23 @@ button:focus-visible,[tabindex]:focus-visible,a:focus-visible,input:focus-visibl
         <h2>Ownership &amp; the keeper</h2>
         <p><b>OilskinAccount</b> — an EIP-1167 clone per user; <code class="mono">owner</code> is your wallet, immutable after init. <code class="mono">exec</code> / <code class="mono">execBatch</code> are owner-only. It receives ERC-721/1155, has no admin, no upgrade, no fee logic, never caches a token balance across an external call (cbZEC rebases).</p>
         <p><b>OilskinAccountFactory</b> — CREATE2; <code class="mono">accountOf(owner)</code> is known before the account exists; anyone may deploy it for that owner only.</p>
-        <p><b>StrategyRouter</b> — stateless. One transaction: Permit2 pull → venue.supply → venue.borrow(USDC) → swap if needed → lpVenue.open, every hop with deadline and minOut. It holds nothing between calls and has no power over your funds. Unwind is the mirror.</p>
+        <p><b>StrategyRouter</b> — stateless. One transaction: Permit2 pull → venue.supply → venue.borrow(USDC) → swap if needed → lpVenue.open, every hop with a deadline and a bounded swap floor. It snapshots its balance of every token it will touch and asserts each is <b>unchanged</b> at exit — a delta, not an absolute zero, so a stray token anyone sends it is inert instead of bricking every open and unwind for everybody. Unwind is the mirror.</p>
+        <h3>Peripheral rights are opt-in, per call</h3>
+        <p id="docPeripheral"></p>
         <h3>Keeper permissions</h3>
-        <p>You grant the keeper a bounded permission on your account: target, selector, token spend per period, expiry — revocable any time. It acts only through <code class="mono">execAsKeeper</code> within that grant, only to repay or unwind. If it is down, nothing acts (the keeper-dependence risk). You can always <code class="mono">exec</code> anything yourself.</p>
+        <p id="docGrantP"></p>
+        <table class="dtable" id="docGrant"></table>
+        <p id="docGrantBoundary"></p>
+        <h3>The entry health floor</h3>
+        <p id="docFloorP"></p>
+        <h3>Selling the pool half — the swap floor</h3>
+        <p id="docSwapP"></p>
+        <h3>What Oilskin's operator can still do</h3>
+        <p>A timelocked owner is still an owner, and this page does not claim otherwise. Oilskin keeps a registry naming which lending contract each collateral asset uses, and that registry has an owner. What it can still do:</p>
+        <ul id="docOwnerCan"></ul>
+        <p>What it cannot do:</p>
+        <ul id="docOwnerCannot"></ul>
+        <p id="docOwnerResidual"></p>
       </div>
 
       <div class="doc-sec" data-doc="modes">
@@ -819,6 +846,12 @@ button:focus-visible,[tabindex]:focus-visible,a:focus-visible,input:focus-visibl
         <p id="docGateP"></p>
         <table class="dtable" id="docPools"></table>
         <p id="docModelSrc"></p>
+        <h3>Two models, and the band between them</h3>
+        <p>The published slice comes from a closed form that assumes the position never leaves its band. A real concentrated position spends part of the year outside it earning nothing, and pays a swap cost at every re-centre. So the gate prices every cell a second time with a Monte-Carlo-calibrated form — <span class="mono">mcLpNet = netEmissions × inRangeEmissionsFactor + mcDragPct</span>, exactly affine in the emissions rate, so two coefficients price the cell at every level including the boundary — and offers only when <b>both</b> clear the borrow. Where they disagree the cell is inside the model's own uncertainty and is refused.</p>
+        <table class="dtable" id="docBoundary"></table>
+        <p id="docBoundaryNote"></p>
+        <h3>Every reason a pool can be refused</h3>
+        <table class="dtable" id="docReasons"></table>
       </div>
 
       <div class="doc-sec" data-doc="rewards">
@@ -831,6 +864,8 @@ button:focus-visible,[tabindex]:focus-visible,a:focus-visible,input:focus-visibl
       <div class="doc-sec" data-doc="withdraw">
         <h2>Withdrawals</h2>
         <p>From your own account, in one transaction. Destinations mirror claims: repay debt (default while you have debt — you see HF before and after) or your wallet. <b>Closing an LP position does not repay debt by itself</b> — the preview says "debt unchanged" and means it; route the proceeds to "repay" if you want the loan down.</p>
+        <h3>The swap floor on the way out</h3>
+        <p id="docSwapP2"></p>
         <h3>The slippage band</h3>
         <p>Before any close the router reads the pool's <code class="mono">slot0()</code> and sets a price band; the transaction reverts rather than accept a sandwiched price. A price band, not a value floor — a single-token remainder's value is price-independent and a value floor would pass while the swap is robbed.</p>
         <h3>Partial withdrawals</h3>
@@ -847,7 +882,7 @@ button:focus-visible,[tabindex]:focus-visible,a:focus-visible,input:focus-visibl
         <h2>FAQ</h2>
         <h3>Does my collateral get sold?</h3><p>Leveraged LP, hold and supply-only: never — it sits on Aave and comes back to your wallet. Spot: yes, that mode explicitly swaps it.</p>
         <h3>Where is my position if I switch browsers?</h3><p>On Base, under your account. Connect the same wallet anywhere and the dashboard reads it from chain (our indexer is a cache, never the authority). This demo stores state in your browser and validates it on every load.</p>
-        <h3>Can Oilskin freeze or redirect my funds?</h3><p>No. The account has no admin and no upgrade; the router holds nothing; the keeper's permission is bounded and revocable. You can always exec from your own account.</p>
+        <h3>Can Oilskin freeze or redirect a position I already have?</h3><p>No. Your account has no admin and no upgrade, the router asserts it ends every call holding exactly what it started with, and the keeper's permission is one function, bounded, expiring and revocable — you can always exec from your own account. What Oilskin <i>can</i> still do is choose which lending contract each asset uses for <b>new</b> positions, disable an asset immediately, and move the entry health floor. Changing a venue takes a fixed on-chain delay and is announced first. The full list is under Ownership &amp; the keeper — we would rather write it down than claim it does not exist.</p>
         <h3>Why is cbZEC greyed out as collateral?</h3><p id="docCbzecWhy"></p>
         <h3>Is this live?</h3><p>No — demo status. Every number, address and transaction here is simulated. Unaudited. Independent audit precedes mainnet.</p>
       </div>
@@ -909,6 +944,8 @@ button:focus-visible,[tabindex]:focus-visible,a:focus-visible,input:focus-visibl
     </div>
     <div class="small muted num" id="wdHf" style="margin:2px 0 10px"></div>
     <div class="note small" id="wdMech"></div>
+    <div class="note small" id="wdSwap" style="display:none"></div>
+    <div class="note warn small" id="wdRevert" style="display:none"></div>
     <div class="note warn small" id="wdWarn" style="display:none"></div>
     <button class="btn btn-gold btn-lg" id="wdConfirm" style="width:100%;margin-top:6px">Withdraw</button>
   </div>
@@ -999,6 +1036,23 @@ button:focus-visible,[tabindex]:focus-visible,a:focus-visible,input:focus-visibl
       <button class="tk-b ok" data-tk="keeper:on">Keeper back</button>
       <button class="tk-b badb" data-tk="store:corrupt">Corrupt saved state, reload</button>
       <button class="tk-b" data-tk="store:wipe">Wipe saved state</button>
+    </div>
+    <h4>Gate refusals &amp; contract guards</h4>
+    <div class="tk-grid">
+      <button class="tk-b badb" data-tk="pause:collateral">Aave guardian pauses your collateral reserve</button>
+      <button class="tk-b badb" data-tk="pause:borrow">Aave guardian pauses USDC borrowing</button>
+      <button class="tk-b ok" data-tk="pause:off">Guardian pauses lifted</button>
+      <button class="tk-b warnb" data-tk="corr:off">Staked-liquidity anchor not yet corroborated</button>
+      <button class="tk-b ok" data-tk="corr:on">Anchor corroborated again</button>
+      <button class="tk-b badb" data-tk="revote:on">AERO/WETH gauge re-voted at its sampled rate</button>
+      <button class="tk-b ok" data-tk="revote:off">Gauge epoch lapsed again</button>
+      <button class="tk-b badb" data-tk="rawbatch">Try the pre-fix raw batch at Aave's full LTV</button>
+      <button class="tk-b badb" data-tk="sandwich:on">Sandwich the unwind swap (price −40% mid-tx)</button>
+      <button class="tk-b ok" data-tk="sandwich:off">Clean market again</button>
+      <button class="tk-b warnb" data-tk="grant:revoke">Revoke the keeper permission</button>
+      <button class="tk-b ok" data-tk="grant:renew">Renew the keeper permission</button>
+      <button class="tk-b warnb" data-tk="grant:expire">Run the grant down to its expiry</button>
+      <button class="tk-b badb" data-tk="mult:12">WHAT-IF ×12 — the band where the two models disagree</button>
     </div>
     <h4>Try every path</h4>
     <ul class="tk-list">
@@ -1093,9 +1147,13 @@ const OIL_SHARED = Object.freeze({
 const OIL_CHAIN_READ = Object.freeze({
   readAt: "2026-09-05T01:00:00Z",
   aaveReserves: {
-    cbBTC: { ltvBps: 7300, liquidationThresholdBps: 7800, liquidationBonusBps: 750, supplyAprPct: 0.012, borrowAprPct: 0.673 },
-    WETH:  { ltvBps: 8000, liquidationThresholdBps: 8300, liquidationBonusBps: 500, supplyAprPct: 1.843, borrowAprPct: 2.454 },
-    USDC:  { ltvBps: 7500, liquidationThresholdBps: 7800, liquidationBonusBps: 500, supplyAprPct: 3.921, borrowAprPct: 4.828 },
+    /* `isPaused` is Aave's GUARDIAN PAUSE — a separate getPaused(asset) read
+       (selector 0xb55d9904), not a field of the config tuple. A paused reserve
+       still quotes a rate and still reads active, but every supply and borrow
+       reverts on chain; false on all three at the 2026-09-05 read. */
+    cbBTC: { ltvBps: 7300, liquidationThresholdBps: 7800, liquidationBonusBps: 750, supplyAprPct: 0.012, borrowAprPct: 0.673, isPaused: false },
+    WETH:  { ltvBps: 8000, liquidationThresholdBps: 8300, liquidationBonusBps: 500, supplyAprPct: 1.843, borrowAprPct: 2.454, isPaused: false },
+    USDC:  { ltvBps: 7500, liquidationThresholdBps: 7800, liquidationBonusBps: 500, supplyAprPct: 3.921, borrowAprPct: 4.828, isPaused: false },
     cbZEC: null,
   },
   feeds: { cbBTC: 79630.89, WETH: 2453.45, USDC: 1.00, BTC: 79593.77 },
@@ -1105,35 +1163,141 @@ const OIL_CHAIN_READ = Object.freeze({
   snuggleEngineFeeBps: 1500,
 });
 
-/* ── OIL_MODEL — pinned to /tmp/build/MODEL-NUMBERS.md (generated
-   2026-09-05T01:47:16+00:00 by services/yield/scripts/lp-sim.py; what
+/* ── OIL_CONTRACTS — the contract surface the copy on this page describes,
+   taken from contracts/abi/oilskin-abi.json after the 2026-09-06 audit-fix
+   round (see /tmp/fix2/CONTRACT-ABI-DELTA.md). Every claim the UI makes about
+   what can and cannot happen is keyed to something in here; nothing in this
+   block is a derived number. ── */
+const OIL_CONTRACTS = Object.freeze({
+  abiAsOf: "2026-09-06",
+  /* D2 — no strategy may reach a venue except through a path that enforces the
+     entry health floor. The floor now lives at the VENUE, so a hand-built
+     execBatch hits it too; openBorrowOnly is the first-class "hold" shape that
+     replaced that batch. */
+  entry: {
+    borrowOnly: "StrategyRouter.openBorrowOnly((address,uint256,(uint256,uint256,bytes),uint256,uint256))",
+    leveragedLp: "StrategyRouter.openLeveragedLp(...)",
+    floorEnforcedAt: "AaveV3Venue.borrow — reads the account's GLOBAL health factor after the borrow",
+    floorError: "EntryHfTooLow(hf, floor)",
+    supplyError: "AssetNotOffered(asset, venue)",
+    preFixShape: "execBatch([permit2, supply, borrow]) — never touched the router, so the floor never ran",
+  },
+  /* B-MED-3 — minOut is a quote plus a bounded tolerance, not a bare number.
+     There is no longer any way to express "accept one base unit". */
+  swap: {
+    adapter: "AerodromeSwapAdapter",
+    slipstreamRouter: "0xBE6D8f0d05cC4be24d5167a3eF062215bE6D18a5",
+    quoteStruct: "SwapQuote { uint256 quotedIn; uint256 quotedOut; uint16 maxSlippageBps; bytes routeData; }",
+    view: "minOutFor(amountIn, quotedIn, quotedOut, maxSlippageBps)",
+    maxSlippageBpsCap: 500,
+    defaultMaxSlippageBps: 50,
+    errors: ["ZeroQuote()", "SlippageTooHigh(bps, cap)", "InsufficientOutput()"],
+    event: "Swapped(..., uint256 minOut) — the enforced floor is in the log",
+  },
+  /* D5 — the keeper makes ONE root call inside the signed grant. D3 — the
+     account grants peripheral rights per call, and on the keeper path the
+     OWNER decides via Permission.allowCallback, never the keeper. */
+  grant: {
+    target: "StrategyRouter",
+    selector: "unwind",
+    rootCalls: 1,
+    periodS: 86400,
+    expiryDays: 30,
+    allowCallback: true,
+    revocable: true,
+    carryForward: true,
+    refusedSelectors: [
+      "Permit2 transferFrom((address,address,uint160,address)[])",
+      "Permit2 permitTransferFrom(...) (single and batch)",
+      "ERC-777 send(address,uint256,bytes)",
+      "ERC-677 transferAndCall(address,uint256,bytes)",
+    ],
+    refusalError: "UnbudgetableSelector(target, selector)",
+    boundary: "Per-day limits cap what the keeper can move DIRECTLY in each token. The router and the venues it calls are trusted code chosen by Oilskin; value those contracts move inside the call tree is not charged to the budget.",
+  },
+  /* D4 — venue replacement is timelocked and announced. The residual is stated
+     in full: a timelocked owner is still an owner. */
+  registry: {
+    timelockDelayS: 172800,
+    proposeEvent: "VenueChangeProposed(asset, currentVenue, proposedVenue, priceFeed, eta)",
+    acceptEvent: "VenueChangeAccepted(asset, previousVenue, newVenue)",
+    cancelEvent: "VenueChangeCancelled(asset, venue)",
+    ownerCanStill: [
+      "disable any asset instantly, with no delay — new positions in it stop; exits are never gated on the asset flag",
+      "change the entry health-factor floor instantly, anywhere in (1.00, 10.00] — it cannot move funds you already have, but it changes what the next transaction you sign is allowed to do",
+      "replace the lending contract an asset points at, after the fixed on-chain delay and only after the change has been announced on chain",
+    ],
+    ownerCannot: [
+      "move, freeze or redirect a position that already exists — those live under your own account, which only your wallet controls",
+      "upgrade your account or add fee logic to it — it has no admin and no proxy",
+      "hold your funds between transactions — the router asserts its balance of every token it touches is unchanged at exit",
+    ],
+    residual: "The delay and the events are a warning, not a prohibition: they protect you only to the extent that somebody is watching and you can act inside the window. Until this owner is a multisig with a published delay, Oilskin does not claim to be free of operator powers.",
+  },
+  peripheral: { maxDepth: 8, defaultCallback: false, plainCall: "exec / execBatch grant NO rights over your account", optIn: "execWithCallback" },
+  routerBalance: { assertion: "delta", error: "RouterBalanceChanged(token, balanceBefore, balanceAfter)", note: "A donation that arrived before the call is inert — the pre-fix code asserted an absolute zero balance, so one base unit of USDC from anybody bricked every open and every unwind for everyone." },
+});
+
+/* ── OIL_MODEL — pinned to /tmp/build/MODEL-NUMBERS.md (regenerated
+   2026-09-06T04:16:02+00:00 by services/yield/scripts/lp-sim.py; what
    /v1/gate serves). Gauge words sampled 2026-08-31T01:34:32Z block 50675328,
    AERO $0.4782; σ trailing-realised as of 2026-08-31 (only three pools have a
    calibrated σ — the gate REFUSES the rest with no_volatility_input).
    `emissions[widthBps]` = gross emissions APR at that TOTAL tick span; other
    widths derive by the concentration relation E(w) = E(w₀)·f(w₀)/f(w).
-   `served` rows are the pinned lpNet + reason at the preset widths — the
-   page reproduces them exactly and test/verify-*.mjs asserts it. ── */
+   `epochActive` is the gauge's own recorded epoch state at the as-of instant
+   (rewardRate > 0 AND periodFinish > as-of) — the gate derives no_emissions
+   from THAT, never from a rounded APR of 0.00.
+   `mc` carries the Monte-Carlo calibration the gate now decides on alongside
+   the closed form; `served` and `userNetPinned` are pins the page RECOMPUTES
+   and the suites assert — no verdict on this page is read from them. ── */
 const OIL_MODEL = Object.freeze({
-  source: "MODEL-NUMBERS.md generated 2026-09-05T01:47:16+00:00 (services/yield/scripts/lp-sim.py, closed form validated by Monte Carlo 3000 paths)",
+  source: "MODEL-NUMBERS.md generated 2026-09-06T04:16:02+00:00 (services/yield/scripts/lp-sim.py; closed form + Monte-Carlo calibration, 6000 paths, as of 2026-08-31T01:34:32Z)",
   sampledAt: "2026-08-31T01:34:32Z", sampleBlock: 50675328, aeroUsd: 0.4782, borrowPctAtGeneration: 4.828,
   keep: { engine: 0.765, direct: 0.90 },
+  /* The gate's own bounds (services/yield/src/gate.ts). Refusals, never clamps. */
+  bounds: { maxEmissionsAprPct: 1000, maxAbsNetPct: 2000, minStakedSamples: 3 },
   pools: [
-    { id:"aero-usdc-weth-5", name:"WETH/USDC",  tag:"BLUE CHIP", pairClass:"UNCORRELATED", entryAsset:"USDC",  c:["weth","usdc"],  eid:"0x0ea72f44ccaf524e3fda5e4a6682fda7a79e42dc2858ee27be311e9337aa72a8", poolAddress:"0xb2cc224c1c9fee385f8ad6a55b4d94e92359dc59", sigma: 0.55, emissions: { 4500: 7.63, 1500: 24.08, 300: 122.41 }, note:"the flagship — deepest ETH flow on Base" },
-    { id:"aero-cbbtc-usdc",  name:"cbBTC/USDC", tag:"BLUE CHIP", pairClass:"UNCORRELATED", entryAsset:"USDC",  c:["usdc","cbbtc"], eid:"0xb1830be2f9077713501ee7b52c92f6c8307ea8ceb16309d1f7fb1ad2643837e6", poolAddress:"0x4e962bb3889bf030368f56810a9c96b83cb3e778", sigma: 0.40, emissions: { 4500: 14.13, 1500: 44.63, 300: 226.85 }, note:"the BTC workhorse — closest to clearing" },
-    { id:"aero-weth-cbbtc",  name:"WETH/cbBTC", tag:"BLUE CHIP", pairClass:"CORRELATED",   entryAsset:"cbBTC", c:["weth","cbbtc"], eid:"0xc97cb5ca633aa7364b3c5789cb0b59b6de362ec48a09b5e4c8e805cedd99c35f", poolAddress:"0x70acdf2ad0bf2402c957154f944c19ef4e1cbae1", sigma: 0.33, emissions: { 2356: 2.70, 784: 8.32, 150: 43.82 }, note:"correlated majors — gentle IL, thin emissions" },
-    { id:"aero-weth-link",   name:"WETH/LINK",  tag:"BLUE CHIP", pairClass:"UNCORRELATED", entryAsset:"WETH",  c:["weth","link"],  eid:"0x477c2374e9cc1a6d42b8ad7a59ffbc2769932d7f659162824276c0b396f7ab24", poolAddress:"0x72be417afb0abea66913141c605d313bb389b59c", sigma: null, emissions: { 4500: 17.46, 1500: 55.13, 300: 280.22 }, note:"ETH against LINK — no σ calibrated, gate refuses" },
-    { id:"cbeth-weth",       name:"cbETH/WETH", tag:"STABLE",    pairClass:"CORRELATED",   entryAsset:"WETH",  c:["cbeth","weth"], eid:"0xcfdea513927b5d64e00e0096e4263b6b67f4e209017f1dde6f9f82856805d419", poolAddress:"0x47ca96ea59c13f72745928887f84c9f52c3d7348", sigma: null, emissions: { 2356: 0.00, 784: 0.01, 150: 0.04 }, note:"correlated LST pair — near-zero IL, near-zero emissions" },
-    { id:"aero-usdt-usdc",   name:"USDT/USDC",  tag:"STABLE",    pairClass:"CORRELATED",   entryAsset:"USDC",  c:["usdt","usdc"],  eid:"0x0ff8167e00d9a34d07034a4a6a8a6dec2ef8caffca0a5178ec940f7fb76babd7", poolAddress:"0xa41bc0affba7fd420d186b84899d7ab2ac57fcd1", sigma: null, emissions: { 2356: 0.00, 784: 0.01, 150: 0.06 }, note:"parking tier — near-zero IL, near-zero emissions" },
-    { id:"aero-aero-weth",   name:"AERO/WETH",  tag:"VOLATILE",  pairClass:"UNCORRELATED", entryAsset:"WETH",  c:["weth","aero"],  eid:"0x6d9490cf9c55426c33c1259073a54bcd6ac78bc43d62796ac62154188ee4c1d1", poolAddress:"0x82321f3beb69f503380d6b233857d5c43562e2d0", sigma: null, emissions: { 4500: 0.00, 1500: 0.00, 300: 0.00 }, note:"the venue's own token — no emissions at the sample" },
-    { id:"aero-aero-cbbtc",  name:"AERO/cbBTC", tag:"VOLATILE",  pairClass:"UNCORRELATED", entryAsset:"cbBTC", c:["aero","cbbtc"], eid:"0xa893d6d3bc3a29d7424223766ebfb8aed8d3b1ec5329d3ae1d7624b0e96d9bfc", poolAddress:"0xdfe5f275020def30993f042174fc2d335678b626", sigma: null, emissions: { 4500: 23.16, 1500: 73.15, 300: 371.80 }, note:"AERO against BTC — no σ calibrated, gate refuses" },
-    { id:"aero-cbzec-usdc",  name:"cbZEC/USDC", tag:"cbZEC",     pairClass:"UNCORRELATED", entryAsset:"USDC",  c:["cbzec","usdc"], eid:null, poolAddress:"0x0Fc47C17AF86078d809358db1b4db2DeBC988566", sigma: null, emissions: { 4500: 0.00, 1500: 0.00, 300: 0.00 }, note:"gauge exists, rewardRate 0 — no emissions until a vote lands", tracked:true, direct:true },
+    { id:"aero-usdc-weth-5", name:"WETH/USDC",  tag:"BLUE CHIP", pairClass:"UNCORRELATED", entryAsset:"USDC",  c:["weth","usdc"],  eid:"0x0ea72f44ccaf524e3fda5e4a6682fda7a79e42dc2858ee27be311e9337aa72a8", poolAddress:"0xb2cc224c1c9fee385f8ad6a55b4d94e92359dc59", sigma: 0.55, feeBps: 3.64, epochActive: true, emissions: { 4500: 7.63, 1500: 24.08, 300: 122.41 }, note:"the flagship — deepest ETH flow on Base" },
+    { id:"aero-cbbtc-usdc",  name:"cbBTC/USDC", tag:"BLUE CHIP", pairClass:"UNCORRELATED", entryAsset:"USDC",  c:["usdc","cbbtc"], eid:"0xb1830be2f9077713501ee7b52c92f6c8307ea8ceb16309d1f7fb1ad2643837e6", poolAddress:"0x4e962bb3889bf030368f56810a9c96b83cb3e778", sigma: 0.40, feeBps: 2.36, epochActive: true, emissions: { 4500: 14.13, 1500: 44.63, 300: 226.85 }, note:"the BTC workhorse — closest to clearing" },
+    { id:"aero-weth-cbbtc",  name:"WETH/cbBTC", tag:"BLUE CHIP", pairClass:"CORRELATED",   entryAsset:"cbBTC", c:["weth","cbbtc"], eid:"0xc97cb5ca633aa7364b3c5789cb0b59b6de362ec48a09b5e4c8e805cedd99c35f", poolAddress:"0x70acdf2ad0bf2402c957154f944c19ef4e1cbae1", sigma: 0.33, feeBps: 25.0, epochActive: true, emissions: { 2356: 2.70, 784: 8.32, 150: 43.82 }, note:"correlated majors — gentle IL, thin emissions" },
+    { id:"aero-weth-link",   name:"WETH/LINK",  tag:"BLUE CHIP", pairClass:"UNCORRELATED", entryAsset:"WETH",  c:["weth","link"],  eid:"0x477c2374e9cc1a6d42b8ad7a59ffbc2769932d7f659162824276c0b396f7ab24", poolAddress:"0x72be417afb0abea66913141c605d313bb389b59c", sigma: null, feeBps: null, epochActive: true, emissions: { 4500: 17.46, 1500: 55.13, 300: 280.22 }, note:"ETH against LINK — no σ calibrated, gate refuses" },
+    { id:"cbeth-weth",       name:"cbETH/WETH", tag:"STABLE",    pairClass:"CORRELATED",   entryAsset:"WETH",  c:["cbeth","weth"], eid:"0xcfdea513927b5d64e00e0096e4263b6b67f4e209017f1dde6f9f82856805d419", poolAddress:"0x47ca96ea59c13f72745928887f84c9f52c3d7348", sigma: null, feeBps: null, epochActive: true, emissions: { 2356: 0.00, 784: 0.01, 150: 0.04 }, note:"correlated LST pair — near-zero IL, near-zero emissions" },
+    { id:"aero-usdt-usdc",   name:"USDT/USDC",  tag:"STABLE",    pairClass:"CORRELATED",   entryAsset:"USDC",  c:["usdt","usdc"],  eid:"0x0ff8167e00d9a34d07034a4a6a8a6dec2ef8caffca0a5178ec940f7fb76babd7", poolAddress:"0xa41bc0affba7fd420d186b84899d7ab2ac57fcd1", sigma: null, feeBps: null, epochActive: true, emissions: { 2356: 0.00, 784: 0.01, 150: 0.06 }, note:"parking tier — near-zero IL, near-zero emissions" },
+    { id:"aero-aero-weth",   name:"AERO/WETH",  tag:"VOLATILE",  pairClass:"UNCORRELATED", entryAsset:"WETH",  c:["weth","aero"],  eid:"0x6d9490cf9c55426c33c1259073a54bcd6ac78bc43d62796ac62154188ee4c1d1", poolAddress:"0x82321f3beb69f503380d6b233857d5c43562e2d0", sigma: null, feeBps: null, epochActive: false, emissions: { 4500: 0.00, 1500: 0.00, 300: 0.00 },
+      /* The gauge's epoch had LAPSED at the as-of instant (periodFinish 1779926400 < 2026-08-31T01:34:32Z), so the model publishes 0. The reading the sample actually carried is kept verbatim, keyed by the half-width it was measured at, because it is the real example of a marginal in-range APR that the plausibility ceiling exists to refuse. */
+      sampledAprByHalfWidth: { 0.25: 5460.44, 0.125: 10741.25, 0.08: 16645.19, 0.04: 33011.61, 0.015: 87523.11, 0.0075: 174728.38 },
+      note:"the venue's own token — the gauge epoch had lapsed at the sample" },
+    { id:"aero-aero-cbbtc",  name:"AERO/cbBTC", tag:"VOLATILE",  pairClass:"UNCORRELATED", entryAsset:"cbBTC", c:["aero","cbbtc"], eid:"0xa893d6d3bc3a29d7424223766ebfb8aed8d3b1ec5329d3ae1d7624b0e96d9bfc", poolAddress:"0xdfe5f275020def30993f042174fc2d335678b626", sigma: null, feeBps: null, epochActive: true, emissions: { 4500: 23.16, 1500: 73.15, 300: 371.80 }, note:"AERO against BTC — no σ calibrated, gate refuses" },
+    { id:"aero-cbzec-usdc",  name:"cbZEC/USDC", tag:"cbZEC",     pairClass:"UNCORRELATED", entryAsset:"USDC",  c:["cbzec","usdc"], eid:null, poolAddress:"0x0Fc47C17AF86078d809358db1b4db2DeBC988566", sigma: null, feeBps: 20, epochActive: false, emissions: { 4500: 0.00, 1500: 0.00, 300: 0.00 }, note:"gauge exists, rewardRate 0 — no emissions until a vote lands", tracked:true, direct:true },
   ],
-  /* [poolId, widthBps, lpNetPct|null, reason] — reason "ok" would mean offered; none is, at 4.828%. */
+  /* The Monte-Carlo calibration of each priced cell (services/yield/samples/mc-calibration.json).
+     mcLpNet = netEmissions × inRangeEmissionsFactor + mcDragPct — affine in the
+     emissions rate, because neither the in-range indicator nor the mint value
+     depends on it, so two coefficients price the cell at EVERY emissions level
+     including the boundary the gate decides at.
+     [poolId, widthBps, sigma, feeBps, inRangeEmissionsFactor, mcDragPct, timeInRange, rebalancesPerYear] */
+  mc: {
+    generatedAt: "2026-09-06T04:16:02+00:00", asOf: "2026-08-31T01:34:32+00:00", paths: 6000, seed: 7, sigmaTolerance: 1e-9,
+    cells: [
+      ["aero-usdc-weth-5", 4500, 0.55, 3.64, 0.8538129917459252, -26.909918312279864, 0.9695052891933029, 3.0843333333333334],
+      ["aero-usdc-weth-5", 1500, 0.55, 3.64, 0.6084475495404585, -61.23619159432736,  0.9341483447488584, 29.647],
+      ["aero-usdc-weth-5",  300, 0.55, 3.64, 0.17866678047824325, -99.00011345763076, 0.8321174467275495, 604.7615],
+      ["aero-cbbtc-usdc",  4500, 0.40, 2.36, 0.9278086753600098, -15.24402581443906,  0.9831953196347031, 1.6863333333333332],
+      ["aero-cbbtc-usdc",  1500, 0.40, 2.36, 0.754940208431314,  -40.20101811134584,  0.9604234969558599, 17.794166666666666],
+      ["aero-cbbtc-usdc",   300, 0.40, 2.36, 0.32110693271644913, -92.36259323625336, 0.8923115106544901, 387.97116666666665],
+      ["aero-weth-cbbtc",  2356, 0.33, 25.0, 0.8654699594196645, -20.106886181614698, 0.9566429223744292, 4.397166666666666],
+      ["aero-weth-cbbtc",   784, 0.33, 25.0, 0.6653976755590356, -49.749318693118084, 0.9168503044140031, 37.42516666666667],
+      ["aero-weth-cbbtc",   150, 0.33, 25.0, 0.18728373342810029, -98.41612812062993, 0.7872646118721461, 766.0711666666666],
+    ],
+  },
+  /* [poolId, widthBps, lpNetPct|null, reason] — the served verdict at each
+     preset width. lpNet is null wherever the gate refuses BEFORE it prices the
+     cell, exactly as /v1/gate leaves it. "ok" would mean offered; none is. */
   served: [
-    ["aero-usdc-weth-5", 4500, -21.86, "net_below_borrow"], ["aero-usdc-weth-5", 1500, -51.07, "net_below_borrow"], ["aero-usdc-weth-5", 300, -80.82, "net_below_borrow"],
-    ["aero-cbbtc-usdc", 4500, -5.29, "net_below_borrow"], ["aero-cbbtc-usdc", 1500, -14.12, "net_below_borrow"], ["aero-cbbtc-usdc", 300, -32.24, "net_below_borrow"],
-    ["aero-weth-cbbtc", 2356, -18.18, "emissions_below_borrow"], ["aero-weth-cbbtc", 784, -45.12, "net_below_borrow"], ["aero-weth-cbbtc", 150, -88.33, "net_below_borrow"],
+    ["aero-usdc-weth-5", 4500, -21.85, "net_below_borrow"], ["aero-usdc-weth-5", 1500, -51.07, "net_below_borrow"], ["aero-usdc-weth-5", 300, -80.82, "net_below_borrow"],
+    ["aero-cbbtc-usdc", 4500, -5.29, "net_below_borrow"], ["aero-cbbtc-usdc", 1500, -14.11, "net_below_borrow"], ["aero-cbbtc-usdc", 300, -32.24, "net_below_borrow"],
+    ["aero-weth-cbbtc", 2356, null, "emissions_below_borrow"], ["aero-weth-cbbtc", 784, -45.11, "net_below_borrow"], ["aero-weth-cbbtc", 150, -88.33, "net_below_borrow"],
     ["aero-weth-link", 4500, null, "no_volatility_input"], ["aero-weth-link", 1500, null, "no_volatility_input"], ["aero-weth-link", 300, null, "no_volatility_input"],
     ["aero-usdt-usdc", 2356, null, "emissions_below_borrow"], ["aero-usdt-usdc", 784, null, "emissions_below_borrow"], ["aero-usdt-usdc", 150, null, "emissions_below_borrow"],
     ["cbeth-weth", 2356, null, "emissions_below_borrow"], ["cbeth-weth", 784, null, "emissions_below_borrow"], ["cbeth-weth", 150, null, "emissions_below_borrow"],
@@ -1141,10 +1305,22 @@ const OIL_MODEL = Object.freeze({
     ["aero-aero-cbbtc", 4500, null, "no_volatility_input"], ["aero-aero-cbbtc", 1500, null, "no_volatility_input"], ["aero-aero-cbbtc", 300, null, "no_volatility_input"],
     ["aero-cbzec-usdc", 4500, null, "no_emissions"], ["aero-cbzec-usdc", 1500, null, "no_emissions"], ["aero-cbzec-usdc", 300, null, "no_emissions"],
   ],
-  userNetPinned: [ /* [poolId, widthBps, collateral, ltvPct, userNetPct] — a sample of the served rows, asserted by the suites */
+  /* [poolId, widthBps, collateral, ltvPct, userNetPct] — a sample of the served
+     user-net rows. There is no row for aero-weth-cbbtc at 2356: the gate refuses
+     that cell with emissions_below_borrow and leaves userNet empty. */
+  userNetPinned: [
     ["aero-usdc-weth-5", 4500, "cbBTC", 30, -7.99], ["aero-usdc-weth-5", 4500, "WETH", 50, -11.50], ["aero-usdc-weth-5", 300, "cbBTC", 50, -42.81],
     ["aero-cbbtc-usdc", 4500, "cbBTC", 30, -3.02], ["aero-cbbtc-usdc", 4500, "WETH", 30, -1.19], ["aero-cbbtc-usdc", 1500, "WETH", 40, -5.73], ["aero-cbbtc-usdc", 300, "cbBTC", 50, -18.52],
-    ["aero-weth-cbbtc", 2356, "cbBTC", 30, -6.89], ["aero-weth-cbbtc", 784, "WETH", 50, -23.13], ["aero-weth-cbbtc", 150, "cbBTC", 50, -46.56],
+    ["aero-weth-cbbtc", 784, "WETH", 50, -23.13], ["aero-weth-cbbtc", 150, "cbBTC", 50, -46.56],
+  ],
+  /* The boundary the guard exists for: at each cell's own published break-even
+     multiple the closed form lands exactly on the borrow rate. This is what the
+     Monte-Carlo-calibrated form says the same position is worth there.
+     [poolId, widthBps, grossAtBoundaryPct, closedLpNetPct, mcLpNetPct] */
+  boundary: [
+    ["aero-usdc-weth-5", 4500, 48.25, 4.83, 4.60], ["aero-usdc-weth-5", 1500, 139.10, 4.83, 3.51], ["aero-usdc-weth-5", 300, 688.48, 4.83, -4.90],
+    ["aero-cbbtc-usdc", 4500, 28.48, 4.83, 4.97], ["aero-cbbtc-usdc", 1500, 76.42, 4.83, 3.94], ["aero-cbbtc-usdc", 300, 365.31, 4.83, -2.63],
+    ["aero-weth-cbbtc", 784, 98.60, 4.83, 0.44], ["aero-weth-cbbtc", 150, 497.13, 4.83, -27.19],
   ],
 });
 
@@ -1187,23 +1363,152 @@ function lpNetPct(pool, widthBps, mult=1){
   return (1 - Math.exp(-x))*(r/x - 1)*100;
 }
 const netSlicePct = (pool, widthBps=widthFor(pool), mult=1) => { const v = lpNetPct(pool, widthBps, mult); return v==null ? NaN : v; };
-/* Yield gate — the same decision the yield service serves. Reasons in order:
-   no_emissions → emissions_below_borrow → no_volatility_input → net_below_borrow → ok.
-   At a pinned width with mult 1, the served row is returned verbatim. */
-const GATE_WHY = { no_emissions:"no emissions — gauge unvoted at the sample", emissions_below_borrow:"emissions after fees are below the borrow rate before any IL", no_volatility_input:"no σ calibrated for this pool — the gate refuses rather than guesses", net_below_borrow:"emissions after fees and IL drag are below the borrow rate" };
-function gate(pool, borrowPct, widthBps=widthFor(pool), mult=1){
-  const served = mult===1 && Math.abs(borrowPct-OIL_MODEL.borrowPctAtGeneration)<1e-9 ? OIL_MODEL.served.find(r=>r[0]===pool.id&&r[1]===widthBps) : null;
-  const gross = grossEmissionsPct(pool, widthBps, mult), r = gross*feeKeep(pool);
-  let reason, net = pool.sigma==null ? null : lpNetPct(pool, widthBps, mult);
-  if(served){ reason = served[3]; if(served[2]!=null) net = served[2]; }
-  else if(!(gross>0)) reason="no_emissions";
-  else if(!(r>borrowPct)) reason="emissions_below_borrow";
-  else if(pool.sigma==null) reason="no_volatility_input";
-  else if(!(net>borrowPct)) reason="net_below_borrow";
-  else reason="ok";
-  return { ok: reason==="ok", reason, why: reason==="ok"?"":GATE_WHY[reason]+(net!=null?` (slice ${net.toFixed(2)}% vs ${borrowPct.toFixed(3)}%)`:` (${r.toFixed(2)}% vs ${borrowPct.toFixed(3)}%)`), net: net==null?NaN:net, gross, r };
+/* Monte-Carlo calibration lookup and application — the same code the yield
+   service runs (services/yield/src/mc-calibration.ts). A cell with no
+   calibration at all is unavailable; a calibration taken at a different width,
+   or at a CALMER σ than today's, is stale (it would flatter the position). A
+   calibration taken at a stormier σ is conservative and is accepted. A live
+   pool fee ABOVE the calibrated one is not a refusal but a computed haircut:
+   every re-centre swaps half the position, so an extra Δfee costs
+   rebalancesPerYear × Δfee/2 of value over the year. */
+function mcCellsFor(poolId){ return OIL_MODEL.mc.cells.filter(c=>c[0]===poolId); }
+function mcApply(pool, widthBps, netEmissionsPct){
+  const cells = mcCellsFor(pool.id);
+  if(!cells.length) return { ok:false, reason:"mc_calibration_unavailable" };
+  const c = cells.find(x=>x[1]===widthBps);
+  if(!c) return { ok:false, reason:"mc_calibration_stale", widths: cells.map(x=>x[1]) };
+  if(pool.sigma==null || pool.sigma > c[2] + OIL_MODEL.mc.sigmaTolerance) return { ok:false, reason:"mc_calibration_stale", cell:c };
+  const extraFeeBps = Math.max(0, (pool.feeBps==null ? 0 : pool.feeBps) - c[3]);
+  const feeCorrectionPct = 100 * c[7] * (extraFeeBps/10000) / 2;
+  return { ok:true, cell:c, feeCorrectionPct, mcNet: netEmissionsPct*c[4] + c[5] - feeCorrectionPct };
 }
-const positionAprPct = (asset, ltvPct, pool, borrowPct, widthBps=widthFor(pool), mult=1) => { const n = pool.sigma==null ? NaN : (gate(pool, borrowPct, widthBps, mult).net); return supplyAprOf(asset) + (ltvPct/100)*(n - borrowPct); };
+/* The MC-calibrated LP slice, in the same units as lpNetPct. null when this
+   pool × width has no usable calibration — the gate then refuses rather than
+   falling back to the closed form alone. */
+function mcLpNetPct(pool, widthBps=widthFor(pool), mult=1){
+  const r = mcApply(pool, widthBps, grossEmissionsPct(pool, widthBps, mult)*feeKeep(pool));
+  return r.ok ? r.mcNet : null;
+}
+/* Realised emissions on the drag-shrunk base: r(1−e^−x)/x. */
+function realizedEmissionsPct(pool, widthBps, mult=1){
+  const r = grossEmissionsPct(pool, widthBps, mult)*feeKeep(pool);
+  if(pool.sigma==null) return r;
+  const x = xOf(pool.sigma, widthBps); if(x<=0) return r;
+  return r*(1-Math.exp(-x))/x;
+}
+/* The gauge reading aero-weth-cbbtc's lapsed-epoch sibling actually carried,
+   re-expressed at a total tick span by the same concentration relation the
+   rest of the model uses. Only pools whose recorded sample is kept have one. */
+function grossIfRevotedPct(pool, widthBps){
+  const t = pool.sampledAprByHalfWidth; if(!t) return null;
+  const hw = halfWidthPct(widthBps)/100;
+  const ks = Object.keys(t).map(Number);
+  const k0 = ks.reduce((a,b)=>Math.abs(b-hw)<Math.abs(a-hw)?b:a);
+  return t[k0] * fW(k0) / fW(hw);
+}
+/* Yield gate — the same decision, in the same order, that
+   services/yield/src/gate.ts serves:
+     collateral enabled → guardian pauses → emissions present, plausible and
+     corroborated → emissions beat the borrow → σ calibrated → CLOSED FORM beats
+     the borrow → MONTE-CARLO-CALIBRATED FORM beats the borrow → inside bounds.
+   Both forms must clear. The band where they disagree is the model's own
+   uncertainty and is refused with within_model_uncertainty — that band is the
+   one that would otherwise have been an offer, and at the worst cell the closed
+   form is 32 points optimistic there.
+   `opts` carries the live reads that are not properties of the pool:
+     { collateral, paused:{SYM:bool}, corroborated:bool, revote:bool,
+       maxEmissionsAprPct, maxAbsNetPct } — each defaults to the chain read. */
+const GATE_WHY = {
+  collateral_disabled: "that asset is not enabled as collateral in the registry, so no position can be opened against it",
+  collateral_paused: "Aave's guardian has paused this collateral reserve — it still quotes a rate, but every supply against it reverts on chain",
+  borrow_paused: "Aave's guardian has paused USDC borrowing — the loan half of this position cannot be opened at all",
+  no_emissions: "no emissions — this gauge's reward epoch has ended, so it pays nothing until AERO voters fund it again",
+  emissions_implausible: `the gauge reading is above the ${OIL_MODEL.bounds.maxEmissionsAprPct}% plausibility ceiling — a marginal in-range rate that large means almost nothing is staked, and it would be diluted the moment anyone else staked, so we refuse to quote it`,
+  insufficient_samples: `we have not yet seen ${OIL_MODEL.bounds.minStakedSamples} independent readings of how much is staked in this gauge — until they agree, any APR built on the first one could be a fabrication, so nothing is published`,
+  emissions_below_borrow: "emissions after fees are below the borrow rate before any IL",
+  no_volatility_input: "no σ calibrated for this pool — the gate refuses rather than guesses",
+  net_below_borrow: "emissions after fees and IL drag are below the borrow rate",
+  within_model_uncertainty: "our two models disagree here: the closed form clears the borrow, the Monte-Carlo-calibrated one does not. The closed form assumes the position never leaves its band; the simulation prices the time it spends outside. Inside that band we do not offer",
+  mc_calibration_unavailable: "no Monte-Carlo calibration exists for this pool and width, and we will not offer a position the second model has never priced",
+  mc_calibration_stale: "the Monte-Carlo calibration for this cell was run at a different band width, or at a calmer volatility, than today's inputs — it would flatter the position, so it is refused until it is re-run",
+  net_out_of_bounds: `the arithmetic came out beyond ±${OIL_MODEL.bounds.maxAbsNetPct}%/yr — that is a broken input, not a yield`,
+};
+function gate(pool, borrowPct, widthBps=widthFor(pool), mult=1, opts){
+  const o = opts || {};
+  const B = OIL_MODEL.bounds;
+  const maxEmis = o.maxEmissionsAprPct==null ? B.maxEmissionsAprPct : o.maxEmissionsAprPct;
+  const maxAbs  = o.maxAbsNetPct==null ? B.maxAbsNetPct : o.maxAbsNetPct;
+  const pausedOf = sym => { const p=o.paused; if(p && Object.prototype.hasOwnProperty.call(p,sym)) return !!p[sym]; const r=CR.aaveReserves[sym]; return !!(r && r.isPaused); };
+  const revoted = !!o.revote && pool.epochActive===false && !!pool.sampledAprByHalfWidth;
+  const gross = revoted ? grossIfRevotedPct(pool, widthBps)*mult : grossEmissionsPct(pool, widthBps, mult);
+  const r = gross*feeKeep(pool);
+  const st = { ok:false, reason:"", why:"", gross, r, net:NaN, mcNet:NaN, realized:NaN, drag:ilDragPct(pool.sigma,widthBps), mcCell:null, userNet:[], borrowPct, widthBps, revoted };
+  const stop = (reason, tail) => { st.reason=reason; st.ok=false; st.why=GATE_WHY[reason]+(tail||""); return st; };
+  const vs = ` (${r.toFixed(2)}% after fees vs ${borrowPct.toFixed(3)}% borrow)`;
+  const asset = o.collateral;
+  if(asset){ const c = SH.COLLATERAL_ASSETS[asset]; if(!c || !c.enabled) return stop("collateral_disabled", ` (${asset})`); if(pausedOf(asset)) return stop("collateral_paused", ` (${asset})`); }
+  if(pausedOf("USDC")) return stop("borrow_paused", "");
+  /* no_emissions comes from the gauge's EPOCH, never from a rounded APR of
+     0.00 — USDT/USDC and cbETH/WETH really do pay something at their sample,
+     it is just far below the borrow rate, and calling that "no emissions"
+     would report the wrong reason for a live gauge. */
+  if(!(pool.epochActive || revoted) || !Number.isFinite(gross)){ st.gross=0; st.r=0; return stop("no_emissions", ""); }
+  if(gross > maxEmis) return stop("emissions_implausible", ` (${gross.toFixed(2)}% gross at ±${halfWidthPct(widthBps).toFixed(2)}%)`);
+  if(o.corroborated===false) return stop("insufficient_samples", "");
+  if(!(r > borrowPct)) return stop("emissions_below_borrow", vs);
+  if(pool.sigma==null) return stop("no_volatility_input", vs);
+  st.net = lpNetPct(pool, widthBps, mult);
+  st.realized = realizedEmissionsPct(pool, widthBps, mult);
+  const mc = mcApply(pool, widthBps, r);
+  if(mc.ok){ st.mcNet = mc.mcNet; st.mcCell = mc.cell; }
+  if(asset) st.userNet = ltvPresetsFor(asset).map(p=>({ ltvBps:p.ltvBps, offerable:p.offerable, userNetPct: supplyAprOf(asset) + (p.ltvBps/10000)*(st.net - borrowPct) }));
+  const slice = ` (slice ${st.net.toFixed(2)}% vs ${borrowPct.toFixed(3)}%)`;
+  if(!(st.net > borrowPct)) return stop("net_below_borrow", slice);
+  if(!mc.ok) return stop(mc.reason, slice);
+  if(!(st.mcNet > borrowPct)) return stop("within_model_uncertainty", ` (closed form ${st.net.toFixed(2)}%, Monte Carlo ${st.mcNet.toFixed(2)}%, borrow ${borrowPct.toFixed(3)}% — ${(st.net-st.mcNet).toFixed(2)} pt apart)`);
+  const inBound = x => Number.isFinite(x) && Math.abs(x) <= maxAbs;
+  if(!inBound(st.net) || st.userNet.some(u=>!inBound(u.userNetPct))) return stop("net_out_of_bounds", slice);
+  st.ok = true; st.reason = "ok"; st.why = "";
+  return st;
+}
+const positionAprPct = (asset, ltvPct, pool, borrowPct, widthBps=widthFor(pool), mult=1, opts) => { const n = pool.sigma==null ? NaN : gate(pool, borrowPct, widthBps, mult, opts).net; return supplyAprOf(asset) + (ltvPct/100)*(n - borrowPct); };
+/* ── The swap floor, mirrored from AerodromeSwapAdapter ─────────────────────
+   minOut = amountIn × quotedOut/quotedIn × (BPS − maxSlippageBps)/BPS, computed
+   on the amount ACTUALLY swapped, so a leg that settles larger or smaller than
+   quoted is still protected in proportion. `minOutFor` is the adapter's own
+   pure view — the number below is the number the chain enforces, not a second
+   guess at it. A bare `minOut` is no longer expressible: the ABI takes a quote
+   plus a bounded tolerance, and the tolerance is capped on chain. */
+const BPS = 10000;
+function minOutFor(amountIn, quotedIn, quotedOut, maxSlippageBps){
+  const cap = OIL_CONTRACTS.swap.maxSlippageBpsCap;
+  if(!(amountIn>0) || !(quotedIn>0) || !(quotedOut>0)) return { ok:false, error:"ZeroQuote()" };
+  if(!(maxSlippageBps>=0) || maxSlippageBps>cap) return { ok:false, error:`SlippageTooHigh(${maxSlippageBps}, ${cap})` };
+  const v = amountIn*quotedOut/quotedIn*(BPS-maxSlippageBps)/BPS;
+  return v>0 ? { ok:true, minOut:v } : { ok:false, error:"ZeroQuote()" };
+}
+/* The unwind's swap leg: half of a closed LP position is not USDC and has to be
+   sold for USDC before the loan can be repaid. The quote is the pool's own,
+   less its fee; the floor under it is what the adapter enforces and what the
+   Swapped() log carries. Two things can differ from the quote and they are not
+   the same thing: `sizeFactor` — the leg settles larger or smaller than quoted,
+   and the floor scales WITH it, so the swap is still protected in proportion;
+   `priceFactor` — the market moved against the swap, and the floor does NOT
+   move, so the swap reverts instead of settling for dust. */
+function swapLegFor(pool, valueUsd, maxSlippageBps=OIL_CONTRACTS.swap.defaultMaxSlippageBps, opts){
+  const o = opts||{}; const sizeFactor = o.sizeFactor==null?1:Math.max(0,o.sizeFactor); const priceFactor = o.priceFactor==null?1:Math.max(0,o.priceFactor);
+  const parts = String(pool && pool.name || "/").split("/");
+  const tokenIn = parts.find(x=>x!=="USDC") || parts[0];
+  const legUsd = Math.max(0, valueUsd)/2;
+  const feeBps = pool && pool.feeBps!=null ? pool.feeBps : 0;
+  const quotedIn = legUsd, quotedOut = legUsd*(BPS-feeBps)/BPS;
+  const amountIn = legUsd*sizeFactor;
+  const m = minOutFor(amountIn, quotedIn, quotedOut, maxSlippageBps);
+  const actualOut = quotedOut*sizeFactor*priceFactor;
+  return { tokenIn, legUsd, amountIn, sizeFactor, priceFactor, quotedIn, quotedOut, feeBps, maxSlippageBps, cap: OIL_CONTRACTS.swap.maxSlippageBpsCap,
+           minOut: m.ok?m.minOut:null, error: m.ok?null:m.error, actualOut, reverts: m.ok ? actualOut < m.minOut : true,
+           revertError: m.ok ? "InsufficientOutput()" : m.error };
+}
 /* Per-year rates the demo accrues at: realised emissions r(1−e^−x)/x and drag (1−e^−x), as fractions of the working slice. σ-less pools accrue their net emissions with no drag (they are never offered anyway). */
 function accrualRates(pool, widthBps, mult=1){ const r=grossEmissionsPct(pool, widthBps, mult)/100*feeKeep(pool); if(pool.sigma==null) return {realized:r, drag:0}; const x=xOf(pool.sigma, widthBps); if(x<=0) return {realized:r, drag:0}; return {realized: r*(1-Math.exp(-x))/x, drag: 1-Math.exp(-x)}; }
 const fmtDrag = v => v==null ? "n/a (no σ)" : v.toFixed(1)+"%";
@@ -1224,7 +1529,17 @@ const MODES = ["LP","HOLD","SUPPLY","SPOT"];
 /* ── Store: versioned, validated on load, two-tab safe ── */
 const STORE_KEY = "oilskin.adv.v2";
 function freshWiz(){ const asset="cbBTC"; return { asset, amount: 0.1, mode:"LP", ltv: SH.LTV_PRESET_FIXED_BPS.p30/100, pool: null, preset:"CONSERVATIVE", rw: presetWidthBps("CONSERVATIVE","UNCORRELATED"), rd: SH.RANGE_PRESETS[0].defaultRebalanceDelayHours, rew:"COMPOUND", econ:true, step:1 }; }
-function freshState(){ return { v:2, seq:0, wallet:null, price:{...PRICE_READ}, borrowPct: CR.aaveReserves.USDC.borrowAprPct, mult:1, positions:[], activity:[], credited:[], flow:null, ladders:{}, sim:{keeperOff:false, failNext:null, refundNext:false}, wiz: freshWiz(), nextId: 1, lastTick: 0 }; }
+const GRANT_EXPIRY_S = OIL_CONTRACTS.grant.expiryDays*86400;
+/* Session-only simulation levers: `paused` mirrors Aave's guardian pause per
+   reserve, `corroborated` the gauge sampler's anchor state, `revote` a lapsed
+   gauge epoch being funded again, `sandwich` an adverse price move inside the
+   unwind's swap. None is persisted — they are demo conditions, not user state. */
+function freshSim(){ return { keeperOff:false, failNext:null, refundNext:false, paused:{}, corroborated:true, revote:false, sandwich:false }; }
+/* Gate options that are live reads rather than properties of a pool. Passed
+   explicitly so the model block stays pure and the fuzz harness can drive it. */
+const gopts = (s, extra) => Object.assign({ paused: s.sim.paused, corroborated: s.sim.corroborated, revote: s.sim.revote }, extra||{});
+const gopt = extra => gopts(S, extra);
+function freshState(){ return { v:2, seq:0, wallet:null, price:{...PRICE_READ}, borrowPct: CR.aaveReserves.USDC.borrowAprPct, mult:1, positions:[], activity:[], credited:[], flow:null, ladders:{}, grants:{}, sim:freshSim(), wiz: freshWiz(), nextId: 1, lastTick: 0 }; }
 function validPosition(p){
   if(!p||typeof p!=="object") return false;
   if(!fin(p.id,1)||!["LP","HOLD","SUPPLY","SPOT"].includes(p.kind)) return false;
@@ -1253,13 +1568,34 @@ function validateStore(raw){
   if(!o.ladders||typeof o.ladders!=="object") return {ok:false, why:"ladders"};
   for(const [k,l] of Object.entries(o.ladders)){ if(!/^0x[0-9a-fA-F]{40}$/.test(k)||!l||typeof l!=="object") return {ok:false, why:"ladder key"}; for(const r of RUNGS) if(typeof l[r]!=="boolean") return {ok:false, why:"ladder rung"}; }
   if(!o.sim||typeof o.sim.keeperOff!=="boolean") return {ok:false, why:"sim"};
+  if(!o.grants||typeof o.grants!=="object") return {ok:false, why:"grants"};
+  for(const [k,g] of Object.entries(o.grants)){ if(!/^0x[0-9a-fA-F]{40}$/.test(k)||!g||typeof g!=="object"||!fin(g.remainingS,0,GRANT_EXPIRY_S)||typeof g.revoked!=="boolean"||typeof g.notified!=="boolean") return {ok:false, why:"grant"}; }
   if(!o.wiz||!(o.wiz.asset in MIN_AMOUNT)||!MODES.includes(o.wiz.mode)||!fin(o.wiz.amount)||!fin(o.wiz.ltv,0,100)||!fin(o.wiz.rw,SH.RANGE_WIDTH_BOUNDS.min,SH.RANGE_WIDTH_BOUNDS.max)||!fin(o.wiz.rd,SH.REBALANCE_DELAY_BOUNDS.minHours,SH.REBALANCE_DELAY_BOUNDS.maxHours)||!fin(o.wiz.step,1,4)) return {ok:false, why:"wiz"};
   const s = freshState();
-  Object.assign(s, { seq:o.seq, wallet:o.wallet, price:{...s.price,...o.price}, borrowPct:o.borrowPct, mult:o.mult, positions:o.positions.map(p=>({...p, cooldown:0})), activity:o.activity.slice(0,500), credited:o.credited.slice(), flow:o.flow, ladders:JSON.parse(JSON.stringify(o.ladders)), sim:{keeperOff:o.sim.keeperOff, failNext:null, refundNext:false}, wiz:{...freshWiz(), ...o.wiz, step:1}, nextId:o.nextId, lastTick:o.lastTick });
+  Object.assign(s, { seq:o.seq, wallet:o.wallet, price:{...s.price,...o.price}, borrowPct:o.borrowPct, mult:o.mult, positions:o.positions.map(p=>({...p, cooldown:0})), activity:o.activity.slice(0,500), credited:o.credited.slice(), flow:o.flow, ladders:JSON.parse(JSON.stringify(o.ladders)), grants:JSON.parse(JSON.stringify(o.grants)), sim:{...freshSim(), keeperOff:o.sim.keeperOff===true}, wiz:{...freshWiz(), ...o.wiz, step:1}, nextId:o.nextId, lastTick:o.lastTick });
   return {ok:true, state:s};
 }
 let storage = { get:()=>{ try{return localStorage.getItem(STORE_KEY);}catch(e){return null;} }, set:v=>{ try{localStorage.setItem(STORE_KEY,v);}catch(e){} }, del:()=>{ try{localStorage.removeItem(STORE_KEY);}catch(e){} } };
 function serialize(s){ return JSON.stringify({...s, sim:{keeperOff:s.sim.keeperOff, failNext:null, refundNext:false}}); }
+/* ── The keeper's permission, per account ─────────────────────────────────
+   One grant, one target, one selector: StrategyRouter.unwind — which is the
+   whole of what the keeper plans now that it makes one root call inside the
+   signed grant instead of planning a close first. The expiry is real and the
+   demo clock runs it down like everything else. */
+function grantFor(s, owner, create){ const k=String(owner||"").toLowerCase(); if(!s.grants[k] && create) s.grants[k]={ remainingS: GRANT_EXPIRY_S, revoked:false, notified:false }; return s.grants[k]||null; }
+function grantOf(s, owner){
+  const g = grantFor(s, owner, false); if(!g) return null;
+  const live = g.remainingS>0 && !g.revoked;
+  const lp = ownedBy(s, owner).filter(p=>p.kind==="LP");
+  const held = ownedBy(s, owner).filter(p=>p.kind==="HOLD").reduce((a,p)=>a+p.usdc,0);
+  const legToken = lp.length ? swapLegFor(poolById(lp[0].pool), 0).tokenIn : "pool token";
+  return { remainingS: g.remainingS, remainingDays: g.remainingS/86400, revoked: g.revoked, expired: g.remainingS<=0, live,
+    budgets: [
+      { token:"USDC", perDay: debtOf(s, owner), why:"repaying your loan — it can never repay more than you owe" },
+      { token: legToken, perDay: lp.reduce((a,p)=>a+p.lp+p.idle,0), why:"the pool half it must sell for USDC before it can repay" },
+      { token:"AERO", perDay: lp.reduce((a,p)=>a+p.emis,0)+held*0, why:"claimed emissions, routed into the same repay" },
+    ] };
+}
 let bootNote=null;
 function load(){ const raw=storage.get(); if(raw==null) return freshState(); const r=validateStore(raw); if(!r.ok){ bootNote="Saved state rejected ("+r.why+") — starting fresh. Positions live under your account on-chain, not in this browser."; storage.del(); return freshState(); } return r.state; }
 function save(){ const raw=storage.get(); if(raw!=null){ const r=validateStore(raw); if(r.ok && r.state.seq > S.seq){ adopt(r.state,"Another tab saved newer state — adopted it instead of overwriting"); return false; } } S.seq+=1; storage.set(serialize(S)); return true; }
@@ -1278,7 +1614,7 @@ const debtOf = (s, owner) => ownedBy(s, owner).reduce((a,p)=>a+p.debt,0);
 const accountHf = (s, owner, dW=0, dD=0) => { const d=debtOf(s,owner)+dD; if(d<=0) return Infinity; return (weightedCollOf(s,owner)+dW)/d; };
 const ladderOf = (s, owner) => { const k=owner.toLowerCase(); if(!s.ladders[k]) s.ladders[k]=Object.fromEntries(RUNGS.map(r=>[r,true])); return s.ladders[k]; };
 function positionApr(s, p){
-  if(p.kind==="LP") return positionAprPct(p.asset, p.ltv, poolById(p.pool), s.borrowPct, p.widthBps, s.mult);
+  if(p.kind==="LP") return positionAprPct(p.asset, p.ltv, poolById(p.pool), s.borrowPct, p.widthBps, s.mult, gopts(s,{collateral:p.asset}));
   if(p.kind==="HOLD") return supplyAprOf(p.asset) - (p.ltv/100)*s.borrowPct;
   if(p.kind==="SUPPLY") return supplyAprOf(p.asset);
   return 0;
@@ -1300,6 +1636,18 @@ function runLadder(s, owner){
   if(!owner) return; const L=ladderOf(s, owner); let hf=accountHf(s, owner);
   for(const r of RUNGS){ if(!L[r] && hf >= LAD.disarm[r]) L[r]=true; }
   if(s.sim.keeperOff) return;
+  /* A permission that has expired or been revoked is not a permission. The
+     keeper stops; the collateral and the loan are untouched, and the owner can
+     still unwind from their own account. Announced once, never per tick. */
+  const G = grantFor(s, owner, false);
+  if(G && !(G.remainingS>0 && !G.revoked)){
+    if(!G.notified){ G.notified = true;
+      log(s, G.revoked ? "Keeper permission revoked" : "Keeper permission expired",
+        G.revoked ? "The keeper can no longer repay or unwind for you. Renew it, or unwind yourself from your account at any time."
+                  : `The ${OIL_CONTRACTS.grant.expiryDays}-day grant ran out. The ladder cannot act until you renew it; your collateral and loan are untouched.`,
+        "⏳", "chip-crit", false); }
+    return;
+  }
   const lps = () => ownedBy(s, owner).filter(p=>p.kind==="LP");
   for(const r of RUNGS){
     hf=accountHf(s, owner);                                 // re-read after any rung acted
@@ -1333,7 +1681,7 @@ function wizDecision(s){
     const pool=poolById(w.pool); if(!pool) return {ok:false, why:"Pick a pool"};
     if(!fin(w.rw, SH.RANGE_WIDTH_BOUNDS.min, SH.RANGE_WIDTH_BOUNDS.max)||!Number.isInteger(w.rw)) return {ok:false, why:`Width must be an integer in [${SH.RANGE_WIDTH_BOUNDS.min}, ${SH.RANGE_WIDTH_BOUNDS.max}] bps`};
     if(!fin(w.rd, SH.REBALANCE_DELAY_BOUNDS.minHours, SH.REBALANCE_DELAY_BOUNDS.maxHours)) return {ok:false, why:"Rebalance delay out of bounds"};
-    const g=gate(pool, s.borrowPct, w.rw, s.mult); if(!g.ok) return {ok:false, why:`${pool.name} fails the gate at this width — ${g.why}`};
+    const g=gate(pool, s.borrowPct, w.rw, s.mult, gopts(s,{collateral:w.asset})); if(!g.ok) return {ok:false, why:`${pool.name} fails the gate at this width — ${g.why}`};
   }
   return {ok:true, why:""};
 }
@@ -1358,7 +1706,7 @@ function reduce(s, a){
     case "setPrice": { if(fin(a.px,1e-9) && a.asset in s.price){ s.price[a.asset]=a.px; if(s.wallet) runLadder(s, s.wallet.addr); for(const o of new Set(s.positions.map(p=>p.owner.toLowerCase()))) if(!sameAddr(o, s.wallet&&s.wallet.addr)) runLadder(s, o); } return s; }
     case "setBorrowRate": if(fin(a.pct,0,100)) s.borrowPct=a.pct; return s;
     case "setMult": if(fin(a.mult,1,100)) s.mult=a.mult; return s;
-    case "tick": { for(const p of s.positions) accruePosition(s, p, a.dt); for(const o of new Set(s.positions.map(p=>p.owner.toLowerCase()))) runLadder(s, o); return s; }
+    case "tick": { const dt=Math.max(0, Math.min(MAX_TICK_S, fin(a.dt)?a.dt:0)); for(const p of s.positions) accruePosition(s, p, a.dt); for(const g of Object.values(s.grants)) g.remainingS = Math.max(0, g.remainingS - dt); for(const o of new Set(s.positions.map(p=>p.owner.toLowerCase()))) runLadder(s, o); return s; }
     case "beginFlow": { const d=wizDecision(s); if(!d.ok) return s; const w=s.wiz; const first = !ownedBy(s, s.wallet.addr).length && !s.credited.some(id=>String(id).startsWith(String(s.nextId)));
       s.flow={ id: s.nextId*100000 + Math.floor(rng()*99999), step:0, status:"signing", owner:s.wallet.addr, firstTime: !ownedBy(s, s.wallet.addr).length, wiz:{...w}, refund:s.sim.refundNext, failNext:s.sim.failNext, opened:Date.now() };
       s.sim.refundNext=false; s.sim.failNext=null; return s; }
@@ -1380,16 +1728,27 @@ function reduce(s, a){
     case "compound": { const p=s.positions.find(x=>x.id===a.id); if(!p||p.kind!=="LP"||p.emis<=0||p.cooldown>0) return s; const out=p.emis; p.emis=0; p.lp+=out; p.lpBasis+=out; p.cooldown=60; log(s,"Compounded",`$${out.toFixed(2)} re-deposited · ${poolById(p.pool).name} · 60s hold restarted`,"↻","chip-good"); return s; }
     case "adjust": { const p=s.positions.find(x=>x.id===a.id); if(!p||p.kind!=="LP") return s; if(fin(a.widthBps,SH.RANGE_WIDTH_BOUNDS.min,SH.RANGE_WIDTH_BOUNDS.max)) p.widthBps=Math.round(a.widthBps); if(fin(a.delayH,SH.REBALANCE_DELAY_BOUNDS.minHours,SH.REBALANCE_DELAY_BOUNDS.maxHours)) p.delayH=Math.round(a.delayH); if(typeof a.autoCompound==="boolean") p.autoCompound=a.autoCompound; log(s,"Parameters updated",`${poolById(p.pool).name}: ±${halfWidthPct(p.widthBps).toFixed(2)}% (${p.widthBps} bps), rebalance ${p.delayH}h, ${p.autoCompound?"auto-compound":"manual claims"} · updateParameters`,"⚙","chip-info"); return s; }
     case "setRange": { const p=s.positions.find(x=>x.id===a.id)||s.positions.find(x=>x.kind==="LP"); if(!p||p.kind!=="LP") return s; if(p.inRange!==a.inRange){ p.inRange=a.inRange; log(s, a.inRange?"Rebalanced":"Out of range", a.inRange?`${poolById(p.pool).name} re-centred by the engine — earning again`:`${poolById(p.pool).name} left its range — emissions pause until the engine rebalances (after ${p.delayH}h)`,"⇄", a.inRange?"chip-good":"chip-warn", a.inRange); } return s; }
-    case "sim": { if(a.kind==="keeperOff"){ s.sim.keeperOff=!!a.on; if(!a.on) for(const o of new Set(s.positions.map(p=>p.owner.toLowerCase()))) runLadder(s,o); } if(a.kind==="failNext") s.sim.failNext=a.on?{step:a.step, why:a.why}:null; if(a.kind==="refundNext") s.sim.refundNext=!!a.on; return s; }
+    case "sim": { if(a.kind==="keeperOff"){ s.sim.keeperOff=!!a.on; if(!a.on) for(const o of new Set(s.positions.map(p=>p.owner.toLowerCase()))) runLadder(s,o); } if(a.kind==="failNext") s.sim.failNext=a.on?{step:a.step, why:a.why}:null; if(a.kind==="refundNext") s.sim.refundNext=!!a.on;
+      if(a.kind==="paused"){ if(a.asset in CR.aaveReserves) s.sim.paused={...s.sim.paused, [a.asset]: !!a.on}; }
+      if(a.kind==="corroborated") s.sim.corroborated=!!a.on;
+      if(a.kind==="revote") s.sim.revote=!!a.on;
+      if(a.kind==="sandwich") s.sim.sandwich=!!a.on;
+      return s; }
+    case "renewGrant": { const o=a.owner||(s.wallet&&s.wallet.addr); if(!o) return s; const g=grantFor(s,o,true); g.remainingS=GRANT_EXPIRY_S; g.revoked=false; g.notified=false;
+      log(s,"Keeper permission renewed",`${OIL_CONTRACTS.grant.target}.${OIL_CONTRACTS.grant.selector} only · ${OIL_CONTRACTS.grant.expiryDays} days · revocable`,"🔑","chip-good"); runLadder(s,o); return s; }
+    case "revokeGrant": { const o=a.owner||(s.wallet&&s.wallet.addr); if(!o) return s; const g=grantFor(s,o,false); if(!g||g.revoked) return s; g.revoked=true; g.notified=false; runLadder(s,o); return s; }
+    case "expireGrant": { const o=a.owner||(s.wallet&&s.wallet.addr); if(!o) return s; const g=grantFor(s,o,false); if(!g) return s; g.remainingS=0; g.notified=false; runLadder(s,o); return s; }
+    case "swapReverted": { log(s,"Withdrawal reverted — nothing moved",`The unwind's swap would have returned $${(a.out||0).toFixed(2)} against a floor of $${(a.minOut||0).toFixed(2)} — ${a.err}. The call is atomic: no collateral left, no debt was repaid, nothing was sold at the bad price.`,"✕","chip-crit",false); return s; }
     case "seed": { if(!s.wallet) return s; const o=s.wallet.addr; if(ownedBy(s,o).length) return s; const px=s.price; const now=Date.now();
-      const pool1=poolById(firstOfferedPoolId(s.borrowPct, s.mult))||poolById("aero-cbbtc-usdc");
+      const pool1=poolById(firstOfferedPoolId(s.borrowPct, s.mult, gopts(s)))||poolById("aero-cbbtc-usdc");
       const p1=mkLp(s, o, "cbBTC", 0.2, 30, pool1.id, presetWidthBps("CONSERVATIVE",pool1.pairClass), 48, true, now-86400000*12); p1.emis=41.3; p1.interest=15.9; p1.ageS=12*86400;
       const p2={ id:s.nextId++, kind:"SUPPLY", owner:o, asset:"WETH", coll:2.0, debt:0, interest:0, openedAt:now-86400000*45, ageS:45*86400 };
+      const g0=grantFor(s,o,true); g0.remainingS=GRANT_EXPIRY_S-12*86400; g0.revoked=false; g0.notified=false;
       s.positions.push(p1,p2); log(s,"Example positions loaded",`Two demo positions under ${short(o)} — every number simulated`,"＋","chip-mute",false); runLadder(s,o); return s; }
     default: return s;
   }
 }
-const firstOfferedPoolId = (borrowPct, mult=1) => { const p=OIL_MODEL.pools.find(pl=>gate(pl,borrowPct,presetWidthBps("CONSERVATIVE",pl.pairClass),mult).ok); return p?p.id:null; };
+const firstOfferedPoolId = (borrowPct, mult=1, opts) => { const p=OIL_MODEL.pools.find(pl=>gate(pl,borrowPct,presetWidthBps("CONSERVATIVE",pl.pairClass),mult,opts).ok); return p?p.id:null; };
 function mkLp(s, owner, asset, coll, ltvPct, poolId, widthBps, delayH, autoCompound, openedAt){ const borrowed=coll*s.price[asset]*(ltvPct/100); return { id:s.nextId++, kind:"LP", owner, asset, coll, ltv:ltvPct, debt:borrowed, lp:borrowed, lpBasis:borrowed, emis:0, idle:0, interest:0, claimed:0, pool:poolId, widthBps, delayH, autoCompound, inRange:true, cooldown:60, unwound:false, openedAt, ageS:0 }; }
 function withdrawCapPct(s,p){ // collateral may leave only while account HF stays ≥ entry floor
   const D=debtOf(s,p.owner); if(D<=0) return 100; const W=weightedCollOf(s,p.owner); const maxW=Math.max(0, W - LAD.entryHfFloor*D); const mine=p.coll*s.price[p.asset]*ltOf(p.asset); if(mine<=0) return 0; return Math.max(0, Math.min(100, Math.floor(maxW/mine*100/5)*5)); }
@@ -1399,6 +1758,7 @@ function openFromFlow(s, f){
   else if(w.mode==="HOLD"){ const b=usdIn*(w.ltv/100); s.positions.unshift({ id:s.nextId++, kind:"HOLD", owner:o, asset:w.asset, coll:w.amount, ltv:w.ltv, debt:b, usdc:b, interest:0, openedAt:Date.now(), ageS:0 }); log(s,"Borrowed & holding",`${w.amount} ${w.asset} → Aave v3 · $${b.toFixed(2)} USDC borrowed, held in your account`,"＋","chip-gold"); }
   else if(w.mode==="SUPPLY"){ s.positions.unshift({ id:s.nextId++, kind:"SUPPLY", owner:o, asset:w.asset, coll:w.amount, debt:0, interest:0, openedAt:Date.now(), ageS:0 }); log(s,"Supplied",`${w.amount} ${w.asset} → Aave v3 · no borrow`,"＋","chip-gold"); }
   else if(w.mode==="SPOT"){ const out=usdIn*(1-0.0002); s.positions.unshift({ id:s.nextId++, kind:"SPOT", owner:o, asset:w.asset, coll:0, debt:0, interest:0, amountIn:w.amount, amountOut:out, openedAt:Date.now(), ageS:0 }); log(s,"Swapped via CoW",`${w.amount} ${w.asset} → $${out.toFixed(2)} USDC · batch auction settled`,"⇄","chip-info"); }
+  if(w.mode==="LP"||w.mode==="HOLD"){ const g=grantFor(s,o,true); g.remainingS=GRANT_EXPIRY_S; g.revoked=false; g.notified=false; }
   s.wiz={...freshWiz(), asset:w.asset};
   runLadder(s,o);
 }
@@ -1467,6 +1827,28 @@ $("#dashConnect").addEventListener("click",()=>$("#connectBtn").click());
 $("#disconnectBtn").addEventListener("click",()=>{ dispatch({type:"disconnect"}); $("#walletOverlay").classList.remove("on"); toast("Wallet disconnected — positions stay under your account on-chain"); });
 
 /* ═══ Dashboard ═══ */
+const fmtDur = s => s<=0 ? "expired" : s>=2*86400 ? `${Math.floor(s/86400)} days` : s>=86400 ? "1 day" : s>=3600 ? `${Math.floor(s/3600)} hours` : `${Math.max(1,Math.floor(s/60))} minutes`;
+/* The permission card: one target, one function, per-token daily caps, an
+   expiry that actually runs out, and the boundary the caps do NOT cover said
+   out loud. Everything here is read off the account — nothing is typed. */
+function renderGrant(){
+  const card=$("#grantCard"), owner=S.wallet&&S.wallet.addr, gr = owner ? grantOf(S, owner) : null;
+  if(!gr){ card.style.display="none"; return; }
+  card.style.display="block";
+  const G=OIL_CONTRACTS.grant, soon = gr.remainingS>0 && gr.remainingS < 7*86400, chip=$("#grantChip");
+  chip.className = "chip " + (!gr.live ? "chip-crit" : soon ? "chip-warn" : "chip-good");
+  chip.innerHTML = `<span class="dot"></span>` + (gr.revoked ? "Revoked — nothing can act" : gr.expired ? "Expired — nothing can act" : `Live · expires in ${fmtDur(gr.remainingS)}`);
+  $("#grantKv").innerHTML = [
+    ["What it may call", `<span class="mono">${G.target}.${G.selector}()</span> — ${G.rootCalls} root call, nothing else`],
+    ["Daily limits", gr.budgets.map(b=>`${usd(b.perDay)} ${b.token}`).join(" · ")],
+    ["Period", `${G.periodS/3600}h · a re-grant inside a live period carries the spend forward, it does not refill the window`],
+    ["Expiry", gr.live ? `${fmtDur(gr.remainingS)} left of ${G.expiryDays} days` : (gr.revoked?"revoked by you":"ran out")],
+    ["May act back on your account", G.allowCallback ? "yes — you decided that when you signed, never the keeper" : "no"],
+    ["Revocable", "yes, at any time, by you alone"],
+  ].map(([k,v])=>`<span class="k">${k}</span><span class="v">${v}</span>`).join("");
+  $("#grantNote").innerHTML = `Each limit is what the keeper may move <b>directly</b> in that token in a day: ${gr.budgets.map(b=>`${b.token} — ${b.why}`).join("; ")}. ${G.boundary} Refused from any keeper grant outright, budget or not: ${G.refusedSelectors.join(", ")} (<span class="mono">${G.refusalError}</span>).`;
+  $("#grantRevoke").disabled = gr.revoked; $("#grantRevoke").textContent = gr.revoked ? "Already revoked" : "Revoke now";
+}
 function renderHealth(){
   const owner=S.wallet&&S.wallet.addr; const band=$("#band"), track=$("#bandTrack"); $$(".band-tick,.band-zonelbl",band).forEach(e=>e.remove());
   const chip=$("#hfChip");
@@ -1494,7 +1876,7 @@ const openCards=new Set();
 function posCard(p){
   const el=document.createElement("div"); el.className="card pos"; el.dataset.id=p.id; const apr=positionApr(S,p);
   let chips="", nums="", body="", title="";
-  if(p.kind==="LP"){ const pool=poolById(p.pool), g=gate(pool,S.borrowPct,p.widthBps,S.mult);
+  if(p.kind==="LP"){ const pool=poolById(p.pool), g=gate(pool,S.borrowPct,p.widthBps,S.mult,gopt({collateral:p.asset}));
     chips=`<span class="chip chip-mute">Aerodrome · Snuggle</span>`+(p.cooldown>0?`<span class="chip chip-info cool"><span class="cool-ring" style="--p:${(1-p.cooldown/60)*100}%"></span>Hold ${Math.ceil(p.cooldown)}s</span>`:p.lp<=0?`<span class="chip chip-warn">Unwound</span>`:p.inRange?`<span class="chip chip-good"><span class="dot"></span>In range</span>`:`<span class="chip chip-warn"><span class="dot"></span>Out of range · rebalance after ${p.delayH}h</span>`)+(g.ok?"":`<span class="chip chip-warn">gate: ${g.why}</span>`)+`<span class="chip chip-mute">${p.autoCompound?"Auto-compound":"Manual claims"}</span>`;
     nums=`<div class="pos-num"><div class="lbl">Value</div><div class="v num">${usd(posValue(S,p))}</div></div><div class="pos-num"><div class="lbl">Net APY</div><div class="v num ${signCls(apr)}">${pct(apr)}</div></div><div class="pos-num"><div class="lbl">Claimable</div><div class="v num">${usd(p.emis)}</div></div>`;
     const gross=p.emis/feeKeep(pool), feeE=gross*CR.snuggleEngineFeeBps/10000, feeP=(gross-feeE)*FEES.performanceBps/10000;
@@ -1554,7 +1936,7 @@ function refreshStats(){
   $("#stColl").textContent=Object.keys(byAsset).length?Object.entries(byAsset).map(([a,v])=>`${fmtAsset(v,a)} ${a}`).join(" + "):"—";
   $("#stCollSub").textContent=owner?`${usd(collUsdOf(S,owner))} · supply ${Object.keys(byAsset).map(a=>`${a} ${supplyAprOf(a).toFixed(3)}%`).join(", ")||"—"}`:"—";
   $("#stClaim").textContent=usd(mine.reduce((a,p)=>a+claimableOf(p),0));
-  $("#msBorrow").textContent=S.borrowPct.toFixed(3)+"%"; $("#msOffered").textContent=OIL_MODEL.pools.filter(p=>gate(p,S.borrowPct,presetWidthBps("CONSERVATIVE",p.pairClass),S.mult).ok).length+" / "+OIL_MODEL.pools.length+(S.mult!==1?` (WHAT-IF ×${S.mult})`:"");
+  $("#msBorrow").textContent=S.borrowPct.toFixed(3)+"%"; $("#msOffered").textContent=OIL_MODEL.pools.filter(p=>gate(p,S.borrowPct,presetWidthBps("CONSERVATIVE",p.pairClass),S.mult,gopt({collateral:S.wiz.asset})).ok).length+" / "+OIL_MODEL.pools.length+(S.mult!==1?` (WHAT-IF ×${S.mult})`:"");
   $("#whatifBanner").style.display=S.mult!==1?"flex":"none"; $("#whatifMult").textContent="×"+S.mult;
   $("#noWalletBanner").style.display=owner?"none":"flex";
   const b=$("#connectBtn"); if(owner){b.textContent=short(owner);b.classList.add("num");} else {b.textContent="Connect wallet";b.classList.remove("num");}
@@ -1574,10 +1956,14 @@ function clSync(){ renderDests("#clDests",destCards(debtOf(S,cl.p.owner)>0),cl.d
   $("#clConfirm").textContent = cl.dest==="REPAY" ? `Use ${usd(cl.p.emis)} to repay the loan` : `Send ${usd(cl.p.emis)} to my wallet`; }
 $("#clConfirm").addEventListener("click",()=>{ $("#clOverlay").classList.remove("on"); dispatch({type:"claim",id:cl.p.id,dest:cl.dest}); toast(cl.dest==="REPAY"?"♥ Rewards repaid debt — your health factor rose":"⚡ Rewards sent to your wallet — the position keeps earning"); });
 
+/* keeper permission */
+$("#grantRenew").addEventListener("click",()=>{ dispatch({type:"renewGrant"}); toast(`Keeper permission renewed — ${OIL_CONTRACTS.grant.target}.${OIL_CONTRACTS.grant.selector} only, ${OIL_CONTRACTS.grant.expiryDays} days, revocable`); });
+$("#grantRevoke").addEventListener("click",()=>{ if($("#grantRevoke").disabled) return; dispatch({type:"revokeGrant"}); toast("Permission revoked — nothing can act on your behalf. Your collateral and loan are untouched and you can unwind yourself."); });
+
 /* adjust modal */
 const prm={p:null};
 function prmOpen(p){ prm.p=p; $("#prmTitle").textContent=`Adjust — ${poolById(p.pool).name}`; const r=$("#prmRw"); r.min=SH.RANGE_WIDTH_BOUNDS.min; r.max=SH.RANGE_WIDTH_BOUNDS.max; r.value=p.widthBps; $("#prmRd").value=p.delayH; $("#prmComp").classList.toggle("on",p.autoCompound); $("#prmComp").setAttribute("aria-checked",p.autoCompound); $("#prmRwMin").textContent=`±${halfWidthPct(SH.RANGE_WIDTH_BOUNDS.min).toFixed(2)}%`; $("#prmRwMax").textContent=`±${halfWidthPct(SH.RANGE_WIDTH_BOUNDS.max).toFixed(2)}%`; prmSync(); $("#prmOverlay").classList.add("on"); }
-function prmSync(){ const w=+$("#prmRw").value, pool=poolById(prm.p.pool), g=gate(pool,S.borrowPct,w,S.mult); $("#prmRwLbl").textContent=`±${halfWidthPct(w).toFixed(2)}% (${w} bps)`; $("#prmRdLbl").textContent=$("#prmRd").value+"h"; $("#prmRwNote").innerHTML=`Emissions ${g.gross.toFixed(2)}% · IL drag at this width ${fmtDrag(ilDragPct(pool.sigma,w))} · working slice <span class="${signCls(g.net)}">${Number.isFinite(g.net)?pct(g.net):"—"}</span>${g.ok?"":" — fails the gate; the position keeps running but no new borrow may be added"}`; }
+function prmSync(){ const w=+$("#prmRw").value, pool=poolById(prm.p.pool), g=gate(pool,S.borrowPct,w,S.mult,gopt({collateral:prm.p.asset})); $("#prmRwLbl").textContent=`±${halfWidthPct(w).toFixed(2)}% (${w} bps)`; $("#prmRdLbl").textContent=$("#prmRd").value+"h"; $("#prmRwNote").innerHTML=`Emissions ${g.gross.toFixed(2)}% · IL drag at this width ${fmtDrag(ilDragPct(pool.sigma,w))} · working slice <span class="${signCls(g.net)}">${Number.isFinite(g.net)?pct(g.net):"—"}</span>${g.ok?"":" — fails the gate; the position keeps running but no new borrow may be added"}`; }
 $("#prmRw").addEventListener("input",prmSync); $("#prmRd").addEventListener("input",prmSync);
 $("#prmComp").addEventListener("click",e=>{e.currentTarget.classList.toggle("on");e.currentTarget.setAttribute("aria-checked",e.currentTarget.classList.contains("on"));});
 $("#prmApply").addEventListener("click",()=>{ $("#prmOverlay").classList.remove("on"); dispatch({type:"adjust",id:prm.p.id,widthBps:+$("#prmRw").value,delayH:+$("#prmRd").value,autoCompound:$("#prmComp").classList.contains("on")}); toast("⚙ Parameters applied via updateParameters — no close, no new hold"); });
@@ -1596,11 +1982,20 @@ function wdUpd(){ const p=wd.p; if(!p) return; const v=+$("#wdSlider").value, k=
   else { const outW=p.coll*k*S.price[p.asset]*ltOf(p.asset); est=`≈ ${fmtAsset(p.coll*k,p.asset)} ${p.asset} (${usd(p.coll*k*S.price[p.asset])})${p.kind==="HOLD"?` + ${usd(p.usdc*k)} USDC`:""}`; const r = p.kind==="HOLD"&&wd.dest==="REPAY" ? Math.min(p.usdc*k,p.debt) : 0; hf1=accountHf(S,p.owner,-outW,-r); note=r>0?`repaying ${usd(r)} and withdrawing collateral`:"withdrawing collateral"; }
   $("#wdEst").textContent=est+" · price band set automatically";
   $("#wdHf").innerHTML=D>0?`Health factor: <b>${fmtHf(hf0)}</b> → <b style="color:${hf1>=hf0?"var(--good)":hf1>=LAD.rungs.warn?"var(--ink)":hf1>=LAD.rungs.derisk?"var(--warn)":"var(--crit)"}">${fmtHf(hf1)}</b> (${note})`:"";
+  const leg = wdLeg(k);
+  $("#wdSwap").style.display = leg && leg.legUsd>0 ? "block" : "none";
+  if(leg && leg.legUsd>0) $("#wdSwap").innerHTML = `<b>Selling the pool's ${leg.tokenIn} half for USDC.</b> Quote ${usd(leg.quotedIn)} of ${leg.tokenIn} → ${usd(leg.quotedOut)} USDC (the pool's own ${leg.feeBps} bps fee is in it), slippage cap <b>${(leg.maxSlippageBps/100).toFixed(2)}%</b> of the quote — the contract refuses anything above ${(leg.cap/100).toFixed(2)}%. The swap <b>reverts below ${usd(leg.minOut)}</b>: that floor is what <span class="mono">${OIL_CONTRACTS.swap.view}</span> returns and what <span class="mono">Swapped</span> logs. A leg that settles larger or smaller scales the floor with it; an adverse price does not move the floor, so the swap reverts rather than settle for dust.`;
+  const rev=$("#wdRevert"); rev.style.display = leg && leg.legUsd>0 && leg.reverts ? "block" : "none";
+  if(leg && leg.legUsd>0 && leg.reverts) rev.innerHTML = `<b>This would revert.</b> Simulated market move: the leg comes back worth ${usd(leg.actualOut)}, below the ${usd(leg.minOut)} floor — <span class="mono">${leg.revertError}</span>. The unwind is atomic, so nothing moves at all.`;
   $("#wdWarn").style.display=v>=100&&p.kind==="LP"?"block":"none"; $("#wdWarn").innerHTML=`Withdrawing 100% closes the pool position. ${D>0&&wd.dest!=="REPAY"?`<b>Your ${usd(D)} debt stays</b> — collateral remains on Aave backing it.`:""}`;
   const D2=debtOf(S,p.owner); $("#wdConfirm").disabled=wd.capPct<5||v<=0;
   $("#wdConfirm").textContent = wd.capPct<5 ? "Nothing withdrawable — repay debt first" : p.kind==="LP" && v>=100 ? (wd.dest==="REPAY" ? "Close the pool position and repay the loan" : (D2>0 ? "Close the pool position — the loan stays" : "Close the pool position")) : wd.dest==="REPAY" ? `Withdraw ${v}% and repay the loan` : `Withdraw ${v}% to my wallet`; }
 $("#wdSlider").addEventListener("input",wdUpd);
-$("#wdConfirm").addEventListener("click",()=>{ if($("#wdConfirm").disabled) return; const v=+$("#wdSlider").value; $("#wdOverlay").classList.remove("on"); dispatch({type:"withdraw",id:wd.p.id,pct:v,dest:wd.dest}); toast(v>=100?"Closed — see Activity":`Withdrew ${v}%`); });
+/* The swap leg this withdrawal would sign, priced exactly as the adapter will. */
+function wdLeg(k){ const p=wd.p; if(!p||p.kind!=="LP") return null; return swapLegFor(poolById(p.pool), (p.lp+p.idle)*k, OIL_CONTRACTS.swap.defaultMaxSlippageBps, { priceFactor: S.sim.sandwich ? 0.6 : 1 }); }
+$("#wdConfirm").addEventListener("click",()=>{ if($("#wdConfirm").disabled || !wd.p) return; const v=+$("#wdSlider").value; const leg=wdLeg(v/100);
+  if(leg && leg.legUsd>0 && leg.reverts){ dispatch({type:"swapReverted", minOut:leg.minOut, out:leg.actualOut, err:leg.revertError}); toast("Reverted — the swap floor held and nothing moved"); return; }
+  $("#wdOverlay").classList.remove("on"); dispatch({type:"withdraw",id:wd.p.id,pct:v,dest:wd.dest}); toast(v>=100?"Closed — see Activity":`Withdrew ${v}%`); });
 
 /* ═══ Wizard ═══ */
 function setStep(n){ dispatch({type:"wiz",key:"step",value:n}); }
@@ -1652,10 +2047,10 @@ function renderWizard(){
   if(w.mode==="SPOT"){ const usdIn=fin(w.amount)?w.amount*S.price[w.asset]:0; $("#spotQuote").innerHTML=`<b>${fin(w.amount)?w.amount:"—"} ${w.asset} → ≈ ${usd(usdIn*(1-0.0002))} USDC</b> · CoW batch auction, 2 bps solver fee, free expiry, MEV-protected. Settlement ${short(SH.COW_PROTOCOL.settlement)}; the vault relayer is read from <span class="mono">settlement.vaultRelayer()</span> before any approval. Demo quote.`; }
   // step 3
   if(w.mode==="LP"){ const pool=poolById(w.pool), pc=pool?pool.pairClass:"UNCORRELATED";
-    $("#presetCards").innerHTML=SH.RANGE_PRESETS.map(pr=>{ const bps=pr.rangeWidthBps[pc]; const on=w.preset===pr.preset; const g=pool?gate(pool,S.borrowPct,bps,S.mult):null; return `<div class="opt${on?" sel":""}" role="radio" aria-checked="${on}" tabindex="${on?0:-1}" data-preset="${pr.preset}"><div class="t">${pr.label}</div><div class="small num" style="color:var(--gold);font-weight:650;margin-top:3px">±${halfWidthPct(bps).toFixed(2)}% · ${bps} bps${pc==="CORRELATED"?" · correlated":""}</div><div class="d">${pr.description}${g?` Emissions ${g.gross.toFixed(2)}%, IL drag ${fmtDrag(ilDragPct(pool.sigma,bps))} → slice <span class="${signCls(g.net)}">${Number.isFinite(g.net)?pct(g.net):"—"}</span>${g.ok?"":" (gated)"}`:""}</div></div>`; }).join("");
+    $("#presetCards").innerHTML=SH.RANGE_PRESETS.map(pr=>{ const bps=pr.rangeWidthBps[pc]; const on=w.preset===pr.preset; const g=pool?gate(pool,S.borrowPct,bps,S.mult,gopt({collateral:w.asset})):null; return `<div class="opt${on?" sel":""}" role="radio" aria-checked="${on}" tabindex="${on?0:-1}" data-preset="${pr.preset}"><div class="t">${pr.label}</div><div class="small num" style="color:var(--gold);font-weight:650;margin-top:3px">±${halfWidthPct(bps).toFixed(2)}% · ${bps} bps${pc==="CORRELATED"?" · correlated":""}</div><div class="d">${pr.description}${g?` Emissions ${g.gross.toFixed(2)}%, IL drag ${fmtDrag(ilDragPct(pool.sigma,bps))} → slice <span class="${signCls(g.net)}">${Number.isFinite(g.net)?pct(g.net):"—"}</span>${g.ok?"":" (gated)"}`:""}</div></div>`; }).join("");
     $$("#presetCards [data-preset]").forEach(o=>o.addEventListener("click",()=>dispatch({type:"wiz",key:"preset",value:o.dataset.preset})));
     const r=$("#rw"); r.min=SH.RANGE_WIDTH_BOUNDS.min; r.max=SH.RANGE_WIDTH_BOUNDS.max; r.value=w.rw; $("#rwLbl").textContent=`±${halfWidthPct(w.rw).toFixed(2)}% (${w.rw} bps${w.preset==="CUSTOM"?" · custom":""})`; $("#rwMin").textContent=`±${halfWidthPct(SH.RANGE_WIDTH_BOUNDS.min).toFixed(2)}%`; $("#rwMax").textContent=`±${halfWidthPct(SH.RANGE_WIDTH_BOUNDS.max).toFixed(2)}%`;
-    if(pool){ const g=gate(pool,S.borrowPct,w.rw,S.mult); $("#rwNote").innerHTML=`Engine bounds [${SH.RANGE_WIDTH_BOUNDS.min}, ${SH.RANGE_WIDTH_BOUNDS.max}] bps total span · emissions ${g.gross.toFixed(2)}% at this width · IL drag ${fmtDrag(ilDragPct(pool.sigma,w.rw))} · working slice <span class="${signCls(g.net)}">${Number.isFinite(g.net)?pct(g.net):"—"}</span>${g.ok?"":" — fails the gate here"}`; }
+    if(pool){ const g=gate(pool,S.borrowPct,w.rw,S.mult,gopt({collateral:w.asset})); $("#rwNote").innerHTML=`Engine bounds [${SH.RANGE_WIDTH_BOUNDS.min}, ${SH.RANGE_WIDTH_BOUNDS.max}] bps total span · emissions ${g.gross.toFixed(2)}% at this width · IL drag ${fmtDrag(ilDragPct(pool.sigma,w.rw))} · working slice <span class="${signCls(g.net)}">${Number.isFinite(g.net)?pct(g.net):"—"}</span>${g.ok?"":" — fails the gate here"}`; }
     $("#rd").value=w.rd; $("#rdLbl").textContent=w.rd+"h";
   }
   $$("#rewCards [data-rew]").forEach(o=>{ const on=w.rew===o.dataset.rew; o.classList.toggle("sel",on); o.setAttribute("aria-checked",on); o.tabIndex=on?0:-1; });
@@ -1666,10 +2061,10 @@ function renderWizard(){
 }
 function renderPoolList(){
   const w=S.wiz; const list=OIL_MODEL.pools; const L=$("#poolList"); L.innerHTML="";
-  const offered=list.filter(p=>gate(p,S.borrowPct,presetWidthBps(w.preset==="CUSTOM"?"CONSERVATIVE":w.preset,p.pairClass),S.mult).ok);
+  const offered=list.filter(p=>gate(p,S.borrowPct,presetWidthBps(w.preset==="CUSTOM"?"CONSERVATIVE":w.preset,p.pairClass),S.mult,gopt({collateral:w.asset})).ok);
   $("#poolCount").textContent=`${offered.length} of ${list.length} pools clear the gate at ${S.borrowPct.toFixed(3)}% borrow (${w.preset==="CUSTOM"?"conservative":w.preset.toLowerCase()} width)${offered.length?"":" — the menu is empty by the model's verdict; pick Borrow & hold, Supply only or Spot"}${S.mult!==1?` · WHAT-IF ×${S.mult}`:""}`;
   if(!w.pool && offered.length){ w.pool=offered[0].id; w.rw=presetWidthBps(w.preset==="CUSTOM"?"CONSERVATIVE":w.preset, offered[0].pairClass); }
-  list.forEach((p,i)=>{ const bps=presetWidthBps(w.preset==="CUSTOM"?"CONSERVATIVE":w.preset,p.pairClass), g=gate(p,S.borrowPct,bps,S.mult); const on=w.pool===p.id;
+  list.forEach((p,i)=>{ const bps=presetWidthBps(w.preset==="CUSTOM"?"CONSERVATIVE":w.preset,p.pairClass), g=gate(p,S.borrowPct,bps,S.mult,gopt({collateral:w.asset})); const on=w.pool===p.id;
     const el=document.createElement("div"); el.className="pool-row"+(on?" sel":""); el.setAttribute("role","radio"); el.setAttribute("aria-checked",on); el.setAttribute("aria-disabled",!g.ok); el.tabIndex=on||(!w.pool&&i===0)?0:-1;
     el.innerHTML=`${coins2(p.c)}<div class="info"><div class="nm">${p.name} ${RISK_CHIP[p.tag]} <span class="faint tiny">${p.pairClass==="CORRELATED"?"correlated":""}</span></div><div class="ds">${p.note} · emissions ${g.gross.toFixed(2)}% · IL drag ${fmtDrag(ilDragPct(p.sigma,bps))} at ±${halfWidthPct(bps).toFixed(2)}%</div>${g.ok?"":`<div class="why">gated: ${g.why}</div>`}</div><div class="apy"><div class="v num ${g.net<0?"neg":""}">${Number.isFinite(g.net)?pct(g.net):"—"}</div><div class="l">working slice</div></div>`;
     el.addEventListener("click",()=>{ if(!g.ok){ toast(`${p.name} is gated — ${g.why}`); return; } dispatch({type:"wiz",key:"pool",value:p.id}); });
@@ -1680,7 +2075,7 @@ function proj(){
   const borrowMode=w.mode==="LP"||w.mode==="HOLD", lp=w.mode==="LP";
   $$("[data-borrow]").forEach(r=>r.style.display=borrowMode?"flex":"none"); $$("[data-lp]").forEach(r=>r.style.display=lp?"flex":"none");
   const pool=poolById(w.pool); let apr=0;
-  if(w.mode==="LP") apr = pool ? positionAprPct(w.asset,w.ltv,pool,S.borrowPct,w.rw,S.mult) : NaN;
+  if(w.mode==="LP") apr = pool ? positionAprPct(w.asset,w.ltv,pool,S.borrowPct,w.rw,S.mult,gopt({collateral:w.asset})) : NaN;
   else if(w.mode==="HOLD") apr = supplyAprOf(w.asset)-(w.ltv/100)*S.borrowPct;
   else if(w.mode==="SUPPLY") apr = supplyAprOf(w.asset);
   else apr = 0;
@@ -1689,9 +2084,9 @@ function proj(){
   $("#pDep").textContent=`${amt} ${w.asset} · ${usd(usdIn)}`;
   if(borrowMode){ const b=usdIn*(w.ltv/100); const hf=accountHf(S,owner||"0x0000000000000000000000000000000000000000",usdIn*(ltOf(w.asset)||0),b); const D=(owner?debtOf(S,owner):0)+b, W=(owner?weightedCollOf(S,owner):0)+usdIn*(ltOf(w.asset)||0); const drop=D>0?Math.max(0,(1-D/W)*100):100;
     $("#pBor").textContent=`${usd(b)} USDC at ${S.borrowPct.toFixed(3)}% (${w.ltv}%)`; $("#pHf").textContent=`${fmtHf(hf)} — ${hf>=LAD.rungs.warn?"healthy":hf>=LAD.rungs.derisk?"ladder acting":"at risk"}`; $("#pHf").style.color=hf>=LAD.rungs.warn?"var(--good)":hf>=LAD.rungs.derisk?"var(--warn)":"var(--crit)"; $("#pLiq").textContent=D>0?`${usd(px*(1-drop/100))} (−${drop.toFixed(1)}%)`:"—"; }
-  if(lp&&pool){ const g=gate(pool,S.borrowPct,w.rw,S.mult); $("#pPool").textContent=`${pool.name} · Aerodrome`; $("#pSlice").innerHTML=`<span class="${signCls(g.net)}">${Number.isFinite(g.net)?pct(g.net):"—"}</span> vs ${S.borrowPct.toFixed(3)}%`; $("#pRange").textContent=`±${halfWidthPct(w.rw).toFixed(2)}% · rebalance after ${w.rd}h`; $("#pRew").textContent=w.rew==="COMPOUND"?"Auto-compound":"Claim to wallet"; $("#pFeeEng").textContent=`${CR.snuggleEngineFeeBps/100}% of yield`; }
+  if(lp&&pool){ const g=gate(pool,S.borrowPct,w.rw,S.mult,gopt({collateral:w.asset})); $("#pPool").textContent=`${pool.name} · Aerodrome`; $("#pSlice").innerHTML=`<span class="${signCls(g.net)}">${Number.isFinite(g.net)?pct(g.net):"—"}</span> vs ${S.borrowPct.toFixed(3)}%`; $("#pRange").textContent=`±${halfWidthPct(w.rw).toFixed(2)}% · rebalance after ${w.rd}h`; $("#pRew").textContent=w.rew==="COMPOUND"?"Auto-compound":"Claim to wallet"; $("#pFeeEng").textContent=`${CR.snuggleEngineFeeBps/100}% of yield`; }
   $("#pFeePlat").textContent=`${FEES.performanceBps/100}% of realised yield (cap ${FEES.maxPerformanceBps/100}%)`;
-  $("#pNote").innerHTML = w.mode==="LP" ? (pool?`Emissions-only: ${pool.name} pays ${gate(pool,S.borrowPct,w.rw,S.mult).gross.toFixed(2)}% in AERO at this width; after the engine's ${CR.snuggleEngineFeeBps/100}% and Oilskin's ${FEES.performanceBps/100}% you keep ${(feeKeep(pool)*100).toFixed(1)}%, less IL drag ${fmtDrag(ilDragPct(pool.sigma,w.rw))} at ±${halfWidthPct(w.rw).toFixed(2)}%. Negative means the position loses money at today's rates — and it is shown that way.${S.mult!==1?` <b>WHAT-IF ×${S.mult} emissions — not today's numbers.</b>`:""}`:"No pool clears the gate today — the menu is empty by the model's verdict. Borrow & hold, Supply only and Spot remain.")
+  $("#pNote").innerHTML = w.mode==="LP" ? (pool?`Emissions-only: ${pool.name} pays ${gate(pool,S.borrowPct,w.rw,S.mult,gopt({collateral:w.asset})).gross.toFixed(2)}% in AERO at this width; after the engine's ${CR.snuggleEngineFeeBps/100}% and Oilskin's ${FEES.performanceBps/100}% you keep ${(feeKeep(pool)*100).toFixed(1)}%, less IL drag ${fmtDrag(ilDragPct(pool.sigma,w.rw))} at ±${halfWidthPct(w.rw).toFixed(2)}%. Negative means the position loses money at today's rates — and it is shown that way.${S.mult!==1?` <b>WHAT-IF ×${S.mult} emissions — not today's numbers.</b>`:""}`:"No pool clears the gate today — the menu is empty by the model's verdict. Borrow & hold, Supply only and Spot remain.")
     : w.mode==="HOLD" ? `Negative carry: the borrowed USDC earns nothing while it sits; you pay ${S.borrowPct.toFixed(3)}% on it. Useful for liquidity without selling, not for yield.`
     : w.mode==="SUPPLY" ? `Supply only: no borrow, no liquidation risk — withdraw any time (subject to the account's HF cap if other positions borrow).`
     : `Spot swap: no loan, no position. The swap is a disposal of ${w.asset}; CoW's batch auction protects you from MEV. Demo quote.`;
@@ -1699,8 +2094,8 @@ function proj(){
 function renderReview(){
   const w=S.wiz, owner=S.wallet.addr, px=S.price[w.asset], amt=w.amount, usdIn=amt*px, pool=poolById(w.pool);
   let rows=`<div class="rev-sec">Deposit</div><span class="k">Wallet</span><span class="v mono">${short(owner)} · ${S.wallet.provider}</span><span class="k">Oilskin account</span><span class="v mono">${short(accountOf(owner))}${ownedBy(S,owner).length?"":" (created in tx 1)"}</span><span class="k">Amount</span><span class="v num">${amt} ${w.asset} (${usd(usdIn)})</span><span class="k">Strategy</span><span class="v">${{LP:"Leveraged LP",HOLD:"Borrow & hold USDC",SUPPLY:"Supply only",SPOT:"Spot swap via CoW"}[w.mode]}</span>`;
-  if(w.mode==="LP"||w.mode==="HOLD"){ const b=usdIn*(w.ltv/100), hf=accountHf(S,owner,usdIn*ltOf(w.asset),b); rows+=`<div class="rev-sec">Borrow</div><span class="k">Setting</span><span class="v num">${w.ltv}% · ${usd(b)} USDC at ${S.borrowPct.toFixed(3)}%</span><span class="k">Health factor after</span><span class="v num">${fmtHf(hf)} (floor ${LAD.entryHfFloor.toFixed(2)}${debtOf(S,owner)>0?" · includes existing debt":""})</span><span class="k">Liquidation threshold (${w.asset})</span><span class="v num">${(ltBpsOf(w.asset)/100).toFixed(0)}% — read from Aave</span>`; }
-  if(w.mode==="LP"){ const g=gate(pool,S.borrowPct,w.rw,S.mult); rows+=`<div class="rev-sec">Pool</div><span class="k">Pool</span><span class="v">${pool.name} · Aerodrome via Snuggle</span><span class="k">Registry id</span><span class="v num">${pool.eid.slice(0,10)}…${pool.eid.slice(-6)} ✓</span><span class="k">Range</span><span class="v num">±${halfWidthPct(w.rw).toFixed(2)}% (${w.rw} bps) · rebalance ${w.rd}h</span><span class="k">Working slice</span><span class="v num ${signCls(g.net)}">${pct(g.net)} (emissions ${g.gross.toFixed(2)}% × keep ${(feeKeep(pool)*100).toFixed(1)}%, IL drag ${fmtDrag(ilDragPct(pool.sigma,w.rw))})${S.mult!==1?` · WHAT-IF ×${S.mult}`:""}</span><span class="k">Rewards</span><span class="v">${w.rew==="COMPOUND"?"Auto-compound":"Claim to wallet"} · ${w.econ?`≥${SH.REWARD_CLAIM_POLICY.minCostMultiple}× costs, $${SH.REWARD_CLAIM_POLICY.minAbsoluteUsd} min`:"manual"}</span><span class="k">Keeper permission</span><span class="v">repay / unwind only · revocable</span>`; }
+  if(w.mode==="LP"||w.mode==="HOLD"){ const b=usdIn*(w.ltv/100), hf=accountHf(S,owner,usdIn*ltOf(w.asset),b); rows+=`<div class="rev-sec">Borrow</div><span class="k">Setting</span><span class="v num">${w.ltv}% · ${usd(b)} USDC at ${S.borrowPct.toFixed(3)}%</span><span class="k">Health factor after</span><span class="v num">${fmtHf(hf)} (floor ${LAD.entryHfFloor.toFixed(2)}${debtOf(S,owner)>0?" · includes existing debt":""})</span><span class="k">Entry floor, enforced where</span><span class="v">${OIL_CONTRACTS.entry.floorEnforcedAt} — below it the transaction reverts <span class="mono">${OIL_CONTRACTS.entry.floorError}</span>, on every path including a batch you write yourself</span><span class="k">Router entry point</span><span class="v mono">${(w.mode==="LP"?OIL_CONTRACTS.entry.leveragedLp:OIL_CONTRACTS.entry.borrowOnly).split("(")[0]}</span><span class="k">Liquidation threshold (${w.asset})</span><span class="v num">${(ltBpsOf(w.asset)/100).toFixed(0)}% — read from Aave</span>`; }
+  if(w.mode==="LP"){ const g=gate(pool,S.borrowPct,w.rw,S.mult,gopt({collateral:w.asset})); rows+=`<div class="rev-sec">Pool</div><span class="k">Pool</span><span class="v">${pool.name} · Aerodrome via Snuggle</span><span class="k">Registry id</span><span class="v num">${pool.eid.slice(0,10)}…${pool.eid.slice(-6)} ✓</span><span class="k">Range</span><span class="v num">±${halfWidthPct(w.rw).toFixed(2)}% (${w.rw} bps) · rebalance ${w.rd}h</span><span class="k">Working slice</span><span class="v num ${signCls(g.net)}">${pct(g.net)} (emissions ${g.gross.toFixed(2)}% × keep ${(feeKeep(pool)*100).toFixed(1)}%, IL drag ${fmtDrag(ilDragPct(pool.sigma,w.rw))})${S.mult!==1?` · WHAT-IF ×${S.mult}`:""}</span><span class="k">Rewards</span><span class="v">${w.rew==="COMPOUND"?"Auto-compound":"Claim to wallet"} · ${w.econ?`≥${SH.REWARD_CLAIM_POLICY.minCostMultiple}× costs, $${SH.REWARD_CLAIM_POLICY.minAbsoluteUsd} min`:"manual"}</span><span class="k">Keeper permission</span><span class="v">repay / unwind only · revocable</span>`; }
   if(w.mode==="SPOT") rows+=`<div class="rev-sec">Swap</div><span class="k">Receive</span><span class="v num">≈ ${usd(usdIn*(1-0.0002))} USDC</span><span class="k">Venue</span><span class="v">CoW batch auction · MEV-protected</span>`;
   rows+=`<div class="rev-sec">Fees</div><span class="k">Oilskin</span><span class="v num">${FEES.performanceBps/100}% of realised yield only (cap ${FEES.maxPerformanceBps/100}%) · no orchestration fee</span>${w.mode==="LP"?`<span class="k">Engine</span><span class="v num">${CR.snuggleEngineFeeBps/100}% of realised yield only</span>`:""}`;
   $("#revList").innerHTML=rows;
@@ -1714,8 +2109,9 @@ function launch(){ if(S.flow&&S.flow.status==="signing") return; const d=wizDeci
 function flowSteps(f){ const w=f.wiz, pool=poolById(w.pool); const acct=[...(f.firstTime?[{t:"Create your Oilskin account",d:`OilskinAccountFactory.createAccount(${short(f.owner)}) → ${short(accountOf(f.owner))}`,plain:"A small account contract that only your wallet controls is created — it will hold the position, and its address is known before it exists."}]:[])];
   const sign={t:"Sign the router call",plain:"Your wallet shows one transaction to approve; everything below happens inside it, all or nothing."};
   const supply={t:`${w.amount} ${w.asset} supplied to Aave v3`,d:"onBehalfOf = your account",plain:`Your ${w.amount} ${w.asset} moves from your wallet into Aave under your account, where it earns a small supply rate and is never sold.`};
-  if(w.mode==="LP") return [...acct,{...sign,d:`Permit2 pull → Aave supply → borrow ${w.ltv}% → deploy to ${pool.name}`},supply,{t:"USDC borrowed",d:`${w.ltv}% of collateral value at the live rate`,plain:`Aave lends your account USDC worth ${w.ltv}% of that collateral; interest accrues at the live rate until it is repaid.`},{t:`Deployed to ${pool.name}`,d:`Snuggle engine · ±${halfWidthPct(w.rw).toFixed(2)}% · staked in the gauge · refunds folded back`,plain:`The USDC goes to work in ${pool.name} within a ±${halfWidthPct(w.rw).toFixed(2)}% band, staked so it earns AERO; anything the engine bounces back is put straight back in.`},{t:"Done — position live",d:"Keeper permission granted (repay / unwind, revocable) · 60s engine hold",plain:"A keeper may repay or unwind on your behalf if the price falls — nothing else — and you can revoke that any time."}];
-  if(w.mode==="HOLD") return [...acct,{...sign,d:`Permit2 pull → Aave supply → borrow ${w.ltv}%`},supply,{t:"USDC borrowed, held in your account",d:`${w.ltv}% of collateral value`,plain:`Aave lends your account USDC worth ${w.ltv}% of that collateral; it sits in your account costing the borrow rate until you use or repay it.`},{t:"Done",d:"Debt accrues at the live rate until repaid",plain:"You can repay from the held USDC or withdraw at any time; the ladder still protects the collateral."}];
+  const floor=`The venue checks your account's health factor after the borrow and reverts ${OIL_CONTRACTS.entry.floorError} below ${LAD.entryHfFloor.toFixed(2)} — on this path and on any batch you write yourself.`;
+  if(w.mode==="LP") return [...acct,{...sign,d:`${OIL_CONTRACTS.entry.leveragedLp.split("(")[0]}: Permit2 pull → Aave supply → borrow ${w.ltv}% → deploy to ${pool.name}`},supply,{t:"USDC borrowed",d:`${w.ltv}% of collateral value at the live rate · entry floor ${LAD.entryHfFloor.toFixed(2)} enforced at the venue`,plain:`Aave lends your account USDC worth ${w.ltv}% of that collateral; interest accrues at the live rate until it is repaid. ${floor}`},{t:`Deployed to ${pool.name}`,d:`Snuggle engine · ±${halfWidthPct(w.rw).toFixed(2)}% · staked in the gauge · refunds folded back`,plain:`The USDC goes to work in ${pool.name} within a ±${halfWidthPct(w.rw).toFixed(2)}% band, staked so it earns AERO; anything the engine bounces back is put straight back in.`},{t:"Done — position live",d:"Keeper permission granted (repay / unwind, revocable) · 60s engine hold",plain:"A keeper may repay or unwind on your behalf if the price falls — nothing else — and you can revoke that any time."}];
+  if(w.mode==="HOLD") return [...acct,{...sign,d:`${OIL_CONTRACTS.entry.borrowOnly.split("(")[0]}: Permit2 pull → Aave supply → borrow ${w.ltv}%`,plain:"Your wallet shows one transaction to approve — a single router call, not a hand-assembled batch, so it goes through the same registry check, deadline and health floor as every other way in."},supply,{t:"USDC borrowed, held in your account",d:`${w.ltv}% of collateral value · entry floor ${LAD.entryHfFloor.toFixed(2)} enforced at the venue`,plain:`Aave lends your account USDC worth ${w.ltv}% of that collateral; it sits in your account costing the borrow rate until you use or repay it. ${floor}`},{t:"Done — keeper permission granted",d:`${OIL_CONTRACTS.grant.target}.${OIL_CONTRACTS.grant.selector} only · ${OIL_CONTRACTS.grant.expiryDays} days · revocable`,plain:"The ladder protects this collateral too. A keeper may repay or unwind on your behalf if the price falls — nothing else — and the permission expires on its own."}];
   if(w.mode==="SUPPLY") return [...acct,{...sign,d:"Permit2 pull → Aave supply"},{...supply,d:"No borrow"},{t:"Done",d:"Earning the supply rate",plain:"No loan, no liquidation risk; withdraw any amount at any time."}];
   return [{t:"Sign the CoW order",d:"Off-chain signature — no gas",plain:"Your wallet signs a message, not a transaction — it costs nothing and can expire unfilled."},{t:"Batch auction",d:"Solvers compete; MEV-protected",plain:"Solvers compete to fill your order in a batch, so nobody can front-run it."},{t:"Settled on Base",d:`${w.amount} ${w.asset} → USDC to your account`,plain:`Your ${w.amount} ${w.asset} is swapped and the USDC lands in your account.`},{t:"Done",d:"",plain:"This was a sale — the borrow routes exist if you would rather keep the asset."}];
 }
@@ -1735,9 +2131,9 @@ if(S.flow&&S.flow.status==="signing") runFlowUi(S.flow);
 
 /* ═══ Pools view ═══ */
 function renderPoolTable(){
-  $("#poolTable tbody").innerHTML=OIL_MODEL.pools.map(p=>{ const cell=pr=>{ const bps=presetWidthBps(pr,p.pairClass), g=gate(p,S.borrowPct,bps,S.mult); return `<td class="num" style="color:${g.ok?"var(--good)":"var(--crit)"}">${Number.isFinite(g.net)?pct(g.net):"—"}<div class="tiny faint">±${halfWidthPct(bps).toFixed(2)}% · ${g.gross.toFixed(2)}% emissions · ${g.ok?"offered":g.reason}</div></td>`; };
+  $("#poolTable tbody").innerHTML=OIL_MODEL.pools.map(p=>{ const cell=pr=>{ const bps=presetWidthBps(pr,p.pairClass), g=gate(p,S.borrowPct,bps,S.mult,gopt({collateral:S.wiz.asset})); return `<td class="num" style="color:${g.ok?"var(--good)":"var(--crit)"}">${Number.isFinite(g.net)?pct(g.net):"—"}<div class="tiny faint">±${halfWidthPct(bps).toFixed(2)}% · ${g.gross.toFixed(2)}% emissions · ${g.ok?"offered":g.reason}</div></td>`; };
     return `<tr class="rowp" data-id="${p.id}" tabindex="0"><td>${coins2(p.c)} <b style="margin-left:8px">${p.name}</b><div class="tiny faint">${p.note}</div></td><td>${RISK_CHIP[p.tag]}<div class="tiny faint">${p.pairClass.toLowerCase()}${p.sigma!=null?` · σ ${p.sigma}`:" · no σ"}</div></td><td class="num">${p.emissions[presetWidthBps("CONSERVATIVE",p.pairClass)].toFixed(2)}%<div class="tiny faint">at conservative</div></td>${cell("CONSERVATIVE")}${cell("MODERATE")}${cell("AGGRESSIVE")}<td>${p.eid?`<span class="ver">✓ <span class="num">${p.eid.slice(0,6)}…${p.eid.slice(-4)}</span></span>`:`<span class="faint tiny">direct · no engine id</span>`}</td></tr>`; }).join("");
-  $$("#poolTable .rowp").forEach(r=>{ const go=()=>{ const p=poolById(r.dataset.id); if(!gate(p,S.borrowPct,presetWidthBps("CONSERVATIVE",p.pairClass),S.mult).ok){ toast(`${p.name} is gated at every preset today`); return; } dispatch({type:"wiz",key:"mode",value:"LP"}); dispatch({type:"wiz",key:"pool",value:p.id}); showView("wiz"); setStep(2); }; r.addEventListener("click",go); r.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();go();}}); });
+  $$("#poolTable .rowp").forEach(r=>{ const go=()=>{ const p=poolById(r.dataset.id); if(!gate(p,S.borrowPct,presetWidthBps("CONSERVATIVE",p.pairClass),S.mult,gopt({collateral:S.wiz.asset})).ok){ toast(`${p.name} is gated at every preset today`); return; } dispatch({type:"wiz",key:"mode",value:"LP"}); dispatch({type:"wiz",key:"pool",value:p.id}); showView("wiz"); setStep(2); }; r.addEventListener("click",go); r.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();go();}}); });
   $("#poolsMeta").textContent=`Engine registry: ${SH.ENGINE_REGISTRY_SNAPSHOT.totalPools} approved · ${SH.ENGINE_REGISTRY_SNAPSHOT.activeAerodromePools} active Aerodrome · enumerated ${SH.ENGINE_REGISTRY_SNAPSHOT.enumeratedAt} · gate at ${S.borrowPct.toFixed(3)}% borrow`;
   $("#poolsModelSrc").textContent=`Model source: ${OIL_MODEL.source}. Gauge sample ${OIL_MODEL.sampledAt} block ${OIL_MODEL.sampleBlock}, AERO $${OIL_MODEL.aeroUsd}. lpNet = (1−e^−x)(r/x − 1), x = σ²/(4·f(w)), f(w) = 2 − √(1−w) − 1/√(1+w); fee keep ${(feeKeep()*100).toFixed(1)}% (engine ${CR.snuggleEngineFeeBps/100}% then Oilskin ${FEES.performanceBps/100}%). Verdict at ${OIL_MODEL.borrowPctAtGeneration}%: no pool × setting clears.${S.mult!==1?` WHAT-IF ×${S.mult} active — not today's numbers.`:""}`;
 }
@@ -1760,19 +2156,61 @@ function renderDocs(){
   $("#docLadder").innerHTML=SH.HF_LADDER.map(r=>`<li><b>${r.label}</b> — HF &lt; ${r.hf.toFixed(2)}: ${{notify:"notify; new borrows blocked.",repay:"claimable emissions repay the debt; principal untouched.",derisk:"just enough of the pool position unwinds to restore HF "+LAD.entryHfFloor.toFixed(2)+", most out-of-range slice first.","emergency-unwind":"everything unwinds, price band still on; collateral sits plain."}[r.action]} Re-arms at HF ≥ ${r.disarmHf.toFixed(2)}.</li>`).join("");
   $("#docHys").textContent=`Hysteresis ${LAD.hysteresis.toFixed(2)}: a fired rung cannot fire again until HF has climbed back above rung + ${LAD.hysteresis.toFixed(2)}. After a full unwind, the next deposit re-arms the ladder. The keeper acts only through the permission you granted; if it is offline nothing acts — a stated risk, not a hidden one.`;
   $("#docGateP").innerHTML=`A pool is offered at a setting only when <b>emissions × (1 − fees) − IL drag &gt; the live Aave USDC borrow rate</b> (${S.borrowPct.toFixed(3)}% at the read). Emissions-only: staked positions earn AERO in lieu of trading fees. IL drag = σ²/(4·f(w)) at the chosen width. Nothing is curated by hand, and the cbZEC/USDC pool (gauge rewardRate 0) is never offered.`;
-  $("#docPools").innerHTML=`<thead><tr><th>Pool</th><th>σ</th><th>Conservative</th><th>Moderate</th><th>Aggressive</th></tr></thead><tbody>`+OIL_MODEL.pools.map(p=>`<tr><td>${p.name}</td><td class="num">${p.sigma==null?"—":p.sigma}</td>${["CONSERVATIVE","MODERATE","AGGRESSIVE"].map(pr=>{const g=gate(p,S.borrowPct,presetWidthBps(pr,p.pairClass),S.mult);return `<td class="num" style="color:${g.ok?"var(--good)":"var(--crit)"}">${Number.isFinite(g.net)?pct(g.net):"—"} ${g.ok?"✓":"✕ "+g.reason}</td>`;}).join("")}</tr>`).join("")+`</tbody>`;
+  $("#docPools").innerHTML=`<thead><tr><th>Pool</th><th>σ</th><th>Conservative</th><th>Moderate</th><th>Aggressive</th></tr></thead><tbody>`+OIL_MODEL.pools.map(p=>`<tr><td>${p.name}</td><td class="num">${p.sigma==null?"—":p.sigma}</td>${["CONSERVATIVE","MODERATE","AGGRESSIVE"].map(pr=>{const g=gate(p,S.borrowPct,presetWidthBps(pr,p.pairClass),S.mult,gopt({collateral:S.wiz.asset}));return `<td class="num" style="color:${g.ok?"var(--good)":"var(--crit)"}">${Number.isFinite(g.net)?pct(g.net):"—"} ${g.ok?"✓":"✕ "+g.reason}</td>`;}).join("")}</tr>`).join("")+`</tbody>`;
   $("#docModelSrc").textContent=`Model source: ${OIL_MODEL.source}. Gate reasons in order: no_emissions → emissions_below_borrow → no_volatility_input (the gate refuses rather than guesses) → net_below_borrow → ok.`;
   $("#docClaimP").textContent=`The keeper claims when rewards ≥ ${SH.REWARD_CLAIM_POLICY.minCostMultiple}× the gas cost, with a $${SH.REWARD_CLAIM_POLICY.minAbsoluteUsd} floor and a ${SH.REWARD_CLAIM_POLICY.maxHoldDays}-day max hold. Fees are taken once, at that chokepoint.`;
   $("#docFees").innerHTML=`<thead><tr><th>Fee</th><th>Rate</th><th>Charged on</th></tr></thead><tbody><tr><td>Oilskin performance</td><td class="num">${FEES.performanceBps/100}%</td><td>Realised yield at claim/close — performanceBps ${FEES.performanceBps}, on-chain cap ${FEES.maxPerformanceBps/100}%</td></tr><tr><td>Engine (Snuggle)</td><td class="num">${CR.snuggleEngineFeeBps/100}%</td><td>Realised LP earnings at harvest — the venue's fee, skimmed before ours</td></tr><tr><td>Orchestration</td><td class="num">${FEES.orchestrationBps/100}%</td><td>None in v1</td></tr><tr><td>Deposit / withdrawal / principal</td><td class="num">0%</td><td>Never</td></tr></tbody>`;
   $("#docFeesP").textContent=`Example: $100 of AERO → engine $${(CR.snuggleEngineFeeBps/100).toFixed(2)}, Oilskin $${((1-CR.snuggleEngineFeeBps/10000)*FEES.performanceBps/100).toFixed(2)}, you keep $${(feeKeep()*100).toFixed(2)}. Every yield number shown is already net of both.`;
   $("#docCbzecWhy").textContent=SH.COLLATERAL_ASSETS.cbZEC.disabledReason+" "+SH.COLLATERAL_ASSETS.cbZEC.riskNotes.join(" ");
   $("#whatifBorrow").textContent=OIL_MODEL.borrowPctAtGeneration.toFixed(3)+"%";
+  renderModelDocs(); renderOwnerDocs();
   $("#footAddrs").textContent=`Aave Pool ${short(SH.AAVE_V3.pool)} · Engine ${short(SH.ENGINE_REGISTRY_SNAPSHOT.vaultProxy)} · Permit2 ${short(SH.PERMIT2)} · CoW ${short(SH.COW_PROTOCOL.settlement)}`;
+}
+/* Docs: the boundary table, the reason catalogue, the grant, the floor and the
+   swap — each rendered from the same objects the gate and the flows use. */
+function renderModelDocs(){
+  /* The multiple at which the CLOSED form crosses the borrow, solved from the
+     page's own math rather than from the table's 2-dp gross, so the "served
+     gate" column is evaluated at the real boundary and not just below it. */
+  const beMult = (pl, w) => { let lo=0.01, hi=500; for(let i=0;i<200;i++){ const m=(lo+hi)/2; (lpNetPct(pl,w,m) > OIL_MODEL.borrowPctAtGeneration) ? hi=m : lo=m; } return hi*(1+1e-9); };
+  const bnd=OIL_MODEL.boundary;
+  $("#docBoundary").innerHTML=`<thead><tr><th>Pool</th><th>Width</th><th>Emissions at the boundary</th><th>Closed form</th><th>Monte Carlo</th><th>Optimism</th><th>Served gate just above it</th></tr></thead><tbody>`+bnd.map(([id,w,gb,cl,mc])=>{
+    const pl=poolById(id), g=gate(pl, OIL_MODEL.borrowPctAtGeneration, w, beMult(pl,w));
+    return `<tr><td><b>${pl.name}</b></td><td class="num">±${halfWidthPct(w).toFixed(2)}%</td><td class="num">${gb.toFixed(2)}%</td><td class="num">${pct(cl)}</td><td class="num ${signCls(mc)}">${pct(mc)}</td><td class="num">${(cl-mc>=0?"+":"")}${(cl-mc).toFixed(2)} pt</td><td>${g.ok?"✓ offered — the two forms agree here":"✕ "+g.reason}</td></tr>`; }).join("")+`</tbody>`;
+  const worst=bnd.reduce((a,b)=>(b[3]-b[4])>(a[3]-a[4])?b:a);
+  const refused=bnd.filter(([id,w])=>{ const pl=poolById(id); return !gate(pl, OIL_MODEL.borrowPctAtGeneration, w, beMult(pl,w)).ok; }).length;
+  $("#docBoundaryNote").innerHTML=`Worst case <b>${poolById(worst[0]).name}</b> at ±${halfWidthPct(worst[1]).toFixed(2)}%: the closed form is <b>${(worst[3]-worst[4]).toFixed(2)} points</b> optimistic there, more than ${((worst[3]-worst[4])/OIL_MODEL.borrowPctAtGeneration).toFixed(1)}× the borrow rate its verdict is compared against. ${refused} of ${bnd.length} cells the closed form alone would have offered at their own break-even are refused; the ${bnd.length-refused===1?"one that remains is":`${bnd.length-refused} that remain are`} where the two forms genuinely agree. Calibration: ${OIL_MODEL.mc.paths} paths per cell, generated ${OIL_MODEL.mc.generatedAt.slice(0,10)}, as of ${OIL_MODEL.mc.asOf.slice(0,10)}.`;
+  const order=["collateral_disabled","collateral_paused","borrow_paused","no_emissions","emissions_implausible","insufficient_samples","emissions_below_borrow","no_volatility_input","net_below_borrow","mc_calibration_unavailable","mc_calibration_stale","within_model_uncertainty","net_out_of_bounds"];
+  const live={}; for(const pl of OIL_MODEL.pools){ const g=gate(pl,S.borrowPct,presetWidthBps("CONSERVATIVE",pl.pairClass),S.mult,gopt({collateral:S.wiz.asset})); live[g.reason]=(live[g.reason]||0)+1; }
+  $("#docReasons").innerHTML=`<thead><tr><th>Reason</th><th>What it means, in plain English</th><th>Pools refusing for it now</th></tr></thead><tbody>`+order.map(r=>`<tr><td class="mono">${r}</td><td>${GATE_WHY[r]}.</td><td class="num">${live[r]||0}</td></tr>`).join("")+`</tbody>`;
+  const G=OIL_CONTRACTS.grant, P=OIL_CONTRACTS.peripheral;
+  $("#docPeripheral").innerHTML=`Every call your account makes is a <b>plain call</b> by default: the target gets no rights over your account and cannot call back into it. ${P.plainCall}. Re-entry is opt-in per call (<span class="mono">${P.optIn}</span>) and only the four Oilskin peripherals — router, Aave venue, LP venue, swap adapter — ever ask for it. On the keeper path the flag on the call is ignored entirely: the account reads <span class="mono">allowCallback</span> from the grant <i>you</i> signed, so a grant can never escalate itself. Nesting is bounded at ${P.maxDepth}.`;
+  $("#docGrantP").innerHTML=`One grant, and it matches what the keeper actually plans: <b>${G.rootCalls} root call</b> to <span class="mono">${G.target}.${G.selector}</span>, nothing else. The keeper no longer plans a close and then an unwind — that meant a grant wider than the plan — and a position id that goes stale between reading and dispatching is now reported instead of reverting the whole protective unwind.`;
+  $("#docGrant").innerHTML=`<thead><tr><th>Field</th><th>Value</th><th>Why</th></tr></thead><tbody>`+[
+    ["target",G.target,"the only contract the keeper may call as you"],
+    ["selector",G.selector+"()","the only function it may call — repay and unwind, nothing else"],
+    ["period",(G.periodS/3600)+" hours","the window each per-token limit refills in; a re-grant inside a live window carries the spend forward rather than refilling it"],
+    ["expiry",G.expiryDays+" days","after this the keeper stops until you sign a new grant — shown on your account with a countdown"],
+    ["allowCallback",String(G.allowCallback),"whether that target may act back on your account. You decide it, never the keeper"],
+    ["revocable",String(G.revocable),"one transaction from you, at any time"],
+  ].map(([k,v,w])=>`<tr><td class="mono">${k}</td><td>${v}</td><td>${w}</td></tr>`).join("")+`</tbody>`;
+  $("#docGrantBoundary").innerHTML=`${G.boundary} And these movers are refused from a keeper grant outright rather than budgeted, because no Oilskin flow needs them and a wrong decoder on any of them fails open: ${G.refusedSelectors.join(", ")} — <span class="mono">${G.refusalError}</span>.`;
+  const r=CR.aaveReserves[S.wiz.asset]||CR.aaveReserves.cbBTC, sym=CR.aaveReserves[S.wiz.asset]?S.wiz.asset:"cbBTC", hfRaw=r.liquidationThresholdBps/r.ltvBps;
+  $("#docFloorP").innerHTML=`Every position is born at a health factor of at least <b>${LAD.entryHfFloor.toFixed(2)}</b>, and that is enforced by ${OIL_CONTRACTS.entry.floorEnforcedAt} rather than by one entry point of the router. It matters: the old "borrow &amp; hold" shape was a hand-built <span class="mono">${OIL_CONTRACTS.entry.preFixShape.split(" —")[0]}</span> that never touched the router, so on ${sym} it could open at Aave's full ${(r.ltvBps/100).toFixed(0)}% LTV — a health factor of <b>${hfRaw.toFixed(2)}</b> against an advertised floor of ${LAD.entryHfFloor.toFixed(2)}. That sequence now reverts <span class="mono">${OIL_CONTRACTS.entry.floorError}</span> wherever it comes from, and Borrow &amp; hold is built as <span class="mono">${OIL_CONTRACTS.entry.borrowOnly.split("(")[0]}</span>. Try it from the tester's kit.`;
+  const pool=poolById(S.wiz.pool)||poolById("aero-cbbtc-usdc"), demo=swapLegFor(pool,10000);
+  const swapCopy=`Closing a pool position leaves half of it in the pool's non-USDC token, which has to be sold before the loan can be repaid. That swap no longer carries a bare minimum-out: the ABI takes a <span class="mono">${OIL_CONTRACTS.swap.quoteStruct}</span> and the floor is <span class="mono">amountIn × quotedOut/quotedIn × (10000 − maxSlippageBps) / 10000</span>, computed on the amount actually swapped, so a leg that settles larger or smaller is still protected in proportion. The tolerance is capped on chain at <b>${(demo.cap/100).toFixed(2)}%</b>; Oilskin signs <b>${(demo.maxSlippageBps/100).toFixed(2)}%</b>. On $10,000 of ${pool.name} that is a ${usd(demo.quotedIn)} ${demo.tokenIn} leg quoted at ${usd(demo.quotedOut)} with a hard floor of <b>${usd(demo.minOut)}</b> — a sandwich that pushes the return below it reverts the whole withdrawal instead of settling for dust. "Accept one base unit" cannot be expressed at all any more. <span class="mono">${OIL_CONTRACTS.swap.view}</span> is that same code exposed as a pure view, so the number a UI shows is the number the chain enforces, and <span class="mono">${OIL_CONTRACTS.swap.event}</span>. Swap router: <span class="mono">${short(OIL_CONTRACTS.swap.slipstreamRouter)}</span>.`;
+  $("#docSwapP").innerHTML=swapCopy; $("#docSwapP2").innerHTML=swapCopy;
+}
+function renderOwnerDocs(){
+  const R=OIL_CONTRACTS.registry;
+  $("#docOwnerCan").innerHTML=R.ownerCanStill.map(x=>`<li>${x}</li>`).join("");
+  $("#docOwnerCannot").innerHTML=R.ownerCannot.map(x=>`<li>${x}</li>`).join("");
+  $("#docOwnerResidual").innerHTML=`A venue change is proposed on chain, waits <b>${(R.timelockDelayS/86400).toFixed(0)} days</b>, and only then can be accepted — <span class="mono">${R.proposeEvent.split("(")[0]}</span> and <span class="mono">${R.acceptEvent.split("(")[0]}</span> are emitted so a watcher can see it coming. ${R.residual}`;
 }
 function showDoc(key){$$("#docsNav button").forEach(b=>b.classList.toggle("on",b.dataset.doc===key));$$(".doc-sec").forEach(s=>s.classList.toggle("on",s.dataset.doc===key));}
 document.addEventListener("click",e=>{const b=e.target.closest("[data-doc]");if(!b||b.tagName!=="BUTTON")return;showDoc(b.dataset.doc);if(!$("#view-docs").classList.contains("on"))showView("docs");});
 
-function renderAll(){ refreshStats(); renderHealth(); renderPositions(); renderActivity(); renderWizard(); renderPoolTable(); renderRisks(); renderDocs(); $("#tkAddrA").textContent=short(DEMO_WALLETS.coinbase); $("#tkAddrB").textContent=short(DEMO_WALLETS.other); }
+function renderAll(){ refreshStats(); renderHealth(); renderGrant(); renderPositions(); renderActivity(); renderWizard(); renderPoolTable(); renderRisks(); renderDocs(); $("#tkAddrA").textContent=short(DEMO_WALLETS.coinbase); $("#tkAddrB").textContent=short(DEMO_WALLETS.other); }
 
 /* accrual + jitter — bounded per tick regardless of wall time */
 let lastReal=Date.now(), freshT=0;
@@ -1796,13 +2234,28 @@ function tk(k,v){ const a=S.wiz.asset;
   if(k==="refund"){ dispatch({type:"sim",kind:"refundNext",on:true}); toast("Next LP deposit: the engine bounces 12% — watch it fold back in"); return; }
   if(k==="range"){ dispatch({type:"setRange",inRange:v==="in"}); return; }
   if(k==="keeper"){ dispatch({type:"sim",kind:"keeperOff",on:v==="off"}); toast(v==="off"?"Keeper offline — nothing will act on the ladder":"Keeper back — ladder evaluated"); return; }
+  if(k==="pause"){
+    if(v==="off"){ for(const sym of Object.keys(CR.aaveReserves)) S=reduce(S,{type:"sim",kind:"paused",asset:sym,on:false}); renderAll(); save(); toast("Guardian pauses lifted — the gate runs again"); return; }
+    const sym = v==="borrow" ? "USDC" : a;
+    dispatch({type:"sim",kind:"paused",asset:sym,on:true});
+    toast(v==="borrow" ? "Aave paused USDC borrowing — every pool now refuses with borrow_paused" : `Aave paused the ${sym} reserve — it still quotes a rate, but every supply against it would revert`); return; }
+  if(k==="corr"){ dispatch({type:"sim",kind:"corroborated",on:v==="on"}); toast(v==="on"?"Anchor corroborated — APRs published again":`Fewer than ${OIL_MODEL.bounds.minStakedSamples} agreeing readings of staked liquidity — no APR is published at all`); return; }
+  if(k==="revote"){ dispatch({type:"sim",kind:"revote",on:v==="on"}); toast(v==="on"?"AERO/WETH gauge funded again at the rate its sample actually carried":"AERO/WETH epoch lapsed again — back to no_emissions"); return; }
+  if(k==="sandwich"){ dispatch({type:"sim",kind:"sandwich",on:v==="on"}); toast(v==="on"?"The next unwind swap will be sandwiched — watch the floor hold":"Clean market — swaps settle at the quote"); return; }
+  if(k==="rawbatch"){ const r=CR.aaveReserves[a]; if(!r){ toast(`${a} is not an Aave collateral`); return; } const hfRaw=r.liquidationThresholdBps/r.ltvBps;
+    dispatch({type:"sim",kind:"failNext",on:true,step:3,why:`execBatch([permit2, supply, borrow]) reverted at the borrow hop: EntryHfTooLow(${hfRaw.toFixed(2)}, ${LAD.entryHfFloor.toFixed(2)}). That hand-built batch never touched the router, so before the fix it opened at Aave's full ${(r.ltvBps/100).toFixed(0)}% LTV for ${a} — a health factor of ${hfRaw.toFixed(2)} against an advertised floor of ${LAD.entryHfFloor.toFixed(2)}. The floor now lives in ${OIL_CONTRACTS.entry.floorEnforcedAt.split(" — ")[0]}, so every path reaches it, and the product builds ${OIL_CONTRACTS.entry.borrowOnly.split("(")[0]} or ${OIL_CONTRACTS.entry.leveragedLp.split("(")[0]} instead — neither can produce that sequence.`});
+    toast("Next sign: the pre-fix raw batch — the venue will refuse it"); return; }
+  if(k==="grant"){ if(!S.wallet){ toast("Connect a wallet first"); return; }
+    if(v==="revoke") dispatch({type:"revokeGrant"}); else if(v==="renew") dispatch({type:"renewGrant"}); else dispatch({type:"expireGrant"});
+    toast(v==="revoke"?"Permission revoked — the ladder will not act":v==="renew"?"Permission renewed for 30 days":"Grant run down to its expiry — the ladder will not act until you renew"); return; }
   if(k==="store"){ if(v==="corrupt"){ storage.set('{"v":1,"positions":"nope"}'); location.reload(); } else { storage.del(); location.reload(); } return; }
 }
 
 /* Demo-only test seam (stripped in production): the fuzz drives the real reducer. */
 window.__oil = { SHARED:OIL_SHARED, CHAIN_READ:OIL_CHAIN_READ, MODEL:OIL_MODEL, RISKS, LADDER:LAD, FEES, RUNGS, MAX_TICK_S, DEMO_SPEED, MIN_AMOUNT, DEMO_BAL, DEMO_WALLETS, PRICE_READ, MODES,
   ltOf, ltBpsOf, topLtvPct, maxOfferedLtvBps, ltvPresetsFor, ltvStopsFor, entryHf, dropPct, liqPrice, halfWidthPct, feeKeep, ilDragPct, netSlicePct, gate, positionAprPct, presetWidthBps, poolById, accountOf, classifyCbZecAddress, grossEmissionsPct, lpNetPct, accrualRates, xOf, fW, GATE_WHY, firstOfferedPoolId,
-  accountHf, debtOf, weightedCollOf, collUsdOf, ownedBy, ladderOf, positionApr, posValue, withdrawCapPct, wizDecision, stepGate, reduce, validateStore, serialize, freshState, freshWiz, runLadder, accruePosition,
+  accountHf, debtOf, weightedCollOf, collUsdOf, ownedBy, ladderOf, positionApr, posValue, withdrawCapPct, wizDecision, stepGate, reduce, validateStore, serialize, freshState, freshWiz, freshSim, runLadder, accruePosition,
+  CONTRACTS: OIL_CONTRACTS, mcLpNetPct, mcApply, realizedEmissionsPct, grossIfRevotedPct, minOutFor, swapLegFor, gopts, gopt, grantOf, grantFor, GRANT_EXPIRY_S, fmtDur,
   get S(){return S}, set S(v){S=v}, dispatch, renderAll, save, load, get storage(){return storage}, set storage(v){storage=v}, get bootNote(){return bootNote}, showView, setStep, launch,
   seedRng(seed){ let x=seed>>>0||1; rng=()=>{ x^=x<<13; x>>>=0; x^=x>>>17; x^=x<<5; x>>>=0; return x/4294967296; }; }, unseedRng(){ rng=Math.random; } };
 

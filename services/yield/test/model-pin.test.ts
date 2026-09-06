@@ -17,17 +17,19 @@ import { ENGINE_FEE_BPS, SETTINGS } from "../src/model.js";
 import { GaugeSource, onchainToken1, SEL } from "../src/sources/gauges.js";
 import { RpcClient } from "../src/sources/rpc.js";
 import type { Address, EmissionsSample } from "../src/types.js";
-import { NOW_S, ratesFixture, reserve, volatilityFixture } from "./fixtures/model.js";
+import { MIN_STAKED_SAMPLES } from "../src/sources/gauges.js";
+import { mcCalibrationFixture, NOW_S, ratesFixture, reserve, volatilityFixture } from "./fixtures/model.js";
 
 const read = (rel: string) => JSON.parse(readFileSync(new URL(rel, import.meta.url), "utf8"));
 const MODEL = read("../../samples/lp-model-2026-09-05.json") as {
   inputs: { borrowAprPct: number; collateral: Record<string, { supplyAprPct: number; liquidationThresholdBps: number }>; gaugeSample: { sampledAt: string } };
   results: Record<string, Record<string, {
     rangeWidthBps: number; emissionsGrossPct?: number; emissionsNetPct?: number; emissionsRealizedPct?: number; dragPct?: number;
-    lpNetPct?: number | null; qualifies?: boolean; reason?: string | null; breakEvenSigma?: number | null; breakEvenEmissionsMultiple?: number | null;
+    lpNetPct?: number | null; mcLpNetPct?: number | null; qualifies?: boolean; reason?: string | null; breakEvenSigma?: number | null; breakEvenEmissionsMultiple?: number | null;
     userNet?: Record<string, Record<string, { ltvBps: number; offerable: boolean; userNetPct: number }>>;
   }>>;
-  validation: { ok: boolean; verdictAgrees: boolean }[];
+  validation: { ok: boolean; neverMorePermissiveThanMc: boolean; affineErrorPct: number; deltaPct: number; tolerancePct: number }[];
+  boundaryGuard: { pool: string; setting: string; optimismPct: number; offeredByClosedFormAlone: boolean; offeredByServedGate: boolean }[];
   verdict: { clears: unknown[] };
 };
 const SAMPLE = read("../../samples/gauge-emissions-2026-09-05-composite.json") as {
@@ -72,7 +74,13 @@ async function emissionsFromWords(poolId: string): Promise<EmissionsSample> {
   assert.equal(t1.decimals, s.dec1, `${poolId}: token1 decimals`);
   // The 08-31 sample was taken with an active epoch; evaluate at that instant.
   const nowSeconds = Math.floor(Date.parse(MODEL.inputs.gaugeSample.sampledAt) / 1000);
-  return src.sample(poolId, pool as Address, { aeroUsd: SAMPLE.aeroUsd, poolTvlUsd: s.poolTvlUsd, token1Usd: s.token1Usd, token1Decimals: s.dec1, nowSeconds });
+  // Sample MIN_STAKED_SAMPLES times: identical readings ARE corroboration, and
+  // until the anchor is corroborated the source publishes no APR at all.
+  let out!: EmissionsSample;
+  for (let i = 0; i < MIN_STAKED_SAMPLES; i++) {
+    out = await src.sample(poolId, pool as Address, { aeroUsd: SAMPLE.aeroUsd, poolTvlUsd: s.poolTvlUsd, token1Usd: s.token1Usd, token1Decimals: s.dec1, nowSeconds });
+  }
+  return out;
 }
 
 test("samples/model-inputs.json matches @zyo/shared and the model today (drift fails the build)", () => {
@@ -88,9 +96,15 @@ test("samples/model-inputs.json matches @zyo/shared and the model today (drift f
   }
 });
 
-test("the sim's own validation passed (closed form vs Monte Carlo within tolerance, verdicts agree) and nothing clears at 4.828 %", () => {
+test("the sim's own validation passed (affine calibration exact, closed form within a tolerance BELOW the borrow rate, gate never more permissive than the MC) and nothing clears at 4.828 %", () => {
   assert.ok(MODEL.validation.length >= 8);
-  assert.ok(MODEL.validation.every((v) => v.ok && v.verdictAgrees));
+  assert.ok(MODEL.validation.every((v) => v.ok && v.neverMorePermissiveThanMc));
+  // FIX D-HIGH-1: the declared model error may never reach the rate it decides against.
+  for (const v of MODEL.validation) {
+    assert.ok(v.tolerancePct < MODEL.inputs.borrowAprPct, `tolerance ${v.tolerancePct} ≥ borrow ${MODEL.inputs.borrowAprPct}`);
+    assert.ok(Math.abs(v.deltaPct) <= v.tolerancePct);
+    assert.ok(v.affineErrorPct < 0.01, `affine error ${v.affineErrorPct} — the calibration must be exact, not fitted`);
+  }
   assert.equal(MODEL.inputs.borrowAprPct, 4.828);
   assert.deepEqual(MODEL.verdict.clears, []);
 });
@@ -103,6 +117,7 @@ test("every served cell reproduces the generated model to 0.01 pt: emissions, dr
   );
   const rates = { ...ratesFixture({ collateral, borrow: reserve("USDC", { variableBorrowAprPct: MODEL.inputs.borrowAprPct }) }, sampledAt), stale: false };
   const vol = volatilityFixture();
+  const MC = mcCalibrationFixture();
   let cells = 0;
   for (const [poolId, perSetting] of Object.entries(MODEL.results)) {
     const pool = poolById(poolId)!;
@@ -110,7 +125,7 @@ test("every served cell reproduces the generated model to 0.01 pt: emissions, dr
     for (const setting of SETTINGS) {
       const cell = perSetting[setting.id]!;
       for (const sym of Object.keys(MODEL.inputs.collateral)) {
-        const v = evaluateGate({ pool, setting, collateral: sym as "cbBTC" | "WETH", rates, emissions, volatility: vol, nowSeconds });
+        const v = evaluateGate({ pool, setting, collateral: sym as "cbBTC" | "WETH", rates, emissions, volatility: vol, mcCalibration: MC, nowSeconds });
         cells++;
         assert.equal(v.rangeWidthBps, cell.rangeWidthBps, `${poolId}/${setting.id} width`);
         if (cell.emissionsGrossPct !== undefined) {
@@ -127,6 +142,11 @@ test("every served cell reproduces the generated model to 0.01 pt: emissions, dr
           if (cell.breakEvenSigma != null) {
             assert.ok(Math.abs(v.breakEvenSigma! - cell.breakEvenSigma) < 0.011, `${poolId}/${setting.id} break-even σ`);
           }
+          // The MC-calibrated number the GATE decides on must also reproduce.
+          assert.ok(
+            Math.abs(v.mcLpNetPct! - cell.mcLpNetPct!) < 0.011,
+            `${poolId}/${setting.id} mcLpNet ${v.mcLpNetPct} vs ${cell.mcLpNetPct}`
+          );
           const expectedUser = cell.userNet![sym]!;
           for (const u of v.userNet) {
             const e = Object.values(expectedUser).find((x) => x.ltvBps === u.ltvBps)!;

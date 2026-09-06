@@ -2,21 +2,37 @@
 
 Every flow below is what `web/lib/plan.ts` builds and `web/lib/execute.ts`
 runs, encoded from `contracts/abi/oilskin-abi.json` (`web/test/abi.test.ts`
-fails on drift), and what the contracts then do. The wallet is asked to sign
-only after `estimateGas` and an ETH-balance check pass and the chain id is
-8453 (`execute.ts: guardedWrite`). Nothing is signable until
+compares the outer *and* inner selectors of every write against the compiled
+artifact and fails on drift), and what the contracts then do. The wallet is
+asked to sign only after `estimateGas` and an ETH-balance check pass and the
+chain id is 8453 (`execute.ts: guardedWrite`). Nothing is signable until
 `NEXT_PUBLIC_OILSKIN_FACTORY` / `_ROUTER` point at a deployment
 (`plan.ts: planIsSignable`), and there is no deployment yet.
 
 Abbreviations: HF = health factor, LT = liquidation threshold, LTV =
 loan-to-value, LP = liquidity provision, EIP = Ethereum Improvement Proposal.
-NFT = non-fungible token (the engine's position id).
 
-## 0 · Before anything: the account address
+## 0 · The calling convention (read this first)
 
-`factory.accountOf(wallet)` (`OilskinAccountFactory`, CREATE2 prediction) is
-read first. It is the Permit2 **spender** the user signs for and the address
-every position will belong to, whether or not it has been deployed.
+`Call { address target; uint256 value; bytes data; bool callback }`.
+`callback` is the **peripheral opt-in** and defaults to false: a call with it
+unset gives the target no rights over the account. So:
+
+| you are calling | use |
+|---|---|
+| the router, a venue, the swap adapter | `execWithCallback(target, 0, data)`, or a `Call` with `callback: true` inside `execBatch` |
+| a token, a pool, Permit2 | `exec(target, 0, data)`, or `callback: false` |
+| the router, first time (no account yet) | `factory.createAccountAndExec([{router, 0, data, callback: true}])` |
+
+A plain `exec` to the router now reverts `NotActivePeripheral` inside the
+router — that is the fix, not a bug. On the **keeper** path the flag on the
+call is ignored and the account reads `Permission.allowCallback` from the
+grant instead: the owner decides which target may act back on the account,
+never the keeper.
+
+`factory.accountOf(wallet)` (CREATE2 prediction) is read first. It is the
+Permit2 **spender** the user signs for and the address every position will
+belong to, whether or not it has been deployed.
 
 ## 1 · Deposit — leveraged LP
 
@@ -31,25 +47,26 @@ sequenceDiagram
     participant LV as SnuggleLpVenue → engine
 
     Note over U: (1) approve — only if the collateral allowance to Permit2 is below the amount
-    U->>P2: collateral.approve(Permit2, max)   [transaction]
+    U->>P2: collateral.approve(Permit2, max)   [transaction, plain exec]
     Note over U: (2) EIP-712 signature, no transaction
     U->>U: sign PermitTransferFrom{token, amount, spender = accountOf(U), nonce, deadline}
     Note over U: web reads lpVenue.poolSqrtPriceX96(poolId) → band = price ± tolerance
     Note over U: (3) one transaction
     alt first-time user
-        U->>F: createAccountAndExec([{router, 0, openLeveragedLp(p)}])
-        F->>A: clone + initialize(U, calls)
+        U->>F: createAccountAndExec([{router, 0, openLeveragedLp(p), callback: true}])
+        F->>A: clone + initialize(U, calls) — or execBatchFromFactory if the clone already existed
     else account exists
-        U->>A: exec(router, 0, openLeveragedLp(p))
+        U->>A: execWithCallback(router, 0, openLeveragedLp(p))
     end
     A->>R: openLeveragedLp(p)  (msg.sender = A)
+    R->>R: snapshot its own balance of the collateral asset, USDC and both pool tokens
     R->>A: execFromPeripheral: Permit2.permitTransferFrom(permit, {to: A, amount}, U, sig)
-    R->>AV: execNestedPeripheral: supply(asset, amount) → approve · Pool.supply(onBehalfOf = A) · approve 0
-    R->>AV: execNestedPeripheral: borrow(USDC, borrowAmount) → Pool.borrow(onBehalfOf = A)
-    R->>AV: healthFactor(A) must be at or above registry.entryHfFloorWad(), else revert EntryHfTooLow
+    R->>AV: execNestedPeripheral: supply(asset, amount) → registry must offer the asset HERE · approve · Pool.supply(onBehalfOf = A) · approve 0
+    R->>AV: execNestedPeripheral: borrow(USDC, borrowAmount) → Pool.borrow(onBehalfOf = A) → VENUE reverts EntryHfTooLow below the floor
+    R->>AV: healthFactor(A) re-read; the router raises its own EntryHfTooLow as a second named check
     R->>LV: execNestedPeripheral: open({poolId, USDC single-sided, width, delay, autoCompound, band, deadline})
-    LV->>LV: band vs pool.slot0() · depositSingleSided → id minted to A · fold any refund
-    R->>R: assert balanceOf(router) == 0 for collateral and USDC
+    LV->>LV: band vs pool.slot0() · band width ≤ MAX_BAND_BPS · depositSingleSided → id minted to A · fold any refund
+    R->>R: assert each snapshotted balance is UNCHANGED (RouterBalanceChanged otherwise)
     Note over U: (4) optional — keeper protection grant (see §5)
 ```
 
@@ -59,110 +76,176 @@ sequenceDiagram
 `autoCompound`, `band{minSqrtPriceX96, maxSqrtPriceX96}`, `deadline`. Web
 defaults: deadline 20 minutes, band tolerance 100 bps of price in Simple mode,
 up to 300 in Advanced (`plan.ts`). What the chain refuses: an asset that is not
-enabled (`AssetDisabled(asset, note)` — cbZEC), a pool without USDC, a width
-outside the bounds, a price outside the band, a post-borrow HF below the
-1.55 floor, an expired deadline, a wrong-spender or reused Permit2 nonce.
+enabled (`AssetDisabled(asset, note)` — cbZEC — or `AssetNotOffered` at the
+venue), a disabled venue (`VenueDisabled`), a pool without USDC, a pool whose
+two tokens are the same (`DegeneratePool`), a width outside the bounds, a band
+wider than `MAX_BAND_BPS` (`BandTooWide`), a price outside the band, a
+post-borrow HF below the 1.55 floor, an expired deadline, a wrong-spender or
+reused Permit2 nonce.
 
 ## 2 · Deposit — borrow and hold (no LP)
 
-Same steps (1) and (2). Step (3) is an owner batch, not a router call:
+Same steps (1) and (2). Step (3) is **one router call**, not a hand-built
+batch:
 
 ```
-account.execBatch([
-  { Permit2, permitTransferFrom(permit, {to: account, amount}, wallet, sig) },
-  { AaveV3Venue, supply(asset, amount) },
-  { AaveV3Venue, borrow(USDC, borrowAmount) }
-])                       — or the same list through factory.createAccountAndExec
+execWithCallback(router, 0, openBorrowOnly({
+  collateralAsset, collateralAmount, permit{nonce, deadline, signature},
+  borrowAmount, deadline
+}))                      — or the same call through factory.createAccountAndExec
 ```
 
-**The entry-HF floor is not chain-enforced on this path.** `EntryHfTooLow`
-lives in `StrategyRouter.openLeveragedLp`; the hold batch never touches the
-router, so the only on-chain limit is Aave's own LTV cap (73 % cbBTC / 80 %
-WETH at the 2026-09-05 read). The web caps the setting at the registry-derived
-top (`SettingStep`, shared `ltvPresets`) — a UI guard, not a contract one.
+Permit2 pull → `venue.supply` → `venue.borrow(USDC)` → the borrowed USDC lands
+in the account and nothing is deployed; the router emits `BorrowOnlyOpened`.
+
+**The entry-HF floor is chain-enforced on this path.** It used to be a UI guard
+only: the shipped flow built `execBatch([permit2, supply, borrow])`, never
+touched the router, and opened a first-time user at HF 1.07 against an
+advertised 1.55. `AaveV3Venue.borrow` now reverts `EntryHfTooLow(hf, floor)`
+itself, so the old batch would revert too — and the product no longer builds
+it (`web/test/plan.test.ts` asserts the three-call shape cannot be produced by
+either entry point).
+
+What a user hand-writing their own calldata can still do, stated plainly:
+`account.exec(aavePool, borrow(...))` goes straight to Aave and can open at
+Aave's full LTV, below Oilskin's floor. That is the same owner-only door the
+exit guarantee is made of; closing it would let the account be trapped by its
+own policy. What is impossible is any sequence *through the Oilskin venue*
+that opens debt below the floor — which is every sequence the web, the keeper,
+the router or `createAccountAndExec` can produce.
 
 ## 3 · Unwind — close, repay, withdraw
 
-Before signing, the web reads the pool's `slot0` tick and `tickSpacing`, sizes
-`swapMinOut` for the non-USDC leg from the position's tick value-split × (1 −
-tolerance) on the **indexer's USD value** (Simple mode refuses when that cache
-is empty; Advanced lets the user enter it), and quotes the band
-(`execute.ts: runUnwind`).
+Before signing, `web/lib/quote.ts` **fetches a real quote**: the pool's live
+`sqrtPriceX96` with token order and `decimals()` read (not assumed),
+cross-checked against the Chainlink price Aave uses, with the enforced floor
+read back from `AerodromeSwapAdapter.minOutFor`. A pool more than 3 % from the
+oracle is refused outright. Every failure is a refusal with a sentence —
+never a smaller number.
 
 ```
-account.exec(router, 0, unwind({
+execWithCallback(router, 0, unwind({
   collateralAsset, positionIds: [ids in one pool], band,
-  swapMinOut, swapRouteData: abi.encode(int24 tickSpacing),
+  swap: { quotedIn, quotedOut, maxSlippageBps ≤ 500, routeData: abi.encode(int24 tickSpacing) },
   repayAmount: max, withdrawAmount: max, deadline
 }))
 ```
 
-On chain (`StrategyRouter.unwind`): `SnuggleLpVenue.closeMany(ids, band)` —
-each id: collect yield (`claimStakingRewards` → `harvest`), take
-`performanceBps` of the gain, then `withdraw(id)`; refused ids are reported in
-`failed` and skipped → `AerodromeSwapAdapter.swap(nonUsdcToken → USDC,
-amount, swapMinOut, deadline)` (reverts `ZeroMinOut` if the floor is 0) →
-`AaveV3Venue.repay(USDC, min(debt, held))` → `AaveV3Venue.withdraw(asset,
-all)` → if any debt remains, HF ≥ floor or `ExitHfTooLow`. Works on a
-**disabled** asset. Proceeds land in the account; nothing is sent to the
-wallet here — see §4 for `sweep`.
+On chain (`StrategyRouter.unwind`): the batch's pool is derived from the first
+id the account **actually owns** → `SnuggleLpVenue.closeMany(ids, band)` — each
+id: collect yield (`claimStakingRewards` → `harvest`), take `performanceBps` of
+the gain once per distinct token, then `withdraw(id)`; refused, re-keyed or
+foreign ids are reported in `failed` and skipped, **at index 0 like anywhere
+else** → `AerodromeSwapAdapter.swap(nonUsdcToken → USDC, amount, quotedIn,
+quotedOut, maxSlippageBps, deadline, routeData)`, which enforces
+`amountIn × quotedOut / quotedIn × (10000 − maxSlippageBps) / 10000` on the
+amount actually swapped → `AaveV3Venue.repay(USDC, min(debt, held))` — a fixed
+repay against zero debt is a **no-op, not a revert** → `AaveV3Venue.withdraw
+(asset, all)` → if a withdrawal happened and any debt remains, the **global**
+health factor must be ≥ the floor or `ExitHfTooLow`.
 
-Known weakness: if the cache reports a value of 0 for a position that still
-holds a non-USDC leg, `runUnwind` falls back to `swapMinOut = 1` — a floor in
-name only. Enter the floor yourself in Advanced mode until the leg amounts
-are read from the engine's NFT liquidity.
+Works on a **disabled asset**; refuses through a **disabled venue**
+(`VenueDisabled`) — then the owner's raw `exec` to Aave is the escape.
+Proceeds land in the account; nothing is sent to the wallet here — see §4 for
+`sweep`.
+
+There is no `swapMinOut` any more, so the old "degrade the floor to 1 when the
+cache is empty" fallback cannot be expressed at all: `ZeroQuote` is the
+adapter's answer to an unpriced swap, and the web refuses to build the call.
 
 ## 4 · Claim — rewards to the wallet
 
 ```
 account.execBatch([
-  { SnuggleLpVenue, claim([ids])  },      // one pool per call (MixedPools); net of performanceBps
-  { StrategyRouter,  sweep([AERO, token0, token1]) }   // whole balances → account.owner()
+  { SnuggleLpVenue, claim(ids, band, deadline), callback: true },   // one pool per call; net of performanceBps
+  { StrategyRouter,  sweep([AERO, token0, token1]), callback: true } // whole balances → account.owner()
 ])
 ```
 
-`sweep` can pay only `IOilskinAccount(msg.sender).owner()`; it is the single
-path from the account to the wallet that the router offers.
+`claim` carries the same price band and deadline as every other
+engine-touching entry point (every position is opened with `autoCompound =
+true`, so a compounding harvest inside the engine can swap) and returns
+`(fees0, fees1, rewards, uint256[] failed)`: an id the account does not own, or
+one the engine re-numbered, or one in another pool is **reported**, never a
+revert. `sweep` can pay only `IOilskinAccount(msg.sender).owner()`; it is the
+single path from the account to the wallet that the router offers.
 
 ## 5 · Keeper protection grant (optional, revocable)
 
 ```
 account.grant(keeper, Permission{
-  target: StrategyRouter, selector: unwind (0xebf64f1c),
-  maxValuePerPeriod: 0, tokenLimits: [{USDC, …}, {pool tokens, …}, {AERO, …}],
-  period: 86400, expiry: now + 30 days
+  target: StrategyRouter,
+  selector: unwind((address,uint256[],(uint160,uint160),(uint256,uint256,uint16,bytes),uint256,uint256,uint256))  = 0x08435e75,
+  maxValuePerPeriod: 0,
+  tokenLimits: [{USDC, 2× the debt}, {collateral, 2× debt-equivalent}, {AERO, 1e23}, {each pool token, …}],
+  period: 86400, expiry: now + 30 days,
+  allowCallback: true
 })
 ```
 
-Budgets are product-policy caps sized at sign time
-(`web/lib/execute.ts: grantTokenLimits`: 2× the borrow in USDC, 2× the
-borrow-equivalent in the collateral and each pool token at the snapshot
-price, `1e23` = 100,000 AERO per day) — sized, not derived from a quote. `revoke(keeper,
-router, unwind)` or `revokeAll()` ends it; either is an owner transaction.
+**`allowCallback: true` is required.** The router must call back into the
+account to close, repay and withdraw; a grant without it *looks live in the UI*
+and every dispatch reverts `NotActivePeripheral` inside the router while the
+position rides to liquidation. The keeper classifies that as a permanent
+configuration error, escalates it, and broadcasts nothing; the dashboard's
+keeper panel shows it as the distinct state `cannot-act`.
 
-**Gap:** the keeper's plan for an account with LP ids starts with
-`SnuggleLpVenue.closeMany`, which needs its own grant (`agent/src/dispatch/
-policy.ts: grantsNeeded`); the web does not ask for it. See `RISKS.md`.
+One grant is enough and one grant is all the keeper needs — the plan is a
+single root `StrategyRouter.unwind` per pool. **Do not sign a
+`SnuggleLpVenue.closeMany` grant**; it is no longer used and would widen the
+keeper's surface for nothing. `web/test/keeper.test.ts` reads the keeper's own
+`KEEPER_GRANT_SHAPE` from `agent/src/abi/oilskin.ts` and asserts the grant the
+web asks users to sign is exactly the grant the keeper plans.
+
+Budgets are product-policy caps sized at sign time
+(`web/lib/execute.ts: grantTokenLimits`: 2× the whole **debt** in USDC — not
+the position at sign time, because a compounded LP grows — 2× the
+borrow-equivalent in the collateral and each pool token at the snapshot price,
+`1e23` = 100,000 AERO per day). The chain refuses a zero line and a duplicate
+token, and the web refuses both locally rather than letting the user pay gas to
+learn it. A re-grant inside a live period does **not** refill the budget: spend
+carries forward per token. What the budgets do **not** bound: value moved by a
+protocol the call tree talks to (an Aave `withdraw`, an engine withdrawal) —
+the grant's target and any peripheral it nests into are trusted code, which is
+exactly why `allowCallback` exists and defaults to false. `revoke(keeper,
+router, unwind)` or `revokeAll()` ends it; either is an owner transaction, and
+`revoke` on a key that was never granted reverts `NotRevocable` instead of
+emitting a `Revoked` event that means nothing.
 
 ## 6 · Keeper action — what the keeper sends
 
 The keeper signs nothing on the user's behalf; it sends its own transaction to
 the user's account (`agent/src/dispatch/keeperDispatcher.ts`), after reading
-`grantOf` for every root call and simulating from its own address:
+`grantOf` for the root call and simulating from its own address:
 
 ```
 account.execAsKeeper([
-  { SnuggleLpVenue, closeMany(ids_k, band) },   // ⌈⅓⌉ / ⌈⅔⌉ / all of the ids, per pool; band = live price ± BAND_TOLERANCE_BPS
-  { StrategyRouter,  unwind({ positionIds: [], repayAmount: max, withdrawAmount: 0, … }) }
+  { StrategyRouter, unwind({ positionIds: ids_pool1, band, swap, repayAmount: 0,   withdrawAmount: 0, deadline }), callback: false },
+  …one per pool, most valuable first…
+  { StrategyRouter, unwind({ positionIds: ids_poolN, band, swap, repayAmount: max, withdrawAmount: 0, deadline }), callback: false }
 ])
 ```
 
-The account charges every token operation in that tree to the grant's
-budgets (`OilskinAccount._charge`) and reverts `NotGranted` /
-`TokenNotBudgeted` / `TokenBudgetExceeded` otherwise. Collateral is never
-withdrawn by the keeper (`withdrawAmount: 0`); the non-USDC leg of a closed
-position stays in the account. The `warn` rung produces a log line and a
-store record only.
+**One root call per pool, and nothing else** — the same selector and target the
+user signed. `unwind` closes the ids itself through the nested path, so no
+second grant is needed; the account takes `allowCallback` from the grant, not
+from the `callback: false` on the call. Only the last call repays, so one repay
+sweeps everything the earlier closes produced plus any idle USDC.
+
+Which ids: **a fraction of the account's LP value**, not of the id count — ⅓ at
+`repay`, ⅔ at `derisk`, everything at `emergency-unwind` — each id priced by
+simulating the very call that would close it, and the whole action additionally
+capped by the USDC actually needed to reach the rung's disarm. The band is the
+pool's live `sqrtPriceX96` ± `BAND_TOLERANCE_BPS`; the swap quote comes from
+that same live price. Collateral is never withdrawn (`withdrawAmount: 0`). The
+account charges every direct token operation in the tree to the grant's budgets
+and reverts `NotGranted` / `TokenNotBudgeted` / `TokenBudgetExceeded` /
+`UnbudgetableSelector` otherwise.
+
+The `warn` rung produces no transaction at all — it is a notification, and the
+UI says so. It reaches the log channel and, when `NOTIFY_WEBHOOK_URL` is set,
+an HTTP endpoint; there is no mailer and no per-user routing yet
+(`RISKS.md` §10).
 
 ## 7 · Spot — CoW Protocol (Advanced mode)
 
@@ -186,6 +269,9 @@ Exercised only in demo mode so far (no wallet in the build container).
 Every position is the account's, and `exec` is owner-only with no other gate:
 `account.exec(AavePool, withdraw(...))`, `account.exec(engine, withdraw(id,
 false))`, `account.exec(token, transfer(wallet, amount))` all work with no
-router, no venue, no registry state and no grant — the property
-`invariant_userCanAlwaysExitViaExec` in `contracts/test/invariant/Invariants.t.sol`
-checks under random sequences, a glitching engine and a disabled asset.
+router, no venue, no registry state and no grant — and now genuinely as *plain*
+calls, granting those targets nothing. The property
+`invariant_userCanAlwaysExitViaExec` in
+`contracts/test/invariant/Invariants.t.sol` probes it under snapshot after
+random sequences, a glitching engine, a disabled asset, and token donations to
+every peripheral.

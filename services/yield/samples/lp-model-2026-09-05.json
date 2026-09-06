@@ -1,6 +1,7 @@
 {
- "generatedAt": "2026-09-05T01:47:16+00:00",
+ "generatedAt": "2026-09-06T04:16:02+00:00",
  "inputs": {
+  "asOf": "2026-08-31T01:34:32+00:00",
   "gaugeSample": {
    "file": "samples/gauge-emissions-2026-09-05-composite.json",
    "sampledAt": "2026-08-31T01:34:32Z",
@@ -112,7 +113,7 @@
     "rebalanceDelayHours": 2
    }
   ],
-  "paths": 3000,
+  "paths": 6000,
   "stepHours": 1,
   "horizonDays": 365,
   "seed": 7,
@@ -120,7 +121,24 @@
   "rebalance": "re-center at current price with the same width after the position has been out of range for the full rebalance delay; cost = (pool fee + 5 bps slippage) on the swapped half",
   "emissions": "in-range emissions APR at the position's exact width from the raw gauge words; paid only while in range on the position's current value; AERO sold on claim",
   "widthConvention": "rangeWidthBps is the TOTAL tick span; half-width w = 1.0001^(bps/2) - 1 (audit FACT 3)",
-  "closedForm": "x = sigma^2/(4 f(w)); drag = -100(1-e^-x); realized = r(1-e^-x)/x; lpNet = (1-e^-x)(r/x - 1); gate: lpNet > borrow"
+  "epochDerivation": "epochActive = rewardRate > 0 AND periodFinish > --as-of (identical to src/gate.ts); the sample's recorded boolean is never trusted",
+  "closedForm": "x = sigma^2/(4 f(w)); drag = -100(1-e^-x); realized = r(1-e^-x)/x; lpNet = (1-e^-x)(r/x - 1)",
+  "mcCalibratedForm": "mcLpNet = net * inRangeEmissionsFactor + mcDragPct (affine in net, exact); gate: lpNet > borrow AND mcLpNet > borrow",
+  "tolerances": {
+   "ceilingPct": {
+    "AGGRESSIVE": 4.75,
+    "MODERATE": 2.5,
+    "CONSERVATIVE": 2.5
+   },
+   "maxFractionOfBorrow": 0.98,
+   "effectivePct": {
+    "AGGRESSIVE": 4.73144,
+    "MODERATE": 2.5,
+    "CONSERVATIVE": 2.5
+   },
+   "affinePct": 0.01
+  },
+  "epochLapsedAtAsOf": []
  },
  "results": {
   "aero-usdc-weth-5": {
@@ -132,28 +150,28 @@
     "protocol": "SNUGGLEFI",
     "pairClass": "UNCORRELATED",
     "keep": 0.765,
-    "emissionsGrossPct": 7.625013660508732,
-    "emissionsNetPct": 5.833135450289181,
+    "feeBpsLive": 3.64,
+    "epochActive": true,
+    "periodFinish": 1788393600,
+    "emissionsGrossPct": 7.63,
+    "emissionsNetPct": 5.83695,
     "sigma": 0.55,
     "dragRate": 0.3128799324673794,
     "dragPct": -26.86622827872488,
-    "emissionsRealizedPct": 5.00876957343791,
-    "lpNetPct": -21.85745870528697,
+    "emissionsRealizedPct": 5.01204503321263,
+    "lpNetPct": -21.85418324551225,
+    "mcLpNetPct": -21.926254570108487,
     "qualifies": false,
     "reason": "net_below_borrow",
-    "breakEvenSigma": 0.09740877772569878,
-    "breakEvenEmissionsMultiple": 6.327747326769249,
+    "breakEvenSigma": 0.09759343164832007,
+    "breakEvenEmissionsMultiple": 6.323612032354277,
     "monteCarlo": {
-     "timeInRange": 0.9697698249619482,
-     "rebalancesPerYear": 3.065,
-     "dragPct": {
-      "mean": -26.867773975975258,
-      "p10": -40.29807910812227,
-      "p90": -12.757619672893489
-     },
-     "emissionsGrossPct": 6.497416981626271,
-     "emissionsNetPct": 4.9705239909440975,
-     "lpNetPct": -21.89724998503116,
+     "timeInRange": 0.9695052891933029,
+     "rebalancesPerYear": 3.0843333333333334,
+     "inRangeEmissionsFactor": 0.8538129917459252,
+     "dragPct": -26.909918312279864,
+     "emissionsNetPct": 4.983663742171378,
+     "lpNetPct": -21.926254570108487,
      "qualifies": false
     },
     "userNet": {
@@ -161,34 +179,34 @@
       "p30": {
        "ltvBps": 3000,
        "offerable": true,
-       "userNetPct": -7.993637611586091
+       "userNetPct": -7.992654973653674
       },
       "p40": {
        "ltvBps": 4000,
        "offerable": true,
-       "userNetPct": -10.662183482114788
+       "userNetPct": -10.6608732982049
       },
       "top": {
        "ltvBps": 5000,
        "offerable": true,
-       "userNetPct": -13.330729352643484
+       "userNetPct": -13.329091622756124
       }
      },
      "WETH": {
       "p30": {
        "ltvBps": 3000,
        "offerable": true,
-       "userNetPct": -6.16263761158609
+       "userNetPct": -6.161654973653674
       },
       "p40": {
        "ltvBps": 4000,
        "offerable": true,
-       "userNetPct": -8.831183482114788
+       "userNetPct": -8.8298732982049
       },
       "top": {
        "ltvBps": 5000,
        "offerable": true,
-       "userNetPct": -11.499729352643485
+       "userNetPct": -11.498091622756125
       }
      }
     }
@@ -201,28 +219,28 @@
     "protocol": "SNUGGLEFI",
     "pairClass": "UNCORRELATED",
     "keep": 0.765,
-    "emissionsGrossPct": 24.08126800161742,
-    "emissionsNetPct": 18.422170021237328,
+    "feeBpsLive": 3.64,
+    "epochActive": true,
+    "periodFinish": 1788393600,
+    "emissionsGrossPct": 24.08,
+    "emissionsNetPct": 18.4212,
     "sigma": 0.55,
     "dragRate": 0.9881353452647095,
     "dragPct": -62.77298003653977,
-    "emissionsRealizedPct": 11.7029971300448,
-    "lpNetPct": -51.06998290649497,
+    "emissionsRealizedPct": 11.702380907539881,
+    "lpNetPct": -51.07059912899989,
+    "mcLpNetPct": -50.027857594732666,
     "qualifies": false,
     "reason": "net_below_borrow",
-    "breakEvenSigma": 0.2015292297235502,
-    "breakEvenEmissionsMultiple": 5.77638183495658,
+    "breakEvenSigma": 0.20152204320780992,
+    "breakEvenEmissionsMultiple": 5.77668600694618,
     "monteCarlo": {
-     "timeInRange": 0.9343527016742771,
-     "rebalancesPerYear": 29.457666666666668,
-     "dragPct": {
-      "mean": -61.03378310659567,
-      "p10": -68.47926056324083,
-      "p90": -53.37427656265151
-     },
-     "emissionsGrossPct": 14.631171741550315,
-     "emissionsNetPct": 11.19284638228599,
-     "lpNetPct": -49.84093672430968,
+     "timeInRange": 0.9341483447488584,
+     "rebalancesPerYear": 29.647,
+     "inRangeEmissionsFactor": 0.6084475495404585,
+     "dragPct": -61.23619159432736,
+     "emissionsNetPct": 11.208333999594695,
+     "lpNetPct": -50.027857594732666,
      "qualifies": false
     },
     "userNet": {
@@ -230,34 +248,34 @@
       "p30": {
        "ltvBps": 3000,
        "offerable": true,
-       "userNetPct": -16.75739487194849
+       "userNetPct": -16.757579738699967
       },
       "p40": {
        "ltvBps": 4000,
        "offerable": true,
-       "userNetPct": -22.34719316259799
+       "userNetPct": -22.347439651599956
       },
       "top": {
        "ltvBps": 5000,
        "offerable": true,
-       "userNetPct": -27.936991453247487
+       "userNetPct": -27.937299564499945
       }
      },
      "WETH": {
       "p30": {
        "ltvBps": 3000,
        "offerable": true,
-       "userNetPct": -14.926394871948492
+       "userNetPct": -14.926579738699967
       },
       "p40": {
        "ltvBps": 4000,
        "offerable": true,
-       "userNetPct": -20.51619316259799
+       "userNetPct": -20.516439651599956
       },
       "top": {
        "ltvBps": 5000,
        "offerable": true,
-       "userNetPct": -26.105991453247487
+       "userNetPct": -26.106299564499945
       }
      }
     }
@@ -270,28 +288,28 @@
     "protocol": "SNUGGLEFI",
     "pairClass": "UNCORRELATED",
     "keep": 0.765,
-    "emissionsGrossPct": 122.406522470155,
-    "emissionsNetPct": 93.64098968966857,
+    "feeBpsLive": 3.64,
+    "epochActive": true,
+    "periodFinish": 1788393600,
+    "emissionsGrossPct": 122.41,
+    "emissionsNetPct": 93.64365,
     "sigma": 0.55,
     "dragRate": 5.022750933861753,
     "dragPct": -99.34136169394198,
-    "emissionsRealizedPct": 18.520574777909342,
-    "lpNetPct": -80.82078691603263,
+    "emissionsRealizedPct": 18.52110094146858,
+    "lpNetPct": -80.8202607524734,
+    "mcLpNetPct": -82.26910399989931,
     "qualifies": false,
     "reason": "net_below_borrow",
-    "breakEvenSigma": 0.22815153056213222,
-    "breakEvenEmissionsMultiple": 5.624520995870568,
+    "breakEvenSigma": 0.22815493646188795,
+    "breakEvenEmissionsMultiple": 5.624361209581646,
     "monteCarlo": {
-     "timeInRange": 0.8321489726027397,
-     "rebalancesPerYear": 604.6773333333333,
-     "dragPct": {
-      "mean": -98.99975047460626,
-      "p10": -99.20345520879158,
-      "p90": -98.78278789177902
-     },
-     "emissionsGrossPct": 21.973095105541418,
-     "emissionsNetPct": 16.809417755739187,
-     "lpNetPct": -82.19033271886707,
+     "timeInRange": 0.8321174467275495,
+     "rebalancesPerYear": 604.7615,
+     "inRangeEmissionsFactor": 0.17866678047824325,
+     "dragPct": -99.00011345763076,
+     "emissionsNetPct": 16.731009457731442,
+     "lpNetPct": -82.26910399989931,
      "qualifies": false
     },
     "userNet": {
@@ -299,34 +317,34 @@
       "p30": {
        "ltvBps": 3000,
        "offerable": true,
-       "userNetPct": -25.68263607480979
+       "userNetPct": -25.68247822574202
       },
       "p40": {
        "ltvBps": 4000,
        "offerable": true,
-       "userNetPct": -34.247514766413055
+       "userNetPct": -34.24730430098936
       },
       "top": {
        "ltvBps": 5000,
        "offerable": true,
-       "userNetPct": -42.81239345801632
+       "userNetPct": -42.8121303762367
       }
      },
      "WETH": {
       "p30": {
        "ltvBps": 3000,
        "offerable": true,
-       "userNetPct": -23.85163607480979
+       "userNetPct": -23.85147822574202
       },
       "p40": {
        "ltvBps": 4000,
        "offerable": true,
-       "userNetPct": -32.41651476641306
+       "userNetPct": -32.41630430098937
       },
       "top": {
        "ltvBps": 5000,
        "offerable": true,
-       "userNetPct": -40.98139345801631
+       "userNetPct": -40.981130376236706
       }
      }
     }
@@ -341,28 +359,28 @@
     "protocol": "SNUGGLEFI",
     "pairClass": "UNCORRELATED",
     "keep": 0.765,
-    "emissionsGrossPct": 14.131040058186025,
-    "emissionsNetPct": 10.81024564451231,
+    "feeBpsLive": 2.36,
+    "epochActive": true,
+    "periodFinish": 1788393600,
+    "emissionsGrossPct": 14.13,
+    "emissionsNetPct": 10.80945,
     "sigma": 0.4,
     "dragRate": 0.1654902122141511,
     "dragPct": -15.252184190094864,
-    "emissionsRealizedPct": 9.963118392579691,
-    "lpNetPct": -5.289065797515173,
+    "emissionsRealizedPct": 9.962385097450678,
+    "lpNetPct": -5.289799092644186,
+    "mcLpNetPct": -5.214924328568804,
     "qualifies": false,
     "reason": "net_below_borrow",
-    "breakEvenSigma": 0.23761643846458275,
-    "breakEvenEmissionsMultiple": 2.0154517289536713,
+    "breakEvenSigma": 0.23760063995265795,
+    "breakEvenEmissionsMultiple": 2.0156000790647286,
     "monteCarlo": {
-     "timeInRange": 0.9830518264840182,
-     "rebalancesPerYear": 1.703,
-     "dragPct": {
-      "mean": -15.38691851661182,
-      "p10": -26.137668792091773,
-      "p90": -3.950665074953642
-     },
-     "emissionsGrossPct": 13.135553689006985,
-     "emissionsNetPct": 10.048698572090343,
-     "lpNetPct": -5.338219944521477,
+     "timeInRange": 0.9831953196347031,
+     "rebalancesPerYear": 1.6863333333333332,
+     "inRangeEmissionsFactor": 0.9278086753600098,
+     "dragPct": -15.24402581443906,
+     "emissionsNetPct": 10.029101485870257,
+     "lpNetPct": -5.214924328568804,
      "qualifies": false
     },
     "userNet": {
@@ -370,34 +388,34 @@
       "p30": {
        "ltvBps": 3000,
        "offerable": true,
-       "userNetPct": -3.023119739254552
+       "userNetPct": -3.023339727793256
       },
       "p40": {
        "ltvBps": 4000,
        "offerable": true,
-       "userNetPct": -4.03482631900607
+       "userNetPct": -4.035119637057676
       },
       "top": {
        "ltvBps": 5000,
        "offerable": true,
-       "userNetPct": -5.0465328987575875
+       "userNetPct": -5.046899546322094
       }
      },
      "WETH": {
       "p30": {
        "ltvBps": 3000,
        "offerable": true,
-       "userNetPct": -1.1921197392545522
+       "userNetPct": -1.192339727793256
       },
       "p40": {
        "ltvBps": 4000,
        "offerable": true,
-       "userNetPct": -2.20382631900607
+       "userNetPct": -2.2041196370576754
       },
       "top": {
        "ltvBps": 5000,
        "offerable": true,
-       "userNetPct": -3.215532898757587
+       "userNetPct": -3.2158995463220936
       }
      }
     }
@@ -410,28 +428,28 @@
     "protocol": "SNUGGLEFI",
     "pairClass": "UNCORRELATED",
     "keep": 0.765,
-    "emissionsGrossPct": 44.62855778806107,
-    "emissionsNetPct": 34.14084670786672,
+    "feeBpsLive": 2.36,
+    "epochActive": true,
+    "periodFinish": 1788393600,
+    "emissionsGrossPct": 44.63,
+    "emissionsNetPct": 34.14195,
     "sigma": 0.4,
     "dragRate": 0.5226500999747224,
     "dragPct": -40.70529050941233,
-    "emissionsRealizedPct": 26.58974108200191,
-    "lpNetPct": -14.115549427410418,
+    "emissionsRealizedPct": 26.590600353373027,
+    "lpNetPct": -14.114690156039302,
+    "mcLpNetPct": -14.425887262094335,
     "qualifies": false,
     "reason": "net_below_borrow",
-    "breakEvenSigma": 0.29584237833793814,
-    "breakEvenEmissionsMultiple": 1.7124382809516314,
+    "breakEvenSigma": 0.295847939606108,
+    "breakEvenEmissionsMultiple": 1.7123829437584104,
     "monteCarlo": {
-     "timeInRange": 0.9606566971080671,
-     "rebalancesPerYear": 17.719666666666665,
-     "dragPct": {
-      "mean": -40.06645679916741,
-      "p10": -48.02168249330192,
-      "p90": -32.01700981522377
-     },
-     "emissionsGrossPct": 33.81645002537319,
-     "emissionsNetPct": 25.869584269410492,
-     "lpNetPct": -14.19687252975692,
+     "timeInRange": 0.9604234969558599,
+     "rebalancesPerYear": 17.794166666666666,
+     "inRangeEmissionsFactor": 0.754940208431314,
+     "dragPct": -40.20101811134584,
+     "emissionsNetPct": 25.775130849251504,
+     "lpNetPct": -14.425887262094335,
      "qualifies": false
     },
     "userNet": {
@@ -439,34 +457,34 @@
       "p30": {
        "ltvBps": 3000,
        "offerable": true,
-       "userNetPct": -5.671064828223125
+       "userNetPct": -5.670807046811791
       },
       "p40": {
        "ltvBps": 4000,
        "offerable": true,
-       "userNetPct": -7.5654197709641675
+       "userNetPct": -7.565076062415721
       },
       "top": {
        "ltvBps": 5000,
        "offerable": true,
-       "userNetPct": -9.459774713705208
+       "userNetPct": -9.45934507801965
       }
      },
      "WETH": {
       "p30": {
        "ltvBps": 3000,
        "offerable": true,
-       "userNetPct": -3.8400648282231247
+       "userNetPct": -3.8398070468117904
       },
       "p40": {
        "ltvBps": 4000,
        "offerable": true,
-       "userNetPct": -5.734419770964167
+       "userNetPct": -5.7340760624157205
       },
       "top": {
        "ltvBps": 5000,
        "offerable": true,
-       "userNetPct": -7.628774713705209
+       "userNetPct": -7.628345078019651
       }
      }
     }
@@ -479,28 +497,28 @@
     "protocol": "SNUGGLEFI",
     "pairClass": "UNCORRELATED",
     "keep": 0.765,
-    "emissionsGrossPct": 226.8496227577384,
-    "emissionsNetPct": 173.53996140966987,
+    "feeBpsLive": 2.36,
+    "epochActive": true,
+    "periodFinish": 1788393600,
+    "emissionsGrossPct": 226.85,
+    "emissionsNetPct": 173.54025,
     "sigma": 0.4,
     "dragRate": 2.6566616509682,
     "dragPct": -92.98178764713381,
-    "emissionsRealizedPct": 60.738091484871845,
-    "lpNetPct": -32.24369616226197,
+    "emissionsRealizedPct": 60.738192489999015,
+    "lpNetPct": -32.2435951571348,
+    "mcLpNetPct": -36.637615855907605,
     "qualifies": false,
     "reason": "net_below_borrow",
-    "breakEvenSigma": 0.31401560058432665,
-    "breakEvenEmissionsMultiple": 1.6103533261576959,
+    "breakEvenSigma": 0.3140158676533028,
+    "breakEvenEmissionsMultiple": 1.6103506482060506,
     "monteCarlo": {
-     "timeInRange": 0.8923766742770167,
-     "rebalancesPerYear": 387.78366666666665,
-     "dragPct": {
-      "mean": -92.35764053782357,
-      "p10": -93.42543742887074,
-      "p90": -91.27634429606911
-     },
-     "emissionsGrossPct": 72.73803956743183,
-     "emissionsNetPct": 55.644600269085345,
-     "lpNetPct": -36.713040268738226,
+     "timeInRange": 0.8923115106544901,
+     "rebalancesPerYear": 387.97116666666665,
+     "inRangeEmissionsFactor": 0.32110693271644913,
+     "dragPct": -92.36259323625336,
+     "emissionsNetPct": 55.724977380345756,
+     "lpNetPct": -36.637615855907605,
      "qualifies": false
     },
     "userNet": {
@@ -508,34 +526,34 @@
       "p30": {
        "ltvBps": 3000,
        "offerable": true,
-       "userNetPct": -11.10950884867859
+       "userNetPct": -11.109478547140439
       },
       "p40": {
        "ltvBps": 4000,
        "offerable": true,
-       "userNetPct": -14.81667846490479
+       "userNetPct": -14.81663806285392
       },
       "top": {
        "ltvBps": 5000,
        "offerable": true,
-       "userNetPct": -18.523848081130986
+       "userNetPct": -18.5237975785674
       }
      },
      "WETH": {
       "p30": {
        "ltvBps": 3000,
        "offerable": true,
-       "userNetPct": -9.278508848678591
+       "userNetPct": -9.27847854714044
       },
       "p40": {
        "ltvBps": 4000,
        "offerable": true,
-       "userNetPct": -12.98567846490479
+       "userNetPct": -12.985638062853921
       },
       "top": {
        "ltvBps": 5000,
        "offerable": true,
-       "userNetPct": -16.692848081130986
+       "userNetPct": -16.6927975785674
       }
      }
     }
@@ -550,53 +568,17 @@
     "protocol": "SNUGGLEFI",
     "pairClass": "CORRELATED",
     "keep": 0.765,
-    "emissionsGrossPct": 2.703715058595427,
-    "emissionsNetPct": 2.0683420198255016,
+    "feeBpsLive": 25.0,
+    "epochActive": true,
+    "periodFinish": 1788393600,
+    "emissionsGrossPct": 2.7,
+    "emissionsNetPct": 2.0655,
     "reason": "emissions_below_borrow",
-    "lpNetPct": -18.17850736397652,
+    "lpNetPct": null,
+    "mcLpNetPct": null,
     "qualifies": false,
     "sigma": 0.33,
-    "dragRate": 0.22354328827459363,
-    "dragPct": -20.03197256609678,
-    "emissionsRealizedPct": 1.8534652021202567,
-    "breakEvenSigma": null,
-    "breakEvenEmissionsMultiple": 13.412699918864627,
-    "userNet": {
-     "cbBTC": {
-      "p30": {
-       "ltvBps": 3000,
-       "offerable": true,
-       "userNetPct": -6.889952209192956
-      },
-      "p40": {
-       "ltvBps": 4000,
-       "offerable": true,
-       "userNetPct": -9.190602945590609
-      },
-      "top": {
-       "ltvBps": 5000,
-       "offerable": true,
-       "userNetPct": -11.49125368198826
-      }
-     },
-     "WETH": {
-      "p30": {
-       "ltvBps": 3000,
-       "offerable": true,
-       "userNetPct": -5.058952209192956
-      },
-      "p40": {
-       "ltvBps": 4000,
-       "offerable": true,
-       "userNetPct": -7.359602945590609
-      },
-      "top": {
-       "ltvBps": 5000,
-       "offerable": true,
-       "userNetPct": -9.66025368198826
-      }
-     }
-    }
+    "wouldNeedEmissionsMultiple": 13.431155091502205
    },
    "steady": {
     "rangeWidthBps": 784,
@@ -606,28 +588,28 @@
     "protocol": "SNUGGLEFI",
     "pairClass": "CORRELATED",
     "keep": 0.765,
-    "emissionsGrossPct": 8.31512801490661,
-    "emissionsNetPct": 6.361072931403557,
+    "feeBpsLive": 25.0,
+    "epochActive": true,
+    "periodFinish": 1788393600,
+    "emissionsGrossPct": 8.32,
+    "emissionsNetPct": 6.364800000000001,
     "sigma": 0.33,
     "dragRate": 0.6874951755611612,
     "dragPct": -49.716599614301316,
-    "emissionsRealizedPct": 4.600045604535681,
-    "lpNetPct": -45.116554009765636,
+    "emissionsRealizedPct": 4.602740855116795,
+    "lpNetPct": -45.113858759184524,
+    "mcLpNetPct": -45.51419556771994,
     "qualifies": false,
     "reason": "net_below_borrow",
-    "breakEvenSigma": 0.04869317431809246,
-    "breakEvenEmissionsMultiple": 11.857404100628898,
+    "breakEvenSigma": 0.04875232412969717,
+    "breakEvenEmissionsMultiple": 11.850460699664405,
     "monteCarlo": {
-     "timeInRange": 0.9165385844748858,
-     "rebalancesPerYear": 37.49666666666667,
-     "dragPct": {
-      "mean": -49.82688158265269,
-      "p10": -55.86063818648075,
-      "p90": -43.44495087235803
-     },
-     "emissionsGrossPct": 5.528475546328428,
-     "emissionsNetPct": 4.2292837929412475,
-     "lpNetPct": -45.59759778971144,
+     "timeInRange": 0.9168503044140031,
+     "rebalancesPerYear": 37.42516666666667,
+     "inRangeEmissionsFactor": 0.6653976755590356,
+     "dragPct": -49.749318693118084,
+     "emissionsNetPct": 4.23512312539815,
+     "lpNetPct": -45.51419556771994,
      "qualifies": false
     },
     "userNet": {
@@ -635,34 +617,34 @@
       "p30": {
        "ltvBps": 3000,
        "offerable": true,
-       "userNetPct": -14.97136620292969
+       "userNetPct": -14.970557627755356
       },
       "p40": {
        "ltvBps": 4000,
        "offerable": true,
-       "userNetPct": -19.965821603906257
+       "userNetPct": -19.964743503673812
       },
       "top": {
        "ltvBps": 5000,
        "offerable": true,
-       "userNetPct": -24.96027700488282
+       "userNetPct": -24.958929379592263
       }
      },
      "WETH": {
       "p30": {
        "ltvBps": 3000,
        "offerable": true,
-       "userNetPct": -13.140366202929691
+       "userNetPct": -13.139557627755357
       },
       "p40": {
        "ltvBps": 4000,
        "offerable": true,
-       "userNetPct": -18.134821603906257
+       "userNetPct": -18.133743503673813
       },
       "top": {
        "ltvBps": 5000,
        "offerable": true,
-       "userNetPct": -23.12927700488282
+       "userNetPct": -23.127929379592263
       }
      }
     }
@@ -675,28 +657,28 @@
     "protocol": "SNUGGLEFI",
     "pairClass": "CORRELATED",
     "keep": 0.765,
-    "emissionsGrossPct": 43.823491167446285,
-    "emissionsNetPct": 33.52497074309641,
+    "feeBpsLive": 25.0,
+    "epochActive": true,
+    "periodFinish": 1788393600,
+    "emissionsGrossPct": 43.82,
+    "emissionsNetPct": 33.5223,
     "sigma": 0.33,
     "dragRate": 3.623328311946002,
     "dragPct": -97.3306316429223,
-    "emissionsRealizedPct": 9.005550414733415,
-    "lpNetPct": -88.32508122818888,
+    "emissionsRealizedPct": 9.004832993925389,
+    "lpNetPct": -88.32579864899691,
+    "mcLpNetPct": -92.13794662353313,
     "qualifies": false,
     "reason": "net_below_borrow",
-    "breakEvenSigma": 0.09171917306864766,
-    "breakEvenEmissionsMultiple": 11.343963104774472,
+    "breakEvenSigma": 0.0917149096160656,
+    "breakEvenEmissionsMultiple": 11.344866885575552,
     "monteCarlo": {
-     "timeInRange": 0.7874017123287671,
-     "rebalancesPerYear": 765.8586666666666,
-     "dragPct": {
-      "mean": -98.41516490167433,
-      "p10": -98.66037488947183,
-      "p90": -98.15682405993746
-     },
-     "emissionsGrossPct": 8.206878671519705,
-     "emissionsNetPct": 6.278262183712575,
-     "lpNetPct": -92.13690271796176,
+     "timeInRange": 0.7872646118721461,
+     "rebalancesPerYear": 766.0711666666666,
+     "inRangeEmissionsFactor": 0.18728373342810029,
+     "dragPct": -98.41612812062993,
+     "emissionsNetPct": 6.278181497096806,
+     "lpNetPct": -92.13794662353313,
      "qualifies": false
     },
     "userNet": {
@@ -704,34 +686,34 @@
       "p30": {
        "ltvBps": 3000,
        "offerable": true,
-       "userNetPct": -27.933924368456662
+       "userNetPct": -27.934139594699072
       },
       "p40": {
        "ltvBps": 4000,
        "offerable": true,
-       "userNetPct": -37.249232491275556
+       "userNetPct": -37.249519459598766
       },
       "top": {
        "ltvBps": 5000,
        "offerable": true,
-       "userNetPct": -46.56454061409444
+       "userNetPct": -46.564899324498455
       }
      },
      "WETH": {
       "p30": {
        "ltvBps": 3000,
        "offerable": true,
-       "userNetPct": -26.102924368456662
+       "userNetPct": -26.103139594699073
       },
       "p40": {
        "ltvBps": 4000,
        "offerable": true,
-       "userNetPct": -35.41823249127556
+       "userNetPct": -35.41851945959877
       },
       "top": {
        "ltvBps": 5000,
        "offerable": true,
-       "userNetPct": -44.73354061409444
+       "userNetPct": -44.73389932449845
       }
      }
     }
@@ -746,12 +728,16 @@
     "protocol": "SNUGGLEFI",
     "pairClass": "UNCORRELATED",
     "keep": 0.765,
-    "emissionsGrossPct": 17.4557891733237,
-    "emissionsNetPct": 13.353678717592631,
+    "feeBpsLive": 25.0,
+    "epochActive": true,
+    "periodFinish": 1788393600,
+    "emissionsGrossPct": 17.46,
+    "emissionsNetPct": 13.356900000000001,
     "reason": "no_volatility_input",
     "lpNetPct": null,
+    "mcLpNetPct": null,
     "qualifies": false,
-    "breakEvenSigma": 0.28365319500750297
+    "wouldClearBelowSigma": 0.2837067592046829
    },
    "steady": {
     "rangeWidthBps": 1500,
@@ -761,12 +747,16 @@
     "protocol": "SNUGGLEFI",
     "pairClass": "UNCORRELATED",
     "keep": 0.765,
-    "emissionsGrossPct": 55.12875858041336,
-    "emissionsNetPct": 42.17350031401622,
+    "feeBpsLive": 25.0,
+    "epochActive": true,
+    "periodFinish": 1788393600,
+    "emissionsGrossPct": 55.13,
+    "emissionsNetPct": 42.17445,
     "reason": "no_volatility_input",
     "lpNetPct": null,
+    "mcLpNetPct": null,
     "qualifies": false,
-    "breakEvenSigma": 0.33387525012458663
+    "wouldClearBelowSigma": 0.3338794892607079
    },
    "working": {
     "rangeWidthBps": 300,
@@ -776,12 +766,16 @@
     "protocol": "SNUGGLEFI",
     "pairClass": "UNCORRELATED",
     "keep": 0.765,
-    "emissionsGrossPct": 280.2227700581166,
-    "emissionsNetPct": 214.3704190944592,
+    "feeBpsLive": 25.0,
+    "epochActive": true,
+    "periodFinish": 1788393600,
+    "emissionsGrossPct": 280.22,
+    "emissionsNetPct": 214.36830000000003,
     "reason": "no_volatility_input",
     "lpNetPct": null,
+    "mcLpNetPct": null,
     "qualifies": false,
-    "breakEvenSigma": 0.34972789029104123
+    "wouldClearBelowSigma": 0.3497261333479841
    }
   },
   "aero-usdt-usdc": {
@@ -793,11 +787,17 @@
     "protocol": "SNUGGLEFI",
     "pairClass": "CORRELATED",
     "keep": 0.765,
-    "emissionsGrossPct": 0.0038664525430950423,
-    "emissionsNetPct": 0.0029578361954677073,
+    "feeBpsLive": 0.09,
+    "epochActive": true,
+    "periodFinish": 1788393600,
+    "emissionsGrossPct": 0.0,
+    "emissionsNetPct": 0.0,
     "reason": "emissions_below_borrow",
     "lpNetPct": null,
-    "qualifies": false
+    "mcLpNetPct": null,
+    "qualifies": false,
+    "sigma": null,
+    "wouldNeedEmissionsMultiple": null
    },
    "steady": {
     "rangeWidthBps": 784,
@@ -807,11 +807,17 @@
     "protocol": "SNUGGLEFI",
     "pairClass": "CORRELATED",
     "keep": 0.765,
-    "emissionsGrossPct": 0.011891063652283823,
-    "emissionsNetPct": 0.009096663693997125,
+    "feeBpsLive": 0.09,
+    "epochActive": true,
+    "periodFinish": 1788393600,
+    "emissionsGrossPct": 0.01,
+    "emissionsNetPct": 0.0076500000000000005,
     "reason": "emissions_below_borrow",
     "lpNetPct": null,
-    "qualifies": false
+    "mcLpNetPct": null,
+    "qualifies": false,
+    "sigma": null,
+    "wouldNeedEmissionsMultiple": null
    },
    "working": {
     "rangeWidthBps": 150,
@@ -821,11 +827,17 @@
     "protocol": "SNUGGLEFI",
     "pairClass": "CORRELATED",
     "keep": 0.765,
-    "emissionsGrossPct": 0.06266986172710827,
-    "emissionsNetPct": 0.04794244422123783,
+    "feeBpsLive": 0.09,
+    "epochActive": true,
+    "periodFinish": 1788393600,
+    "emissionsGrossPct": 0.06,
+    "emissionsNetPct": 0.045899999999999996,
     "reason": "emissions_below_borrow",
     "lpNetPct": null,
-    "qualifies": false
+    "mcLpNetPct": null,
+    "qualifies": false,
+    "sigma": null,
+    "wouldNeedEmissionsMultiple": null
    }
   },
   "cbeth-weth": {
@@ -837,11 +849,17 @@
     "protocol": "SNUGGLEFI",
     "pairClass": "CORRELATED",
     "keep": 0.765,
-    "emissionsGrossPct": 0.0022311960510715927,
-    "emissionsNetPct": 0.0017068649790697684,
+    "feeBpsLive": 0.65,
+    "epochActive": true,
+    "periodFinish": 1788393600,
+    "emissionsGrossPct": 0.0,
+    "emissionsNetPct": 0.0,
     "reason": "emissions_below_borrow",
     "lpNetPct": null,
-    "qualifies": false
+    "mcLpNetPct": null,
+    "qualifies": false,
+    "sigma": null,
+    "wouldNeedEmissionsMultiple": null
    },
    "steady": {
     "rangeWidthBps": 784,
@@ -851,11 +869,17 @@
     "protocol": "SNUGGLEFI",
     "pairClass": "CORRELATED",
     "keep": 0.765,
-    "emissionsGrossPct": 0.006861921611167294,
-    "emissionsNetPct": 0.00524937003254298,
+    "feeBpsLive": 0.65,
+    "epochActive": true,
+    "periodFinish": 1788393600,
+    "emissionsGrossPct": 0.01,
+    "emissionsNetPct": 0.0076500000000000005,
     "reason": "emissions_below_borrow",
     "lpNetPct": null,
-    "qualifies": false
+    "mcLpNetPct": null,
+    "qualifies": false,
+    "sigma": null,
+    "wouldNeedEmissionsMultiple": null
    },
    "working": {
     "rangeWidthBps": 150,
@@ -865,11 +889,17 @@
     "protocol": "SNUGGLEFI",
     "pairClass": "CORRELATED",
     "keep": 0.765,
-    "emissionsGrossPct": 0.036164609922974954,
-    "emissionsNetPct": 0.02766592659107584,
+    "feeBpsLive": 0.65,
+    "epochActive": true,
+    "periodFinish": 1788393600,
+    "emissionsGrossPct": 0.04,
+    "emissionsNetPct": 0.030600000000000002,
     "reason": "emissions_below_borrow",
     "lpNetPct": null,
-    "qualifies": false
+    "mcLpNetPct": null,
+    "qualifies": false,
+    "sigma": null,
+    "wouldNeedEmissionsMultiple": null
    }
   },
   "aero-aero-weth": {
@@ -881,10 +911,14 @@
     "protocol": "SNUGGLEFI",
     "pairClass": "UNCORRELATED",
     "keep": 0.765,
+    "feeBpsLive": 30.0,
+    "epochActive": false,
+    "periodFinish": 1779926400,
     "emissionsGrossPct": 0.0,
     "emissionsNetPct": 0.0,
     "reason": "no_emissions",
     "lpNetPct": null,
+    "mcLpNetPct": null,
     "qualifies": false
    },
    "steady": {
@@ -895,10 +929,14 @@
     "protocol": "SNUGGLEFI",
     "pairClass": "UNCORRELATED",
     "keep": 0.765,
+    "feeBpsLive": 30.0,
+    "epochActive": false,
+    "periodFinish": 1779926400,
     "emissionsGrossPct": 0.0,
     "emissionsNetPct": 0.0,
     "reason": "no_emissions",
     "lpNetPct": null,
+    "mcLpNetPct": null,
     "qualifies": false
    },
    "working": {
@@ -909,10 +947,14 @@
     "protocol": "SNUGGLEFI",
     "pairClass": "UNCORRELATED",
     "keep": 0.765,
+    "feeBpsLive": 30.0,
+    "epochActive": false,
+    "periodFinish": 1779926400,
     "emissionsGrossPct": 0.0,
     "emissionsNetPct": 0.0,
     "reason": "no_emissions",
     "lpNetPct": null,
+    "mcLpNetPct": null,
     "qualifies": false
    }
   },
@@ -925,12 +967,16 @@
     "protocol": "SNUGGLEFI",
     "pairClass": "UNCORRELATED",
     "keep": 0.765,
-    "emissionsGrossPct": 23.16049039263005,
-    "emissionsNetPct": 17.717775150361987,
+    "feeBpsLive": 7.5,
+    "epochActive": true,
+    "periodFinish": 1788393600,
+    "emissionsGrossPct": 23.16,
+    "emissionsNetPct": 17.7174,
     "reason": "no_volatility_input",
     "lpNetPct": null,
+    "mcLpNetPct": null,
     "qualifies": false,
-    "breakEvenSigma": 0.34874627939996683
+    "wouldClearBelowSigma": 0.3487412068248994
    },
    "steady": {
     "rangeWidthBps": 1500,
@@ -940,12 +986,16 @@
     "protocol": "SNUGGLEFI",
     "pairClass": "UNCORRELATED",
     "keep": 0.765,
-    "emissionsGrossPct": 73.14530845792585,
-    "emissionsNetPct": 55.95616097031328,
+    "feeBpsLive": 7.5,
+    "epochActive": true,
+    "periodFinish": 1788393600,
+    "emissionsGrossPct": 73.15,
+    "emissionsNetPct": 55.95975000000001,
     "reason": "no_volatility_input",
     "lpNetPct": null,
+    "mcLpNetPct": null,
     "qualifies": false,
-    "breakEvenSigma": 0.39055482563851707
+    "wouldClearBelowSigma": 0.3905685068332597
    },
    "working": {
     "rangeWidthBps": 300,
@@ -955,12 +1005,16 @@
     "protocol": "SNUGGLEFI",
     "pairClass": "UNCORRELATED",
     "keep": 0.765,
-    "emissionsGrossPct": 371.80196834901557,
-    "emissionsNetPct": 284.42850578699694,
+    "feeBpsLive": 7.5,
+    "epochActive": true,
+    "periodFinish": 1788393600,
+    "emissionsGrossPct": 371.8,
+    "emissionsNetPct": 284.427,
     "reason": "no_volatility_input",
     "lpNetPct": null,
+    "mcLpNetPct": null,
     "qualifies": false,
-    "breakEvenSigma": 0.403574546391824
+    "wouldClearBelowSigma": 0.4035734678220193
    }
   },
   "aero-cbzec-usdc": {
@@ -972,10 +1026,14 @@
     "protocol": "DIRECT",
     "pairClass": "UNCORRELATED",
     "keep": 0.9,
+    "feeBpsLive": 20.0,
+    "epochActive": false,
+    "periodFinish": 0,
     "emissionsGrossPct": 0.0,
     "emissionsNetPct": 0.0,
     "reason": "no_emissions",
     "lpNetPct": null,
+    "mcLpNetPct": null,
     "qualifies": false
    },
    "steady": {
@@ -986,10 +1044,14 @@
     "protocol": "DIRECT",
     "pairClass": "UNCORRELATED",
     "keep": 0.9,
+    "feeBpsLive": 20.0,
+    "epochActive": false,
+    "periodFinish": 0,
     "emissionsGrossPct": 0.0,
     "emissionsNetPct": 0.0,
     "reason": "no_emissions",
     "lpNetPct": null,
+    "mcLpNetPct": null,
     "qualifies": false
    },
    "working": {
@@ -1000,10 +1062,14 @@
     "protocol": "DIRECT",
     "pairClass": "UNCORRELATED",
     "keep": 0.9,
+    "feeBpsLive": 20.0,
+    "epochActive": false,
+    "periodFinish": 0,
     "emissionsGrossPct": 0.0,
     "emissionsNetPct": 0.0,
     "reason": "no_emissions",
     "lpNetPct": null,
+    "mcLpNetPct": null,
     "qualifies": false
    }
   }
@@ -1012,82 +1078,306 @@
   {
    "pool": "aero-usdc-weth-5",
    "setting": "sheltered",
-   "closedFormLpNetPct": -21.85745870528697,
-   "monteCarloLpNetPct": -21.89724998503116,
-   "deltaPct": 0.03979127974418972,
+   "closedFormLpNetPct": -21.85418324551225,
+   "mcLpNetPct": -21.926254570108487,
+   "directMcLpNetPct": -21.92625457010859,
+   "affineErrorPct": 1.0302869668521453e-13,
+   "deltaPct": 0.07207132459623722,
    "tolerancePct": 2.5,
-   "verdictAgrees": true,
+   "neverMorePermissiveThanMc": true,
    "ok": true
   },
   {
    "pool": "aero-usdc-weth-5",
    "setting": "steady",
-   "closedFormLpNetPct": -51.06998290649497,
-   "monteCarloLpNetPct": -49.84093672430968,
-   "deltaPct": -1.229046182185293,
+   "closedFormLpNetPct": -51.07059912899989,
+   "mcLpNetPct": -50.027857594732666,
+   "directMcLpNetPct": -50.02785759473264,
+   "affineErrorPct": 2.842170943040401e-14,
+   "deltaPct": -1.042741534267222,
    "tolerancePct": 2.5,
-   "verdictAgrees": true,
+   "neverMorePermissiveThanMc": true,
    "ok": true
   },
   {
    "pool": "aero-usdc-weth-5",
    "setting": "working",
-   "closedFormLpNetPct": -80.82078691603263,
-   "monteCarloLpNetPct": -82.19033271886707,
-   "deltaPct": 1.3695458028344376,
-   "tolerancePct": 8.0,
-   "verdictAgrees": true,
+   "closedFormLpNetPct": -80.8202607524734,
+   "mcLpNetPct": -82.26910399989931,
+   "directMcLpNetPct": -82.26910399989931,
+   "affineErrorPct": 0.0,
+   "deltaPct": 1.4488432474259128,
+   "tolerancePct": 4.73144,
+   "neverMorePermissiveThanMc": true,
    "ok": true
   },
   {
    "pool": "aero-cbbtc-usdc",
    "setting": "sheltered",
-   "closedFormLpNetPct": -5.289065797515173,
-   "monteCarloLpNetPct": -5.338219944521477,
-   "deltaPct": 0.04915414700630372,
+   "closedFormLpNetPct": -5.289799092644186,
+   "mcLpNetPct": -5.214924328568804,
+   "directMcLpNetPct": -5.2149243285687295,
+   "affineErrorPct": 7.460698725481052e-14,
+   "deltaPct": -0.07487476407538196,
    "tolerancePct": 2.5,
-   "verdictAgrees": true,
+   "neverMorePermissiveThanMc": true,
    "ok": true
   },
   {
    "pool": "aero-cbbtc-usdc",
    "setting": "steady",
-   "closedFormLpNetPct": -14.115549427410418,
-   "monteCarloLpNetPct": -14.19687252975692,
-   "deltaPct": 0.0813231023465022,
+   "closedFormLpNetPct": -14.114690156039302,
+   "mcLpNetPct": -14.425887262094335,
+   "directMcLpNetPct": -14.425887262094399,
+   "affineErrorPct": 6.394884621840902e-14,
+   "deltaPct": 0.31119710605503315,
    "tolerancePct": 2.5,
-   "verdictAgrees": true,
+   "neverMorePermissiveThanMc": true,
    "ok": true
   },
   {
    "pool": "aero-cbbtc-usdc",
    "setting": "working",
-   "closedFormLpNetPct": -32.24369616226197,
-   "monteCarloLpNetPct": -36.713040268738226,
-   "deltaPct": 4.469344106476257,
-   "tolerancePct": 8.0,
-   "verdictAgrees": true,
+   "closedFormLpNetPct": -32.2435951571348,
+   "mcLpNetPct": -36.637615855907605,
+   "directMcLpNetPct": -36.637615855907576,
+   "affineErrorPct": 2.842170943040401e-14,
+   "deltaPct": 4.394020698772806,
+   "tolerancePct": 4.73144,
+   "neverMorePermissiveThanMc": true,
    "ok": true
   },
   {
    "pool": "aero-weth-cbbtc",
    "setting": "steady",
-   "closedFormLpNetPct": -45.116554009765636,
-   "monteCarloLpNetPct": -45.59759778971144,
-   "deltaPct": 0.48104377994580716,
+   "closedFormLpNetPct": -45.113858759184524,
+   "mcLpNetPct": -45.51419556771994,
+   "directMcLpNetPct": -45.51419556771994,
+   "affineErrorPct": 0.0,
+   "deltaPct": 0.400336808535414,
    "tolerancePct": 2.5,
-   "verdictAgrees": true,
+   "neverMorePermissiveThanMc": true,
    "ok": true
   },
   {
    "pool": "aero-weth-cbbtc",
    "setting": "working",
-   "closedFormLpNetPct": -88.32508122818888,
-   "monteCarloLpNetPct": -92.13690271796176,
-   "deltaPct": 3.811821489772882,
-   "tolerancePct": 8.0,
-   "verdictAgrees": true,
+   "closedFormLpNetPct": -88.32579864899691,
+   "mcLpNetPct": -92.13794662353313,
+   "directMcLpNetPct": -92.13794662353313,
+   "affineErrorPct": 0.0,
+   "deltaPct": 3.8121479745362166,
+   "tolerancePct": 4.73144,
+   "neverMorePermissiveThanMc": true,
    "ok": true
+  }
+ ],
+ "boundaryGuard": [
+  {
+   "pool": "aero-usdc-weth-5",
+   "setting": "sheltered",
+   "netEmissionsAtBoundaryPct": 36.9106072522503,
+   "grossEmissionsAtBoundaryPct": 48.24915980686314,
+   "closedFormLpNetPct": 4.828,
+   "mcLpNetPct": 4.6048376929228105,
+   "optimismPct": 0.22316230707718976,
+   "offeredByClosedFormAlone": true,
+   "offeredByServedGate": false,
+   "guardBites": true
+  },
+  {
+   "pool": "aero-usdc-weth-5",
+   "setting": "steady",
+   "netEmissionsAtBoundaryPct": 106.41348827115698,
+   "grossEmissionsAtBoundaryPct": 139.10259904726402,
+   "closedFormLpNetPct": 4.828,
+   "mcLpNetPct": 3.51083458231043,
+   "optimismPct": 1.3171654176895702,
+   "offeredByClosedFormAlone": true,
+   "offeredByServedGate": false,
+   "guardBites": true
+  },
+  {
+   "pool": "aero-usdc-weth-5",
+   "setting": "working",
+   "netEmissionsAtBoundaryPct": 526.6857125836402,
+   "grossEmissionsAtBoundaryPct": 688.4780556648892,
+   "closedFormLpNetPct": 4.828,
+   "mcLpNetPct": -4.898872866422394,
+   "optimismPct": 9.726872866422394,
+   "offeredByClosedFormAlone": true,
+   "offeredByServedGate": false,
+   "guardBites": true
+  },
+  {
+   "pool": "aero-cbbtc-usdc",
+   "setting": "sheltered",
+   "netEmissionsAtBoundaryPct": 21.787528274646235,
+   "grossEmissionsAtBoundaryPct": 28.48042911718462,
+   "closedFormLpNetPct": 4.828,
+   "mcLpNetPct": 4.970631933429223,
+   "optimismPct": -0.14263193342922253,
+   "offeredByClosedFormAlone": true,
+   "offeredByServedGate": true,
+   "guardBites": true
+  },
+  {
+   "pool": "aero-cbbtc-usdc",
+   "setting": "steady",
+   "netEmissionsAtBoundaryPct": 58.464092846652456,
+   "grossEmissionsAtBoundaryPct": 76.42365077993784,
+   "closedFormLpNetPct": 4.828,
+   "mcLpNetPct": 3.9358763280536593,
+   "optimismPct": 0.892123671946341,
+   "offeredByClosedFormAlone": true,
+   "offeredByServedGate": false,
+   "guardBites": true
+  },
+  {
+   "pool": "aero-cbbtc-usdc",
+   "setting": "working",
+   "netEmissionsAtBoundaryPct": 279.4606540773401,
+   "grossEmissionsAtBoundaryPct": 365.3080445455426,
+   "closedFormLpNetPct": 4.828,
+   "mcLpNetPct": -2.6258397905460384,
+   "optimismPct": 7.453839790546039,
+   "offeredByClosedFormAlone": true,
+   "offeredByServedGate": false,
+   "guardBites": true
+  },
+  {
+   "pool": "aero-weth-cbbtc",
+   "setting": "steady",
+   "netEmissionsAtBoundaryPct": 75.42581226122401,
+   "grossEmissionsAtBoundaryPct": 98.59583302120785,
+   "closedFormLpNetPct": 4.828,
+   "mcLpNetPct": 0.43884146265258295,
+   "optimismPct": 4.389158537347417,
+   "offeredByClosedFormAlone": true,
+   "offeredByServedGate": false,
+   "guardBites": true
+  },
+  {
+   "pool": "aero-weth-cbbtc",
+   "setting": "working",
+   "netEmissionsAtBoundaryPct": 380.30603119832926,
+   "grossEmissionsAtBoundaryPct": 497.1320669259206,
+   "closedFormLpNetPct": 4.828,
+   "mcLpNetPct": -27.19099475258325,
+   "optimismPct": 32.018994752583254,
+   "offeredByClosedFormAlone": true,
+   "offeredByServedGate": false,
+   "guardBites": true
+  }
+ ],
+ "calibration": [
+  {
+   "poolId": "aero-usdc-weth-5",
+   "setting": "sheltered",
+   "rangeWidthBps": 4500,
+   "rebalanceDelayHours": 48,
+   "sigma": 0.55,
+   "feeBps": 3.64,
+   "inRangeEmissionsFactor": 0.8538129917459252,
+   "mcDragPct": -26.909918312279864,
+   "timeInRange": 0.9695052891933029,
+   "rebalancesPerYear": 3.0843333333333334
+  },
+  {
+   "poolId": "aero-usdc-weth-5",
+   "setting": "steady",
+   "rangeWidthBps": 1500,
+   "rebalanceDelayHours": 12,
+   "sigma": 0.55,
+   "feeBps": 3.64,
+   "inRangeEmissionsFactor": 0.6084475495404585,
+   "mcDragPct": -61.23619159432736,
+   "timeInRange": 0.9341483447488584,
+   "rebalancesPerYear": 29.647
+  },
+  {
+   "poolId": "aero-usdc-weth-5",
+   "setting": "working",
+   "rangeWidthBps": 300,
+   "rebalanceDelayHours": 2,
+   "sigma": 0.55,
+   "feeBps": 3.64,
+   "inRangeEmissionsFactor": 0.17866678047824325,
+   "mcDragPct": -99.00011345763076,
+   "timeInRange": 0.8321174467275495,
+   "rebalancesPerYear": 604.7615
+  },
+  {
+   "poolId": "aero-cbbtc-usdc",
+   "setting": "sheltered",
+   "rangeWidthBps": 4500,
+   "rebalanceDelayHours": 48,
+   "sigma": 0.4,
+   "feeBps": 2.36,
+   "inRangeEmissionsFactor": 0.9278086753600098,
+   "mcDragPct": -15.24402581443906,
+   "timeInRange": 0.9831953196347031,
+   "rebalancesPerYear": 1.6863333333333332
+  },
+  {
+   "poolId": "aero-cbbtc-usdc",
+   "setting": "steady",
+   "rangeWidthBps": 1500,
+   "rebalanceDelayHours": 12,
+   "sigma": 0.4,
+   "feeBps": 2.36,
+   "inRangeEmissionsFactor": 0.754940208431314,
+   "mcDragPct": -40.20101811134584,
+   "timeInRange": 0.9604234969558599,
+   "rebalancesPerYear": 17.794166666666666
+  },
+  {
+   "poolId": "aero-cbbtc-usdc",
+   "setting": "working",
+   "rangeWidthBps": 300,
+   "rebalanceDelayHours": 2,
+   "sigma": 0.4,
+   "feeBps": 2.36,
+   "inRangeEmissionsFactor": 0.32110693271644913,
+   "mcDragPct": -92.36259323625336,
+   "timeInRange": 0.8923115106544901,
+   "rebalancesPerYear": 387.97116666666665
+  },
+  {
+   "poolId": "aero-weth-cbbtc",
+   "setting": "sheltered",
+   "rangeWidthBps": 2356,
+   "rebalanceDelayHours": 48,
+   "sigma": 0.33,
+   "feeBps": 25.0,
+   "inRangeEmissionsFactor": 0.8654699594196645,
+   "mcDragPct": -20.106886181614698,
+   "timeInRange": 0.9566429223744292,
+   "rebalancesPerYear": 4.397166666666666
+  },
+  {
+   "poolId": "aero-weth-cbbtc",
+   "setting": "steady",
+   "rangeWidthBps": 784,
+   "rebalanceDelayHours": 12,
+   "sigma": 0.33,
+   "feeBps": 25.0,
+   "inRangeEmissionsFactor": 0.6653976755590356,
+   "mcDragPct": -49.749318693118084,
+   "timeInRange": 0.9168503044140031,
+   "rebalancesPerYear": 37.42516666666667
+  },
+  {
+   "poolId": "aero-weth-cbbtc",
+   "setting": "working",
+   "rangeWidthBps": 150,
+   "rebalanceDelayHours": 2,
+   "sigma": 0.33,
+   "feeBps": 25.0,
+   "inRangeEmissionsFactor": 0.18728373342810029,
+   "mcDragPct": -98.41612812062993,
+   "timeInRange": 0.7872646118721461,
+   "rebalancesPerYear": 766.0711666666666
   }
  ],
  "verdict": {
@@ -1096,92 +1386,100 @@
    {
     "pool": "aero-usdc-weth-5",
     "setting": "sheltered",
-    "lpNetPct": -21.85745870528697,
+    "lpNetPct": -21.85418324551225,
+    "mcLpNetPct": -21.926254570108487,
     "reason": "net_below_borrow"
    },
    {
     "pool": "aero-usdc-weth-5",
     "setting": "steady",
-    "lpNetPct": -51.06998290649497,
+    "lpNetPct": -51.07059912899989,
+    "mcLpNetPct": -50.027857594732666,
     "reason": "net_below_borrow"
    },
    {
     "pool": "aero-usdc-weth-5",
     "setting": "working",
-    "lpNetPct": -80.82078691603263,
+    "lpNetPct": -80.8202607524734,
+    "mcLpNetPct": -82.26910399989931,
     "reason": "net_below_borrow"
    },
    {
     "pool": "aero-cbbtc-usdc",
     "setting": "sheltered",
-    "lpNetPct": -5.289065797515173,
+    "lpNetPct": -5.289799092644186,
+    "mcLpNetPct": -5.214924328568804,
     "reason": "net_below_borrow"
    },
    {
     "pool": "aero-cbbtc-usdc",
     "setting": "steady",
-    "lpNetPct": -14.115549427410418,
+    "lpNetPct": -14.114690156039302,
+    "mcLpNetPct": -14.425887262094335,
     "reason": "net_below_borrow"
    },
    {
     "pool": "aero-cbbtc-usdc",
     "setting": "working",
-    "lpNetPct": -32.24369616226197,
+    "lpNetPct": -32.2435951571348,
+    "mcLpNetPct": -36.637615855907605,
     "reason": "net_below_borrow"
    },
    {
     "pool": "aero-weth-cbbtc",
     "setting": "sheltered",
     "reason": "emissions_below_borrow",
-    "emissionsNetPct": 2.0683420198255016
+    "emissionsNetPct": 2.0655
    },
    {
     "pool": "aero-weth-cbbtc",
     "setting": "steady",
-    "lpNetPct": -45.116554009765636,
+    "lpNetPct": -45.113858759184524,
+    "mcLpNetPct": -45.51419556771994,
     "reason": "net_below_borrow"
    },
    {
     "pool": "aero-weth-cbbtc",
     "setting": "working",
-    "lpNetPct": -88.32508122818888,
+    "lpNetPct": -88.32579864899691,
+    "mcLpNetPct": -92.13794662353313,
     "reason": "net_below_borrow"
    },
    {
     "pool": "aero-usdt-usdc",
     "setting": "sheltered",
     "reason": "emissions_below_borrow",
-    "emissionsNetPct": 0.0029578361954677073
+    "emissionsNetPct": 0.0
    },
    {
     "pool": "aero-usdt-usdc",
     "setting": "steady",
     "reason": "emissions_below_borrow",
-    "emissionsNetPct": 0.009096663693997125
+    "emissionsNetPct": 0.0076500000000000005
    },
    {
     "pool": "aero-usdt-usdc",
     "setting": "working",
     "reason": "emissions_below_borrow",
-    "emissionsNetPct": 0.04794244422123783
+    "emissionsNetPct": 0.045899999999999996
    },
    {
     "pool": "cbeth-weth",
     "setting": "sheltered",
     "reason": "emissions_below_borrow",
-    "emissionsNetPct": 0.0017068649790697684
+    "emissionsNetPct": 0.0
    },
    {
     "pool": "cbeth-weth",
     "setting": "steady",
     "reason": "emissions_below_borrow",
-    "emissionsNetPct": 0.00524937003254298
+    "emissionsNetPct": 0.0076500000000000005
    },
    {
     "pool": "cbeth-weth",
     "setting": "working",
     "reason": "emissions_below_borrow",
-    "emissionsNetPct": 0.02766592659107584
+    "emissionsNetPct": 0.030600000000000002
    },
    {
     "pool": "aero-aero-weth",
@@ -1219,43 +1517,43 @@
     "pool": "aero-weth-link",
     "setting": "sheltered",
     "reason": "no_volatility_input",
-    "emissionsNetPct": 13.353678717592631,
-    "breakEvenSigma": 0.28365319500750297
+    "emissionsNetPct": 13.356900000000001,
+    "wouldClearBelowSigma": 0.2837067592046829
    },
    {
     "pool": "aero-weth-link",
     "setting": "steady",
     "reason": "no_volatility_input",
-    "emissionsNetPct": 42.17350031401622,
-    "breakEvenSigma": 0.33387525012458663
+    "emissionsNetPct": 42.17445,
+    "wouldClearBelowSigma": 0.3338794892607079
    },
    {
     "pool": "aero-weth-link",
     "setting": "working",
     "reason": "no_volatility_input",
-    "emissionsNetPct": 214.3704190944592,
-    "breakEvenSigma": 0.34972789029104123
+    "emissionsNetPct": 214.36830000000003,
+    "wouldClearBelowSigma": 0.3497261333479841
    },
    {
     "pool": "aero-aero-cbbtc",
     "setting": "sheltered",
     "reason": "no_volatility_input",
-    "emissionsNetPct": 17.717775150361987,
-    "breakEvenSigma": 0.34874627939996683
+    "emissionsNetPct": 17.7174,
+    "wouldClearBelowSigma": 0.3487412068248994
    },
    {
     "pool": "aero-aero-cbbtc",
     "setting": "steady",
     "reason": "no_volatility_input",
-    "emissionsNetPct": 55.95616097031328,
-    "breakEvenSigma": 0.39055482563851707
+    "emissionsNetPct": 55.95975000000001,
+    "wouldClearBelowSigma": 0.3905685068332597
    },
    {
     "pool": "aero-aero-cbbtc",
     "setting": "working",
     "reason": "no_volatility_input",
-    "emissionsNetPct": 284.42850578699694,
-    "breakEvenSigma": 0.403574546391824
+    "emissionsNetPct": 284.427,
+    "wouldClearBelowSigma": 0.4035734678220193
    }
   ]
  }

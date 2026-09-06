@@ -1,7 +1,7 @@
 /**
  * Core domain types shared by the keeper, web app, yield service and tooling.
  * Base-only: every position is owned by the user's wallet through their
- * OilskinAccount; there is no bridge leg and no operator custody.
+ * OilskinAccount; there is no bridge leg and the registry owner retains bounded powers — see docs/RISKS.md §16.
  */
 import type { Address } from "./evm.js";
 import type { TokenSymbol } from "./base.js";

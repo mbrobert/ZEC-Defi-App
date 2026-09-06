@@ -21,13 +21,24 @@ if (FEES.performanceBps > FEES.maxPerformanceBps) {
   throw new Error("FEES.performanceBps exceeds maxPerformanceBps");
 }
 
-/** Multiply a gross realised amount by (1 − performanceBps/10000). */
+/**
+ * Multiply a gross realised amount by (1 − performanceBps/10000).
+ *
+ * A performance fee is charged on PERFORMANCE. A loss is not performance:
+ * `netOfPerformance(-100)` must be −100, not −90. Scaling a negative number
+ * by 0.9 *shrinks* the loss and flatters every downside figure derived from
+ * it (audit wave 1 lens D MED-2; a recurrence of the Part-4 `simple.html`
+ * defect). Zero and losses pass through untouched — the fee is never
+ * charged on principal, and never credited on a drawdown.
+ */
 export function netOfPerformance(gross: number): number {
+  if (!(gross > 0)) return gross;
   return gross * (1 - FEES.performanceBps / BPS_DENOMINATOR);
 }
 
-/** The performance fee taken on a gross realised amount. */
+/** The performance fee taken on a gross realised amount (0 on a loss). */
 export function performanceFeeOn(gross: number): number {
+  if (!(gross > 0)) return 0;
   return gross * (FEES.performanceBps / BPS_DENOMINATOR);
 }
 
@@ -49,11 +60,16 @@ export function feeBreakdown(gross: number): FeeBreakdown {
   };
 }
 
-/** Integer (wei-style) variant matching the on-chain arithmetic: fee = gross * bps / 10000, floor. */
+/**
+ * Integer (wei-style) variant matching the on-chain arithmetic:
+ * fee = gross * bps / 10000, floor. A non-positive gross yields no fee —
+ * the on-chain `_takeFee` path is only reached with a realised gain.
+ */
 export function performanceFeeAtomic(gross: bigint, bps: number = FEES.performanceBps): bigint {
   if (!Number.isInteger(bps) || bps < 0 || bps > FEES.maxPerformanceBps) {
     throw new RangeError(`performance bps ${bps} outside [0, ${FEES.maxPerformanceBps}]`);
   }
+  if (gross <= 0n) return 0n;
   return (gross * BigInt(bps)) / BigInt(BPS_DENOMINATOR);
 }
 

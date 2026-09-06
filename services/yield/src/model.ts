@@ -40,8 +40,13 @@
  *   and the LP slice ends the year at
  *       lpNet = (1 − e^{−x}) · (r / x − 1).
  *   This reproduces the Monte Carlo (scripts/lp-sim.py) to ~0.1 pt at the
- *   Conservative/Moderate presets and within ~5 pt at Aggressive (where time
- *   out of range, which the closed form ignores, costs a few points more).
+ *   Conservative/Moderate presets and within ~4.4 pt at Aggressive AT TODAY'S
+ *   DEEPLY-NEGATIVE EMISSIONS. That number is not the model's accuracy where
+ *   the decision is made: the error ignores time out of range, so it scales
+ *   with the emissions level and reaches +7 to +32 pt at the gate boundary —
+ *   wider than the borrow rate being tested. The gate therefore does NOT
+ *   decide on this form alone; see src/mc-calibration.ts for the second,
+ *   Monte-Carlo-calibrated number it must also clear.
  *   The additive shortcut r + drag is NOT used: at tight widths it overstates
  *   the outcome by >100 pt. The sim re-validates every cell on every run.
  *
@@ -49,7 +54,8 @@
  *   same at every width for a given pool — a pool that loses at one width
  *   loses at all of them, and vice versa; width only scales the magnitude.
  *
- *   Gate. A pool is offered at a setting only when lpNet > the LIVE Aave
+ *   Gate. A pool is offered at a setting only when lpNet AND the
+ *   MC-calibrated mcLpNet (src/mc-calibration.ts) both exceed the LIVE Aave
  *   USDC variable borrow APR. User net on the whole collateral position
  *   = collateral supply APR + LTV × (lpNet − borrow).
  */

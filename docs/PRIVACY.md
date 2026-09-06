@@ -73,16 +73,33 @@ signing flow — flow kind, wallet address, step states, transaction hashes
 
 **The keeper** (`agent/`) is Oilskin's process. It reads every
 `OilskinAccount` from the factory's `AccountCreated` logs and stores, in its
-JSON store on Oilskin's disk (`STORE_PATH`): account and owner addresses,
-block cursors, per-account ladder state, and dispatch records (rung, health
-factor, transaction hash, status, reason). Its logs (`agent/src/log.ts`)
+JSON store on Oilskin's disk (`STORE_PATH`, format v3): account and owner
+addresses, block cursors, per-account ladder state, dispatch records (rung,
+health factor, transaction hash, status, reason, the nonce it used and the
+position ids it planned to close) and — added 2026-09-06 — the last valuation
+and health factor, the named reasons behind an `UNKNOWN`, and a copy of the
+grant it read from your account (`target`, `selector`, `active`,
+`allowCallback`, `expiry`, `checkedAt`). All of that is either your own public
+chain state or the keeper's record of what it did about it; none of it is
+personal data the chain does not already carry. Its logs (`agent/src/log.ts`)
 carry account addresses, health factors and transaction hashes; they redact
 every 32-byte hex value not under a `txHash` / `blockHash` / `hash` field
 (so a private key can never print), reduce URLs to their origin (provider
 keys live in paths), and blank fields named like secrets. The keeper's own
 private key never enters the logger (`config.ts` serialises a mode flag only).
-There is no user-facing notification channel, so nothing about you is sent
-anywhere by the keeper except its transactions to Base.
+
+**The keeper can now send to an outbound webhook, and you should know what it
+sends.** Before 2026-09-06 every rung and escalation reached only the keeper
+host's stdout — which is exactly why the protection was invisible
+(`RISKS.md` §10). A notifier (`agent/src/notify/notifier.ts`) now has a log
+channel and, when the operator sets `NOTIFY_WEBHOOK_URL`, an HTTP channel that
+posts `{kind, severity, account, owner, rung, hf, status, key, reasons, at}` —
+your account address, your wallet address as its owner, and your health factor
+— to whatever endpoint Oilskin configured. `describeConfig` reduces that URL to
+its origin and the auth token to `set` / `unset` in every log line. If no
+webhook is configured, nothing about you leaves the keeper except its
+transactions to Base. There is still **no per-user routing**: the endpoint is
+Oilskin's, not yours, and nothing delivers to you directly.
 
 **The yield service** (`services/yield/`) reads Aave, Aerodrome and the
 engine's history over an RPC and, optionally, the Blockscout API with a key

@@ -187,8 +187,11 @@ entirely in our control; **[ext]** depend on someone else and get a fallback.
    threshold — read from the venue, never hard-coded. Replaces `rhea.ts`/`rheaSdk.ts` and the 0.70 constant.
 5. **[own] Stateless router contract.** One transaction: approve (Permit2) → supply collateral → borrow USDC
    → swap → deposit into the LP venue, with deadline and slippage on every hop, no balances held between
-   calls, no owner powers over user funds. Unwind path is the mirror. This is the whole of our on-chain
+   calls, and no owner on the router itself. Unwind path is the mirror. This is the whole of our on-chain
    surface for v1 and it is small enough to audit properly.
+   *(Corrected 2026-09-06: this item originally generalised the router's lack of an owner into a claim about
+   the product. The router has no owner and holds nothing — but the `CollateralRegistry` does have an owner,
+   with the powers set out in `RISKS.md` §16, so the generalisation was wrong and the phrasing is retired.)*
 6. **[own] cbZEC B20 handling.** Read the live policy state (blocklist, pause, multiplier) on-chain before
    integration; test every contract path against a mock whose `balanceOf` rebases and whose transfers can be
    blocked; surface issuer-policy risk in the UI. Pin the real cbZEC address and show a counterfeit warning

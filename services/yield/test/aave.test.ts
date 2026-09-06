@@ -7,6 +7,7 @@ import {
   decodeReserve,
   RESERVE_CONFIG_WORDS,
   RESERVE_DATA_WORDS,
+  SEL_GET_PAUSED,
   SEL_GET_RESERVE_CONFIGURATION_DATA,
   SEL_GET_RESERVE_DATA,
   strictWords,
@@ -36,6 +37,8 @@ interface ReserveFixture {
   borrowable?: boolean;
   active?: boolean;
   frozen?: boolean;
+  /** PoolDataProvider.getPaused(asset) — a separate call, not in the config tuple. */
+  paused?: boolean;
 }
 
 function reserveDataWords(f: ReserveFixture): string {
@@ -55,6 +58,12 @@ function configWords(f: ReserveFixture): string {
   assert.equal(w.length, RESERVE_CONFIG_WORDS);
   return "0x" + w.map(word).join("");
 }
+
+function pausedWord(f: ReserveFixture): string {
+  return "0x" + word(f.paused ? 1n : 0n);
+}
+/** The un-paused answer, for the pure decodeReserve cases. */
+const PAUSED_FALSE = "0x" + word(0n);
 
 const FIX: Record<string, ReserveFixture> = {
   [BASE_TOKENS.USDC.address.toLowerCase()]: { supplyPct: 3.921, borrowPct: 4.828, ltv: 7500, lt: 7800, bonus: 10500 },
@@ -81,6 +90,7 @@ function makeTransport(overrides?: TransportOverrides) {
     const f = { ...FIX[asset]!, ...(overrides?.reserves?.[asset] ?? {}) };
     if (sel === SEL_GET_RESERVE_DATA) return reserveDataWords(f);
     if (sel === SEL_GET_RESERVE_CONFIGURATION_DATA) return configWords(f);
+    if (sel === SEL_GET_PAUSED) return pausedWord(f);
     throw new Error(`unexpected selector ${sel}`);
   };
   const fetchImpl = (async (_url: unknown, init?: { body?: string }) => {
@@ -122,18 +132,19 @@ test("sample reproduces the verified 2026-09-05 facts: USDC borrow 4.828 %, cbBT
   assert.equal(s.sampledAt, new Date(NOW).toISOString());
   // no `stale` field is ever stored on a sample
   assert.equal("stale" in s, false);
-  // 2 calls per reserve × 3 reserves, one batch
-  assert.equal(t.counts.calls, 6);
+  // 3 calls per reserve (data + config + getPaused) × 3 reserves, one batch
+  assert.equal(t.counts.calls, 9);
+  assert.equal(s.borrow.isPaused, false);
 });
 
 test("STRICT decoding: short, empty, non-hex or over-long returns throw — nothing reads as zero", () => {
   const usdc = BASE_TOKENS.USDC.address.toLowerCase() as Address;
   const f = FIX[usdc]!;
-  assert.throws(() => decodeReserve("USDC", usdc, "0x", configWords(f)), AaveDecodeError);
-  assert.throws(() => decodeReserve("USDC", usdc, reserveDataWords(f).slice(0, -64), configWords(f)), /expected 12 words, got 11/);
-  assert.throws(() => decodeReserve("USDC", usdc, reserveDataWords(f) + "00".repeat(32), configWords(f)), /expected 12 words, got 13/);
-  assert.throws(() => decodeReserve("USDC", usdc, reserveDataWords(f), "0x" + "zz".repeat(32 * 10)), /non-hex/);
-  assert.throws(() => decodeReserve("USDC", usdc, reserveDataWords(f), configWords(f).slice(0, -64)), /expected 10 words, got 9/);
+  assert.throws(() => decodeReserve("USDC", usdc, "0x", configWords(f), PAUSED_FALSE), AaveDecodeError);
+  assert.throws(() => decodeReserve("USDC", usdc, reserveDataWords(f).slice(0, -64), configWords(f), PAUSED_FALSE), /expected 12 words, got 11/);
+  assert.throws(() => decodeReserve("USDC", usdc, reserveDataWords(f) + "00".repeat(32), configWords(f), PAUSED_FALSE), /expected 12 words, got 13/);
+  assert.throws(() => decodeReserve("USDC", usdc, reserveDataWords(f), "0x" + "zz".repeat(32 * 10), PAUSED_FALSE), /non-hex/);
+  assert.throws(() => decodeReserve("USDC", usdc, reserveDataWords(f), configWords(f).slice(0, -64), PAUSED_FALSE), /expected 10 words, got 9/);
   assert.throws(() => strictWords(undefined, 1, "x"), /empty return/);
 });
 
@@ -143,10 +154,10 @@ test("STRICT decoding: implausible words (bool ≠ 0/1, bps > 10000, rate > 1 ra
   const cfgWords = configWords(f).slice(2).match(/.{64}/g)!;
   const rdWords = reserveDataWords(f).slice(2).match(/.{64}/g)!;
   const patch = (arr: string[], i: number, v: bigint) => "0x" + arr.map((w, j) => (j === i ? word(v) : w)).join("");
-  assert.throws(() => decodeReserve("USDC", usdc, reserveDataWords(f), patch(cfgWords, 5, 2n)), /bool word is 2/);
-  assert.throws(() => decodeReserve("USDC", usdc, reserveDataWords(f), patch(cfgWords, 2, 10_001n)), /> 10000/);
-  assert.throws(() => decodeReserve("USDC", usdc, reserveDataWords(f), patch(cfgWords, 3, 9_000n)), /liquidationBonus/);
-  assert.throws(() => decodeReserve("USDC", usdc, patch(rdWords, 6, RAY + 1n), configWords(f)), /exceeds 1 ray/);
+  assert.throws(() => decodeReserve("USDC", usdc, reserveDataWords(f), patch(cfgWords, 5, 2n), PAUSED_FALSE), /bool word is 2/);
+  assert.throws(() => decodeReserve("USDC", usdc, reserveDataWords(f), patch(cfgWords, 2, 10_001n), PAUSED_FALSE), /> 10000/);
+  assert.throws(() => decodeReserve("USDC", usdc, reserveDataWords(f), patch(cfgWords, 3, 9_000n), PAUSED_FALSE), /liquidationBonus/);
+  assert.throws(() => decodeReserve("USDC", usdc, patch(rdWords, 6, RAY + 1n), configWords(f), PAUSED_FALSE), /exceeds 1 ray/);
 });
 
 test("sample fails CLOSED when any reserve is unreadable — no half-read sample is ever produced", async () => {

@@ -39,3 +39,21 @@ test("performanceFeeAtomic mirrors on-chain floor arithmetic and rejects bps abo
   assert.throws(() => performanceFeeAtomic(1n, -1), RangeError);
   assert.throws(() => performanceFeeAtomic(1n, 10.5), RangeError);
 });
+
+test("FIX D-MED-2: the performance fee is never charged on a LOSS (or on zero)", () => {
+  // A fee scaled onto a negative number SHRINKS the loss and flatters every
+  // downside figure derived from it. -100 must stay -100.
+  assert.equal(netOfPerformance(-100), -100);
+  assert.equal(netOfPerformance(-0.01), -0.01);
+  assert.equal(performanceFeeOn(-100), 0);
+  assert.equal(performanceFeeOn(0), 0);
+  assert.equal(netAprAfterFees(-40), -40);
+  // the breakdown stays self-consistent on the loss side: fee 0, net = gross
+  assert.deepEqual(feeBreakdown(-40), { gross: -40, performanceBps: 1000, performanceFee: 0, net: -40 });
+  // atomic variant: a non-positive gross takes no fee (never a negative fee)
+  assert.equal(performanceFeeAtomic(-1_000_000n), 0n);
+  assert.equal(performanceFeeAtomic(0n), 0n);
+  // the gain side is unchanged
+  assert.equal(netOfPerformance(100), 90);
+  assert.equal(performanceFeeAtomic(1_000_000n), 100_000n);
+});

@@ -266,8 +266,12 @@ export interface EmissionsSample {
   periodFinish: number;
   /** rewardRate > 0 AND periodFinish > now (at sample time). */
   epochActive: boolean;
-  /** rewardRate × 1yr × AERO/USD ÷ pool TVL, percent (0 when epoch inactive). */
-  wholePoolAprPct: number;
+  /**
+   * rewardRate × 1yr × AERO/USD ÷ pool TVL, percent (0 when epoch inactive).
+   * NULL when there is nothing behind it: no staked liquidity (an APR nobody
+   * can earn) or a stakedLiquidity anchor that is not yet corroborated.
+   */
+  wholePoolAprPct: number | null;
   /**
    * TOTAL width bps (e.g. "4500") → APR percent for a staked position of
    * that width. Null when the pool has no staked liquidity to share with
@@ -279,9 +283,21 @@ export interface EmissionsSample {
   /** Rolling stakedLiquidity samples averaged into the APR (max 12). */
   samples: number;
   /**
-   * True when this reading fell outside the outlier band around the FIRST
-   * reading for the pool (audit round 3). The APRs are still reported for
-   * observability, but the gate refuses to offer the pool.
+   * True once `samples >= MIN_STAKED_SAMPLES` independent readings agree on
+   * an anchor. Until then there is NOTHING to test a reading against, so no
+   * APR is published and the gate refuses with `insufficient_samples`.
+   * Wave-1 lens D HIGH-2: the old filter compared every reading against the
+   * FIRST reading ever taken, which is by construction never an outlier —
+   * one tiny first `stakedLiquidity` served 7,599.64 % against a true 3.80 %
+   * with `outlier:false`, and pinned the anchor there for the life of the
+   * process. An anchor is a claim about the pool and needs corroboration.
+   */
+  corroborated: boolean;
+  /**
+   * True when this reading fell outside the outlier band around the MEDIAN
+   * of the corroborated history. The APRs are withheld and the gate refuses
+   * to offer the pool. A run of consecutive outliers means the anchor itself
+   * is wrong: the history is dropped and re-corroborated from scratch.
    */
   outlier: boolean;
   sqrtPriceX96: string;
@@ -306,6 +322,14 @@ export interface AaveReserve {
   borrowingEnabled: boolean;
   isActive: boolean;
   isFrozen: boolean;
+  /**
+   * PoolDataProvider.getPaused(asset) — a SEPARATE call: the 10-word
+   * configuration tuple carries isActive/isFrozen but NOT isPaused, so a
+   * guardian-paused reserve used to decode as active and unfrozen and the
+   * gate kept offering it while every supply/borrow reverted on chain
+   * (wave-1 lens D LOW-1).
+   */
+  isPaused: boolean;
 }
 
 /**
@@ -334,12 +358,20 @@ export type GateReason =
   | "rates_stale"
   | "emissions_unavailable"
   | "emissions_stale"
+  | "collateral_paused"
+  | "borrow_paused"
   | "no_emissions"
   | "no_staked_liquidity"
+  | "insufficient_samples"
   | "staked_liquidity_outlier"
+  | "emissions_implausible"
   | "emissions_below_borrow"
   | "no_volatility_input"
-  | "net_below_borrow";
+  | "mc_calibration_unavailable"
+  | "mc_calibration_stale"
+  | "net_below_borrow"
+  | "within_model_uncertainty"
+  | "net_out_of_bounds";
 
 export interface GateUserNet {
   ltvBps: number;
@@ -368,6 +400,16 @@ export interface GateVerdict {
   dragPct: number | null;
   /** emissionsRealized + drag = (1 − e^{−x})(r/x − 1), percent. */
   lpNetPct: number | null;
+  /**
+   * The SAME LP slice priced by the Monte-Carlo-calibrated form
+   * (src/mc-calibration.ts): `net × inRangeEmissionsFactor + mcDragPct`,
+   * minus a correction for any live pool fee above the calibrated one.
+   * The closed form ignores time out of range and is therefore optimistic —
+   * 7 to 32 points at the gate boundary (wave-1 lens D HIGH-1). `lpNetPct`
+   * stays the published headline; the OFFER decision requires BOTH numbers
+   * to clear the borrow. Null when no calibration covers the cell.
+   */
+  mcLpNetPct: number | null;
   borrowAprPct: number | null;
   collateralSupplyAprPct: number | null;
   /** Annualized σ used for drag (null when not calibrated for the pool). */

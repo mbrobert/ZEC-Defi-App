@@ -10,6 +10,15 @@
  *   • The MODEL path (src/model.ts keepFactor) starts from GROSS gauge
  *     emissions and applies the engine fee first, then Oilskin's — the two
  *     paths therefore state the same economics; tests pin this.
+ *   • The keep factor applies to GAINS ONLY. A performance fee is charged on
+ *     performance; multiplying a LOSS by 0.9 shrinks it and flatters the one
+ *     number a first-time user most needs to be true. Every cohort percentile
+ *     can be negative (`cohorts.ts` computes netAprFraction freely), and the
+ *     MODEL path never does this — `gate.ts` applies keepFactor to gross
+ *     EMISSIONS only and leaves the drag alone. Unconditional keep here made
+ *     a −40 % cohort p10 read −20.40 % at LTV 0.5 instead of −22.40 %, and a
+ *     −60 % cohort −29.40 % instead of −32.40 % (wave-1 lens D MED-2; a
+ *     recurrence of the Part-4 `simple.html` defect).
  *
  * Supply and borrow are the LIVE Aave figures for the chosen collateral —
  * there is no fallback constant (audit Lens F: a hard-coded 0.8 % once
@@ -34,13 +43,18 @@ export interface UserBand {
   p90: number;
 }
 
+/** The engine-net APR the user keeps: the fee is taken on gains, never on losses. */
+export function keptEngineNetPct(engineNetPct: number): number {
+  return engineNetPct > 0 ? engineNetPct * OILSKIN_KEEP : engineNetPct;
+}
+
 export function userNetPct(
   engineNetPct: number,
   ltv: number,
   borrowAprPct: number,
   supplyAprPct: number
 ): number {
-  return round2(supplyAprPct + ltv * (engineNetPct * OILSKIN_KEEP - borrowAprPct));
+  return round2(supplyAprPct + ltv * (keptEngineNetPct(engineNetPct) - borrowAprPct));
 }
 
 /**

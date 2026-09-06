@@ -16,7 +16,7 @@ const block = html => html.slice(html.indexOf("/* ── OIL_SHARED"), html.inde
 /* ── 1. byte-equal shared block, and it evaluates standalone ── */
 check("parity: the OIL_SHARED / OIL_CHAIN_READ / OIL_MODEL / derived-math block is byte-equal in both builds", block(simple) === block(adv) && block(simple).length > 5000, `${block(simple).length} vs ${block(adv).length}`);
 const sandbox = {}; vm.createContext(sandbox);
-vm.runInContext(block(simple) + "\nthis.OUT = { OIL_SHARED, OIL_CHAIN_READ, OIL_MODEL, maxOfferedLtvBps, maxOfferedLtvStopBps, ltvPresetsFor, entryHf, dropPct, halfWidthPct, gate, lpNetPct, positionAprPct, presetWidthBps, classifyCbZecAddress, topLtvPct, ltvStopsFor, LAD, RUNGS };", sandbox);
+vm.runInContext(block(simple) + "\nthis.OUT = { OIL_SHARED, OIL_CHAIN_READ, OIL_MODEL, OIL_CONTRACTS, mcLpNetPct, mcApply, minOutFor, swapLegFor, GATE_WHY, realizedEmissionsPct, grossIfRevotedPct, maxOfferedLtvBps, maxOfferedLtvStopBps, ltvPresetsFor, entryHf, dropPct, halfWidthPct, gate, lpNetPct, positionAprPct, presetWidthBps, classifyCbZecAddress, topLtvPct, ltvStopsFor, LAD, RUNGS };", sandbox);
 const P = sandbox.OUT;
 check("parity: the block evaluates on its own (no hidden dependency on page code)", !!P && !!P.OIL_SHARED && typeof P.gate === "function");
 
@@ -77,7 +77,19 @@ if (shared) {
     const un = [...md.matchAll(/^\| (aero-[\w-]+) \| (sheltered|steady|working) \| (cbBTC|WETH) \| (\d+)% \([^)]+\) \| ([-\d.]+)% \| 4\.828% \| ([\d.]+)% \| \*\*([-\d.]+)%\*\* \|/gm)].map(m => ({ id: m[1], setting: m[2], asset: m[3], ltv: +m[4], user: +m[7] }));
     const W = { sheltered: "CONSERVATIVE", steady: "MODERATE", working: "AGGRESSIVE" };
     const badU = un.filter(r => { const pool = P.OIL_MODEL.pools.find(p => p.id === r.id); const w = P.presetWidthBps(W[r.setting], pool.pairClass); return !near(P.positionAprPct(r.asset, r.ltv, pool, 4.828, w), r.user, 0.011); });
-    check(`model: all ${un.length} userNet rows (pool × setting × collateral × LTV) reproduce to 0.011 pt`, un.length === 54 && badU.length === 0, JSON.stringify(badU.slice(0, 3)));
+    check(`model: all ${un.length} userNet rows (pool × setting × collateral × LTV) reproduce to 0.011 pt`, un.length === 48 && badU.length === 0, JSON.stringify(badU.slice(0, 3)));
+    /* The six rows that disappeared were a user-net ladder published for a cell
+       (aero-weth-cbbtc/sheltered) the gate refuses with emissions_below_borrow
+       before it prices anything: 54 → 48. The prototypes must not price it either. */
+    check("model: the refused aero-weth-cbbtc/sheltered cell publishes no lpNet and no userNet ladder (54 → 48 rows)", (() => {
+      const rows = md.split("\n").filter(l => /^\| aero-weth-cbbtc \| sheltered \|/.test(l));
+      const g = P.gate(P.OIL_MODEL.pools.find(p => p.id === "aero-weth-cbbtc"), 4.828, 2356);
+      return un.every(r => !(r.id === "aero-weth-cbbtc" && r.setting === "sheltered")) && rows.length === 1 && /emissions_below_borrow/.test(rows[0]) && g.reason === "emissions_below_borrow" && !Number.isFinite(g.net) && P.OIL_MODEL.served.some(s => s[0] === "aero-weth-cbbtc" && s[1] === 2356 && s[2] === null) && !P.OIL_MODEL.userNetPinned.some(s => s[0] === "aero-weth-cbbtc" && s[1] === 2356);
+    })());
+    /* The MC-calibrated column the gate now decides on, parsed from the same file. */
+    const mcRows = md.split("\n").filter(l => /^\| (aero-[\w-]+|cbeth-weth) \| (sheltered|steady|working) \| \d+ \(/.test(l)).map(l => { const c = l.split("|").map(x => x.replace(/\*/g, "").trim()); return { id: c[1], w: parseInt(c[3]), mc: c[10] === "—" ? null : parseFloat(c[10]) }; }).filter(r => r.mc !== null);
+    const badMc = mcRows.filter(r => { const pool = P.OIL_MODEL.pools.find(p => p.id === r.id); const v = P.mcLpNetPct(pool, r.w); return v === null || !near(v, r.mc, 0.011); });
+    check(`model: all ${mcRows.length} MC-calibrated lpNet cells reproduce from the two pinned coefficients to 0.011 pt`, mcRows.length === 8 && badMc.length === 0, JSON.stringify(badMc.slice(0, 3)));
     check("model: the verdict 'no pool × setting clears the gate' holds in the page's gate at 4.828%", /No pool × setting clears the gate/.test(md) && P.OIL_MODEL.pools.every(p => ["CONSERVATIVE", "MODERATE", "AGGRESSIVE"].every(pr => !P.gate(p, 4.828, P.presetWidthBps(pr, p.pairClass)).ok)));
     check("model: source string names the generator and the file's generation timestamp", (() => { const ts = (md.match(/generated (\S+)/) || [])[1]; return !!ts && P.OIL_MODEL.source.includes("generated " + ts); })(), P.OIL_MODEL.source);
   } else check("model: MODEL-NUMBERS.md present to pin against (skipped — file absent)", true);
@@ -91,6 +103,36 @@ const a1 = await probe(ps), a2 = await probe(pa);
 check("agreement: simple and advanced compute identical HF / drop / top / gate / ± for 6 settings × 9 pools × 7 widths", JSON.stringify(a1) === JSON.stringify(a2));
 check("agreement: the three surfaces (simple, advanced, MODEL-NUMBERS) agree on cbBTC/USDC sheltered lpNet −5.29 and userNet −3.02 to 0.1 pt", near(a1["aero-cbbtc-usdc@4500"][1], -5.29, 0.1) && near(await ps.evaluate(() => window.__oil.positionAprPct("cbBTC", 30, window.__oil.poolById("aero-cbbtc-usdc"), 4.828, 4500)), -3.02, 0.1) && near(await pa.evaluate(() => window.__oil.positionAprPct("cbBTC", 30, window.__oil.poolById("aero-cbbtc-usdc"), 4.828, 4500)), -3.02, 0.1));
 check("agreement: both pages' risk lists are identical", JSON.stringify(await ps.evaluate(() => window.__oil.RISKS)) === JSON.stringify(await pa.evaluate(() => window.__oil.RISKS)));
+/* ── the audit-fix round: the same contract facts, the same refusals, the same
+   floors and the same honest custody language in both builds ── */
+{
+  const cs = await ps.evaluate(() => window.__oil.CONTRACTS), ca = await pa.evaluate(() => window.__oil.CONTRACTS);
+  check("contracts: the OIL_CONTRACTS block is identical in both builds and pins the post-fix surface (openBorrowOnly, the venue-side floor, the swap quote, the grant, the registry timelock)", JSON.stringify(cs) === JSON.stringify(ca) && /openBorrowOnly/.test(cs.entry.borrowOnly) && /AaveV3Venue\.borrow/.test(cs.entry.floorEnforcedAt) && cs.entry.floorError === "EntryHfTooLow(hf, floor)" && cs.swap.maxSlippageBpsCap === 500 && cs.grant.rootCalls === 1 && cs.grant.selector === "unwind" && cs.grant.expiryDays === 30 && cs.registry.timelockDelayS === 172800 && cs.peripheral.defaultCallback === false && cs.routerBalance.assertion === "delta");
+  const ws = await ps.evaluate(() => window.__oil.GATE_WHY), wa = await pa.evaluate(() => window.__oil.GATE_WHY);
+  const REASONS = ["collateral_disabled","collateral_paused","borrow_paused","no_emissions","emissions_implausible","insufficient_samples","emissions_below_borrow","no_volatility_input","net_below_borrow","within_model_uncertainty","mc_calibration_unavailable","mc_calibration_stale","net_out_of_bounds"];
+  check("gate: both builds carry the same plain-English sentence for all 13 refusal reasons, none of them a bare code", JSON.stringify(ws) === JSON.stringify(wa) && REASONS.every(r => typeof ws[r] === "string" && ws[r].length > 40 && !/^[a-z_]+$/.test(ws[r])) && Object.keys(ws).length === REASONS.length, REASONS.filter(r => !ws[r] || ws[r].length <= 40).join(", "));
+  const probe2 = p => p.evaluate(() => { const o = window.__oil; const out = {};
+    for (const [id, w, gb] of o.MODEL.boundary) { const pl = o.poolById(id); let lo = 0.01, hi = 500; for (let i = 0; i < 200; i++) { const m = (lo + hi) / 2; (o.lpNetPct(pl, w, m) > 4.828) ? hi = m : lo = m; } const g = o.gate(pl, 4.828, w, hi * (1 + 1e-9)); out[`${id}@${w}`] = [g.reason, +g.net.toFixed(4), +g.mcNet.toFixed(4)]; }
+    for (const pl of o.MODEL.pools) for (const w of [150, 300, 1000, 1500, 4500]) { const g = o.gate(pl, 4.828, w, 12, { collateral: "cbBTC", paused: { USDC: false } }); out[`x${pl.id}@${w}`] = [g.reason, Number.isFinite(g.mcNet) ? +g.mcNet.toFixed(4) : null]; }
+    out.paused = o.gate(o.MODEL.pools[1], 4.828, 4500, 12, { collateral: "cbBTC", paused: { cbBTC: true } }).reason;
+    out.borrowPaused = o.gate(o.MODEL.pools[1], 4.828, 4500, 12, { collateral: "cbBTC", paused: { USDC: true } }).reason;
+    out.uncorroborated = o.gate(o.MODEL.pools[1], 4.828, 4500, 12, { corroborated: false }).reason;
+    out.revote = o.gate(o.poolById("aero-aero-weth"), 4.828, 4500, 1, { revote: true }).reason;
+    const leg = o.swapLegFor(o.poolById("aero-cbbtc-usdc"), 10000);
+    out.swap = [+leg.minOut.toFixed(8), leg.maxSlippageBps, leg.cap, o.swapLegFor(o.poolById("aero-cbbtc-usdc"), 10000, 501).error, o.minOutFor(1, 0, 1, 50).error, o.swapLegFor(o.poolById("aero-cbbtc-usdc"), 10000, 50, { priceFactor: 0.6 }).reverts];
+    return out; });
+  const bs = await probe2(ps), ba = await probe2(pa);
+  check("agreement: simple and advanced return the identical verdict, both model numbers and the identical swap floor for every probe (boundary cells, 45 pool × width cells, pauses, corroboration, re-vote)", JSON.stringify(bs) === JSON.stringify(ba), JSON.stringify(Object.keys(bs).filter(k => JSON.stringify(bs[k]) !== JSON.stringify(ba[k])).slice(0, 5)));
+  check("gate: both builds refuse a guardian-paused collateral, a paused borrow, an uncorroborated anchor and a re-voted gauge above the ceiling — with the right named reason", bs.paused === "collateral_paused" && bs.borrowPaused === "borrow_paused" && bs.uncorroborated === "insufficient_samples" && bs.revote === "emissions_implausible");
+  check("swap: both builds enforce the same floor, cap the tolerance at 5.00%, refuse a zero quote, and revert a sandwiched leg", bs.swap[1] === 50 && bs.swap[2] === 500 && /SlippageTooHigh\(501, 500\)/.test(bs.swap[3]) && bs.swap[4] === "ZeroQuote()" && bs.swap[5] === true);
+  const CLAIMS = [/no operator custody/i, /no owner powers/i, /At no point does an operator custody/, /has no power over your funds/i, /\bnon-custodial\b/i];
+  check("custody: neither build claims 'no operator custody' or 'no owner powers' — a timelocked owner is still an owner", CLAIMS.every(re => !re.test(simple) && !re.test(adv)), CLAIMS.filter(re => re.test(simple) || re.test(adv)).map(String).join(", "));
+  const owns = await ps.evaluate(() => [...document.querySelectorAll("#docOwnerCan li")].map(e => e.textContent));
+  const owna = await pa.evaluate(() => [...document.querySelectorAll("#docOwnerCan li")].map(e => e.textContent));
+  check("custody: both builds print the same three things the registry owner can still do, and both name the timelock delay", JSON.stringify(owns) === JSON.stringify(owna) && owns.length === 3 && (await ps.evaluate(() => document.querySelector("#docOwnerResidual").textContent)).includes("2 days") && (await pa.evaluate(() => document.querySelector("#docOwnerResidual").textContent)).includes("2 days"));
+  check("entry floor: neither build ever builds the pre-fix raw open — the hold path is openBorrowOnly and the floor is named at the venue in both", /openBorrowOnly/.test(adv) && /AaveV3Venue\.borrow/.test(simple) && /AaveV3Venue\.borrow/.test(adv) && !/execBatch\(\[permit2, supply, borrow\]\)`/.test(adv));
+  check("grant: both builds pin one target, one selector, a 24-hour period and a 30-day expiry, and both list the movers refused from a keeper grant outright", cs.grant.periodS === 86400 && cs.grant.refusedSelectors.length === 4 && cs.grant.refusalError === "UnbudgetableSelector(target, selector)" && /Renew for 30 days/.test(simple) && /Renew for 30 days/.test(adv) && /grantChip/.test(simple) && /grantChip/.test(adv));
+}
 check("hand-holding: simple.html explains each of the five steps in one plain sentence before it happens, plus an opening guide", (simple.match(/class="guide small muted"/g) || []).length === 5 && /id="guideBox"/.test(simple));
 check("hand-holding: simple.html review lists what will happen when you sign, in order, with a plain sentence per hop", /id="revSteps"/.test(simple) && /plain:"A small account contract/.test(simple) && /Nothing moves until you sign/.test(simple));
 check("hand-holding: index.html carries a per-step guide sentence and the same ordered what-will-happen list in the review", /id="stepGuide"/.test(adv) && /What will happen when you sign — in order/.test(adv) && /plain:"Your wallet signs a message, not a transaction/.test(adv));

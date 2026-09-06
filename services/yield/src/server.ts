@@ -40,7 +40,8 @@ import {
 import { mixUserBand } from "./bands.js";
 import { loadVolatility, type VolatilityInputs, type YieldConfig } from "./config.js";
 import { evaluatePool, evaluateGate } from "./gate.js";
-import { SETTINGS, type Setting } from "./model.js";
+import { calibrationIndex, loadMcCalibration, type McCalibration, type McCalibrationCell } from "./mc-calibration.js";
+import { ENGINE_FEE_BPS, SETTINGS, type Setting } from "./model.js";
 import { AaveSource } from "./sources/aave.js";
 import { BlockscoutSource } from "./sources/blockscout.js";
 import { GeckoSource } from "./sources/gecko.js";
@@ -78,6 +79,8 @@ const CURATED_IDS = new Set(CURATED_POOLS.map((p) => p.id));
 const MAX_MIX_IDS = 16;
 
 export const VOLATILITY_FILE = "volatility.json";
+/** The Monte-Carlo calibration of the closed form (scripts/lp-sim.py --calibration). */
+export const MC_CALIBRATION_FILE = "mc-calibration.json";
 
 interface CacheEntry<T> {
   value: T | null;
@@ -115,7 +118,9 @@ export class YieldServer {
   private rates: CacheEntry<AaveRatesSample> = { value: null, at: 0 };
   private bands = new Map<string, PoolBands>(); // curatedId → bands
   private volatility: VolatilityInputs;
-  private startedAt = Date.now();
+  private mcCalibration: McCalibration | null;
+  private mcIndex: Map<string, McCalibrationCell>;
+  private startedAt: number;
   private lastRefresh = 0;
   private refreshing = false;
   private readonly refreshDeadlineMs: number;
@@ -132,6 +137,8 @@ export class YieldServer {
       aave?: AaveSource;
       gauges?: GaugeSource;
       volatility?: VolatilityInputs;
+      /** MC calibration of the closed form; null = every cell refuses (fail closed). */
+      mcCalibration?: McCalibration | null;
       /** Whole-refresh time budget (default 90s); injectable for tests. */
       refreshDeadlineMs?: number;
       /** Injectable clock — staleness tests freeze and advance it. */
@@ -148,6 +155,17 @@ export class YieldServer {
     this.aave = deps?.aave ?? (rpc ? new AaveSource(rpc, this.now) : undefined);
     this.gauges = deps?.gauges ?? (rpc ? new GaugeSource(rpc) : undefined);
     this.volatility = deps?.volatility ?? loadVolatility(join(cfg.samplesDir, VOLATILITY_FILE));
+    this.mcCalibration =
+      deps?.mcCalibration !== undefined
+        ? deps.mcCalibration
+        : loadMcCalibration(join(cfg.samplesDir, MC_CALIBRATION_FILE));
+    if (!this.mcCalibration) {
+      // Loud, not silent: with no calibration the boundary guard has nothing
+      // to check against and every cell refuses with mc_calibration_unavailable.
+      console.error(`${MC_CALIBRATION_FILE} not found in ${cfg.samplesDir}: the gate will offer nothing`);
+    }
+    this.mcIndex = calibrationIndex(this.mcCalibration);
+    this.startedAt = this.now();
     this.refreshDeadlineMs = deps?.refreshDeadlineMs ?? 90_000;
     this.loadBandsFromDisk();
   }
@@ -277,13 +295,18 @@ export class YieldServer {
       rates: this.ratesForServe(),
       emissions: this.emissionsForServe(pool.id),
       volatility: this.volatility,
+      mcCalibration: this.mcIndex,
       nowSeconds: Math.floor(this.now() / 1000),
     });
   }
 
+  private liveForServe(poolId: string): (PoolLiveSample & { stale: boolean }) | null {
+    const e = this.live.get(poolId);
+    return e?.value ? { ...e.value, stale: this.isStale(e) } : null;
+  }
+
   private poolsPayload(): PoolsResponse {
     const pools: PoolPayload[] = CURATED_POOLS.map((p) => {
-      const live = this.live.get(p.id);
       const bands = this.bands.get(p.id) ?? null;
       return {
         id: p.id,
@@ -293,17 +316,24 @@ export class YieldServer {
         protocol: p.protocol,
         pairClass: p.pairClass,
         ...(p.note ? { note: p.note } : {}),
-        live: live?.value ?? null,
+        live: this.liveForServe(p.id),
         emissions: this.emissionsForServe(p.id),
         gate: p.dex === "AERODROME" ? this.gateFor(p) : [],
         bands,
         ...(bands ? {} : { bandsUnavailableReason: "backfill_pending" }),
       };
     });
-    // Per-SOURCE staleness: any sampleable pool whose last good live sample —
-    // or the rates sample — is older than staleAfterMs flags the payload.
+    // Per-SOURCE staleness: any sampleable pool whose last good live sample,
+    // ANY pool's gauge emissions, or the rates sample is older than
+    // staleAfterMs flags the payload. Emissions used to be excluded, so the
+    // headline flag read `false` with every gauge hours dead while the
+    // per-pool `emissions.stale` said otherwise (wave-1 lens D MED-5) — a
+    // consumer trusting the headline rendered stale emissions as live.
     const stale =
       CURATED_POOLS.filter((p) => p.poolAddress).some((p) => this.isStale(this.live.get(p.id) ?? { value: null, at: 0 })) ||
+      CURATED_POOLS.filter((p) => p.dex === "AERODROME" && p.poolAddress).some((p) =>
+        this.isStale(this.emissions.get(p.id) ?? { value: null, at: 0 })
+      ) ||
       this.isStale(this.rates);
     return {
       pools,
@@ -350,16 +380,35 @@ export class YieldServer {
               rates,
               emissions: this.emissionsForServe(pool.id),
               volatility: this.volatility,
+              mcCalibration: this.mcIndex,
               nowSeconds,
             })
           );
         }
       }
     }
+    // Fields web/lib/gate.ts has always read and the live payload never sent
+    // (wave-1 lens D MED-6): without `stale` the client's staleness guard —
+    // and the `&& !stale` term in its own qualifies re-derivation — was dead
+    // code in live mode, and emissions staleness is the ONE kind /v1/gate
+    // does not 503 on. `emissionsSampledAt` is the OLDEST sample actually
+    // consumed by the verdicts above, so it cannot read fresher than the
+    // worst input behind them.
+    const consumed = [...new Set(pools.map((p) => p.id))]
+      .map((id) => this.emissionsForServe(id))
+      .filter((e): e is EmissionsSample & { stale: boolean } => e !== null);
+    const emissionsStale = consumed.some((e) => e.stale);
+    const emissionsSampledAt = consumed.length
+      ? consumed.map((e) => e.sampledAt).sort()[0]!
+      : null;
     return {
       borrowAprPct: rates.borrow.variableBorrowAprPct,
       ratesSampledAt: rates.sampledAt,
+      emissionsSampledAt,
       volatilityAsOf: this.volatility.asOf,
+      engineFeeBps: ENGINE_FEE_BPS,
+      stale: rates.stale || emissionsStale,
+      mcCalibrationGeneratedAt: this.mcCalibration?.generatedAt ?? null,
       settings: settings.map((s) => ({ id: s.id, preset: s.preset, rebalanceDelayHours: s.rebalanceDelayHours })),
       verdicts,
       qualifying: verdicts.filter((v) => v.qualifies).map((v) => ({ poolId: v.poolId, setting: v.setting, collateral: v.collateral })),
@@ -431,6 +480,53 @@ export class YieldServer {
     };
   }
 
+  /**
+   * Health with per-source freshness. `ok` is false — and the endpoint 503s —
+   * when the rates are missing/stale, when no source has ever refreshed, or
+   * when every sampleable pool's live or emissions sample is stale.
+   */
+  private health(): Record<string, unknown> & { ok: boolean } {
+    const sampleable = CURATED_POOLS.filter((p) => p.poolAddress);
+    const aeroPools = sampleable.filter((p) => p.dex === "AERODROME");
+    const count = (
+      ids: readonly string[],
+      map: Map<string, CacheEntry<unknown>>
+    ): { total: number; fresh: number; stale: number } => {
+      let fresh = 0;
+      let stale = 0;
+      for (const id of ids) {
+        const e = map.get(id);
+        if (!e?.value) continue;
+        if (this.isStale(e)) stale += 1;
+        else fresh += 1;
+      }
+      return { total: ids.length, fresh, stale };
+    };
+    const live = count(sampleable.map((p) => p.id), this.live as Map<string, CacheEntry<unknown>>);
+    const emissions = count(aeroPools.map((p) => p.id), this.emissions as Map<string, CacheEntry<unknown>>);
+    const ratesStale = this.isStale(this.rates);
+    const degraded: string[] = [];
+    if (!this.lastRefresh) degraded.push("never_refreshed");
+    if (!this.rates.value) degraded.push("rates_unavailable");
+    else if (ratesStale) degraded.push("rates_stale");
+    if (live.fresh === 0 && live.total > 0) degraded.push("live_samples_stale");
+    if (emissions.fresh === 0 && emissions.total > 0) degraded.push("emissions_stale");
+    if (!this.mcCalibration) degraded.push("mc_calibration_unavailable");
+    return {
+      ok: degraded.length === 0,
+      degraded,
+      uptimeS: Math.round((this.now() - this.startedAt) / 1000),
+      lastRefresh: this.lastRefresh ? new Date(this.lastRefresh).toISOString() : null,
+      sources: {
+        rates: this.rates.value ? { sampledAt: this.rates.value.sampledAt, stale: ratesStale } : null,
+        emissionsPools: emissions,
+        livePools: live,
+        volatilityAsOf: this.volatility.asOf,
+        mcCalibrationGeneratedAt: this.mcCalibration?.generatedAt ?? null,
+      },
+    };
+  }
+
   handler = (req: IncomingMessage, res: ServerResponse): void => {
     const send = (status: number, body: object) => {
       const json = JSON.stringify(body);
@@ -461,18 +557,14 @@ export class YieldServer {
       if (req.method !== "GET") return send(405, { error: "GET only" });
 
       switch (url.pathname) {
-        case "/healthz":
-          return send(200, {
-            ok: true,
-            uptimeS: Math.round((this.now() - this.startedAt) / 1000),
-            lastRefresh: this.lastRefresh ? new Date(this.lastRefresh).toISOString() : null,
-            sources: {
-              rates: this.rates.value ? { sampledAt: this.rates.value.sampledAt, stale: this.isStale(this.rates) } : null,
-              emissionsPools: [...this.emissions.values()].filter((e) => e.value).length,
-              livePools: [...this.live.values()].filter((e) => e.value).length,
-              volatilityAsOf: this.volatility.asOf,
-            },
-          });
+        case "/healthz": {
+          const h = this.health();
+          // A monitor must be able to see a dead service. `ok:true`
+          // unconditionally, with counts of entries that merely HAVE a value,
+          // reported a healthy service while every source had been dead for
+          // hours (wave-1 lens D MED-5).
+          return send(h.ok ? 200 : 503, h);
+        }
         case "/v1/pools":
           return send(200, this.poolsPayload());
         case "/v1/rates": {
