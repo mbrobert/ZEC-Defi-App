@@ -19,7 +19,7 @@ contract OilskinAccountFactory {
     event AccountCreated(address indexed owner, address indexed account);
 
     error ZeroOwner();
-    error AccountExists(address account);
+    error InvalidOwner(address owner);
 
     constructor(address permit2) {
         IMPLEMENTATION = address(new OilskinAccount(address(this), permit2));
@@ -42,6 +42,9 @@ contract OilskinAccountFactory {
     /// @dev Invariant: returns accountOf(owner); emits AccountCreated only on first deployment.
     function createAccount(address owner) public returns (address account) {
         if (owner == address(0)) revert ZeroOwner();
+        // The factory has no code path that can drive an account, so an account owned by it would
+        // be a black hole. (Every other contract owner is legitimate — a Safe, for instance.)
+        if (owner == address(this)) revert InvalidOwner(owner);
         account = accountOf(owner);
         if (account.code.length != 0) return account;
         Clones.cloneDeterministic(IMPLEMENTATION, _salt(owner));
@@ -50,19 +53,26 @@ contract OilskinAccountFactory {
         emit AccountCreated(owner, account);
     }
 
-    /// @notice Deploy the CALLER's account and run `calls` as its owner in the same transaction.
-    /// @dev Invariant: only for a not-yet-deployed account (an existing one takes `execBatch` from
-    ///      its owner directly); `calls` run with the caller as owner; msg.value is forwarded.
+    /// @notice Deploy the CALLER's account if needed and run `calls` as its owner in the same
+    ///         transaction. Idempotent: an account someone else already deployed for this owner is
+    ///         used as-is, so front-running the clone cannot take the one-transaction flow away.
+    /// @dev Invariant: `calls` always run with `msg.sender` as the owner of `account`; the account
+    ///      itself re-checks that (`execBatchFromFactory` requires `owner_ == owner`), so the
+    ///      factory is a forwarder for the caller and for nobody else. msg.value is forwarded.
     function createAccountAndExec(Call[] calldata calls)
         external
         payable
         returns (address account, bytes[] memory results)
     {
         account = accountOf(msg.sender);
-        if (account.code.length != 0) revert AccountExists(account);
-        Clones.cloneDeterministic(IMPLEMENTATION, _salt(msg.sender));
-        results = OilskinAccount(payable(account)).initialize{value: msg.value}(msg.sender, calls);
-        emit AccountCreated(msg.sender, account);
+        if (account.code.length == 0) {
+            Clones.cloneDeterministic(IMPLEMENTATION, _salt(msg.sender));
+            results = OilskinAccount(payable(account)).initialize{value: msg.value}(msg.sender, calls);
+            emit AccountCreated(msg.sender, account);
+        } else {
+            results =
+                OilskinAccount(payable(account)).execBatchFromFactory{value: msg.value}(msg.sender, calls);
+        }
     }
 
     function _salt(address owner) internal pure returns (bytes32) {

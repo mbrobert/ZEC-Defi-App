@@ -29,6 +29,7 @@ contract InvariantsTest is Fixture {
             lpVenue,
             registry,
             router,
+            swapAdapter,
             aave,
             engine,
             poolWethUsdc,
@@ -39,7 +40,7 @@ contract InvariantsTest is Fixture {
         handler.grantKeeper();
 
         targetContract(address(handler));
-        bytes4[] memory sel = new bytes4[](15);
+        bytes4[] memory sel = new bytes4[](16);
         sel[0] = Handler.supplyAndBorrow.selector;
         sel[1] = Handler.openLp.selector;
         sel[2] = Handler.accrueYield.selector;
@@ -55,6 +56,7 @@ contract InvariantsTest is Fixture {
         sel[12] = Handler.glitchEnumeration.selector;
         sel[13] = Handler.rawExitProbe.selector;
         sel[14] = Handler.ownerExit.selector;
+        sel[15] = Handler.donate.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: sel}));
     }
 
@@ -84,15 +86,30 @@ contract InvariantsTest is Fixture {
         assertEq(cbbtc.balanceOf(treasury), 0, "collateral is never yield");
     }
 
-    function invariant_routerAndPeripheralsHoldNothing() public view {
+    /// A peripheral never ACQUIRES a balance: whatever it holds is exactly what was donated to it
+    /// from outside. Asserting an absolute zero here is what let B-CRIT-1 pass — the handler had no
+    /// action that could transfer a token to a peripheral, so the vacuous assertion looked strong
+    /// while one base unit of USDC would have bricked the protocol for everyone, permanently.
+    function invariant_peripheralsAcquireNothing() public view {
         address[4] memory peripherals = [address(router), address(aaveVenue), address(lpVenue), address(swapAdapter)];
         MockERC20[4] memory toks = [usdc, weth, cbbtc, aero];
         for (uint256 i = 0; i < 4; i++) {
             for (uint256 j = 0; j < 4; j++) {
-                assertEq(toks[j].balanceOf(peripherals[i]), 0, "peripheral holds a balance");
+                assertEq(
+                    toks[j].balanceOf(peripherals[i]),
+                    handler.g_donated(peripherals[i], address(toks[j])),
+                    "peripheral acquired a balance of its own"
+                );
             }
             assertEq(peripherals[i].balance, 0);
         }
+    }
+
+    /// …and a donation is INERT: after any sequence that includes donations, the owner can still
+    /// exit and the keeper can still run its protective unwind. (`g_exitProbeFailed` covers the
+    /// exit; this asserts the donations actually happened, so the property is not vacuous.)
+    function invariant_donationsDoNotBrickTheProtocol() public view {
+        assertFalse(handler.g_exitProbeFailed(), "a donation broke the owner exit");
     }
 
     function invariant_noStandingAllowances() public view {
@@ -126,6 +143,14 @@ contract InvariantsTest is Fixture {
         assertEq(handler.g_keeperUnwinds(), 1, "keeper unwind must succeed within its grant");
         assertEq(lpVenue.positionsOf(address(acct)).length, 0);
         assertGt(usdc.balanceOf(treasury), 0, "fee was taken on the yield");
+        // One base unit at the router: the old absolute assertion made this a permanent,
+        // protocol-wide brick. It must now be completely inert.
+        handler.donate(0, 1);
+        assertEq(usdc.balanceOf(address(router)), 1);
+        handler.supplyAndBorrow(1e8, 4000);
+        handler.openLp(type(uint256).max);
+        handler.keeperUnwind(5_000e6);
+        assertEq(handler.g_keeperUnwinds(), 2, "keeper unwind still works with a donated router");
         handler.glitchEnumeration(true);
         handler.toggleAsset(false);
         handler.revokeAll();

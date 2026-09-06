@@ -13,15 +13,23 @@ import {CollateralRegistry} from "../registry/CollateralRegistry.sol";
 /// @title StrategyRouter — stateless "supply → borrow → (swap) → LP" and its mirror, executed BY the
 ///        caller's OilskinAccount.
 ///
-/// @notice The account calls the router (`account.exec(router, openLeveragedLp(...))`, or the factory's
-///         `createAccountAndExec` for a first-time user); the router then instructs the account
-///         through the venues, so every position is the account's and the router is never a holder
-///         of anything: `balanceOf(router) == 0` before, during and after every call. It has no
-///         storage, no owner, no fee. Every hop carries a deadline and a floor: Permit2 deadline,
-///         the pool price band on the LP deposit/close, minOut on each swap, and the registry's
-///         entry health-factor floor after the borrow. The LP pool must contain USDC in v1 (the
-///         engine's single-sided deposit swaps to ratio internally, so no swap is needed on open);
-///         a non-USDC pool token is swapped back to USDC on unwind.
+/// @notice The account calls the router (`account.execWithCallback(router, openLeveragedLp(...))`, or
+///         the factory's `createAccountAndExec` for a first-time user); the router then instructs the
+///         account through the venues, so every position is the account's and the router never holds
+///         anything: its balance of every token it touches is UNCHANGED across every call. It has no
+///         storage, no owner, no fee. Every hop carries a deadline and a floor: Permit2 deadline, the
+///         pool price band on the LP deposit/close, a quote-derived slippage floor on each swap, and
+///         the entry health-factor floor after any borrow (enforced by the venue itself, so no entry
+///         point can skip it). The LP pool must contain USDC in v1 (the engine's single-sided deposit
+///         swaps to ratio internally, so no swap is needed on open); a non-USDC pool token is swapped
+///         back to USDC on unwind.
+///
+/// @dev **The non-holder property is a DELTA, not an absolute.** Anyone can send tokens to any
+///      address, and this contract is immutable with no rescue: asserting `balanceOf(this) == 0`
+///      would let one base unit of USDC, from anybody, permanently disable every open and every
+///      unwind for every user — including the keeper's only protective grant. So each entry point
+///      snapshots its balance of every token it will touch and requires it UNCHANGED at exit. A
+///      donation is inert; a token that actually stuck to the router still reverts.
 contract StrategyRouter is Peripheral {
     CollateralRegistry public immutable REGISTRY;
     ILpVenue public immutable LP_VENUE;
@@ -52,15 +60,38 @@ contract StrategyRouter is Peripheral {
         uint256 deadline;
     }
 
+    /// @notice The "borrow and hold" shape: collateral in, USDC out, nothing deployed.
+    struct BorrowOnlyParams {
+        address collateralAsset;
+        /// @dev 0 = borrow against collateral already supplied by this account.
+        uint256 collateralAmount;
+        Permit2Pull permit;
+        /// @dev USDC to borrow. Must be > 0. Lands in the account.
+        uint256 borrowAmount;
+        uint256 deadline;
+    }
+
+    /// @notice The caller's swap quote for the non-USDC LP leg, scaled and bounded by the adapter.
+    struct SwapQuote {
+        /// @dev Input amount the quote was taken for (raw units of the non-USDC pool token).
+        uint256 quotedIn;
+        /// @dev USDC that quote promised for `quotedIn`.
+        uint256 quotedOut;
+        /// @dev Tolerance below the quoted rate; the adapter caps it (MAX_SLIPPAGE_BPS).
+        uint16 maxSlippageBps;
+        bytes routeData;
+    }
+
     struct UnwindParams {
         address collateralAsset;
         /// @dev LP ids to close (all in one pool). May be empty (repay / withdraw only).
         uint256[] positionIds;
         PriceBand band;
-        /// @dev minOut for swapping the non-USDC pool token proceeds to USDC (adapter route data).
-        uint256 swapMinOut;
-        bytes swapRouteData;
-        /// @dev USDC to repay. type(uint256).max = everything the account holds up to its debt. 0 = none.
+        /// @dev Quote for swapping the non-USDC pool token proceeds to USDC. Required when the pool
+        ///      has a non-USDC leg and that leg pays out; ignored otherwise.
+        SwapQuote swap;
+        /// @dev USDC to repay. type(uint256).max = everything the account holds up to its debt.
+        ///      0 = none. A fixed amount against zero debt is a no-op, never a revert.
         uint256 repayAmount;
         /// @dev Collateral to withdraw to the account. type(uint256).max = all. 0 = none.
         uint256 withdrawAmount;
@@ -74,6 +105,14 @@ contract StrategyRouter is Peripheral {
         uint256 borrowed,
         bytes32 indexed poolId,
         uint256 positionId,
+        uint256 healthFactor
+    );
+    /// @notice A borrow-only ("hold") open. Carries the same floor as every other entry point.
+    event BorrowOnlyOpened(
+        address indexed account,
+        address indexed collateralAsset,
+        uint256 collateralAmount,
+        uint256 borrowed,
         uint256 healthFactor
     );
     event LeveragedLpUnwound(
@@ -97,7 +136,9 @@ contract StrategyRouter is Peripheral {
     error PoolWithoutUsdc(bytes32 poolId);
     error EntryHfTooLow(uint256 healthFactor, uint256 floor);
     error ExitHfTooLow(uint256 healthFactor, uint256 floor);
-    error RouterHoldsBalance(address token, uint256 amount);
+    /// @notice The router's own balance of `token` moved across the call: `before` → `current`.
+    ///         Only reachable if the router actually acquired or lost a token, never by a donation.
+    error RouterBalanceChanged(address token, uint256 balanceBefore, uint256 balanceAfter);
 
     constructor(
         CollateralRegistry registry,
@@ -121,9 +162,10 @@ contract StrategyRouter is Peripheral {
     // ------------------------------------------------------------------ open
 
     /// @notice Permit2 pull → venue.supply → venue.borrow(USDC) → lpVenue.open, all as the account.
-    /// @dev Invariant: the asset is enabled in the registry and its venue is enabled; after the borrow
-    ///      the account's health factor is ≥ the registry's entry floor (else revert); the LP id is
-    ///      minted to the account; the router's own balance of every token involved is unchanged (0).
+    /// @dev Invariant: the asset is enabled in the registry and its venue is enabled; after the
+    ///      borrow the account's health factor is ≥ the registry's entry floor (the VENUE enforces
+    ///      it, this is the second, named check); the LP id is minted to the account; the router's
+    ///      own balance of every token involved is unchanged.
     function openLeveragedLp(OpenParams calldata p)
         external
         returns (uint256 positionId, uint256 healthFactor)
@@ -135,15 +177,12 @@ contract StrategyRouter is Peripheral {
         if (t0 != USDC && t1 != USDC) revert PoolWithoutUsdc(p.poolId);
 
         address account = msg.sender;
-        if (p.collateralAmount != 0) {
-            if (p.permit.signature.length != 0) _pull(account, p);
-            _nested(address(venue), abi.encodeCall(ICollateralVenue.supply, (p.collateralAsset, p.collateralAmount)));
-        }
-        _nested(address(venue), abi.encodeCall(ICollateralVenue.borrow, (USDC, p.borrowAmount)));
+        uint256 beforeCollateral = _balance(p.collateralAsset);
+        uint256 beforeUsdc = _balance(USDC);
+        uint256 beforeT0 = _balance(t0);
+        uint256 beforeT1 = _balance(t1);
 
-        healthFactor = venue.healthFactor(account);
-        uint256 floor = REGISTRY.entryHfFloorWad();
-        if (healthFactor < floor) revert EntryHfTooLow(healthFactor, floor);
+        healthFactor = _supplyAndBorrow(venue, account, p.collateralAsset, p.collateralAmount, p.permit, p.borrowAmount);
 
         LpOpenParams memory lp = LpOpenParams({
             poolId: p.poolId,
@@ -157,20 +196,49 @@ contract StrategyRouter is Peripheral {
         });
         positionId = abi.decode(_nested(address(LP_VENUE), abi.encodeCall(ILpVenue.open, (lp))), (uint256));
 
-        _assertHoldsNothing(p.collateralAsset);
-        _assertHoldsNothing(USDC);
+        _assertUnchanged(p.collateralAsset, beforeCollateral);
+        _assertUnchanged(USDC, beforeUsdc);
+        _assertUnchanged(t0, beforeT0);
+        _assertUnchanged(t1, beforeT1);
         emit LeveragedLpOpened(
             account, p.collateralAsset, p.collateralAmount, p.borrowAmount, p.poolId, positionId, healthFactor
         );
     }
 
+    /// @notice Permit2 pull → venue.supply → venue.borrow(USDC), and stop. The "hold" shape: the
+    ///         borrowed USDC lands in the account and is not deployed.
+    /// @dev Invariant: identical entry conditions to `openLeveragedLp` — registry-enabled asset,
+    ///      enabled venue, deadline, and the entry health-factor floor after the borrow. It exists
+    ///      so no product flow ever has a reason to hand-build a supply/borrow batch that skips
+    ///      those checks.
+    function openBorrowOnly(BorrowOnlyParams calldata p) external returns (uint256 healthFactor) {
+        if (p.deadline < block.timestamp) revert Expired(p.deadline);
+        if (p.borrowAmount == 0) revert ZeroBorrow();
+        ICollateralVenue venue = _venueFor(p.collateralAsset, true);
+
+        address account = msg.sender;
+        uint256 beforeCollateral = _balance(p.collateralAsset);
+        uint256 beforeUsdc = _balance(USDC);
+
+        healthFactor = _supplyAndBorrow(venue, account, p.collateralAsset, p.collateralAmount, p.permit, p.borrowAmount);
+
+        _assertUnchanged(p.collateralAsset, beforeCollateral);
+        _assertUnchanged(USDC, beforeUsdc);
+        emit BorrowOnlyOpened(account, p.collateralAsset, p.collateralAmount, p.borrowAmount, healthFactor);
+    }
+
     // ---------------------------------------------------------------- unwind
 
     /// @notice The mirror: lpVenue.closeMany → swap non-USDC proceeds to USDC → venue.repay →
-    ///         venue.withdraw, all as the account. Works for DISABLED assets (exits are never gated).
-    /// @dev Invariant: an un-closable id is skipped, never blocking; a swap of a non-USDC leg requires
-    ///      `swapMinOut > 0`; after a collateral withdraw with debt outstanding the health factor is
-    ///      ≥ the entry floor; the router holds nothing afterwards.
+    ///         venue.withdraw, all as the account. Works for DISABLED assets (exits are never gated
+    ///         on the asset flag) but not through a DISABLED venue, which is a different thing: a
+    ///         venue that reports itself off is code we will not delegate to, and the owner's raw
+    ///         `exec` to the protocol still works when it happens.
+    /// @dev Invariant: an un-closable id is skipped, never blocking — at index 0 like anywhere else;
+    ///      a swap of a non-USDC leg is bounded by the caller's quote and the adapter's cap; a fixed
+    ///      repay against zero debt is a no-op, not a revert; after a collateral withdraw with ANY
+    ///      debt outstanding the global health factor is ≥ the entry floor; the router's balance of
+    ///      every token it touched is unchanged.
     function unwind(UnwindParams calldata p)
         external
         returns (uint256 usdcFromLp, uint256 repaid, uint256 withdrawn, uint256 healthFactor)
@@ -179,33 +247,29 @@ contract StrategyRouter is Peripheral {
         ICollateralVenue venue = _venueFor(p.collateralAsset, false);
         address account = msg.sender;
 
+        uint256 beforeCollateral = _balance(p.collateralAsset);
+        uint256 beforeUsdc = _balance(USDC);
+
         uint256 closed;
         uint256 failedCount;
         if (p.positionIds.length != 0) {
-            (bytes32 poolId,) = LP_VENUE.poolOf(p.positionIds[0]);
-            (address t0, address t1,) = LP_VENUE.poolTokens(poolId);
-            (uint256 out0, uint256 out1,, uint256[] memory failed) = abi.decode(
-                _nested(address(LP_VENUE), abi.encodeCall(ILpVenue.closeMany, (p.positionIds, p.band))),
-                (uint256, uint256, uint256, uint256[])
-            );
-            failedCount = failed.length;
-            closed = p.positionIds.length - failedCount;
-            usdcFromLp += _toUsdc(t0, out0, p);
-            usdcFromLp += _toUsdc(t1, out1, p);
+            (usdcFromLp, closed, failedCount) = _closeAndSettle(p);
         }
 
         if (p.repayAmount != 0) {
-            uint256 amount = p.repayAmount;
-            if (amount == type(uint256).max) {
-                uint256 owed = venue.debt(account, USDC);
-                uint256 held = IERC20(USDC).balanceOf(account);
-                amount = owed < held ? owed : held;
-            }
-            if (amount != 0) {
-                repaid = abi.decode(
-                    _nested(address(venue), abi.encodeCall(ICollateralVenue.repay, (USDC, amount))),
-                    (uint256)
-                );
+            uint256 owed = venue.debt(account, USDC);
+            if (owed != 0) {
+                uint256 amount = p.repayAmount;
+                if (amount == type(uint256).max) {
+                    uint256 held = IERC20(USDC).balanceOf(account);
+                    amount = owed < held ? owed : held;
+                }
+                if (amount != 0) {
+                    repaid = abi.decode(
+                        _nested(address(venue), abi.encodeCall(ICollateralVenue.repay, (USDC, amount))),
+                        (uint256)
+                    );
+                }
             }
         }
 
@@ -220,13 +284,15 @@ contract StrategyRouter is Peripheral {
         }
 
         healthFactor = venue.healthFactor(account);
-        if (p.withdrawAmount != 0 && venue.debt(account, USDC) != 0) {
+        // The venue's health factor is GLOBAL across every reserve; gate on that, not on the USDC
+        // debt alone, or a withdrawal with non-USDC debt outstanding sails past the floor.
+        if (p.withdrawAmount != 0 && healthFactor != type(uint256).max) {
             uint256 floor = REGISTRY.entryHfFloorWad();
             if (healthFactor < floor) revert ExitHfTooLow(healthFactor, floor);
         }
 
-        _assertHoldsNothing(p.collateralAsset);
-        _assertHoldsNothing(USDC);
+        _assertUnchanged(p.collateralAsset, beforeCollateral);
+        _assertUnchanged(USDC, beforeUsdc);
         emit LeveragedLpUnwound(
             account, p.collateralAsset, closed, failedCount, usdcFromLp, repaid, withdrawn, healthFactor
         );
@@ -248,18 +314,78 @@ contract StrategyRouter is Peripheral {
 
     // -------------------------------------------------------------- internal
 
-    function _pull(address account, OpenParams calldata p) internal {
+    function _supplyAndBorrow(
+        ICollateralVenue venue,
+        address account,
+        address collateralAsset,
+        uint256 collateralAmount,
+        Permit2Pull calldata permit,
+        uint256 borrowAmount
+    ) internal returns (uint256 healthFactor) {
+        if (collateralAmount != 0) {
+            if (permit.signature.length != 0) _pull(account, collateralAsset, collateralAmount, permit);
+            _nested(address(venue), abi.encodeCall(ICollateralVenue.supply, (collateralAsset, collateralAmount)));
+        }
+        // The venue itself refuses a borrow that breaks the floor; this re-reads it so the router's
+        // own named error is what a caller sees when the router is the one composing the call.
+        _nested(address(venue), abi.encodeCall(ICollateralVenue.borrow, (USDC, borrowAmount)));
+        healthFactor = venue.healthFactor(account);
+        uint256 floor = REGISTRY.entryHfFloorWad();
+        if (healthFactor < floor) revert EntryHfTooLow(healthFactor, floor);
+    }
+
+    /// @dev Close the ids, swap any non-USDC proceeds, and report what closed. Separated so the
+    ///      pool tokens' balance snapshots live in one frame.
+    function _closeAndSettle(UnwindParams calldata p)
+        internal
+        returns (uint256 usdcFromLp, uint256 closed, uint256 failedCount)
+    {
+        // A stale id at index 0 no longer decides the batch's pool: the venue reports it in `failed`
+        // like any other. Use the first id this account actually owns — the same rule the venue
+        // uses, so the tokens the router swaps are always the tokens the venue paid out.
+        bytes32 poolId;
+        for (uint256 i = 0; i < p.positionIds.length; i++) {
+            (bytes32 pid, address owner) = LP_VENUE.poolOf(p.positionIds[i]);
+            if (owner == msg.sender && pid != bytes32(0)) {
+                poolId = pid;
+                break;
+            }
+        }
+        if (poolId == bytes32(0)) return (0, 0, p.positionIds.length);
+
+        (address t0, address t1,) = LP_VENUE.poolTokens(poolId);
+        uint256 beforeT0 = _balance(t0);
+        uint256 beforeT1 = _balance(t1);
+
+        (uint256 out0, uint256 out1,, uint256[] memory failed) = abi.decode(
+            _nested(address(LP_VENUE), abi.encodeCall(ILpVenue.closeMany, (p.positionIds, p.band))),
+            (uint256, uint256, uint256, uint256[])
+        );
+        failedCount = failed.length;
+        closed = p.positionIds.length - failedCount;
+        usdcFromLp = _toUsdc(t0, out0, p) + _toUsdc(t1, out1, p);
+
+        _assertUnchanged(t0, beforeT0);
+        _assertUnchanged(t1, beforeT1);
+    }
+
+    function _pull(
+        address account,
+        address collateralAsset,
+        uint256 collateralAmount,
+        Permit2Pull calldata pp
+    ) internal {
         IPermit2.PermitTransferFrom memory permit = IPermit2.PermitTransferFrom({
-            permitted: IPermit2.TokenPermissions({token: p.collateralAsset, amount: p.collateralAmount}),
-            nonce: p.permit.nonce,
-            deadline: p.permit.deadline
+            permitted: IPermit2.TokenPermissions({token: collateralAsset, amount: collateralAmount}),
+            nonce: pp.nonce,
+            deadline: pp.deadline
         });
         IPermit2.SignatureTransferDetails memory details =
-            IPermit2.SignatureTransferDetails({to: account, requestedAmount: p.collateralAmount});
+            IPermit2.SignatureTransferDetails({to: account, requestedAmount: collateralAmount});
         address signer = IOilskinAccount(account).owner();
         _exec(
             address(PERMIT2),
-            abi.encodeCall(IPermit2.permitTransferFrom, (permit, details, signer, p.permit.signature))
+            abi.encodeCall(IPermit2.permitTransferFrom, (permit, details, signer, pp.signature))
         );
     }
 
@@ -274,7 +400,16 @@ contract StrategyRouter is Peripheral {
                 address(SWAP),
                 abi.encodeCall(
                     ISwapAdapter.swap,
-                    (token, USDC, amount, p.swapMinOut, p.deadline, p.swapRouteData)
+                    (
+                        token,
+                        USDC,
+                        amount,
+                        p.swap.quotedIn,
+                        p.swap.quotedOut,
+                        p.swap.maxSlippageBps,
+                        p.deadline,
+                        p.swap.routeData
+                    )
                 )
             ),
             (uint256)
@@ -284,10 +419,10 @@ contract StrategyRouter is Peripheral {
     function _venueFor(address asset, bool requireEnabled) internal view returns (ICollateralVenue) {
         CollateralRegistry.AssetConfig memory cfg = REGISTRY.config(asset);
         if (cfg.venue == address(0)) revert AssetNotRegistered(asset);
-        if (requireEnabled) {
-            if (!cfg.enabled) revert AssetDisabled(asset, cfg.note);
-            if (!ICollateralVenue(cfg.venue).enabled()) revert VenueDisabled(cfg.venue);
-        }
+        // The VENUE's own switch is honoured on every path, entry and exit: a venue that says it is
+        // off is not code the account should be handed to. Only the ASSET flag is bypassed on exit.
+        if (!ICollateralVenue(cfg.venue).enabled()) revert VenueDisabled(cfg.venue);
+        if (requireEnabled && !cfg.enabled) revert AssetDisabled(asset, cfg.note);
         return ICollateralVenue(cfg.venue);
     }
 
@@ -295,9 +430,14 @@ contract StrategyRouter is Peripheral {
         return _account().execNestedPeripheral(peripheral, 0, data);
     }
 
-    /// @dev The router is not a holder. Cheap to prove at the end of every call.
-    function _assertHoldsNothing(address token) internal view {
-        uint256 bal = IERC20(token).balanceOf(address(this));
-        if (bal != 0) revert RouterHoldsBalance(token, bal);
+    function _balance(address token) internal view returns (uint256) {
+        return IERC20(token).balanceOf(address(this));
+    }
+
+    /// @dev The router is not a holder: what it had at entry it still has at exit. A pre-existing
+    ///      donation is inert — see the contract-level note on why this is a delta, not a zero.
+    function _assertUnchanged(address token, uint256 balanceBefore) internal view {
+        uint256 current = _balance(token);
+        if (current != balanceBefore) revert RouterBalanceChanged(token, balanceBefore, current);
     }
 }

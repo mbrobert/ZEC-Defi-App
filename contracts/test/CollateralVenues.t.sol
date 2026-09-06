@@ -8,6 +8,8 @@ import {AaveV3Venue} from "../src/venues/AaveV3Venue.sol";
 import {MorphoBlueVenue} from "../src/venues/MorphoBlueVenue.sol";
 import {MarketParams} from "../src/interfaces/IMorphoBlue.sol";
 import {CollateralRegistry} from "../src/registry/CollateralRegistry.sol";
+import {ICollateralRegistry} from "../src/interfaces/ICollateralRegistry.sol";
+import {IPoolAddressesProvider} from "../src/interfaces/IAaveV3.sol";
 import {MockAave} from "./mocks/MockAave.sol";
 import {MockERC20} from "./mocks/MockERC20.sol";
 
@@ -67,7 +69,7 @@ contract AaveV3VenueTest is Fixture {
         uint256 tooMuch = (PRICE_WETH_E8 * 81) / 100 / 100;
         vm.prank(alice);
         vm.expectRevert(MockAave.CollateralCannotCoverNewBorrow.selector);
-        acct.exec(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.borrow, (address(usdc), tooMuch)));
+        acct.execWithCallback(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.borrow, (address(usdc), tooMuch)));
     }
 
     function test_repayPartialAndAll() public {
@@ -92,7 +94,7 @@ contract AaveV3VenueTest is Fixture {
     function test_repayNothingOwedReverts() public {
         vm.prank(alice);
         vm.expectRevert(AaveV3Venue.NothingToRepay.selector);
-        acct.exec(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.repay, (address(usdc), 1)));
+        acct.execWithCallback(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.repay, (address(usdc), 1)));
     }
 
     function test_withdrawPartialAndAllToTheAccount() public {
@@ -113,19 +115,19 @@ contract AaveV3VenueTest is Fixture {
         _borrow(30_000e6);
         vm.prank(alice);
         vm.expectRevert(MockAave.HealthFactorBelowOne.selector);
-        acct.exec(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.withdraw, (address(cbbtc), 0.6e8)));
+        acct.execWithCallback(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.withdraw, (address(cbbtc), 0.6e8)));
     }
 
     function test_zeroAmountsRevert() public {
         vm.startPrank(alice);
         vm.expectRevert(AaveV3Venue.ZeroAmount.selector);
-        acct.exec(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.supply, (address(cbbtc), 0)));
+        acct.execWithCallback(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.supply, (address(cbbtc), 0)));
         vm.expectRevert(AaveV3Venue.ZeroAmount.selector);
-        acct.exec(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.borrow, (address(usdc), 0)));
+        acct.execWithCallback(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.borrow, (address(usdc), 0)));
         vm.expectRevert(AaveV3Venue.ZeroAmount.selector);
-        acct.exec(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.withdraw, (address(cbbtc), 0)));
+        acct.execWithCallback(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.withdraw, (address(cbbtc), 0)));
         vm.expectRevert(AaveV3Venue.ZeroAmount.selector);
-        acct.exec(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.repay, (address(usdc), 0)));
+        acct.execWithCallback(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.repay, (address(usdc), 0)));
         vm.stopPrank();
     }
 
@@ -169,7 +171,7 @@ contract AaveV3VenueTest is Fixture {
     function test_keeperWithdrawAlwaysPaysTheAccount() public {
         _supply(address(cbbtc), 1e8);
         vm.prank(alice);
-        acct.grant(keeper, _perm(address(aaveVenue), ICollateralVenue.withdraw.selector, _limits1(address(cbbtc), 0), 0));
+        acct.grant(keeper, _perm(address(aaveVenue), ICollateralVenue.withdraw.selector, _limits1(address(cbbtc), 1), 0));
         vm.prank(keeper);
         acct.execAsKeeper(
             _one(_call(address(aaveVenue), abi.encodeCall(ICollateralVenue.withdraw, (address(cbbtc), 1e8))))
@@ -185,16 +187,16 @@ contract MorphoBlueVenueTest is Fixture {
         vm.startPrank(alice);
         bytes memory d = abi.encodeCall(ICollateralVenue.supply, (address(cbbtc), 1));
         vm.expectRevert(MorphoBlueVenue.VenueDisabled.selector);
-        acct.exec(address(morphoVenue), 0, d);
+        acct.execWithCallback(address(morphoVenue), 0, d);
         d = abi.encodeCall(ICollateralVenue.borrow, (address(usdc), 1));
         vm.expectRevert(MorphoBlueVenue.VenueDisabled.selector);
-        acct.exec(address(morphoVenue), 0, d);
+        acct.execWithCallback(address(morphoVenue), 0, d);
         d = abi.encodeCall(ICollateralVenue.repay, (address(usdc), 1));
         vm.expectRevert(MorphoBlueVenue.VenueDisabled.selector);
-        acct.exec(address(morphoVenue), 0, d);
+        acct.execWithCallback(address(morphoVenue), 0, d);
         d = abi.encodeCall(ICollateralVenue.withdraw, (address(cbbtc), 1));
         vm.expectRevert(MorphoBlueVenue.VenueDisabled.selector);
-        acct.exec(address(morphoVenue), 0, d);
+        acct.execWithCallback(address(morphoVenue), 0, d);
         vm.stopPrank();
         vm.expectRevert(MorphoBlueVenue.VenueDisabled.selector);
         morphoVenue.healthFactor(address(acct));
@@ -226,11 +228,11 @@ contract MorphoBlueVenueTest is Fixture {
         vm.expectRevert(
             abi.encodeWithSelector(CollateralRegistry.VenueDisabled.selector, address(morphoVenue))
         );
-        registry.register(address(cbbtc), address(morphoVenue), address(0), true, "");
+        registry.register(address(aero), address(morphoVenue), address(0), true, "");
         // Registering it disabled is fine (ships as a placeholder).
         vm.prank(registryOwner);
-        registry.register(address(cbbtc), address(morphoVenue), address(0), false, "morpho market not discovered");
-        assertEq(registry.maxOfferedLtvBps(address(cbbtc)), 0);
+        registry.register(address(aero), address(morphoVenue), address(0), false, "morpho market not discovered");
+        assertEq(registry.maxOfferedLtvBps(address(aero)), 0);
     }
 }
 
@@ -288,7 +290,11 @@ contract CollateralRegistryTest is Fixture {
         registry.setEntryHfFloor(11e18);
         vm.stopPrank();
         vm.expectRevert(abi.encodeWithSelector(CollateralRegistry.InvalidHfFloor.selector, 0));
-        new CollateralRegistry(registryOwner, 0);
+        new CollateralRegistry(registryOwner, 0, REGISTRY_TIMELOCK);
+        vm.expectRevert(abi.encodeWithSelector(CollateralRegistry.InvalidTimelock.selector, 1));
+        new CollateralRegistry(registryOwner, ENTRY_HF_FLOOR_WAD, 1);
+        vm.expectRevert(abi.encodeWithSelector(CollateralRegistry.InvalidTimelock.selector, 31 days));
+        new CollateralRegistry(registryOwner, ENTRY_HF_FLOOR_WAD, 31 days);
     }
 
     function test_ownerOnly() public {
@@ -309,9 +315,13 @@ contract CollateralRegistryTest is Fixture {
         );
         registry.setEnabled(address(cbzec), true, "");
         vm.expectRevert(
-            abi.encodeWithSelector(CollateralRegistry.VenueDoesNotKnowAsset.selector, address(cbzec))
+            abi.encodeWithSelector(CollateralRegistry.AssetAlreadyRegistered.selector, address(cbzec))
         );
         registry.register(address(cbzec), address(aaveVenue), address(0), true, "");
+        vm.expectRevert(
+            abi.encodeWithSelector(CollateralRegistry.VenueDoesNotKnowAsset.selector, address(aero))
+        );
+        registry.register(address(aero), address(aaveVenue), address(0), true, "");
         vm.expectRevert(abi.encodeWithSelector(CollateralRegistry.UnknownAsset.selector, address(aero)));
         registry.setEnabled(address(aero), false, "");
         vm.stopPrank();
@@ -322,15 +332,88 @@ contract CollateralRegistryTest is Fixture {
         assertEq(registry.maxOfferedLtvBps(address(cbzec)), 3870); // floor(6000 / 1.55)
     }
 
-    function test_disableWithNoteAndReRegisterKeepsList() public {
+    function test_disableAndReEnableIsImmediateInBothDirections() public {
+        // Disabling is the ops safety valve: it must never wait on a timelock.
         vm.prank(registryOwner);
         registry.setEnabled(address(weth), false, "paused for review");
         assertEq(registry.config(address(weth)).note, "paused for review");
         assertEq(registry.maxOfferedLtvBps(address(weth)), 0);
         vm.prank(registryOwner);
-        registry.register(address(weth), address(aaveVenue), makeAddr("feed2"), true, "");
-        assertEq(registry.assets().length, 3, "re-register must not duplicate");
+        registry.setEnabled(address(weth), true, "");
+        assertEq(registry.assets().length, 3, "the list is unchanged");
         assertEq(registry.maxOfferedLtvBps(address(weth)), 5000);
+    }
+
+    /// FIX B-MED-1. Aave retires a collateral by zeroing the LTV and KEEPING the liquidation
+    /// threshold, so a registry that reads only the threshold keeps advertising 50 % while every
+    /// open reverts inside Aave. Both parameters are read now.
+    function test_FIX_B3_ltvZeroDeprecationTakesTheOfferToZero() public {
+        aave.setReserve(address(cbbtc), 0, CBBTC_LT, 750, true, true, PRICE_CBBTC_E8, RATE_CBBTC_RAY);
+        assertEq(aaveVenue.maxLtvBps(address(cbbtc)), 0, "the venue knows");
+        assertEq(registry.maxOfferedLtvBps(address(cbbtc)), 0, "and the registry now asks");
+        // …and it cannot be (re-)enabled while the venue will not lend against it.
+        vm.prank(registryOwner);
+        vm.expectRevert(
+            abi.encodeWithSelector(CollateralRegistry.VenueDoesNotKnowAsset.selector, address(cbbtc))
+        );
+        registry.setEnabled(address(cbbtc), true, "");
+    }
+
+    /// FIX A-HIGH-2 / D4. Pointing an asset at a different venue is the one owner power that could
+    /// redirect user funds. It is now propose → wait → accept, with an event at each step.
+    function test_FIX_A2_venueReplacementIsTimelockedAndAnnounced() public {
+        AaveV3Venue replacement =
+            new AaveV3Venue(IPoolAddressesProvider(address(aave)), ICollateralRegistry(address(registry)));
+
+        // There is no immediate path: `register` refuses a known asset outright.
+        vm.prank(registryOwner);
+        vm.expectRevert(
+            abi.encodeWithSelector(CollateralRegistry.AssetAlreadyRegistered.selector, address(cbbtc))
+        );
+        registry.register(address(cbbtc), address(replacement), address(0), true, "");
+
+        uint40 eta = uint40(block.timestamp + REGISTRY_TIMELOCK);
+        vm.expectEmit(true, true, true, true);
+        emit CollateralRegistry.VenueChangeProposed(
+            address(cbbtc), address(aaveVenue), address(replacement), address(0), eta
+        );
+        vm.prank(registryOwner);
+        registry.proposeVenue(address(cbbtc), address(replacement), address(0));
+        assertEq(registry.pendingVenue(address(cbbtc)).venue, address(replacement), "watchable on chain");
+        assertEq(registry.venueOf(address(cbbtc)), address(aaveVenue), "not yet in force");
+
+        vm.prank(registryOwner);
+        vm.expectRevert(abi.encodeWithSelector(CollateralRegistry.TimelockNotElapsed.selector, eta));
+        registry.acceptVenue(address(cbbtc));
+
+        vm.warp(uint256(eta));
+        vm.expectEmit(true, true, true, false);
+        emit CollateralRegistry.VenueChangeAccepted(address(cbbtc), address(aaveVenue), address(replacement));
+        vm.prank(registryOwner);
+        registry.acceptVenue(address(cbbtc));
+        assertEq(registry.venueOf(address(cbbtc)), address(replacement));
+        assertEq(registry.pendingVenue(address(cbbtc)).venue, address(0), "pending cleared");
+    }
+
+    function test_FIX_A2b_pendingVenueChangeCanBeCancelled() public {
+        vm.startPrank(registryOwner);
+        registry.proposeVenue(address(cbbtc), address(aaveVenue), makeAddr("feed2"));
+        vm.expectEmit(true, true, false, false);
+        emit CollateralRegistry.VenueChangeCancelled(address(cbbtc), address(aaveVenue));
+        registry.cancelVenueChange(address(cbbtc));
+        vm.expectRevert(abi.encodeWithSelector(CollateralRegistry.NoPendingChange.selector, address(cbbtc)));
+        registry.acceptVenue(address(cbbtc));
+        vm.stopPrank();
+    }
+
+    /// FIX B-LOW-5. A client reading both offer views gets one coherent story: a disabled asset is
+    /// a named refusal, never a health factor of zero.
+    function test_FIX_B11b_offerViewsAgreeOnADisabledAsset() public {
+        assertEq(registry.maxOfferedLtvBps(address(cbzec)), 0);
+        vm.expectRevert(abi.encodeWithSelector(CollateralRegistry.AssetNotEnabled.selector, address(cbzec)));
+        registry.entryHfForLtv(address(cbzec), 5000);
+        vm.expectRevert(abi.encodeWithSelector(CollateralRegistry.UnknownAsset.selector, address(aero)));
+        registry.entryHfForLtv(address(aero), 5000);
     }
 
     function testFuzz_maxOfferedLtvNeverExceedsCapOrThreshold(uint256 lt, uint256 floorWad) public {

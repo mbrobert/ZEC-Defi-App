@@ -17,7 +17,11 @@ import {Call, IOilskinAccount, Permission, TokenLimit} from "../interfaces/IOils
 ///     initialise, and only through the factory that deployed them, exactly once.
 ///   • Keeper budgets are enforced from CALLDATA (the amounts the account is asked to transfer /
 ///     approve), never from balance snapshots — a rebasing token (cbZEC B20) cannot fool them, and
-///     the account never reads a balance across an external call.
+///     the account never reads a balance across an external call. The parser reads six selectors;
+///     token movers it cannot read are REFUSED on the keeper path (`UnbudgetableSelector`) rather
+///     than passing free.
+///   • Peripheral rights are OPT-IN per call (`Call.callback`, and `Permission.allowCallback` on the
+///     keeper path). A plain call — a token transfer, a pool call — grants the callee nothing.
 contract OilskinAccount is IOilskinAccount, IERC721Receiver, IERC1155Receiver {
     // ---------------------------------------------------------------- immutables
 
@@ -40,6 +44,7 @@ contract OilskinAccount is IOilskinAccount, IERC721Receiver, IERC1155Receiver {
         uint40 period;
         uint40 expiry;
         uint40 periodStart;
+        bool allowCallback;
         address[] tokens;
         mapping(address => uint256) tokenLimit;
         mapping(address => uint256) tokenSpent;
@@ -54,11 +59,16 @@ contract OilskinAccount is IOilskinAccount, IERC721Receiver, IERC1155Receiver {
     uint256 private constant T_ACTOR = uint256(keccak256("oilskin.account.transient.actor")) - 1;
     uint256 private constant T_ACTIVE = uint256(keccak256("oilskin.account.transient.active")) - 1;
     uint256 private constant T_ROOT = uint256(keccak256("oilskin.account.transient.root")) - 1;
+    uint256 private constant T_DEPTH = uint256(keccak256("oilskin.account.transient.depth")) - 1;
 
     // ------------------------------------------------------------------ limits
 
     /// @notice Hard cap on token budgets per grant — bounds the period-roll loop.
     uint256 public constant MAX_TOKEN_LIMITS = 8;
+
+    /// @notice Hard cap on `execNestedPeripheral` depth. The real composition is two levels
+    ///         (router → venue); a bound stops a peripheral nesting into itself without limit.
+    uint256 public constant MAX_PERIPHERAL_DEPTH = 8;
 
     // ERC-20 / Permit2 selectors the budget logic recognises as token operations.
     bytes4 private constant SEL_TRANSFER = bytes4(keccak256("transfer(address,uint256)"));
@@ -71,6 +81,26 @@ contract OilskinAccount is IOilskinAccount, IERC721Receiver, IERC1155Receiver {
         bytes4(keccak256("approve(address,address,uint160,uint48)"));
     bytes4 private constant SEL_PERMIT2_TRANSFER_FROM =
         bytes4(keccak256("transferFrom(address,address,uint160,address)"));
+
+    // Token movers the budget parser CANNOT read. Refused on the keeper path rather than passing
+    // free: budgeting them would mean decoding four more calldata shapes for no product need — no
+    // Oilskin flow asks a keeper to batch-transfer through Permit2, spend an owner signature, or
+    // call an ERC-777 / ERC-677 entry point. The owner path is untouched.
+    bytes4 private constant SEL_PERMIT2_TRANSFER_FROM_BATCH =
+        bytes4(keccak256("transferFrom((address,address,uint160,address)[])"));
+    bytes4 private constant SEL_PERMIT2_PERMIT_TRANSFER_FROM = bytes4(
+        keccak256(
+            "permitTransferFrom(((address,uint256),uint256,uint256),(address,uint256),address,bytes)"
+        )
+    );
+    bytes4 private constant SEL_PERMIT2_PERMIT_TRANSFER_FROM_BATCH = bytes4(
+        keccak256(
+            "permitTransferFrom(((address,uint256)[],uint256,uint256),(address,uint256)[],address,bytes)"
+        )
+    );
+    bytes4 private constant SEL_ERC777_SEND = bytes4(keccak256("send(address,uint256,bytes)"));
+    bytes4 private constant SEL_ERC677_TRANSFER_AND_CALL =
+        bytes4(keccak256("transferAndCall(address,uint256,bytes)"));
 
     // ------------------------------------------------------------------ events
 
@@ -104,6 +134,12 @@ contract OilskinAccount is IOilskinAccount, IERC721Receiver, IERC1155Receiver {
     error ValueBudgetExceeded(uint256 wanted, uint256 remaining);
     error TokenNotBudgeted(address token);
     error TokenBudgetExceeded(address token, uint256 wanted, uint256 remaining);
+    /// @notice A keeper call tree tried a token mover the budget cannot parse. Refused, not free.
+    error UnbudgetableSelector(address target, bytes4 selector);
+    /// @notice `execFromPeripheral` never grants rights; a call there may not ask for them.
+    error CallbackNotPermitted();
+    error PeripheralDepthExceeded(uint256 cap);
+    error NotRevocable(address keeper, address target, bytes4 selector);
 
     // -------------------------------------------------------------- construction
 
@@ -134,11 +170,31 @@ contract OilskinAccount is IOilskinAccount, IERC721Receiver, IERC1155Receiver {
         }
     }
 
+    /// @notice The factory's forwarder for an owner batch on an account that ALREADY exists — the
+    ///         other half of `createAccountAndExec`, so a griefer who front-runs the clone cannot
+    ///         take the one-transaction first-time flow away from the user.
+    /// @dev Invariant: only FACTORY may call it, and only with `owner_ == owner`; the factory passes
+    ///      its own `msg.sender`, so this executes for the owner and nobody else. Identical to
+    ///      `execBatch` in every other respect.
+    function execBatchFromFactory(address owner_, Call[] calldata calls)
+        external
+        payable
+        returns (bytes[] memory results)
+    {
+        if (msg.sender != FACTORY) revert NotFactory();
+        if (owner_ != owner) revert NotOwner();
+        _lock();
+        _tstore(T_ACTOR, 0);
+        results = _runRootCalls(calls, owner_, false);
+        _unlock();
+    }
+
     // ------------------------------------------------------------- owner surface
 
     /// @inheritdoc IOilskinAccount
-    /// @dev Invariant: only the owner can call; the target becomes the active peripheral for the
-    ///      duration of the call; revert data is bubbled.
+    /// @dev Invariant: only the owner can call; the target gets NO rights over the account (a plain
+    ///      call — this is the exit door, and the exit door must not hand authority to a token whose
+    ///      code the user does not control); revert data is bubbled.
     function exec(address target, uint256 value, bytes calldata data)
         external
         payable
@@ -148,12 +204,29 @@ contract OilskinAccount is IOilskinAccount, IERC721Receiver, IERC1155Receiver {
         if (msg.sender != owner) revert NotOwner();
         _lock();
         _tstore(T_ACTOR, 0);
-        result = _callAsRoot(target, value, data, msg.sender);
+        result = _callAsRoot(target, value, data, msg.sender, false);
         _unlock();
     }
 
     /// @inheritdoc IOilskinAccount
-    /// @dev Invariant: only the owner; each call's target is the active peripheral while it runs.
+    /// @dev Invariant: only the owner; the target IS the active peripheral for the duration of the
+    ///      call. Use it for the router and the venues; never for a token or a pool.
+    function execWithCallback(address target, uint256 value, bytes calldata data)
+        external
+        payable
+        override
+        returns (bytes memory result)
+    {
+        if (msg.sender != owner) revert NotOwner();
+        _lock();
+        _tstore(T_ACTOR, 0);
+        result = _callAsRoot(target, value, data, msg.sender, true);
+        _unlock();
+    }
+
+    /// @inheritdoc IOilskinAccount
+    /// @dev Invariant: only the owner; a call's target is the active peripheral while it runs ONLY
+    ///      if that call sets `callback`.
     function execBatch(Call[] calldata calls)
         external
         payable
@@ -197,6 +270,7 @@ contract OilskinAccount is IOilskinAccount, IERC721Receiver, IERC1155Receiver {
         results = new bytes[](calls.length);
         for (uint256 i = 0; i < calls.length; i++) {
             Call calldata c = calls[i];
+            if (c.callback) revert CallbackNotPermitted();
             if (keeper) _charge(root, c.target, c.value, c.data);
             results[i] = _rawCall(c.target, c.value, c.data);
             emit Executed(msg.sender, c.target, c.value, _selector(c.data));
@@ -215,10 +289,14 @@ contract OilskinAccount is IOilskinAccount, IERC721Receiver, IERC1155Receiver {
         _requireActivePeripheral();
         bool keeper = _tload(T_ACTOR) != 0;
         if (keeper) _charge(bytes32(_tload(T_ROOT)), peripheral, value, data);
+        uint256 depth = _tload(T_DEPTH) + 1;
+        if (depth > MAX_PERIPHERAL_DEPTH) revert PeripheralDepthExceeded(MAX_PERIPHERAL_DEPTH);
+        _tstore(T_DEPTH, depth);
         address previous = msg.sender;
         _tstore(T_ACTIVE, uint256(uint160(peripheral)));
         result = _rawCall(peripheral, value, data);
         _tstore(T_ACTIVE, uint256(uint160(previous)));
+        _tstore(T_DEPTH, depth - 1);
         emit Executed(msg.sender, peripheral, value, _selector(data));
     }
 
@@ -232,28 +310,56 @@ contract OilskinAccount is IOilskinAccount, IERC721Receiver, IERC1155Receiver {
         if (
             keeper == address(0) || p.target == address(0) || p.period == 0
                 || p.expiry <= block.timestamp || p.tokenLimits.length > MAX_TOKEN_LIMITS
+                // selector 0 would be a blanket permit for any call carrying fewer than four bytes
+                // of data, including a bare ETH send. Nothing in the product needs it.
+                || p.selector == bytes4(0)
         ) revert InvalidPermission();
 
         bytes32 key = _grantKey(keeper, p.target, p.selector);
         GrantData storage g = _grants[key];
-        // Clear the previous token list so a re-grant cannot inherit a stale budget.
-        for (uint256 i = 0; i < g.tokens.length; i++) {
-            delete g.tokenLimit[g.tokens[i]];
-            delete g.tokenSpent[g.tokens[i]];
+
+        // A re-grant must not refill an exhausted window: carry the spend forward unless the period
+        // has already rolled (or the grant is dead / from an older epoch, in which case there is
+        // nothing to carry).
+        uint256 n = g.tokens.length;
+        address[] memory oldTokens = new address[](n);
+        uint256[] memory oldSpent = new uint256[](n);
+        bool carry = g.expiry != 0 && g.epoch == grantEpoch
+            && block.timestamp < uint256(g.periodStart) + uint256(g.period);
+        for (uint256 i = 0; i < n; i++) {
+            oldTokens[i] = g.tokens[i];
+            oldSpent[i] = g.tokenSpent[oldTokens[i]];
+            delete g.tokenLimit[oldTokens[i]];
+            delete g.tokenSpent[oldTokens[i]];
         }
         delete g.tokens;
 
         g.maxValuePerPeriod = p.maxValuePerPeriod;
-        g.valueSpent = 0;
         g.epoch = grantEpoch;
         g.period = p.period;
         g.expiry = p.expiry;
-        g.periodStart = uint40(block.timestamp);
+        g.allowCallback = p.allowCallback;
+        if (!carry) {
+            g.valueSpent = 0;
+            g.periodStart = uint40(block.timestamp);
+        }
         for (uint256 i = 0; i < p.tokenLimits.length; i++) {
             TokenLimit calldata tl = p.tokenLimits[i];
-            if (tl.token == address(0) || g.tokenLimit[tl.token] != 0) revert InvalidPermission();
+            // A zero budget reads to a user as "listed" but behaves as "not budgeted", and it also
+            // defeats the duplicate guard below. Refuse it.
+            if (tl.token == address(0) || tl.amountPerPeriod == 0 || g.tokenLimit[tl.token] != 0) {
+                revert InvalidPermission();
+            }
             g.tokens.push(tl.token);
             g.tokenLimit[tl.token] = tl.amountPerPeriod;
+            if (carry) {
+                for (uint256 j = 0; j < n; j++) {
+                    if (oldTokens[j] == tl.token) {
+                        g.tokenSpent[tl.token] = oldSpent[j];
+                        break;
+                    }
+                }
+            }
         }
         emit Granted(keeper, p.target, p.selector, p.expiry, p.period, p.maxValuePerPeriod);
     }
@@ -263,6 +369,8 @@ contract OilskinAccount is IOilskinAccount, IERC721Receiver, IERC1155Receiver {
     function revoke(address keeper, address target, bytes4 selector) external override {
         if (msg.sender != owner) revert NotOwner();
         GrantData storage g = _grants[_grantKey(keeper, target, selector)];
+        // Revoking nothing must not look like a kill switch firing.
+        if (g.expiry == 0) revert NotRevocable(keeper, target, selector);
         g.expiry = 0;
         emit Revoked(keeper, target, selector);
     }
@@ -289,12 +397,16 @@ contract OilskinAccount is IOilskinAccount, IERC721Receiver, IERC1155Receiver {
             uint256 valueSpent,
             uint40 period,
             uint40 expiry,
-            uint40 periodStart
+            uint40 periodStart,
+            bool allowCallback
         )
     {
         GrantData storage g = _grants[_grantKey(keeper, target, selector)];
         active = _isActive(g);
-        return (active, g.maxValuePerPeriod, g.valueSpent, g.period, g.expiry, g.periodStart);
+        // The period roll happens inside `_charge`; apply it here too so a client never renders an
+        // exhausted budget the chain would in fact refill on the keeper's next call.
+        uint256 spent = _rolled(g) ? 0 : g.valueSpent;
+        return (active, g.maxValuePerPeriod, spent, g.period, g.expiry, g.periodStart, g.allowCallback);
     }
 
     /// @inheritdoc IOilskinAccount
@@ -305,7 +417,7 @@ contract OilskinAccount is IOilskinAccount, IERC721Receiver, IERC1155Receiver {
         returns (uint256 amountPerPeriod, uint256 spent)
     {
         GrantData storage g = _grants[_grantKey(keeper, target, selector)];
-        return (g.tokenLimit[token], g.tokenSpent[token]);
+        return (g.tokenLimit[token], _rolled(g) ? 0 : g.tokenSpent[token]);
     }
 
     /// @inheritdoc IOilskinAccount
@@ -365,25 +477,33 @@ contract OilskinAccount is IOilskinAccount, IERC721Receiver, IERC1155Receiver {
         results = new bytes[](calls.length);
         for (uint256 i = 0; i < calls.length; i++) {
             Call calldata c = calls[i];
+            bool callback = c.callback;
             if (keeper) {
                 bytes32 key = _grantKey(actor, c.target, _selector(c.data));
                 GrantData storage g = _grants[key];
                 if (!_isActive(g)) revert NotGranted(actor, c.target, _selector(c.data));
+                // The OWNER decides whether a granted target may act back on the account, not the
+                // keeper: a grant on a token can never escalate into peripheral rights.
+                callback = g.allowCallback;
                 _tstore(T_ROOT, uint256(key));
                 _charge(key, c.target, c.value, c.data);
             }
-            results[i] = _callAsRoot(c.target, c.value, c.data, actor);
+            results[i] = _callAsRoot(c.target, c.value, c.data, actor, callback);
         }
         if (keeper) _tstore(T_ROOT, 0);
     }
 
-    function _callAsRoot(address target, uint256 value, bytes calldata data, address actor)
-        internal
-        returns (bytes memory result)
-    {
-        _tstore(T_ACTIVE, uint256(uint160(target)));
+    function _callAsRoot(
+        address target,
+        uint256 value,
+        bytes calldata data,
+        address actor,
+        bool callback
+    ) internal returns (bytes memory result) {
+        // A plain call leaves T_ACTIVE at zero: the callee has no door back into the account.
+        if (callback) _tstore(T_ACTIVE, uint256(uint160(target)));
         result = _rawCall(target, value, data);
-        _tstore(T_ACTIVE, 0);
+        if (callback) _tstore(T_ACTIVE, 0);
         emit Executed(actor, target, value, _selector(data));
     }
 
@@ -431,6 +551,13 @@ contract OilskinAccount is IOilskinAccount, IERC721Receiver, IERC1155Receiver {
     {
         if (data.length < 4) return (address(0), 0);
         bytes4 sel = bytes4(data[:4]);
+        // Token movers the parser cannot read fail CLOSED on the keeper path.
+        if (
+            sel == SEL_ERC777_SEND || sel == SEL_ERC677_TRANSFER_AND_CALL
+                || sel == SEL_PERMIT2_TRANSFER_FROM_BATCH
+                || sel == SEL_PERMIT2_PERMIT_TRANSFER_FROM
+                || sel == SEL_PERMIT2_PERMIT_TRANSFER_FROM_BATCH
+        ) revert UnbudgetableSelector(target, sel);
         if (target == PERMIT2) {
             if (sel == SEL_PERMIT2_APPROVE) {
                 (address t,, uint160 a,) = abi.decode(data[4:], (address, address, uint160, uint48));
@@ -461,6 +588,10 @@ contract OilskinAccount is IOilskinAccount, IERC721Receiver, IERC1155Receiver {
                 g.tokenSpent[g.tokens[i]] = 0;
             }
         }
+    }
+
+    function _rolled(GrantData storage g) internal view returns (bool) {
+        return g.period != 0 && block.timestamp >= uint256(g.periodStart) + uint256(g.period);
     }
 
     function _isActive(GrantData storage g) internal view returns (bool) {

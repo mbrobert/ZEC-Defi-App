@@ -3,8 +3,10 @@ pragma solidity ^0.8.24;
 
 /// @notice Acceptable pool price window (sqrtPriceX96) for any engine call that swaps or mints —
 ///         read from the pool's `slot0()` at execution and compared; outside → revert. Both bounds
-///         must be non-zero: there is no "no band" (a value floor would pass while a swap is robbed;
-///         a price band does not — AUDIT-FINDINGS Part 5).
+///         must be non-zero AND the window's WIDTH is bounded by the venue (`MAX_BAND_BPS`): there
+///         is no "no band", and `[1, type(uint160).max]` — which is "no band" wearing a band's
+///         clothes — is refused (a value floor would pass while a swap is robbed; a price band does
+///         not — AUDIT-FINDINGS Part 5).
 struct PriceBand {
     uint160 minSqrtPriceX96;
     uint160 maxSqrtPriceX96;
@@ -55,16 +57,22 @@ interface ILpVenue {
         returns (uint256 out0, uint256 out1, uint256 rewards);
 
     /// @notice Close several ids with per-id try/catch: what closes is paid; ids the engine refuses
-    ///         are returned in `failed` and left untouched (an un-closable id never blocks the rest).
+    ///         — including the id at index 0 — are returned in `failed` and left untouched. An
+    ///         un-closable id never blocks the rest, which is what makes a protective unwind survive
+    ///         the engine re-keying a position between the keeper's read and its dispatch.
     function closeMany(uint256[] calldata positionIds, PriceBand calldata band)
         external
         returns (uint256 out0, uint256 out1, uint256 rewards, uint256[] memory failed);
 
     /// @notice Collect realised fees / rewards for `positionIds` into the calling account, net of the
     ///         performance fee. The ONLY place (with `close`) where the fee is taken.
-    function claim(uint256[] calldata positionIds)
+    /// @dev Carries the same band and deadline as every other engine-touching entry point: a
+    ///      compounding `harvest` inside the engine may swap, and an unbanded, undated claim can be
+    ///      executed at any price at any time. Ids the account does not own, or that sit in another
+    ///      pool, are REPORTED in `failed` and skipped — never a revert, at index 0 or anywhere else.
+    function claim(uint256[] calldata positionIds, PriceBand calldata band, uint256 deadline)
         external
-        returns (uint256 fees0, uint256 fees1, uint256 rewards);
+        returns (uint256 fees0, uint256 fees1, uint256 rewards, uint256[] memory failed);
 
     /// @notice Live engine ids owned by `account` (index enumeration until the measured end-of-list
     ///         revert; fails closed if the engine cannot be enumerated).

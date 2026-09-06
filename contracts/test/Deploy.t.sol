@@ -36,6 +36,7 @@ contract DeployTest is Fixture {
         c.deployer = address(script);
         c.performanceBps = 1000;
         c.entryHfFloorWad = 1.55e18;
+        c.registryTimelockDelay = REGISTRY_TIMELOCK;
     }
 
     function makeAddrView(string memory n) internal pure returns (address) {

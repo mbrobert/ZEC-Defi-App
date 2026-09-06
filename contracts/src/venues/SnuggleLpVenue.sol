@@ -13,19 +13,31 @@ import {IAerodromeCLPool} from "../interfaces/IAerodromeCLPool.sol";
 /// @notice Stateless and admin-free: every parameter is an immutable, every position is an engine id
 ///         owned by the calling account, every token movement is instructed back into that account.
 ///         Carries the fixes that survived the audit:
-///           • C-2  index enumeration of `userPositions(address,uint256)` until the end-of-list revert,
-///                  whose shape is MEASURED by a canary probe at call time; an engine that cannot be
-///                  enumerated reverts rather than reading as "owns nothing".
+///           • C-2  index enumeration of `userPositions(address,uint256)` until the end-of-list revert.
+///                  A canary probe at a far index must FAIL (an engine that answers every index is
+///                  not a bounded list), and the terminating revert must be exactly `Panic(0x32)` —
+///                  the only shape an array-bounds read inside a generated getter produces. A bare
+///                  `revert()`, an out-of-gas or a proxy miss therefore fails CLOSED instead of
+///                  truncating the list into "owns fewer positions" or "owns nothing".
 ///           • refund folding after EVERY engine deposit (the dual-deposit bounce is re-deposited
 ///                  single-sided in the same transaction; leftovers below a decimals-aware dust floor
 ///                  stay in the user's account — nothing is ever swept anywhere else).
-///           • per-id try/catch close (`closeMany`) paying what closed.
+///           • per-id try/catch close (`closeMany`) paying what closed — at EVERY index including the
+///                  first, so an id the engine re-keyed between the keeper's read and its dispatch is
+///                  reported in `failed` rather than reverting the whole protective unwind. `claim`
+///                  behaves the same way and carries a price band and a deadline like every other
+///                  engine-touching entry point.
 ///           • price band from the pool's `slot0()` on every deposit and close, failing closed when
 ///                  the pool cannot be read.
-///           • width bounds [150, 5000] total tick span, enforced here.
+///           • width bounds [150, 5000] total tick span, enforced here; and a bound on the price
+///                  BAND's own width, so `[1, uint160.max]` — "no band" wearing a band's clothes —
+///                  is refused.
 ///           • ONE fee chokepoint: `claim` and `close` collect realised yield first and take
 ///                  `performanceBps` of it; principal is withdrawn afterwards and never touched.
-///                  `performanceBps` is immutable and capped by MAX_PERFORMANCE_BPS at construction.
+///                  `performanceBps` is immutable and capped by MAX_PERFORMANCE_BPS at construction,
+///                  and the cap is a real bound on what the user pays: a pool whose two tokens are
+///                  the SAME token is refused on the way in, and the fee is taken once per DISTINCT
+///                  token, so the chokepoint can never compound into 1-(1-p)^2.
 contract SnuggleLpVenue is ILpVenue, Peripheral {
     // ---------------------------------------------------------------- config
 
@@ -48,7 +60,13 @@ contract SnuggleLpVenue is ILpVenue, Peripheral {
     uint256 public constant DUST_DIVISOR = 1e5;
     /// @notice Enumeration bound for `positionsOf` (real users hold 13–25 ids, FACT 2).
     uint256 public constant MAX_ENUMERATION = 512;
+    /// @notice Widest price band accepted, in bps of the LOWER bound (sqrtPriceX96 space). A
+    ///         backstop only: the product's real tolerance is far tighter and set off chain.
+    uint256 public constant MAX_BAND_BPS = 2500;
     uint256 private constant CANARY_INDEX = type(uint256).max;
+    /// @dev The one revert an array-bounds read inside a generated getter can produce.
+    bytes32 private constant PANIC_ARRAY_OOB_HASH =
+        keccak256(abi.encodeWithSignature("Panic(uint256)", 0x32));
 
     // ---------------------------------------------------------------- events
 
@@ -98,7 +116,8 @@ contract SnuggleLpVenue is ILpVenue, Peripheral {
     error PriceUnreadable(address pool);
     error PriceOutOfBand(uint256 sqrtPriceX96, uint160 min, uint160 max);
     error NotPositionOwner(uint256 positionId, address owner);
-    error MixedPools();
+    error BandTooWide(uint160 min, uint160 max, uint256 maxBps);
+    error DegeneratePool(bytes32 poolId, address token);
     error EngineUnreachable();
     error EnumerationFailed(bytes reason);
     error TooManyPositions(uint256 cap);
@@ -137,6 +156,10 @@ contract SnuggleLpVenue is ILpVenue, Peripheral {
         if (p.amount0 == 0 && p.amount1 == 0) revert ZeroAmounts();
         (address t0, address t1, address pool, bool active) = _poolOf(p.poolId);
         if (!active) revert PoolInactive(p.poolId);
+        // `approvedPools` is third-party admin state. A pool whose two tokens are the SAME token
+        // makes every balance-delta measurement here ambiguous (and doubles the fee) — refuse it on
+        // the way IN. Exits never consult this: a position that somehow exists must still close.
+        if (t0 == t1) revert DegeneratePool(p.poolId, t0);
         _checkBand(pool, p.band);
         Ctx memory ctx = Ctx(p.poolId, t0, t1, p.rangeWidthBps, p.rebalanceDelay, p.autoCompound, p.deadline);
         positionId = _deposit(ctx, p.amount0, p.amount1);
@@ -160,6 +183,7 @@ contract SnuggleLpVenue is ILpVenue, Peripheral {
         _validate(width, delay, deadline);
         (address t0, address t1, address pool, bool active) = _poolOf(poolId);
         if (!active) revert PoolInactive(poolId);
+        if (t0 == t1) revert DegeneratePool(poolId, t0);
         _checkBand(pool, band);
         newPositionId = _deposit(Ctx(poolId, t0, t1, width, delay, autoCompound, deadline), amount0, amount1);
         emit LpIncreased(msg.sender, positionId, newPositionId, amount0, amount1);
@@ -197,7 +221,10 @@ contract SnuggleLpVenue is ILpVenue, Peripheral {
         returns (uint256 out0, uint256 out1, uint256 rewards, uint256[] memory failed)
     {
         if (positionIds.length == 0) revert ZeroAmounts();
-        (bytes32 poolId, address t0, address t1) = _ownedPool(positionIds[0]);
+        // The batch's pool comes from the first id the caller ACTUALLY OWNS, not from index 0: a
+        // stale id at the front is reported like any other, never a revert that kills the batch.
+        (bool found, bytes32 poolId, address t0, address t1) = _firstOwnedPool(positionIds);
+        if (!found) return (0, 0, 0, _copy(positionIds));
         (,, address pool,) = _poolOf(poolId);
         _checkBand(pool, band);
 
@@ -235,18 +262,43 @@ contract SnuggleLpVenue is ILpVenue, Peripheral {
     /// @inheritdoc ILpVenue
     /// @dev Invariant: the single fee chokepoint (with `close`); all ids must be the account's and in
     ///      one pool; fee = gain × performanceBps / 10 000 per token, paid to `treasury`.
-    function claim(uint256[] calldata positionIds)
+    function claim(uint256[] calldata positionIds, PriceBand calldata band, uint256 deadline)
         external
         override
-        returns (uint256 fees0, uint256 fees1, uint256 rewards)
+        returns (uint256 fees0, uint256 fees1, uint256 rewards, uint256[] memory failed)
     {
         if (positionIds.length == 0) revert ZeroAmounts();
-        (bytes32 poolId, address t0, address t1) = _ownedPool(positionIds[0]);
-        for (uint256 i = 1; i < positionIds.length; i++) {
-            (bytes32 pid,,) = _ownedPool(positionIds[i]);
-            if (pid != poolId) revert MixedPools();
+        if (deadline < block.timestamp) revert Expired(deadline);
+        (bool found, bytes32 poolId, address t0, address t1) = _firstOwnedPool(positionIds);
+        if (!found) return (0, 0, 0, _copy(positionIds));
+        (,, address pool,) = _poolOf(poolId);
+        // Every position is opened with autoCompound = true, so a harvest inside the engine may
+        // swap: claim carries the same band as the deposit and close paths, and the same deadline.
+        _checkBand(pool, band);
+
+        uint256[] memory keep = new uint256[](positionIds.length);
+        uint256[] memory failedBuf = new uint256[](positionIds.length);
+        uint256 nKeep;
+        uint256 nFailed;
+        for (uint256 i = 0; i < positionIds.length; i++) {
+            uint256 id = positionIds[i];
+            (, bytes32 pid, address owner,,,,,,,,,,,,,,) = ENGINE.positions(id);
+            if (owner != msg.sender || pid != poolId) {
+                failedBuf[nFailed++] = id;
+                emit ClaimSkipped(msg.sender, id);
+            } else {
+                keep[nKeep++] = id;
+            }
         }
-        (fees0, fees1, rewards) = _collect(positionIds, t0, t1);
+        uint256[] memory ids = new uint256[](nKeep);
+        for (uint256 i = 0; i < nKeep; i++) {
+            ids[i] = keep[i];
+        }
+        failed = new uint256[](nFailed);
+        for (uint256 i = 0; i < nFailed; i++) {
+            failed[i] = failedBuf[i];
+        }
+        (fees0, fees1, rewards) = _collect(ids, t0, t1);
     }
 
     // ----------------------------------------------------------------- views
@@ -265,6 +317,11 @@ contract SnuggleLpVenue is ILpVenue, Peripheral {
             abi.encodeCall(ISnuggleVault.userPositions, (account, CANARY_INDEX))
         );
         if (canaryOk) revert EnumerationFailed(canary); // a far index answered: not a bounded list
+        // …and the WAY it failed must be the one shape that means "past the end of an array". A
+        // canary alone measures the shape of a revert, not its cause: a bare `revert()`, an
+        // out-of-gas or a proxy miss all look identical to it, so a transient failure mid-list would
+        // read as the end of the list and truncate it silently. Pin the shape.
+        if (keccak256(canary) != PANIC_ARRAY_OOB_HASH) revert EnumerationFailed(canary);
 
         uint256[] memory buf = new uint256[](MAX_ENUMERATION);
         uint256 kept;
@@ -274,7 +331,7 @@ contract SnuggleLpVenue is ILpVenue, Peripheral {
                 abi.encodeCall(ISnuggleVault.userPositions, (account, i))
             );
             if (!ok) {
-                if (keccak256(ret) != keccak256(canary)) revert EnumerationFailed(ret);
+                if (keccak256(ret) != PANIC_ARRAY_OOB_HASH) revert EnumerationFailed(ret);
                 break;
             }
             if (ret.length < 32) revert EnumerationFailed(ret);
@@ -343,7 +400,8 @@ contract SnuggleLpVenue is ILpVenue, Peripheral {
                 data: abi.encodeCall(
                     ISnuggleVault.deposit,
                     (ctx.poolId, a0, a1, ctx.width, ctx.delay, true, ctx.autoCompound, ctx.deadline, treasury)
-                )
+                ),
+                callback: false
             });
             calls[3] = _approveCall(ctx.token0, address(ENGINE), 0);
             calls[4] = _approveCall(ctx.token1, address(ENGINE), 0);
@@ -372,7 +430,8 @@ contract SnuggleLpVenue is ILpVenue, Peripheral {
             data: abi.encodeCall(
                 ISnuggleVault.depositSingleSided,
                 (ctx.poolId, token, amount, ctx.width, ctx.delay, true, ctx.autoCompound, ctx.deadline, treasury)
-            )
+            ),
+            callback: false
         });
     }
 
@@ -426,7 +485,10 @@ contract SnuggleLpVenue is ILpVenue, Peripheral {
         }
 
         n0 = _takeFee(t0, acct, b0);
-        n1 = _takeFee(t1, acct, b1);
+        // One fee per DISTINCT token. A degenerate (X, X) pool is refused at open, but if one ever
+        // existed a second call would measure the already-reduced gain and charge again —
+        // 1-(1-p)^2, i.e. 19 % at a 10 % setting, above the cap this contract advertises.
+        n1 = t1 == t0 ? 0 : _takeFee(t1, acct, b1);
         nr = rewardIsPoolToken ? 0 : _takeFee(REWARD_TOKEN, acct, br);
     }
 
@@ -437,7 +499,8 @@ contract SnuggleLpVenue is ILpVenue, Peripheral {
         c[0] = Call({
             target: address(ENGINE),
             value: 0,
-            data: abi.encodeCall(ISnuggleVault.claimStakingRewards, (id))
+            data: abi.encodeCall(ISnuggleVault.claimStakingRewards, (id)),
+            callback: false
         });
         try _account().execFromPeripheral(c) {
             return;
@@ -459,7 +522,7 @@ contract SnuggleLpVenue is ILpVenue, Peripheral {
         uint256 fee = (gained * performanceBps) / BPS;
         if (fee != 0) {
             Call[] memory c = new Call[](1);
-            c[0] = Call({target: token, value: 0, data: abi.encodeCall(IERC20.transfer, (treasury, fee))});
+            c[0] = Call({target: token, value: 0, data: abi.encodeCall(IERC20.transfer, (treasury, fee)), callback: false});
             try _account().execFromPeripheral(c) {}
             catch {
                 emit FeeSkipped(acct, token, fee);
@@ -490,7 +553,8 @@ contract SnuggleLpVenue is ILpVenue, Peripheral {
         c[0] = Call({
             target: address(ENGINE),
             value: 0,
-            data: abi.encodeCall(ISnuggleVault.withdraw, (id, false))
+            data: abi.encodeCall(ISnuggleVault.withdraw, (id, false)),
+            callback: false
         });
         try _account().execFromPeripheral(c) {
             ok = true;
@@ -504,6 +568,30 @@ contract SnuggleLpVenue is ILpVenue, Peripheral {
     function _gain(address token, address acct, uint256 before) internal view returns (uint256) {
         uint256 after_ = _bal(token, acct);
         return after_ > before ? after_ - before : 0;
+    }
+
+    /// @dev The pool of the first id in `ids` this account actually owns. Never reverts: an unowned
+    ///      or re-keyed id is something to tell the caller about, not a reason to kill a batch.
+    function _firstOwnedPool(uint256[] calldata ids)
+        internal
+        view
+        returns (bool found, bytes32 poolId, address t0, address t1)
+    {
+        for (uint256 i = 0; i < ids.length; i++) {
+            (, bytes32 pid, address owner,,,,,,,,,,,,,,) = ENGINE.positions(ids[i]);
+            if (owner == msg.sender && pid != bytes32(0)) {
+                (t0, t1,,) = _poolOf(pid);
+                return (true, pid, t0, t1);
+            }
+        }
+        return (false, bytes32(0), address(0), address(0));
+    }
+
+    function _copy(uint256[] calldata ids) internal pure returns (uint256[] memory out) {
+        out = new uint256[](ids.length);
+        for (uint256 i = 0; i < ids.length; i++) {
+            out[i] = ids[i];
+        }
     }
 
     function _ownedPool(uint256 id) internal view returns (bytes32 poolId, address t0, address t1) {
@@ -530,6 +618,12 @@ contract SnuggleLpVenue is ILpVenue, Peripheral {
     function _checkBand(address pool, PriceBand calldata band) internal view {
         if (band.minSqrtPriceX96 == 0 || band.maxSqrtPriceX96 == 0
                 || band.minSqrtPriceX96 > band.maxSqrtPriceX96) revert BandRequired();
+        // "There is no 'no band'" has to mean something: bound the WIDTH, or [1, uint160.max] is
+        // accepted and the pre-check protects nothing.
+        if (
+            uint256(band.maxSqrtPriceX96) * BPS
+                > uint256(band.minSqrtPriceX96) * (BPS + MAX_BAND_BPS)
+        ) revert BandTooWide(band.minSqrtPriceX96, band.maxSqrtPriceX96, MAX_BAND_BPS);
         uint256 price = _readSqrtPrice(pool);
         if (price < band.minSqrtPriceX96 || price > band.maxSqrtPriceX96) {
             revert PriceOutOfBand(price, band.minSqrtPriceX96, band.maxSqrtPriceX96);

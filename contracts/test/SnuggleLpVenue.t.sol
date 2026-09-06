@@ -155,22 +155,22 @@ contract SnuggleLpVenueTest is Fixture {
         vm.startPrank(alice);
         p.rangeWidthBps = 149;
         vm.expectRevert(abi.encodeWithSelector(SnuggleLpVenue.InvalidWidth.selector, 149));
-        acct.exec(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
+        acct.execWithCallback(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
         p.rangeWidthBps = 5001;
         vm.expectRevert(abi.encodeWithSelector(SnuggleLpVenue.InvalidWidth.selector, 5001));
-        acct.exec(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
+        acct.execWithCallback(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
         p.rangeWidthBps = 1500;
         p.rebalanceDelay = 31 days;
         vm.expectRevert(abi.encodeWithSelector(SnuggleLpVenue.InvalidDelay.selector, 31 days));
-        acct.exec(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
+        acct.execWithCallback(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
         p.rebalanceDelay = 1 hours;
         p.deadline = block.timestamp - 1;
         vm.expectRevert(abi.encodeWithSelector(SnuggleLpVenue.Expired.selector, block.timestamp - 1));
-        acct.exec(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
+        acct.execWithCallback(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
         p.deadline = block.timestamp + 1;
         p.amount1 = 0;
         vm.expectRevert(SnuggleLpVenue.ZeroAmounts.selector);
-        acct.exec(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
+        acct.execWithCallback(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
         vm.stopPrank();
         // boundary widths are accepted
         p.amount1 = 1_000e6;
@@ -185,7 +185,7 @@ contract SnuggleLpVenueTest is Fixture {
         LpOpenParams memory p = _openParams(POOL_WETH_USDC, 0, 1_000e6, poolWethUsdc);
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(SnuggleLpVenue.PoolInactive.selector, POOL_WETH_USDC));
-        acct.exec(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
+        acct.execWithCallback(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
     }
 
     // --------------------------------------------------------------- band
@@ -195,13 +195,13 @@ contract SnuggleLpVenueTest is Fixture {
         vm.startPrank(alice);
         p.band = PriceBand(0, 0);
         vm.expectRevert(SnuggleLpVenue.BandRequired.selector);
-        acct.exec(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
+        acct.execWithCallback(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
         p.band = PriceBand(2, 1);
         vm.expectRevert(SnuggleLpVenue.BandRequired.selector);
-        acct.exec(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
+        acct.execWithCallback(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
         p.band = PriceBand(1, 0);
         vm.expectRevert(SnuggleLpVenue.BandRequired.selector);
-        acct.exec(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
+        acct.execWithCallback(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
         vm.stopPrank();
     }
 
@@ -213,13 +213,13 @@ contract SnuggleLpVenueTest is Fixture {
         vm.expectRevert(
             abi.encodeWithSelector(SnuggleLpVenue.PriceOutOfBand.selector, price, price + 1, price + 2)
         );
-        acct.exec(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
+        acct.execWithCallback(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
         // price moves 20 % (sandwich) between quote and execution → band (±10 %) rejects
         p = _openParams(POOL_WETH_USDC, 0, 1_000e6, poolWethUsdc);
         poolWethUsdc.setSqrtPrice(uint160((price * 120) / 100));
         vm.prank(alice);
         vm.expectRevert();
-        acct.exec(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
+        acct.execWithCallback(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
     }
 
     function test_bandFailsClosedWhenSlot0Unreadable() public {
@@ -229,13 +229,13 @@ contract SnuggleLpVenueTest is Fixture {
         vm.expectRevert(
             abi.encodeWithSelector(SnuggleLpVenue.PriceUnreadable.selector, address(poolWethUsdc))
         );
-        acct.exec(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
+        acct.execWithCallback(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
         poolWethUsdc.setMode(MockCLPool.Mode.ShortReturn);
         vm.prank(alice);
         vm.expectRevert(
             abi.encodeWithSelector(SnuggleLpVenue.PriceUnreadable.selector, address(poolWethUsdc))
         );
-        acct.exec(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
+        acct.execWithCallback(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
         poolWethUsdc.setMode(MockCLPool.Mode.Normal);
         _open(p);
     }
@@ -248,7 +248,7 @@ contract SnuggleLpVenueTest is Fixture {
         vm.expectRevert(
             abi.encodeWithSelector(SnuggleLpVenue.PriceUnreadable.selector, makeAddr("ghost-pool"))
         );
-        acct.exec(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
+        acct.execWithCallback(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
     }
 
     function test_bandAppliesToClose() public {
@@ -258,11 +258,11 @@ contract SnuggleLpVenueTest is Fixture {
         PriceBand memory band = PriceBand(uint160((price * 90) / 100), uint160((price * 110) / 100));
         vm.prank(alice);
         vm.expectRevert();
-        acct.exec(address(lpVenue), 0, abi.encodeCall(ILpVenue.close, (id, band)));
+        acct.execWithCallback(address(lpVenue), 0, abi.encodeCall(ILpVenue.close, (id, band)));
         poolWethUsdc.setMode(MockCLPool.Mode.Revert);
         vm.prank(alice);
         vm.expectRevert();
-        acct.exec(address(lpVenue), 0, abi.encodeCall(ILpVenue.close, (id, band)));
+        acct.execWithCallback(address(lpVenue), 0, abi.encodeCall(ILpVenue.close, (id, band)));
     }
 
     // ---------------------------------------------------------- enumeration
@@ -298,7 +298,7 @@ contract SnuggleLpVenueTest is Fixture {
         bytes memory closeOld = abi.encodeCall(ILpVenue.close, (b, _band(poolWethUsdc, 1000)));
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(SnuggleLpVenue.NotPositionOwner.selector, b, address(0)));
-        acct.exec(address(lpVenue), 0, closeOld);
+        acct.execWithCallback(address(lpVenue), 0, closeOld);
         // the new id closes fine
         _close(newB);
     }
@@ -405,7 +405,7 @@ contract SnuggleLpVenueTest is Fixture {
         bytes memory closeData = abi.encodeCall(ILpVenue.close, (id, _band(poolWethUsdc, 1000)));
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(MockSnuggleVault.WithdrawRefused.selector, id));
-        acct.exec(address(lpVenue), 0, closeData);
+        acct.execWithCallback(address(lpVenue), 0, closeData);
     }
 
     function test_closeManyPaysWhatClosedAndReportsFailures() public {
@@ -439,7 +439,7 @@ contract SnuggleLpVenueTest is Fixture {
         bytes memory data = abi.encodeCall(ILpVenue.closeMany, (none, _band(poolWethUsdc, 1000)));
         vm.prank(alice);
         vm.expectRevert(SnuggleLpVenue.ZeroAmounts.selector);
-        acct.exec(address(lpVenue), 0, data);
+        acct.execWithCallback(address(lpVenue), 0, data);
     }
 
     // ---------------------------------------------------------------- claim
@@ -452,8 +452,13 @@ contract SnuggleLpVenueTest is Fixture {
         engine.setStaked(b, true);
         uint256[] memory ids = new uint256[](2);
         (ids[0], ids[1]) = (a, b);
-        bytes memory ret = _ownerExec(address(lpVenue), abi.encodeCall(ILpVenue.claim, (ids)));
-        (uint256 f0, uint256 f1, uint256 r) = abi.decode(ret, (uint256, uint256, uint256));
+        bytes memory ret = _ownerExec(
+            address(lpVenue),
+            abi.encodeCall(ILpVenue.claim, (ids, _band(poolWethUsdc, 1000), block.timestamp + 60))
+        );
+        (uint256 f0, uint256 f1, uint256 r, uint256[] memory failed) =
+            abi.decode(ret, (uint256, uint256, uint256, uint256[]));
+        assertEq(failed.length, 0);
         assertEq(f0, 0);
         assertEq(f1, 90e6);
         assertEq(r, 18e18);
@@ -462,18 +467,44 @@ contract SnuggleLpVenueTest is Fixture {
         assertEq(lpVenue.positionsOf(address(acct)).length, 2, "claim leaves principal in place");
     }
 
-    function test_claimRejectsMixedPoolsAndForeignIds() public {
+    /// FIX B-HIGH-1. A mixed-pool or foreign id is REPORTED, never a revert that takes the whole
+    /// claim with it — at index 0 like anywhere else.
+    function test_FIX_B10c_claimReportsMixedPoolsAndForeignIdsInsteadOfReverting() public {
         uint256 a = _openUsdc(1_000e6);
         uint256 z = _open(_openParams(POOL_CBZEC_USDC, 100e6, 0, poolCbzecUsdc));
+        engine.setPendingFee(a, address(usdc), 100e6);
         uint256[] memory ids = new uint256[](2);
         (ids[0], ids[1]) = (a, z);
+        bytes memory ret = _ownerExec(
+            address(lpVenue),
+            abi.encodeCall(ILpVenue.claim, (ids, _band(poolWethUsdc, 1000), block.timestamp + 60))
+        );
+        (, uint256 f1,, uint256[] memory failed) = abi.decode(ret, (uint256, uint256, uint256, uint256[]));
+        assertEq(f1, 90e6, "the id in the batch's pool was still claimed");
+        assertEq(failed.length, 1);
+        assertEq(failed[0], z, "the other pool's id is reported, not fatal");
+
+        // A foreign id at index 0 with nothing else owned: everything is reported, nothing reverts.
+        uint256[] memory none = _ids(4242);
+        ret = _ownerExec(
+            address(lpVenue),
+            abi.encodeCall(ILpVenue.claim, (none, _band(poolWethUsdc, 1000), block.timestamp + 60))
+        );
+        (,,, failed) = abi.decode(ret, (uint256, uint256, uint256, uint256[]));
+        assertEq(failed.length, 1);
+        assertEq(failed[0], 4242);
+    }
+
+    /// FIX B-LOW-1. `claim` carries a deadline now, like every other engine-touching entry point.
+    function test_FIX_B8_claimCarriesADeadline() public {
+        uint256 a = _openUsdc(1_000e6);
+        // Build the calldata BEFORE the cheatcodes: `_band` reads the pool, and an external call
+        // between `expectRevert` and the call under test is the call the cheatcode would judge.
+        bytes memory data =
+            abi.encodeCall(ILpVenue.claim, (_ids(a), _band(poolWethUsdc, 1000), block.timestamp - 1));
         vm.prank(alice);
-        vm.expectRevert(SnuggleLpVenue.MixedPools.selector);
-        acct.exec(address(lpVenue), 0, abi.encodeCall(ILpVenue.claim, (ids)));
-        ids = _ids(4242);
-        vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(SnuggleLpVenue.NotPositionOwner.selector, 4242, address(0)));
-        acct.exec(address(lpVenue), 0, abi.encodeCall(ILpVenue.claim, (ids)));
+        vm.expectRevert(abi.encodeWithSelector(SnuggleLpVenue.Expired.selector, block.timestamp - 1));
+        acct.execWithCallback(address(lpVenue), 0, data);
     }
 
     function test_feeIsPathIndependentBetweenClaimAndClose() public {
@@ -481,7 +512,10 @@ contract SnuggleLpVenueTest is Fixture {
         uint256 b = _openUsdc(1_000e6);
         engine.setPendingFee(a, address(usdc), 100e6);
         engine.setPendingFee(b, address(usdc), 100e6);
-        _ownerExec(address(lpVenue), abi.encodeCall(ILpVenue.claim, (_ids(a))));
+        _ownerExec(
+            address(lpVenue),
+            abi.encodeCall(ILpVenue.claim, (_ids(a), _band(poolWethUsdc, 1000), block.timestamp + 60))
+        );
         _close(b);
         assertEq(usdc.balanceOf(treasury), 20e6, "same 10 % via either door");
     }
@@ -579,7 +613,7 @@ contract SnuggleLpVenueTest is Fixture {
         LpOpenParams memory p = _openParams(POOL_CBZEC_USDC, 0, 100e8, poolCbzecUsdc);
         vm.prank(alice);
         vm.expectRevert();
-        acct.exec(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
+        acct.execWithCallback(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
         assertEq(cbzec.allowance(address(acct), address(engine)), 0, "no dangling allowance");
         assertEq(lpVenue.positionsOf(address(acct)).length, 0);
         // A USDC-side open into the same pool still works: the block is per token.
@@ -593,7 +627,7 @@ contract SnuggleLpVenueTest is Fixture {
         bytes memory closeZ = abi.encodeCall(ILpVenue.close, (z, _band(poolCbzecUsdc, 1000)));
         vm.prank(alice);
         vm.expectRevert();
-        acct.exec(address(lpVenue), 0, closeZ);
+        acct.execWithCallback(address(lpVenue), 0, closeZ);
         (, uint256 out1,) = _close(w);
         assertEq(out1, 100e6);
     }
@@ -623,9 +657,9 @@ contract SnuggleLpVenueTest is Fixture {
         vm.prank(alice);
         if (width < 150 || width > 5000) {
             vm.expectRevert(abi.encodeWithSelector(SnuggleLpVenue.InvalidWidth.selector, width));
-            acct.exec(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
+            acct.execWithCallback(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
         } else {
-            acct.exec(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
+            acct.execWithCallback(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
         }
     }
 }

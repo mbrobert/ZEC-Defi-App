@@ -58,8 +58,13 @@ contract B20Test is Fixture {
         u.collateralAsset = address(cbbtc);
         u.positionIds = ids;
         u.band = _band(poolCbzecUsdc, 1000);
-        u.swapMinOut = 1;
-        u.swapRouteData = abi.encode(int24(200));
+        // A real quote at the mock router's live rate (1 cbZEC = 1,020 USDC), 1 % tolerance.
+        u.swap = StrategyRouter.SwapQuote({
+            quotedIn: 1e8,
+            quotedOut: 1020_000000,
+            maxSlippageBps: 100,
+            routeData: abi.encode(int24(200))
+        });
         u.repayAmount = type(uint256).max;
         u.withdrawAmount = type(uint256).max;
         u.deadline = block.timestamp + 10 minutes;
@@ -126,6 +131,7 @@ contract B20Test is Fixture {
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(MockB20.Blocked.selector, address(acct)));
         acct.exec(address(engine), 0, raw);
+        // (a plain call: the engine is not a peripheral of ours)
         // Once unblocked, the same id closes normally.
         cbzec.setBlocked(address(acct), false);
         ret = _ownerExec(address(lpVenue), abi.encodeCall(ILpVenue.close, (zecId, _band(poolCbzecUsdc, 1000))));
@@ -164,7 +170,7 @@ contract B20Test is Fixture {
         vm.expectRevert(
             abi.encodeWithSelector(StrategyRouter.AssetDisabled.selector, address(cbzec), "no collateral market on Base yet")
         );
-        acct.exec(address(router), 0, data);
+        acct.execWithCallback(address(router), 0, data);
     }
 
     // ------------------------------------------------------------- venue path
@@ -203,7 +209,8 @@ contract B20Test is Fixture {
     function test_swap_rebaseBetweenQuoteAndExecutionIsAmountBased() public {
         cbzec.setMultiplier(2e18); // account now shows 200 cbZEC
         bytes memory data = abi.encodeCall(
-            ISwapAdapter.swap, (address(cbzec), address(usdc), 200e8, 1, block.timestamp + 60, abi.encode(int24(200)))
+            ISwapAdapter.swap,
+            (address(cbzec), address(usdc), 200e8, 1e8, 1020_000000, uint16(100), block.timestamp + 60, abi.encode(int24(200)))
         );
         bytes memory ret = _ownerExec(address(swapAdapter), data);
         assertEq(abi.decode(ret, (uint256)), aeroRouter.quote(address(cbzec), address(usdc), 200e8));
@@ -214,11 +221,12 @@ contract B20Test is Fixture {
     function test_swap_blockedFailsClosedNoAllowanceLeft() public {
         cbzec.setBlocked(address(aeroRouter), true);
         bytes memory data = abi.encodeCall(
-            ISwapAdapter.swap, (address(cbzec), address(usdc), 10e8, 1, block.timestamp + 60, abi.encode(int24(200)))
+            ISwapAdapter.swap,
+            (address(cbzec), address(usdc), 10e8, 1e8, 1020_000000, uint16(100), block.timestamp + 60, abi.encode(int24(200)))
         );
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(MockB20.Blocked.selector, address(aeroRouter)));
-        acct.exec(address(swapAdapter), 0, data);
+        acct.execWithCallback(address(swapAdapter), 0, data);
         assertEq(cbzec.allowance(address(acct), address(aeroRouter)), 0);
         assertEq(cbzec.balanceOf(address(acct)), 100e8);
     }
@@ -227,7 +235,7 @@ contract B20Test is Fixture {
 
     function test_account_keeperBudgetSurvivesRebase() public {
         vm.prank(alice);
-        acct.grant(keeper, _perm(address(cbzec), IERC20.transfer.selector, _limits1(address(cbzec), 10e8), 0));
+        acct.grant(keeper, _permPlain(address(cbzec), IERC20.transfer.selector, _limits1(address(cbzec), 10e8), 0));
         cbzec.setMultiplier(3e18); // 300 cbZEC now; budget is 10 in amount terms regardless
         Call[] memory calls = _one(_call(address(cbzec), abi.encodeCall(IERC20.transfer, (keeper, 10e8))));
         vm.prank(keeper);

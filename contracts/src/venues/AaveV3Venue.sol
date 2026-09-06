@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {Peripheral} from "../account/Peripheral.sol";
 import {Call} from "../interfaces/IOilskinAccount.sol";
 import {ICollateralVenue} from "../interfaces/ICollateralVenue.sol";
+import {ICollateralRegistry} from "../interfaces/ICollateralRegistry.sol";
 import {
     IAaveOracle,
     IAavePool,
@@ -18,26 +19,48 @@ import {
 ///         PoolDataProvider at call time; the pool, data provider and oracle are resolved through
 ///         the PoolAddressesProvider on every call so an Aave upgrade cannot strand us on a stale
 ///         address. Nothing here is a constant.
+///
+/// @dev **Policy lives on the ENTRY side of this contract, not in one router function.** `supply`
+///      refuses an asset the registry does not offer at this venue, and `borrow` refuses any amount
+///      that would leave the account below the registry's entry health-factor floor. There is
+///      therefore no reachable sequence through this venue — the router, a raw owner `execBatch`, a
+///      keeper call — that opens debt below the floor. `withdraw` and `repay` consult nothing: an
+///      exit is never gated.
 contract AaveV3Venue is ICollateralVenue, Peripheral {
     /// @notice Aave PoolAddressesProvider (Base: 0xe20fCBdBfFC4Dd138cE8b2E6FBb6CB49777ad64D).
     IPoolAddressesProvider public immutable PROVIDER;
+    /// @notice The registry whose offer this venue enforces (entry floor + which assets are offered).
+    ICollateralRegistry public immutable REGISTRY;
 
     uint256 private constant VARIABLE_RATE = 2;
     uint16 private constant NO_REFERRAL = 0;
 
     error ZeroAmount();
+    error ZeroAddress();
     error NothingToRepay();
+    /// @notice The registry does not offer this asset at this venue (or has it disabled).
+    error AssetNotOffered(address asset, address venue);
+    /// @notice The borrow would leave the account below the registry's entry floor.
+    error EntryHfTooLow(uint256 healthFactor, uint256 floor);
 
-    constructor(IPoolAddressesProvider provider) {
+    constructor(IPoolAddressesProvider provider, ICollateralRegistry registry) {
+        if (address(provider) == address(0) || address(registry) == address(0)) revert ZeroAddress();
         PROVIDER = provider;
+        REGISTRY = registry;
     }
 
     // ------------------------------------------------------------- mutators
 
     /// @inheritdoc ICollateralVenue
-    /// @dev Invariant: the account is `onBehalfOf`; the allowance is exact and reset to zero.
+    /// @dev Invariant: the registry offers `asset` at THIS venue and has it enabled (so the flag the
+    ///      operator sets holds on every path, not only through the router — the day Aave lists cbZEC
+    ///      the registry's `enabled = false` still keeps it out); the account is `onBehalfOf`; the
+    ///      allowance is exact and reset to zero.
     function supply(address asset, uint256 amount) external override {
         if (amount == 0) revert ZeroAmount();
+        if (REGISTRY.venueOf(asset) != address(this) || !REGISTRY.isEnabled(asset)) {
+            revert AssetNotOffered(asset, address(this));
+        }
         address pool = PROVIDER.getPool();
         _approveCallReset(
             asset,
@@ -46,7 +69,8 @@ contract AaveV3Venue is ICollateralVenue, Peripheral {
             Call({
                 target: pool,
                 value: 0,
-                data: abi.encodeCall(IAavePool.supply, (asset, amount, msg.sender, NO_REFERRAL))
+                data: abi.encodeCall(IAavePool.supply, (asset, amount, msg.sender, NO_REFERRAL)),
+                callback: false
             })
         );
     }
@@ -66,7 +90,10 @@ contract AaveV3Venue is ICollateralVenue, Peripheral {
     }
 
     /// @inheritdoc ICollateralVenue
-    /// @dev Invariant: variable rate, `onBehalfOf` = the calling account (no credit delegation).
+    /// @dev Invariant: variable rate, `onBehalfOf` = the calling account (no credit delegation), and
+    ///      the account's GLOBAL health factor after the borrow is at or above the registry's entry
+    ///      floor. This IS the floor, not a copy of it: every path that borrows through this venue
+    ///      passes through here, so there is no entry point left that can open debt below it.
     function borrow(address asset, uint256 amount) external override {
         if (amount == 0) revert ZeroAmount();
         address pool = PROVIDER.getPool();
@@ -76,6 +103,9 @@ contract AaveV3Venue is ICollateralVenue, Peripheral {
                 IAavePool.borrow, (asset, amount, VARIABLE_RATE, NO_REFERRAL, msg.sender)
             )
         );
+        uint256 floor = REGISTRY.entryHfFloorWad();
+        (,,,,, uint256 hf) = IAavePool(pool).getUserAccountData(msg.sender);
+        if (hf < floor) revert EntryHfTooLow(hf, floor);
     }
 
     /// @inheritdoc ICollateralVenue
@@ -93,7 +123,8 @@ contract AaveV3Venue is ICollateralVenue, Peripheral {
             Call({
                 target: pool,
                 value: 0,
-                data: abi.encodeCall(IAavePool.repay, (asset, amount, VARIABLE_RATE, msg.sender))
+                data: abi.encodeCall(IAavePool.repay, (asset, amount, VARIABLE_RATE, msg.sender)),
+                callback: false
             })
         );
         repaid = abi.decode(ret, (uint256));

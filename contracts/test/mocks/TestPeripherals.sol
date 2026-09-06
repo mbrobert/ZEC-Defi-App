@@ -45,7 +45,7 @@ contract ReentrantTarget {
 
     function hit() external {
         Call[] memory calls = new Call[](1);
-        calls[0] = Call({target: address(this), value: 0, data: abi.encodeWithSignature("noop()")});
+        calls[0] = Call({target: address(this), value: 0, data: abi.encodeWithSignature("noop()"), callback: false});
         bool ok;
         bytes memory ret;
         if (door == Door.Exec) {
@@ -53,13 +53,13 @@ contract ReentrantTarget {
                 abi.encodeWithSignature("exec(address,uint256,bytes)", address(this), 0, bytes(""))
             );
         } else if (door == Door.ExecBatch) {
-            (ok, ret) = account.call(abi.encodeWithSignature("execBatch((address,uint256,bytes)[])", calls));
+            (ok, ret) = account.call(abi.encodeWithSignature("execBatch((address,uint256,bytes,bool)[])", calls));
         } else if (door == Door.ExecAsKeeper) {
-            (ok, ret) = account.call(abi.encodeWithSignature("execAsKeeper((address,uint256,bytes)[])", calls));
+            (ok, ret) = account.call(abi.encodeWithSignature("execAsKeeper((address,uint256,bytes,bool)[])", calls));
         } else {
             // Legit-looking: this contract IS the active peripheral, so this one is allowed.
             (ok, ret) = account.call(
-                abi.encodeWithSignature("execFromPeripheral((address,uint256,bytes)[])", calls)
+                abi.encodeWithSignature("execFromPeripheral((address,uint256,bytes,bool)[])", calls)
             );
         }
         reentered = ok;
@@ -82,9 +82,9 @@ contract HookToken {
 
     function transfer(address, uint256) external returns (bool) {
         Call[] memory calls = new Call[](1);
-        calls[0] = Call({target: address(this), value: 0, data: ""});
+        calls[0] = Call({target: address(this), value: 0, data: "", callback: false});
         (bool ok,) = account.call(
-            abi.encodeWithSignature("execFromPeripheral((address,uint256,bytes)[])", calls)
+            abi.encodeWithSignature("execFromPeripheral((address,uint256,bytes,bool)[])", calls)
         );
         require(!ok, "hook got peripheral rights");
         return true;
@@ -116,6 +116,12 @@ contract EthSink {
     uint256 public received;
 
     receive() external payable {
+        received += msg.value;
+    }
+
+    /// @dev A named payable entry point, so a value grant can name a real selector (a grant on
+    ///      selector 0 — a blanket permit for any short calldata — is refused by the account).
+    function pay() external payable {
         received += msg.value;
     }
 }

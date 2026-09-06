@@ -13,6 +13,7 @@ import {AaveV3Venue} from "../../src/venues/AaveV3Venue.sol";
 import {SnuggleLpVenue} from "../../src/venues/SnuggleLpVenue.sol";
 import {CollateralRegistry} from "../../src/registry/CollateralRegistry.sol";
 import {StrategyRouter} from "../../src/router/StrategyRouter.sol";
+import {AerodromeSwapAdapter} from "../../src/swap/AerodromeSwapAdapter.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
 import {MockAave} from "../mocks/MockAave.sol";
 import {MockCLPool} from "../mocks/MockCLPool.sol";
@@ -26,6 +27,7 @@ contract Handler is Test {
     SnuggleLpVenue immutable lpVenue;
     CollateralRegistry immutable registry;
     StrategyRouter immutable router;
+    AerodromeSwapAdapter immutable swapAdapter;
     MockAave immutable aave;
     MockSnuggleVault immutable engine;
     MockCLPool immutable pool;
@@ -53,6 +55,11 @@ contract Handler is Test {
     bool public g_exitProbeFailed;
     bool public g_keeperUngrantedSucceeded;
     uint256 public g_calls;
+    /// Donations pushed at a peripheral — the invariant asserts they are INERT, not that they are
+    /// impossible: anyone can transfer to any address, and a contract that treats that as fatal is
+    /// a one-base-unit denial of service.
+    mapping(address => mapping(address => uint256)) public g_donated;
+    uint256 public g_donations;
 
     constructor(
         OilskinAccount acct_,
@@ -60,6 +67,7 @@ contract Handler is Test {
         SnuggleLpVenue lpVenue_,
         CollateralRegistry registry_,
         StrategyRouter router_,
+        AerodromeSwapAdapter swapAdapter_,
         MockAave aave_,
         MockSnuggleVault engine_,
         MockCLPool pool_,
@@ -72,6 +80,7 @@ contract Handler is Test {
         lpVenue = lpVenue_;
         registry = registry_;
         router = router_;
+        swapAdapter = swapAdapter_;
         aave = aave_;
         engine = engine_;
         pool = pool_;
@@ -82,12 +91,21 @@ contract Handler is Test {
 
     // ------------------------------------------------------------- helpers
 
+    /// ±10 % of the live sqrt price — a real window, inside the venue's MAX_BAND_BPS width bound.
     function _band() internal view returns (PriceBand memory) {
         uint256 p = pool.sqrtPriceX96();
-        return PriceBand(uint160(p / 2), uint160(p * 2));
+        return PriceBand(uint160((p * 9_000) / 10_000), uint160((p * 11_000) / 10_000));
     }
 
+    /// Owner call to a PERIPHERAL (router / venue): the callback opt-in is set.
     function _exec(address target, bytes memory data) internal returns (bool ok, bytes memory ret) {
+        vm.prank(alice);
+        (ok, ret) =
+            address(acct).call(abi.encodeCall(OilskinAccount.execWithCallback, (target, 0, data)));
+    }
+
+    /// Owner call to a plain target (token, pool): no rights handed over.
+    function _execPlain(address target, bytes memory data) internal returns (bool ok, bytes memory ret) {
         vm.prank(alice);
         (ok, ret) = address(acct).call(abi.encodeCall(OilskinAccount.exec, (target, 0, data)));
     }
@@ -106,7 +124,8 @@ contract Handler is Test {
     function supplyAndBorrow(uint256 amount, uint256 ltvBps) external {
         g_calls++;
         amount = bound(amount, 0.01e8, 2e8);
-        ltvBps = bound(ltvBps, 1000, 6000);
+        // The venue enforces the registry's 1.55 entry floor (LT 7800 → LTV ≤ 5032 bps).
+        ltvBps = bound(ltvBps, 1000, 5000);
         cbbtc.mint(address(acct), amount);
         _exec(address(aaveVenue), abi.encodeCall(ICollateralVenue.supply, (address(cbbtc), amount)));
         uint256 usd = (amount * aave.getAssetPrice(address(cbbtc))) / 1e8; // E8
@@ -165,7 +184,7 @@ contract Handler is Test {
         g_calls++;
         uint256[] memory ids = _ids();
         if (ids.length == 0) return;
-        _exec(address(lpVenue), abi.encodeCall(ILpVenue.claim, (ids)));
+        _exec(address(lpVenue), abi.encodeCall(ILpVenue.claim, (ids, _band(), block.timestamp + 1)));
     }
 
     function ownerCloseOne(uint256 seed) external {
@@ -184,14 +203,19 @@ contract Handler is Test {
             collateralAsset: address(cbbtc),
             positionIds: ids,
             band: _band(),
-            swapMinOut: 1,
-            swapRouteData: abi.encode(int24(100)),
+            // A real quote at the mock router's rate (1 WETH = 2453.45 USDC), 1 % tolerance.
+            swap: StrategyRouter.SwapQuote({
+                quotedIn: 1e18,
+                quotedOut: 2453_450000,
+                maxSlippageBps: 100,
+                routeData: abi.encode(int24(100))
+            }),
             repayAmount: repay,
             withdrawAmount: 0,
             deadline: block.timestamp + 1
         });
         Call[] memory calls = new Call[](1);
-        calls[0] = Call(address(router), 0, abi.encodeCall(StrategyRouter.unwind, (u)));
+        calls[0] = Call(address(router), 0, abi.encodeCall(StrategyRouter.unwind, (u)), true);
         vm.prank(keeper);
         (bool ok,) = address(acct).call(abi.encodeCall(OilskinAccount.execAsKeeper, (calls)));
         if (ok) g_keeperUnwinds++;
@@ -204,18 +228,21 @@ contract Handler is Test {
         Call[] memory calls = new Call[](1);
         uint256 k = seed % 5;
         if (k == 0) {
-            calls[0] = Call(address(usdc), 0, abi.encodeCall(IERC20.transfer, (keeper, amount)));
+            calls[0] = Call(address(usdc), 0, abi.encodeCall(IERC20.transfer, (keeper, amount)), false);
         } else if (k == 1) {
-            calls[0] = Call(address(cbbtc), 0, abi.encodeCall(IERC20.approve, (keeper, amount)));
+            calls[0] = Call(address(cbbtc), 0, abi.encodeCall(IERC20.approve, (keeper, amount)), false);
         } else if (k == 2) {
             calls[0] = Call(
-                address(aave), 0, abi.encodeCall(IAavePool.withdraw, (address(cbbtc), amount, keeper))
+                address(aave), 0, abi.encodeCall(IAavePool.withdraw, (address(cbbtc), amount, keeper)), false
             );
         } else if (k == 3) {
-            calls[0] = Call(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.borrow, (address(usdc), amount)));
+            calls[0] =
+                Call(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.borrow, (address(usdc), amount)), true);
         } else {
             uint256[] memory ids = _ids();
-            calls[0] = Call(address(lpVenue), 0, abi.encodeCall(ILpVenue.claim, (ids)));
+            calls[0] = Call(
+                address(lpVenue), 0, abi.encodeCall(ILpVenue.claim, (ids, _band(), block.timestamp + 1)), true
+            );
         }
         vm.prank(keeper);
         (bool ok,) = address(acct).call(abi.encodeCall(OilskinAccount.execAsKeeper, (calls)));
@@ -304,7 +331,7 @@ contract Handler is Test {
         for (uint256 id = 1; id < n; id++) {
             (,, address owner,,,,,,,,,,,,,,) = engine.positions(id);
             if (owner != address(acct)) continue;
-            (bool ok,) = _exec(address(engine), abi.encodeCall(ISnuggleVault.withdraw, (id, false)));
+            (bool ok,) = _execPlain(address(engine), abi.encodeCall(ISnuggleVault.withdraw, (id, false)));
             if (!ok) return false;
         }
         // 2. Repay everything held, withdraw all collateral, sweep to the wallet.
@@ -313,9 +340,10 @@ contract Handler is Test {
         uint256 repay = debt < held ? debt : held;
         if (repay != 0) {
             Call[] memory calls = new Call[](3);
-            calls[0] = Call(address(usdc), 0, abi.encodeCall(IERC20.approve, (address(aave), repay)));
-            calls[1] = Call(address(aave), 0, abi.encodeCall(IAavePool.repay, (address(usdc), repay, 2, address(acct))));
-            calls[2] = Call(address(usdc), 0, abi.encodeCall(IERC20.approve, (address(aave), 0)));
+            calls[0] = Call(address(usdc), 0, abi.encodeCall(IERC20.approve, (address(aave), repay)), false);
+            calls[1] =
+                Call(address(aave), 0, abi.encodeCall(IAavePool.repay, (address(usdc), repay, 2, address(acct))), false);
+            calls[2] = Call(address(usdc), 0, abi.encodeCall(IERC20.approve, (address(aave), 0)), false);
             vm.prank(alice);
             (bool ok,) = address(acct).call(abi.encodeCall(OilskinAccount.execBatch, (calls)));
             if (!ok) return false;
@@ -323,7 +351,7 @@ contract Handler is Test {
         if (aaveVenue.debt(address(acct), address(usdc)) == 0) {
             uint256 coll = aaveVenue.collateral(address(acct), address(cbbtc));
             if (coll != 0) {
-                (bool ok,) = _exec(
+                (bool ok,) = _execPlain(
                     address(aave), abi.encodeCall(IAavePool.withdraw, (address(cbbtc), type(uint256).max, address(acct)))
                 );
                 if (!ok) return false;
@@ -333,7 +361,7 @@ contract Handler is Test {
         for (uint256 i = 0; i < 3; i++) {
             uint256 bal = IERC20(toks[i]).balanceOf(address(acct));
             if (bal == 0) continue;
-            (bool ok,) = _exec(toks[i], abi.encodeCall(IERC20.transfer, (alice, bal)));
+            (bool ok,) = _execPlain(toks[i], abi.encodeCall(IERC20.transfer, (alice, bal)));
             if (!ok) return false;
         }
         return true;
@@ -352,7 +380,10 @@ contract Handler is Test {
             maxValuePerPeriod: 0,
             tokenLimits: limits,
             period: 1 days,
-            expiry: uint40(block.timestamp + 365 days)
+            expiry: uint40(block.timestamp + 365 days),
+            // The router MUST act back on the account; a grant on a token would not, and the
+            // default is false precisely so that a token grant can never escalate.
+            allowCallback: true
         });
         vm.prank(alice);
         acct.grant(keeper, p);
@@ -360,5 +391,21 @@ contract Handler is Test {
 
     function grantKeeper() external {
         _grant();
+    }
+
+    /// ANYBODY can send tokens to a peripheral. This is the action that would have caught
+    /// B-CRIT-1: a router that treats a donation as fatal is a one-base-unit permanent denial of
+    /// service on an immutable contract. After this runs, every other action must still work.
+    function donate(uint256 seed, uint256 amount) external {
+        g_calls++;
+        address[4] memory peripherals =
+            [address(router), address(aaveVenue), address(lpVenue), address(swapAdapter)];
+        MockERC20[4] memory toks = [usdc, weth, cbbtc, aero];
+        address to = peripherals[seed % 4];
+        MockERC20 t = toks[(seed / 4) % 4];
+        amount = bound(amount, 1, 1_000e6);
+        t.mint(to, amount);
+        g_donated[to][address(t)] += amount;
+        g_donations++;
     }
 }

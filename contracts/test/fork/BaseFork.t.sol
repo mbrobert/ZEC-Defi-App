@@ -14,6 +14,8 @@ import {ILpVenue, LpOpenParams, PriceBand} from "../../src/interfaces/ILpVenue.s
 import {ISnuggleVault} from "../../src/interfaces/ISnuggleVault.sol";
 import {IAerodromeCLPool} from "../../src/interfaces/IAerodromeCLPool.sol";
 import {IPoolAddressesProvider} from "../../src/interfaces/IAaveV3.sol";
+import {CollateralRegistry} from "../../src/registry/CollateralRegistry.sol";
+import {ICollateralRegistry} from "../../src/interfaces/ICollateralRegistry.sol";
 
 /// @title BaseFork — the tests that can only be true against the chain (Part 6 lesson 2: "verify
 ///        the external contract against the chain, not against your own mock").
@@ -33,6 +35,7 @@ contract BaseForkTest is Test {
     OilskinAccount acct;
     AaveV3Venue aaveVenue;
     SnuggleLpVenue lpVenue;
+    CollateralRegistry registry;
     address alice = makeAddr("alice-fork");
     address treasury = makeAddr("treasury-fork");
 
@@ -47,7 +50,15 @@ contract BaseForkTest is Test {
 
         factory = new OilskinAccountFactory(BaseAddresses.PERMIT2);
         acct = OilskinAccount(payable(factory.createAccount(alice)));
-        aaveVenue = new AaveV3Venue(IPoolAddressesProvider(BaseAddresses.AAVE_POOL_ADDRESSES_PROVIDER));
+        // The venue enforces the registry's entry floor and offer flags, so the fork needs the same
+        // wiring the deploy script builds: registry first, then the venue, then the assets.
+        registry = new CollateralRegistry(address(this), 1.55e18, 2 days);
+        aaveVenue = new AaveV3Venue(
+            IPoolAddressesProvider(BaseAddresses.AAVE_POOL_ADDRESSES_PROVIDER),
+            ICollateralRegistry(address(registry))
+        );
+        registry.register(BaseAddresses.CBBTC, address(aaveVenue), address(0), true, "");
+        registry.register(BaseAddresses.WETH, address(aaveVenue), address(0), true, "");
         lpVenue = new SnuggleLpVenue(ISnuggleVault(BaseAddresses.SNUGGLE_ENGINE), BaseAddresses.AERO, treasury, 1000);
     }
 
@@ -126,18 +137,18 @@ contract BaseForkTest is Test {
     function test_fork_supplyBorrowRepayWithdrawUnderTheAccount() public onlyForked {
         deal(BaseAddresses.CBBTC, address(acct), 1e8);
         vm.startPrank(alice);
-        acct.exec(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.supply, (BaseAddresses.CBBTC, 1e8)));
+        acct.execWithCallback(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.supply, (BaseAddresses.CBBTC, 1e8)));
         assertEq(aaveVenue.collateral(address(acct), BaseAddresses.CBBTC), 1e8);
         uint256 borrow = 10_000e6;
-        acct.exec(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.borrow, (BaseAddresses.USDC, borrow)));
+        acct.execWithCallback(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.borrow, (BaseAddresses.USDC, borrow)));
         assertEq(IERC20(BaseAddresses.USDC).balanceOf(address(acct)), borrow, "borrowed USDC lands in the account");
         uint256 hf = aaveVenue.healthFactor(address(acct));
         console2.log("HF after borrow (wad)", hf);
         assertGt(hf, 1e18);
         assertApproxEqAbs(aaveVenue.debt(address(acct), BaseAddresses.USDC), borrow, 2);
-        acct.exec(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.repay, (BaseAddresses.USDC, type(uint256).max)));
+        acct.execWithCallback(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.repay, (BaseAddresses.USDC, type(uint256).max)));
         assertEq(aaveVenue.debt(address(acct), BaseAddresses.USDC), 0);
-        acct.exec(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.withdraw, (BaseAddresses.CBBTC, type(uint256).max)));
+        acct.execWithCallback(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.withdraw, (BaseAddresses.CBBTC, type(uint256).max)));
         vm.stopPrank();
         assertEq(IERC20(BaseAddresses.CBBTC).balanceOf(address(acct)), 1e8);
         assertEq(IERC20(BaseAddresses.CBBTC).allowance(address(acct), BaseAddresses.AAVE_POOL), 0);
@@ -177,7 +188,7 @@ contract BaseForkTest is Test {
             deadline: block.timestamp + 15 minutes
         });
         vm.prank(alice);
-        uint256 id = abi.decode(acct.exec(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p))), (uint256));
+        uint256 id = abi.decode(acct.execWithCallback(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p))), (uint256));
         (bytes32 pid, address owner) = lpVenue.poolOf(id);
         assertEq(pid, poolId);
         assertEq(owner, address(acct), "minted to the account");
@@ -190,7 +201,7 @@ contract BaseForkTest is Test {
         vm.warp(t + 2 minutes);
         PriceBand memory band = PriceBand(uint160((price * 80) / 100), uint160((price * 120) / 100));
         vm.prank(alice);
-        bytes memory ret = acct.exec(address(lpVenue), 0, abi.encodeCall(ILpVenue.close, (id, band)));
+        bytes memory ret = acct.execWithCallback(address(lpVenue), 0, abi.encodeCall(ILpVenue.close, (id, band)));
         (uint256 out0, uint256 out1,) = abi.decode(ret, (uint256, uint256, uint256));
         console2.log("closed: out0", out0, "out1", out1);
         assertGt(out0 + out1, 0);

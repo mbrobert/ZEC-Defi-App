@@ -10,6 +10,11 @@
           "stateMutability": "view",
           "outputs": "address"
         },
+        "MAX_PERIPHERAL_DEPTH()": {
+          "selector": "0x70545338",
+          "stateMutability": "view",
+          "outputs": "uint256"
+        },
         "MAX_TOKEN_LIMITS()": {
           "selector": "0x92e30094",
           "stateMutability": "view",
@@ -25,18 +30,23 @@
           "stateMutability": "payable",
           "outputs": "bytes"
         },
-        "execAsKeeper((address,uint256,bytes)[])": {
-          "selector": "0x67729475",
+        "execAsKeeper((address,uint256,bytes,bool)[])": {
+          "selector": "0xfb3f24d3",
           "stateMutability": "nonpayable",
           "outputs": "bytes[]"
         },
-        "execBatch((address,uint256,bytes)[])": {
-          "selector": "0x0b8707f6",
+        "execBatch((address,uint256,bytes,bool)[])": {
+          "selector": "0xe82a13d1",
           "stateMutability": "payable",
           "outputs": "bytes[]"
         },
-        "execFromPeripheral((address,uint256,bytes)[])": {
-          "selector": "0x7cc04026",
+        "execBatchFromFactory(address,(address,uint256,bytes,bool)[])": {
+          "selector": "0x41d4e839",
+          "stateMutability": "payable",
+          "outputs": "bytes[]"
+        },
+        "execFromPeripheral((address,uint256,bytes,bool)[])": {
+          "selector": "0x3bc5a750",
           "stateMutability": "nonpayable",
           "outputs": "bytes[]"
         },
@@ -45,8 +55,13 @@
           "stateMutability": "nonpayable",
           "outputs": "bytes"
         },
-        "grant(address,(address,bytes4,uint256,(address,uint256)[],uint40,uint40))": {
-          "selector": "0x345fe22c",
+        "execWithCallback(address,uint256,bytes)": {
+          "selector": "0x0401f576",
+          "stateMutability": "payable",
+          "outputs": "bytes"
+        },
+        "grant(address,(address,bytes4,uint256,(address,uint256)[],uint40,uint40,bool))": {
+          "selector": "0x6429b6ce",
           "stateMutability": "nonpayable",
           "outputs": ""
         },
@@ -58,15 +73,15 @@
         "grantOf(address,address,bytes4)": {
           "selector": "0x6e58f6bc",
           "stateMutability": "view",
-          "outputs": "bool,uint256,uint256,uint40,uint40,uint40"
+          "outputs": "bool,uint256,uint256,uint40,uint40,uint40,bool"
         },
         "grantTokens(address,address,bytes4)": {
           "selector": "0xa0b87a5c",
           "stateMutability": "view",
           "outputs": "address[]"
         },
-        "initialize(address,(address,uint256,bytes)[])": {
-          "selector": "0x37ba97af",
+        "initialize(address,(address,uint256,bytes,bool)[])": {
+          "selector": "0x798b3276",
           "stateMutability": "payable",
           "outputs": "bytes[]"
         },
@@ -165,6 +180,9 @@
         "AlreadyInitialized()": {
           "selector": "0x0dc149f0"
         },
+        "CallbackNotPermitted()": {
+          "selector": "0x873f13d6"
+        },
         "InvalidPermission()": {
           "selector": "0x868a64de"
         },
@@ -180,6 +198,12 @@
         "NotOwner()": {
           "selector": "0x30cd7471"
         },
+        "NotRevocable(address,address,bytes4)": {
+          "selector": "0x4ad5cdb7"
+        },
+        "PeripheralDepthExceeded(uint256)": {
+          "selector": "0x6c6e6575"
+        },
         "Reentrancy()": {
           "selector": "0xab143c06"
         },
@@ -188,6 +212,9 @@
         },
         "TokenNotBudgeted(address)": {
           "selector": "0x97c5302a"
+        },
+        "UnbudgetableSelector(address,bytes4)": {
+          "selector": "0xca2709b3"
         },
         "ValueBudgetExceeded(uint256,uint256)": {
           "selector": "0xbdc29de0"
@@ -226,6 +253,19 @@
               "name": "",
               "type": "address",
               "internalType": "address"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "MAX_PERIPHERAL_DEPTH",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256",
+              "internalType": "uint256"
             }
           ],
           "stateMutability": "view"
@@ -308,6 +348,11 @@
                   "name": "data",
                   "type": "bytes",
                   "internalType": "bytes"
+                },
+                {
+                  "name": "callback",
+                  "type": "bool",
+                  "internalType": "bool"
                 }
               ]
             }
@@ -344,6 +389,57 @@
                   "name": "data",
                   "type": "bytes",
                   "internalType": "bytes"
+                },
+                {
+                  "name": "callback",
+                  "type": "bool",
+                  "internalType": "bool"
+                }
+              ]
+            }
+          ],
+          "outputs": [
+            {
+              "name": "results",
+              "type": "bytes[]",
+              "internalType": "bytes[]"
+            }
+          ],
+          "stateMutability": "payable"
+        },
+        {
+          "type": "function",
+          "name": "execBatchFromFactory",
+          "inputs": [
+            {
+              "name": "owner_",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "calls",
+              "type": "tuple[]",
+              "internalType": "struct Call[]",
+              "components": [
+                {
+                  "name": "target",
+                  "type": "address",
+                  "internalType": "address"
+                },
+                {
+                  "name": "value",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                },
+                {
+                  "name": "data",
+                  "type": "bytes",
+                  "internalType": "bytes"
+                },
+                {
+                  "name": "callback",
+                  "type": "bool",
+                  "internalType": "bool"
                 }
               ]
             }
@@ -380,6 +476,11 @@
                   "name": "data",
                   "type": "bytes",
                   "internalType": "bytes"
+                },
+                {
+                  "name": "callback",
+                  "type": "bool",
+                  "internalType": "bool"
                 }
               ]
             }
@@ -421,6 +522,35 @@
             }
           ],
           "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "execWithCallback",
+          "inputs": [
+            {
+              "name": "target",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "value",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "data",
+              "type": "bytes",
+              "internalType": "bytes"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "result",
+              "type": "bytes",
+              "internalType": "bytes"
+            }
+          ],
+          "stateMutability": "payable"
         },
         {
           "type": "function",
@@ -477,6 +607,11 @@
                   "name": "expiry",
                   "type": "uint40",
                   "internalType": "uint40"
+                },
+                {
+                  "name": "allowCallback",
+                  "type": "bool",
+                  "internalType": "bool"
                 }
               ]
             }
@@ -547,6 +682,11 @@
               "name": "periodStart",
               "type": "uint40",
               "internalType": "uint40"
+            },
+            {
+              "name": "allowCallback",
+              "type": "bool",
+              "internalType": "bool"
             }
           ],
           "stateMutability": "view"
@@ -608,6 +748,11 @@
                   "name": "data",
                   "type": "bytes",
                   "internalType": "bytes"
+                },
+                {
+                  "name": "callback",
+                  "type": "bool",
+                  "internalType": "bool"
                 }
               ]
             }
@@ -991,6 +1136,11 @@
         },
         {
           "type": "error",
+          "name": "CallbackNotPermitted",
+          "inputs": []
+        },
+        {
+          "type": "error",
           "name": "InvalidPermission",
           "inputs": []
         },
@@ -1032,6 +1182,38 @@
         },
         {
           "type": "error",
+          "name": "NotRevocable",
+          "inputs": [
+            {
+              "name": "keeper",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "target",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "selector",
+              "type": "bytes4",
+              "internalType": "bytes4"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "PeripheralDepthExceeded",
+          "inputs": [
+            {
+              "name": "cap",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
           "name": "Reentrancy",
           "inputs": []
         },
@@ -1064,6 +1246,22 @@
               "name": "token",
               "type": "address",
               "internalType": "address"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "UnbudgetableSelector",
+          "inputs": [
+            {
+              "name": "target",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "selector",
+              "type": "bytes4",
+              "internalType": "bytes4"
             }
           ]
         },
@@ -1108,8 +1306,8 @@
           "stateMutability": "nonpayable",
           "outputs": "address"
         },
-        "createAccountAndExec((address,uint256,bytes)[])": {
-          "selector": "0x2e154f02",
+        "createAccountAndExec((address,uint256,bytes,bool)[])": {
+          "selector": "0xbc8b9a9f",
           "stateMutability": "payable",
           "outputs": "address,bytes[]"
         },
@@ -1129,14 +1327,14 @@
         }
       },
       "errors": {
-        "AccountExists(address)": {
-          "selector": "0x91a7990e"
-        },
         "FailedDeployment()": {
           "selector": "0xb06ebf3d"
         },
         "InsufficientBalance(uint256,uint256)": {
           "selector": "0xcf479181"
+        },
+        "InvalidOwner(address)": {
+          "selector": "0xb20f76e3"
         },
         "ZeroOwner()": {
           "selector": "0x9905827b"
@@ -1228,6 +1426,11 @@
                   "name": "data",
                   "type": "bytes",
                   "internalType": "bytes"
+                },
+                {
+                  "name": "callback",
+                  "type": "bool",
+                  "internalType": "bool"
                 }
               ]
             }
@@ -1286,17 +1489,6 @@
         },
         {
           "type": "error",
-          "name": "AccountExists",
-          "inputs": [
-            {
-              "name": "account",
-              "type": "address",
-              "internalType": "address"
-            }
-          ]
-        },
-        {
-          "type": "error",
           "name": "FailedDeployment",
           "inputs": []
         },
@@ -1318,6 +1510,17 @@
         },
         {
           "type": "error",
+          "name": "InvalidOwner",
+          "inputs": [
+            {
+              "name": "owner",
+              "type": "address",
+              "internalType": "address"
+            }
+          ]
+        },
+        {
+          "type": "error",
           "name": "ZeroOwner",
           "inputs": []
         }
@@ -1328,6 +1531,11 @@
       "functions": {
         "PROVIDER()": {
           "selector": "0x00d34411",
+          "stateMutability": "view",
+          "outputs": "address"
+        },
+        "REGISTRY()": {
+          "selector": "0x06433b1b",
           "stateMutability": "view",
           "outputs": "address"
         },
@@ -1394,8 +1602,17 @@
       },
       "events": {},
       "errors": {
+        "AssetNotOffered(address,address)": {
+          "selector": "0xbff4059e"
+        },
+        "EntryHfTooLow(uint256,uint256)": {
+          "selector": "0xd40fd174"
+        },
         "NothingToRepay()": {
           "selector": "0xd32e7fc6"
+        },
+        "ZeroAddress()": {
+          "selector": "0xd92e233d"
         },
         "ZeroAmount()": {
           "selector": "0x1f2a2005"
@@ -1409,6 +1626,11 @@
               "name": "provider",
               "type": "address",
               "internalType": "contract IPoolAddressesProvider"
+            },
+            {
+              "name": "registry",
+              "type": "address",
+              "internalType": "contract ICollateralRegistry"
             }
           ],
           "stateMutability": "nonpayable"
@@ -1422,6 +1644,19 @@
               "name": "",
               "type": "address",
               "internalType": "contract IPoolAddressesProvider"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "REGISTRY",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "address",
+              "internalType": "contract ICollateralRegistry"
             }
           ],
           "stateMutability": "view"
@@ -1668,7 +1903,44 @@
         },
         {
           "type": "error",
+          "name": "AssetNotOffered",
+          "inputs": [
+            {
+              "name": "asset",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "venue",
+              "type": "address",
+              "internalType": "address"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "EntryHfTooLow",
+          "inputs": [
+            {
+              "name": "healthFactor",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "floor",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
           "name": "NothingToRepay",
+          "inputs": []
+        },
+        {
+          "type": "error",
+          "name": "ZeroAddress",
           "inputs": []
         },
         {
@@ -2070,6 +2342,11 @@
           "stateMutability": "view",
           "outputs": "address"
         },
+        "MAX_BAND_BPS()": {
+          "selector": "0x58e9ea7c",
+          "stateMutability": "view",
+          "outputs": "uint256"
+        },
         "MAX_ENUMERATION()": {
           "selector": "0x165693f5",
           "stateMutability": "view",
@@ -2100,10 +2377,10 @@
           "stateMutability": "view",
           "outputs": "address"
         },
-        "claim(uint256[])": {
-          "selector": "0x6ba4c138",
+        "claim(uint256[],(uint160,uint160),uint256)": {
+          "selector": "0x388a2c47",
           "stateMutability": "nonpayable",
-          "outputs": "uint256,uint256,uint256"
+          "outputs": "uint256,uint256,uint256,uint256[]"
         },
         "close(uint256,(uint160,uint160))": {
           "selector": "0x2623a0a9",
@@ -2247,6 +2524,12 @@
         "BandRequired()": {
           "selector": "0x86e45e3c"
         },
+        "BandTooWide(uint160,uint160,uint256)": {
+          "selector": "0x6dc2c272"
+        },
+        "DegeneratePool(bytes32,address)": {
+          "selector": "0x46b3c09f"
+        },
         "EngineUnreachable()": {
           "selector": "0xd148f8ee"
         },
@@ -2264,9 +2547,6 @@
         },
         "InvalidWidth(uint24)": {
           "selector": "0xb2c36d99"
-        },
-        "MixedPools()": {
-          "selector": "0xdcd13606"
         },
         "NotPositionOwner(uint256,address)": {
           "selector": "0x606840e0"
@@ -2358,6 +2638,19 @@
         },
         {
           "type": "function",
+          "name": "MAX_BAND_BPS",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
           "name": "MAX_ENUMERATION",
           "inputs": [],
           "outputs": [
@@ -2442,6 +2735,28 @@
               "name": "positionIds",
               "type": "uint256[]",
               "internalType": "uint256[]"
+            },
+            {
+              "name": "band",
+              "type": "tuple",
+              "internalType": "struct PriceBand",
+              "components": [
+                {
+                  "name": "minSqrtPriceX96",
+                  "type": "uint160",
+                  "internalType": "uint160"
+                },
+                {
+                  "name": "maxSqrtPriceX96",
+                  "type": "uint160",
+                  "internalType": "uint160"
+                }
+              ]
+            },
+            {
+              "name": "deadline",
+              "type": "uint256",
+              "internalType": "uint256"
             }
           ],
           "outputs": [
@@ -2459,6 +2774,11 @@
               "name": "rewards",
               "type": "uint256",
               "internalType": "uint256"
+            },
+            {
+              "name": "failed",
+              "type": "uint256[]",
+              "internalType": "uint256[]"
             }
           ],
           "stateMutability": "nonpayable"
@@ -3100,6 +3420,43 @@
         },
         {
           "type": "error",
+          "name": "BandTooWide",
+          "inputs": [
+            {
+              "name": "min",
+              "type": "uint160",
+              "internalType": "uint160"
+            },
+            {
+              "name": "max",
+              "type": "uint160",
+              "internalType": "uint160"
+            },
+            {
+              "name": "maxBps",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "DegeneratePool",
+          "inputs": [
+            {
+              "name": "poolId",
+              "type": "bytes32",
+              "internalType": "bytes32"
+            },
+            {
+              "name": "token",
+              "type": "address",
+              "internalType": "address"
+            }
+          ]
+        },
+        {
+          "type": "error",
           "name": "EngineUnreachable",
           "inputs": []
         },
@@ -3162,11 +3519,6 @@
               "internalType": "uint24"
             }
           ]
-        },
-        {
-          "type": "error",
-          "name": "MixedPools",
-          "inputs": []
         },
         {
           "type": "error",
@@ -3263,6 +3615,21 @@
           "stateMutability": "view",
           "outputs": "uint256"
         },
+        "MAX_TIMELOCK_DELAY()": {
+          "selector": "0x2a083ca3",
+          "stateMutability": "view",
+          "outputs": "uint256"
+        },
+        "MIN_TIMELOCK_DELAY()": {
+          "selector": "0x169070eb",
+          "stateMutability": "view",
+          "outputs": "uint256"
+        },
+        "TIMELOCK_DELAY()": {
+          "selector": "0x5ba1c1a9",
+          "stateMutability": "view",
+          "outputs": "uint256"
+        },
         "WAD()": {
           "selector": "0x6a146024",
           "stateMutability": "view",
@@ -3273,10 +3640,20 @@
           "stateMutability": "nonpayable",
           "outputs": ""
         },
+        "acceptVenue(address)": {
+          "selector": "0xb61826b2",
+          "stateMutability": "nonpayable",
+          "outputs": ""
+        },
         "assets()": {
           "selector": "0x71a97305",
           "stateMutability": "view",
           "outputs": "address[]"
+        },
+        "cancelVenueChange(address)": {
+          "selector": "0x06ad4a24",
+          "stateMutability": "nonpayable",
+          "outputs": ""
         },
         "config(address)": {
           "selector": "0x0e68ec95",
@@ -3312,6 +3689,16 @@
           "selector": "0xe30c3978",
           "stateMutability": "view",
           "outputs": "address"
+        },
+        "pendingVenue(address)": {
+          "selector": "0x5e043289",
+          "stateMutability": "view",
+          "outputs": "(address,address,uint40)"
+        },
+        "proposeVenue(address,address,address)": {
+          "selector": "0xbf31b757",
+          "stateMutability": "nonpayable",
+          "outputs": ""
         },
         "register(address,address,address,bool,string)": {
           "selector": "0x7c9189e7",
@@ -3382,17 +3769,57 @@
             true,
             true
           ]
+        },
+        "VenueChangeAccepted(address,address,address)": {
+          "topic0": "0xc81b3a865a81972c161f4a4156e7309b5b0e38bec2825b275ffa37efee5241e2",
+          "indexed": [
+            true,
+            true,
+            true
+          ]
+        },
+        "VenueChangeCancelled(address,address)": {
+          "topic0": "0xe2ab07b5e76316e0e9097c770f8bb8d6a8050198ab6c76e5854cadb88fc7973a",
+          "indexed": [
+            true,
+            true
+          ]
+        },
+        "VenueChangeProposed(address,address,address,address,uint40)": {
+          "topic0": "0xabc5b6d3e40d5bd17d4191245f1e023a2b1811a54d735b3c13030d79630d3505",
+          "indexed": [
+            true,
+            true,
+            true,
+            false,
+            false
+          ]
         }
       },
       "errors": {
+        "AssetAlreadyRegistered(address)": {
+          "selector": "0x9690e53c"
+        },
+        "AssetNotEnabled(address)": {
+          "selector": "0xf6f24b83"
+        },
         "InvalidHfFloor(uint256)": {
           "selector": "0x4a3368d2"
+        },
+        "InvalidTimelock(uint256)": {
+          "selector": "0x81872b29"
+        },
+        "NoPendingChange(address)": {
+          "selector": "0x3c89b279"
         },
         "OwnableInvalidOwner(address)": {
           "selector": "0x1e4fbdf7"
         },
         "OwnableUnauthorizedAccount(address)": {
           "selector": "0x118cdaa7"
+        },
+        "TimelockNotElapsed(uint40)": {
+          "selector": "0x4b1b3dcf"
         },
         "UnknownAsset(address)": {
           "selector": "0xad61e2ba"
@@ -3418,6 +3845,11 @@
             },
             {
               "name": "entryHfFloorWad_",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "timelockDelay",
               "type": "uint256",
               "internalType": "uint256"
             }
@@ -3452,6 +3884,45 @@
         },
         {
           "type": "function",
+          "name": "MAX_TIMELOCK_DELAY",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "MIN_TIMELOCK_DELAY",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "TIMELOCK_DELAY",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
           "name": "WAD",
           "inputs": [],
           "outputs": [
@@ -3472,6 +3943,19 @@
         },
         {
           "type": "function",
+          "name": "acceptVenue",
+          "inputs": [
+            {
+              "name": "asset",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "outputs": [],
+          "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
           "name": "assets",
           "inputs": [],
           "outputs": [
@@ -3482,6 +3966,19 @@
             }
           ],
           "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "cancelVenueChange",
+          "inputs": [
+            {
+              "name": "asset",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "outputs": [],
+          "stateMutability": "nonpayable"
         },
         {
           "type": "function",
@@ -3629,6 +4126,65 @@
             }
           ],
           "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "pendingVenue",
+          "inputs": [
+            {
+              "name": "asset",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "",
+              "type": "tuple",
+              "internalType": "struct CollateralRegistry.PendingVenue",
+              "components": [
+                {
+                  "name": "venue",
+                  "type": "address",
+                  "internalType": "address"
+                },
+                {
+                  "name": "priceFeed",
+                  "type": "address",
+                  "internalType": "address"
+                },
+                {
+                  "name": "eta",
+                  "type": "uint40",
+                  "internalType": "uint40"
+                }
+              ]
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "proposeVenue",
+          "inputs": [
+            {
+              "name": "asset",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "venue",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "priceFeed",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "outputs": [],
+          "stateMutability": "nonpayable"
         },
         {
           "type": "function",
@@ -3852,6 +4408,109 @@
           "anonymous": false
         },
         {
+          "type": "event",
+          "name": "VenueChangeAccepted",
+          "inputs": [
+            {
+              "name": "asset",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "previousVenue",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "newVenue",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "event",
+          "name": "VenueChangeCancelled",
+          "inputs": [
+            {
+              "name": "asset",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "proposedVenue",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "event",
+          "name": "VenueChangeProposed",
+          "inputs": [
+            {
+              "name": "asset",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "currentVenue",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "proposedVenue",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "priceFeed",
+              "type": "address",
+              "indexed": false,
+              "internalType": "address"
+            },
+            {
+              "name": "eta",
+              "type": "uint40",
+              "indexed": false,
+              "internalType": "uint40"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "error",
+          "name": "AssetAlreadyRegistered",
+          "inputs": [
+            {
+              "name": "asset",
+              "type": "address",
+              "internalType": "address"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "AssetNotEnabled",
+          "inputs": [
+            {
+              "name": "asset",
+              "type": "address",
+              "internalType": "address"
+            }
+          ]
+        },
+        {
           "type": "error",
           "name": "InvalidHfFloor",
           "inputs": [
@@ -3859,6 +4518,28 @@
               "name": "wad",
               "type": "uint256",
               "internalType": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "InvalidTimelock",
+          "inputs": [
+            {
+              "name": "delay",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "NoPendingChange",
+          "inputs": [
+            {
+              "name": "asset",
+              "type": "address",
+              "internalType": "address"
             }
           ]
         },
@@ -3881,6 +4562,17 @@
               "name": "account",
               "type": "address",
               "internalType": "address"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "TimelockNotElapsed",
+          "inputs": [
+            {
+              "name": "eta",
+              "type": "uint40",
+              "internalType": "uint40"
             }
           ]
         },
@@ -3927,24 +4619,40 @@
     "AerodromeSwapAdapter": {
       "name": "AerodromeSwapAdapter",
       "functions": {
+        "BPS()": {
+          "selector": "0x249d39e9",
+          "stateMutability": "view",
+          "outputs": "uint256"
+        },
+        "MAX_SLIPPAGE_BPS()": {
+          "selector": "0xe229cd76",
+          "stateMutability": "view",
+          "outputs": "uint16"
+        },
         "ROUTER()": {
           "selector": "0x32fe7b26",
           "stateMutability": "view",
           "outputs": "address"
         },
-        "swap(address,address,uint256,uint256,uint256,bytes)": {
-          "selector": "0x16725787",
+        "minOutFor(uint256,uint256,uint256,uint16)": {
+          "selector": "0xea6f620b",
+          "stateMutability": "pure",
+          "outputs": "uint256"
+        },
+        "swap(address,address,uint256,uint256,uint256,uint16,uint256,bytes)": {
+          "selector": "0xaa212198",
           "stateMutability": "nonpayable",
           "outputs": "uint256"
         }
       },
       "events": {
-        "Swapped(address,address,address,uint256,uint256)": {
-          "topic0": "0x6782190c91d4a7e8ad2a867deed6ec0a970cab8ff137ae2bd4abd92b3810f4d3",
+        "Swapped(address,address,address,uint256,uint256,uint256)": {
+          "topic0": "0xc9163c3bdf7263acf1bb3d24072cc7da025f7181c31e2edc7e1673edf5e0ca32",
           "indexed": [
             true,
             true,
             true,
+            false,
             false,
             false
           ]
@@ -3960,14 +4668,17 @@
         "SameToken()": {
           "selector": "0x201b580a"
         },
+        "SlippageTooHigh(uint16,uint16)": {
+          "selector": "0xe4617933"
+        },
         "ZeroAddress()": {
           "selector": "0xd92e233d"
         },
         "ZeroAmount()": {
           "selector": "0x1f2a2005"
         },
-        "ZeroMinOut()": {
-          "selector": "0x2870c094"
+        "ZeroQuote()": {
+          "selector": "0x69f8a2c0"
         }
       },
       "abi": [
@@ -3984,6 +4695,32 @@
         },
         {
           "type": "function",
+          "name": "BPS",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "MAX_SLIPPAGE_BPS",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint16",
+              "internalType": "uint16"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
           "name": "ROUTER",
           "inputs": [],
           "outputs": [
@@ -3994,6 +4731,40 @@
             }
           ],
           "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "minOutFor",
+          "inputs": [
+            {
+              "name": "amountIn",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "quotedIn",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "quotedOut",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "maxSlippageBps",
+              "type": "uint16",
+              "internalType": "uint16"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "pure"
         },
         {
           "type": "function",
@@ -4015,9 +4786,19 @@
               "internalType": "uint256"
             },
             {
-              "name": "minOut",
+              "name": "quotedIn",
               "type": "uint256",
               "internalType": "uint256"
+            },
+            {
+              "name": "quotedOut",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "maxSlippageBps",
+              "type": "uint16",
+              "internalType": "uint16"
             },
             {
               "name": "deadline",
@@ -4072,6 +4853,12 @@
               "type": "uint256",
               "indexed": false,
               "internalType": "uint256"
+            },
+            {
+              "name": "minOut",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
             }
           ],
           "anonymous": false
@@ -4110,6 +4897,22 @@
         },
         {
           "type": "error",
+          "name": "SlippageTooHigh",
+          "inputs": [
+            {
+              "name": "bps",
+              "type": "uint16",
+              "internalType": "uint16"
+            },
+            {
+              "name": "cap",
+              "type": "uint16",
+              "internalType": "uint16"
+            }
+          ]
+        },
+        {
+          "type": "error",
           "name": "ZeroAddress",
           "inputs": []
         },
@@ -4120,7 +4923,7 @@
         },
         {
           "type": "error",
-          "name": "ZeroMinOut",
+          "name": "ZeroQuote",
           "inputs": []
         }
       ]
@@ -4153,6 +4956,11 @@
           "stateMutability": "view",
           "outputs": "address"
         },
+        "openBorrowOnly((address,uint256,(uint256,uint256,bytes),uint256,uint256))": {
+          "selector": "0x16e05d79",
+          "stateMutability": "nonpayable",
+          "outputs": "uint256"
+        },
         "openLeveragedLp((address,uint256,(uint256,uint256,bytes),uint256,bytes32,uint24,uint64,bool,(uint160,uint160),uint256))": {
           "selector": "0x3c2639d6",
           "stateMutability": "nonpayable",
@@ -4163,13 +4971,23 @@
           "stateMutability": "nonpayable",
           "outputs": ""
         },
-        "unwind((address,uint256[],(uint160,uint160),uint256,bytes,uint256,uint256,uint256))": {
-          "selector": "0xebf64f1c",
+        "unwind((address,uint256[],(uint160,uint160),(uint256,uint256,uint16,bytes),uint256,uint256,uint256))": {
+          "selector": "0x08435e75",
           "stateMutability": "nonpayable",
           "outputs": "uint256,uint256,uint256,uint256"
         }
       },
       "events": {
+        "BorrowOnlyOpened(address,address,uint256,uint256,uint256)": {
+          "topic0": "0xcc55d9e70e26b1978d7c9a75cf3a894e80f571d91b4177c6465b88f7264e590c",
+          "indexed": [
+            true,
+            true,
+            false,
+            false,
+            false
+          ]
+        },
         "LeveragedLpOpened(address,address,uint256,uint256,bytes32,uint256,uint256)": {
           "topic0": "0x6c145e8b27174ce6f96d2431e77de7a899e44cb9cad929d273bbf0be62d64bb9",
           "indexed": [
@@ -4224,8 +5042,8 @@
         "PoolWithoutUsdc(bytes32)": {
           "selector": "0x3a20909e"
         },
-        "RouterHoldsBalance(address,uint256)": {
-          "selector": "0xb9b79a47"
+        "RouterBalanceChanged(address,uint256,uint256)": {
+          "selector": "0xc690fd22"
         },
         "VenueDisabled(address)": {
           "selector": "0x251897fd"
@@ -4333,6 +5151,69 @@
             }
           ],
           "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "openBorrowOnly",
+          "inputs": [
+            {
+              "name": "p",
+              "type": "tuple",
+              "internalType": "struct StrategyRouter.BorrowOnlyParams",
+              "components": [
+                {
+                  "name": "collateralAsset",
+                  "type": "address",
+                  "internalType": "address"
+                },
+                {
+                  "name": "collateralAmount",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                },
+                {
+                  "name": "permit",
+                  "type": "tuple",
+                  "internalType": "struct StrategyRouter.Permit2Pull",
+                  "components": [
+                    {
+                      "name": "nonce",
+                      "type": "uint256",
+                      "internalType": "uint256"
+                    },
+                    {
+                      "name": "deadline",
+                      "type": "uint256",
+                      "internalType": "uint256"
+                    },
+                    {
+                      "name": "signature",
+                      "type": "bytes",
+                      "internalType": "bytes"
+                    }
+                  ]
+                },
+                {
+                  "name": "borrowAmount",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                },
+                {
+                  "name": "deadline",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                }
+              ]
+            }
+          ],
+          "outputs": [
+            {
+              "name": "healthFactor",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "nonpayable"
         },
         {
           "type": "function",
@@ -4489,14 +5370,31 @@
                   ]
                 },
                 {
-                  "name": "swapMinOut",
-                  "type": "uint256",
-                  "internalType": "uint256"
-                },
-                {
-                  "name": "swapRouteData",
-                  "type": "bytes",
-                  "internalType": "bytes"
+                  "name": "swap",
+                  "type": "tuple",
+                  "internalType": "struct StrategyRouter.SwapQuote",
+                  "components": [
+                    {
+                      "name": "quotedIn",
+                      "type": "uint256",
+                      "internalType": "uint256"
+                    },
+                    {
+                      "name": "quotedOut",
+                      "type": "uint256",
+                      "internalType": "uint256"
+                    },
+                    {
+                      "name": "maxSlippageBps",
+                      "type": "uint16",
+                      "internalType": "uint16"
+                    },
+                    {
+                      "name": "routeData",
+                      "type": "bytes",
+                      "internalType": "bytes"
+                    }
+                  ]
                 },
                 {
                   "name": "repayAmount",
@@ -4539,6 +5437,43 @@
             }
           ],
           "stateMutability": "nonpayable"
+        },
+        {
+          "type": "event",
+          "name": "BorrowOnlyOpened",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "collateralAsset",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "collateralAmount",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            },
+            {
+              "name": "borrowed",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            },
+            {
+              "name": "healthFactor",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            }
+          ],
+          "anonymous": false
         },
         {
           "type": "event",
@@ -4758,7 +5693,7 @@
         },
         {
           "type": "error",
-          "name": "RouterHoldsBalance",
+          "name": "RouterBalanceChanged",
           "inputs": [
             {
               "name": "token",
@@ -4766,7 +5701,12 @@
               "internalType": "address"
             },
             {
-              "name": "amount",
+              "name": "balanceBefore",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "balanceAfter",
               "type": "uint256",
               "internalType": "uint256"
             }
@@ -5300,18 +6240,18 @@
           "stateMutability": "payable",
           "outputs": "bytes"
         },
-        "execAsKeeper((address,uint256,bytes)[])": {
-          "selector": "0x67729475",
+        "execAsKeeper((address,uint256,bytes,bool)[])": {
+          "selector": "0xfb3f24d3",
           "stateMutability": "nonpayable",
           "outputs": "bytes[]"
         },
-        "execBatch((address,uint256,bytes)[])": {
-          "selector": "0x0b8707f6",
+        "execBatch((address,uint256,bytes,bool)[])": {
+          "selector": "0xe82a13d1",
           "stateMutability": "payable",
           "outputs": "bytes[]"
         },
-        "execFromPeripheral((address,uint256,bytes)[])": {
-          "selector": "0x7cc04026",
+        "execFromPeripheral((address,uint256,bytes,bool)[])": {
+          "selector": "0x3bc5a750",
           "stateMutability": "nonpayable",
           "outputs": "bytes[]"
         },
@@ -5320,8 +6260,13 @@
           "stateMutability": "nonpayable",
           "outputs": "bytes"
         },
-        "grant(address,(address,bytes4,uint256,(address,uint256)[],uint40,uint40))": {
-          "selector": "0x345fe22c",
+        "execWithCallback(address,uint256,bytes)": {
+          "selector": "0x0401f576",
+          "stateMutability": "payable",
+          "outputs": "bytes"
+        },
+        "grant(address,(address,bytes4,uint256,(address,uint256)[],uint40,uint40,bool))": {
+          "selector": "0x6429b6ce",
           "stateMutability": "nonpayable",
           "outputs": ""
         },
@@ -5333,7 +6278,7 @@
         "grantOf(address,address,bytes4)": {
           "selector": "0x6e58f6bc",
           "stateMutability": "view",
-          "outputs": "bool,uint256,uint256,uint40,uint40,uint40"
+          "outputs": "bool,uint256,uint256,uint40,uint40,uint40,bool"
         },
         "grantTokens(address,address,bytes4)": {
           "selector": "0xa0b87a5c",
@@ -5416,6 +6361,11 @@
                   "name": "data",
                   "type": "bytes",
                   "internalType": "bytes"
+                },
+                {
+                  "name": "callback",
+                  "type": "bool",
+                  "internalType": "bool"
                 }
               ]
             }
@@ -5452,6 +6402,11 @@
                   "name": "data",
                   "type": "bytes",
                   "internalType": "bytes"
+                },
+                {
+                  "name": "callback",
+                  "type": "bool",
+                  "internalType": "bool"
                 }
               ]
             }
@@ -5488,6 +6443,11 @@
                   "name": "data",
                   "type": "bytes",
                   "internalType": "bytes"
+                },
+                {
+                  "name": "callback",
+                  "type": "bool",
+                  "internalType": "bool"
                 }
               ]
             }
@@ -5529,6 +6489,35 @@
             }
           ],
           "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "execWithCallback",
+          "inputs": [
+            {
+              "name": "target",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "value",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "data",
+              "type": "bytes",
+              "internalType": "bytes"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "result",
+              "type": "bytes",
+              "internalType": "bytes"
+            }
+          ],
+          "stateMutability": "payable"
         },
         {
           "type": "function",
@@ -5585,6 +6574,11 @@
                   "name": "expiry",
                   "type": "uint40",
                   "internalType": "uint40"
+                },
+                {
+                  "name": "allowCallback",
+                  "type": "bool",
+                  "internalType": "bool"
                 }
               ]
             }
@@ -5655,6 +6649,11 @@
               "name": "periodStart",
               "type": "uint40",
               "internalType": "uint40"
+            },
+            {
+              "name": "allowCallback",
+              "type": "bool",
+              "internalType": "bool"
             }
           ],
           "stateMutability": "view"
@@ -6060,10 +7059,10 @@
     "ILpVenue": {
       "name": "ILpVenue",
       "functions": {
-        "claim(uint256[])": {
-          "selector": "0x6ba4c138",
+        "claim(uint256[],(uint160,uint160),uint256)": {
+          "selector": "0x388a2c47",
           "stateMutability": "nonpayable",
-          "outputs": "uint256,uint256,uint256"
+          "outputs": "uint256,uint256,uint256,uint256[]"
         },
         "close(uint256,(uint160,uint160))": {
           "selector": "0x2623a0a9",
@@ -6122,6 +7121,28 @@
               "name": "positionIds",
               "type": "uint256[]",
               "internalType": "uint256[]"
+            },
+            {
+              "name": "band",
+              "type": "tuple",
+              "internalType": "struct PriceBand",
+              "components": [
+                {
+                  "name": "minSqrtPriceX96",
+                  "type": "uint160",
+                  "internalType": "uint160"
+                },
+                {
+                  "name": "maxSqrtPriceX96",
+                  "type": "uint160",
+                  "internalType": "uint160"
+                }
+              ]
+            },
+            {
+              "name": "deadline",
+              "type": "uint256",
+              "internalType": "uint256"
             }
           ],
           "outputs": [
@@ -6139,6 +7160,11 @@
               "name": "rewards",
               "type": "uint256",
               "internalType": "uint256"
+            },
+            {
+              "name": "failed",
+              "type": "uint256[]",
+              "internalType": "uint256[]"
             }
           ],
           "stateMutability": "nonpayable"
@@ -6467,8 +7493,18 @@
     "ISwapAdapter": {
       "name": "ISwapAdapter",
       "functions": {
-        "swap(address,address,uint256,uint256,uint256,bytes)": {
-          "selector": "0x16725787",
+        "MAX_SLIPPAGE_BPS()": {
+          "selector": "0xe229cd76",
+          "stateMutability": "view",
+          "outputs": "uint16"
+        },
+        "minOutFor(uint256,uint256,uint256,uint16)": {
+          "selector": "0xea6f620b",
+          "stateMutability": "pure",
+          "outputs": "uint256"
+        },
+        "swap(address,address,uint256,uint256,uint256,uint16,uint256,bytes)": {
+          "selector": "0xaa212198",
           "stateMutability": "nonpayable",
           "outputs": "uint256"
         }
@@ -6476,6 +7512,53 @@
       "events": {},
       "errors": {},
       "abi": [
+        {
+          "type": "function",
+          "name": "MAX_SLIPPAGE_BPS",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint16",
+              "internalType": "uint16"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "minOutFor",
+          "inputs": [
+            {
+              "name": "amountIn",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "quotedIn",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "quotedOut",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "maxSlippageBps",
+              "type": "uint16",
+              "internalType": "uint16"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "pure"
+        },
         {
           "type": "function",
           "name": "swap",
@@ -6496,9 +7579,19 @@
               "internalType": "uint256"
             },
             {
-              "name": "minOut",
+              "name": "quotedIn",
               "type": "uint256",
               "internalType": "uint256"
+            },
+            {
+              "name": "quotedOut",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "maxSlippageBps",
+              "type": "uint16",
+              "internalType": "uint16"
             },
             {
               "name": "deadline",

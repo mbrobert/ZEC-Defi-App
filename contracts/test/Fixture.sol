@@ -12,6 +12,7 @@ import {ISnuggleVault} from "../src/interfaces/ISnuggleVault.sol";
 import {IPoolAddressesProvider} from "../src/interfaces/IAaveV3.sol";
 import {IMorphoBlue} from "../src/interfaces/IMorphoBlue.sol";
 import {IAerodromeSwapRouter} from "../src/interfaces/IAerodromeSwapRouter.sol";
+import {ICollateralRegistry} from "../src/interfaces/ICollateralRegistry.sol";
 import {AaveV3Venue} from "../src/venues/AaveV3Venue.sol";
 import {MorphoBlueVenue} from "../src/venues/MorphoBlueVenue.sol";
 import {SnuggleLpVenue} from "../src/venues/SnuggleLpVenue.sol";
@@ -63,6 +64,7 @@ abstract contract Fixture is Test {
 
     uint256 constant ENTRY_HF_FLOOR_WAD = 1.55e18; // packages/shared ENTRY_HF_FLOOR
     uint256 constant PERF_BPS = 1000; // packages/shared FEES.performanceBps
+    uint256 constant REGISTRY_TIMELOCK = 2 days; // Deploy.s.sol REGISTRY_TIMELOCK_DELAY default
 
     // verified Base reserve facts (2026-09-05)
     uint256 constant CBBTC_LTV = 7300;
@@ -124,10 +126,12 @@ abstract contract Fixture is Test {
         factory = new OilskinAccountFactory(address(permit2));
         acct = OilskinAccount(payable(factory.createAccount(alice)));
 
-        aaveVenue = new AaveV3Venue(IPoolAddressesProvider(address(aave)));
+        // Registry first: the collateral venue enforces the registry's entry floor and offer flags
+        // itself, so it takes the registry address at construction.
+        registry = new CollateralRegistry(registryOwner, ENTRY_HF_FLOOR_WAD, REGISTRY_TIMELOCK);
+        aaveVenue = new AaveV3Venue(IPoolAddressesProvider(address(aave)), ICollateralRegistry(address(registry)));
         morphoVenue = new MorphoBlueVenue(IMorphoBlue(makeAddr("morpho")));
         lpVenue = new SnuggleLpVenue(ISnuggleVault(address(engine)), address(aero), treasury, PERF_BPS);
-        registry = new CollateralRegistry(registryOwner, ENTRY_HF_FLOOR_WAD);
         vm.startPrank(registryOwner);
         registry.register(address(cbbtc), address(aaveVenue), makeAddr("feed-cbbtc"), true, "");
         registry.register(address(weth), address(aaveVenue), makeAddr("feed-eth"), true, "");
@@ -141,8 +145,14 @@ abstract contract Fixture is Test {
 
     // ------------------------------------------------------------ helpers
 
+    /// @dev A PLAIN call: the target gets no rights over the account. Tokens, pools, Permit2.
     function _call(address target, bytes memory data) internal pure returns (Call memory) {
-        return Call({target: target, value: 0, data: data});
+        return Call({target: target, value: 0, data: data, callback: false});
+    }
+
+    /// @dev A call that opts the target IN as the active peripheral. Router, venues, adapter.
+    function _callP(address target, bytes memory data) internal pure returns (Call memory) {
+        return Call({target: target, value: 0, data: data, callback: true});
     }
 
     function _one(Call memory c) internal pure returns (Call[] memory arr) {
@@ -150,12 +160,20 @@ abstract contract Fixture is Test {
         arr[0] = c;
     }
 
-    /// @dev Owner runs `data` on `target` from the account.
+    /// @dev Owner runs `data` on a PERIPHERAL (router / venue / adapter) from the account.
     function _ownerExec(address target, bytes memory data) internal returns (bytes memory) {
+        vm.prank(alice);
+        return acct.execWithCallback(target, 0, data);
+    }
+
+    /// @dev Owner runs `data` on a plain target (token, pool, Permit2) — no callback rights.
+    function _ownerExecPlain(address target, bytes memory data) internal returns (bytes memory) {
         vm.prank(alice);
         return acct.exec(target, 0, data);
     }
 
+    /// @dev A ±pctBps window around the live sqrt price. The venue bounds the total WIDTH at
+    ///      MAX_BAND_BPS (2500), so pctBps must stay ≤ 1000 (ratio 1.222).
     function _band(MockCLPool pool, uint256 pctBps) internal view returns (PriceBand memory) {
         uint256 p = pool.sqrtPriceX96();
         return PriceBand({
@@ -207,7 +225,19 @@ abstract contract Fixture is Test {
         sig = abi.encodePacked(r, s, v);
     }
 
+    /// @dev A grant on a PERIPHERAL target (the router): callbacks allowed, as the product's
+    ///      protection grant needs.
     function _perm(address target, bytes4 sel, TokenLimit[] memory limits, uint256 maxValue)
+        internal
+        view
+        returns (Permission memory p)
+    {
+        p = _permPlain(target, sel, limits, maxValue);
+        p.allowCallback = true;
+    }
+
+    /// @dev A grant on a plain target: no peripheral rights (the default and the safe shape).
+    function _permPlain(address target, bytes4 sel, TokenLimit[] memory limits, uint256 maxValue)
         internal
         view
         returns (Permission memory p)
@@ -218,6 +248,7 @@ abstract contract Fixture is Test {
         p.tokenLimits = limits;
         p.period = 1 days;
         p.expiry = uint40(block.timestamp + 30 days);
+        p.allowCallback = false;
     }
 
     function _limits1(address t, uint256 a) internal pure returns (TokenLimit[] memory l) {

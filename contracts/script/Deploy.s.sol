@@ -12,6 +12,7 @@ import {StrategyRouter} from "../src/router/StrategyRouter.sol";
 import {PythOracleAdapter} from "../src/oracle/PythOracleAdapter.sol";
 import {IPoolAddressesProvider} from "../src/interfaces/IAaveV3.sol";
 import {IMorphoBlue} from "../src/interfaces/IMorphoBlue.sol";
+import {ICollateralRegistry} from "../src/interfaces/ICollateralRegistry.sol";
 import {ISnuggleVault} from "../src/interfaces/ISnuggleVault.sol";
 import {IAerodromeSwapRouter} from "../src/interfaces/IAerodromeSwapRouter.sol";
 import {IAerodromeCLPool} from "../src/interfaces/IAerodromeCLPool.sol";
@@ -62,6 +63,8 @@ library BaseAddresses {
 ///   AERODROME_SWAP_ROUTER    Slipstream SwapRouter — PROBED, not in VERIFIED-BASE-FACTS (required)
 ///   PERFORMANCE_BPS          default 1000  (packages/shared FEES.performanceBps; capped on chain)
 ///   ENTRY_HF_FLOOR_WAD       default 1.55e18 (packages/shared ENTRY_HF_FLOOR)
+///   REGISTRY_TIMELOCK_DELAY  default 172800 (2 days) — the IMMUTABLE delay on replacing an
+///                            asset's venue. Bounded [1 hours, 30 days] by the registry.
 ///   DEPLOY_PYTH_ADAPTER      "true" to also deploy the v1.1 PythOracleAdapter (unused in v1)
 ///   PYTH_MAX_AGE / PYTH_MAX_DEVIATION_BPS / PYTH_TWAP_WINDOW  adapter params (defaults 60 / 300 / 1800)
 ///   ALLOW_ANY_CHAIN          "true" to run on a non-Base chain with ALL addresses given by env
@@ -94,6 +97,7 @@ contract Deploy is Script {
         address deployer;
         uint256 performanceBps;
         uint256 entryHfFloorWad;
+        uint256 registryTimelockDelay;
         bool deployPythAdapter;
         uint256 pythMaxAge;
         uint256 pythMaxDeviationBps;
@@ -152,6 +156,7 @@ contract Deploy is Script {
         c.deployer = msg.sender;
         c.performanceBps = vm.envOr("PERFORMANCE_BPS", uint256(1000));
         c.entryHfFloorWad = vm.envOr("ENTRY_HF_FLOOR_WAD", uint256(1.55e18));
+        c.registryTimelockDelay = vm.envOr("REGISTRY_TIMELOCK_DELAY", uint256(2 days));
         c.deployPythAdapter = vm.envOr("DEPLOY_PYTH_ADAPTER", false);
         c.pythMaxAge = vm.envOr("PYTH_MAX_AGE", uint256(60));
         c.pythMaxDeviationBps = vm.envOr("PYTH_MAX_DEVIATION_BPS", uint256(300));
@@ -211,11 +216,14 @@ contract Deploy is Script {
 
     function deploy(Config memory c) public returns (Deployed memory d) {
         d.factory = new OilskinAccountFactory(c.permit2);
-        d.aaveVenue = new AaveV3Venue(IPoolAddressesProvider(c.aaveProvider));
         d.morphoVenue = new MorphoBlueVenue(IMorphoBlue(c.morpho));
         d.lpVenue = new SnuggleLpVenue(ISnuggleVault(c.engine), c.aero, c.treasury, c.performanceBps);
-        // Registry is owned by the deployer during setup, then handed to REGISTRY_OWNER (2-step).
-        d.registry = new CollateralRegistry(c.deployer, c.entryHfFloorWad);
+        // Registry FIRST: the collateral venue enforces the registry's entry floor and offer flags
+        // itself, so it needs the registry address at construction (and the registry only needs the
+        // venue when an asset is registered, after both exist).
+        // Owned by the deployer during setup, then handed to REGISTRY_OWNER (2-step).
+        d.registry = new CollateralRegistry(c.deployer, c.entryHfFloorWad, c.registryTimelockDelay);
+        d.aaveVenue = new AaveV3Venue(IPoolAddressesProvider(c.aaveProvider), ICollateralRegistry(address(d.registry)));
         d.registry.register(c.cbbtc, address(d.aaveVenue), c.chainlinkCbbtcUsd, true, "");
         d.registry.register(c.weth, address(d.aaveVenue), c.chainlinkEthUsd, true, "");
         d.registry.register(c.cbzec, address(d.aaveVenue), c.pyth, false, CBZEC_NOTE);
@@ -253,5 +261,6 @@ contract Deploy is Script {
         console2.log("StrategyRouter        ", address(d.router));
         console2.log("PythOracleAdapter     ", address(d.pythAdapter));
         console2.log("NOTE: REGISTRY_OWNER must call registry.acceptOwnership()");
+        console2.log("Registry venue-change timelock (s)", d.registry.TIMELOCK_DELAY());
     }
 }

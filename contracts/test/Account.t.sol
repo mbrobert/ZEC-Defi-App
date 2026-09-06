@@ -46,8 +46,14 @@ contract AccountTest is Test {
 
     // ------------------------------------------------------------- helpers
 
+    /// A PLAIN call: the target gets no rights over the account.
     function _call(address target, bytes memory data) internal pure returns (Call memory) {
-        return Call({target: target, value: 0, data: data});
+        return Call({target: target, value: 0, data: data, callback: false});
+    }
+
+    /// A call that opts the target in as the active peripheral.
+    function _callP(address target, bytes memory data) internal pure returns (Call memory) {
+        return Call({target: target, value: 0, data: data, callback: true});
     }
 
     function _transfer(address token, address to, uint256 amount) internal pure returns (Call memory) {
@@ -69,10 +75,21 @@ contract AccountTest is Test {
         p.maxValuePerPeriod = maxValue;
         p.period = 1 days;
         p.expiry = uint40(block.timestamp + 30 days);
+        p.allowCallback = false;
         if (token != address(0)) {
             p.tokenLimits = new TokenLimit[](1);
             p.tokenLimits[0] = TokenLimit(token, limit);
         }
+    }
+
+    /// The same, for a grant on a PERIPHERAL target that must act back on the account.
+    function _permP(address target, bytes4 sel, address token, uint256 limit, uint256 maxValue)
+        internal
+        view
+        returns (Permission memory p)
+    {
+        p = _perm(target, sel, token, limit, maxValue);
+        p.allowCallback = true;
     }
 
     function _grantTransfer(address token, uint256 limit) internal {
@@ -138,7 +155,7 @@ contract AccountTest is Test {
     function test_factory_createAccountAndExec_forwardsValue() public {
         EthSink sink = new EthSink();
         Call[] memory calls = new Call[](1);
-        calls[0] = Call({target: address(sink), value: 1 ether, data: ""});
+        calls[0] = Call({target: address(sink), value: 1 ether, data: "", callback: false});
         vm.deal(bob, 2 ether);
         vm.prank(bob);
         factory.createAccountAndExec{value: 1.5 ether}(calls);
@@ -146,13 +163,49 @@ contract AccountTest is Test {
         assertEq(factory.accountOf(bob).balance, 0.5 ether);
     }
 
-    function test_factory_createAccountAndExec_revertsIfExists() public {
-        Call[] memory none;
-        vm.prank(alice);
+    /// FIX A-LOW-1. A griefer who front-runs the clone (`createAccount(victim)` costs one EIP-1167
+    /// deployment) used to brick the one-transaction first-time flow FOREVER. It is now idempotent:
+    /// the existing account is used and the owner batch still runs atomically.
+    function test_FIX_A1_createAccountAndExecIsIdempotentAfterAFrontRun() public {
+        address victim = makeAddr("victim");
+        address predicted = factory.accountOf(victim);
+        vm.prank(bob); // the griefer
+        factory.createAccount(victim);
+        usdc.mint(predicted, 500e6);
+
+        Call[] memory calls = _one(_transfer(address(usdc), victim, 200e6));
+        vm.prank(victim);
+        (address a, bytes[] memory results) = factory.createAccountAndExec(calls);
+        assertEq(a, predicted, "the same deterministic account");
+        assertEq(results.length, 1);
+        assertEq(usdc.balanceOf(victim), 200e6, "the first-time batch still ran, in one transaction");
+        assertEq(OilskinAccount(payable(predicted)).owner(), victim);
+    }
+
+    /// …and the forwarder is only ever a forwarder for the CALLER: it cannot drive someone else's
+    /// account, because the account re-checks `owner_ == owner` itself.
+    function test_FIX_A1b_factoryForwarderCannotDriveAnotherOwnersAccount() public {
+        Call[] memory calls = _one(_transfer(address(usdc), bob, 1e6));
+        usdc.mint(factory.accountOf(bob), 1e6);
+        vm.prank(bob); // bob's own (undeployed) account is created; alice's is untouched
+        (address a,) = factory.createAccountAndExec(calls);
+        assertEq(a, factory.accountOf(bob));
+        assertTrue(a != address(acct));
+        // Direct: only FACTORY may call the forwarder, and only for the real owner.
+        vm.prank(bob);
+        vm.expectRevert(OilskinAccount.NotFactory.selector);
+        acct.execBatchFromFactory(alice, calls);
+        vm.prank(address(factory));
+        vm.expectRevert(OilskinAccount.NotOwner.selector);
+        acct.execBatchFromFactory(bob, calls);
+    }
+
+    /// FIX A-INFO-1. An account owned by the factory could never be driven by anyone.
+    function test_FIX_A1c_factoryRefusesToOwnAnAccount() public {
         vm.expectRevert(
-            abi.encodeWithSelector(OilskinAccountFactory.AccountExists.selector, address(acct))
+            abi.encodeWithSelector(OilskinAccountFactory.InvalidOwner.selector, address(factory))
         );
-        factory.createAccountAndExec(none);
+        factory.createAccount(address(factory));
     }
 
     function test_initialize_onlyFactoryAndOnce() public {
@@ -262,7 +315,7 @@ contract AccountTest is Test {
         for (uint256 i = 0; i < 3; i++) {
             t.arm(address(acct), doors[i]);
             vm.prank(alice);
-            acct.exec(address(t), 0, abi.encodeCall(ReentrantTarget.hit, ()));
+            acct.execWithCallback(address(t), 0, abi.encodeCall(ReentrantTarget.hit, ()));
             assertFalse(t.reentered(), "re-entered");
             // exec / execBatch fail on NotOwner (msg.sender is the target); keeper on Reentrancy.
             bytes4 got = bytes4(t.lastRevert());
@@ -278,9 +331,9 @@ contract AccountTest is Test {
         ReentrantTarget t = new ReentrantTarget();
         t.arm(address(acct), ReentrantTarget.Door.ExecAsKeeper);
         vm.prank(alice);
-        acct.grant(address(t), _perm(address(t), ReentrantTarget.hit.selector, address(0), 0, 0));
+        acct.grant(address(t), _permP(address(t), ReentrantTarget.hit.selector, address(0), 0, 0));
         vm.prank(alice);
-        acct.exec(address(t), 0, abi.encodeCall(ReentrantTarget.hit, ()));
+        acct.execWithCallback(address(t), 0, abi.encodeCall(ReentrantTarget.hit, ()));
         assertFalse(t.reentered());
         assertEq(bytes4(t.lastRevert()), OilskinAccount.Reentrancy.selector);
     }
@@ -289,7 +342,7 @@ contract AccountTest is Test {
         ReentrantTarget t = new ReentrantTarget();
         t.arm(address(acct), ReentrantTarget.Door.ExecFromPeripheral);
         vm.prank(alice);
-        acct.exec(address(t), 0, abi.encodeCall(ReentrantTarget.hit, ()));
+        acct.execWithCallback(address(t), 0, abi.encodeCall(ReentrantTarget.hit, ()));
         assertTrue(t.reentered(), "active peripheral must be able to call back");
     }
 
@@ -301,7 +354,7 @@ contract AccountTest is Test {
         // asserts this itself; a failure would revert the whole call).
         Call[] memory inner = _one(_transfer(address(hook), bob, 1));
         vm.prank(alice);
-        acct.exec(address(relay), 0, abi.encodeCall(RelayPeripheral.run, (inner)));
+        acct.execWithCallback(address(relay), 0, abi.encodeCall(RelayPeripheral.run, (inner)));
     }
 
     // ----------------------------------------------------------- peripherals
@@ -321,7 +374,7 @@ contract AccountTest is Test {
         inner[0] = _transfer(address(usdc), bob, 1e6);
         inner[1] = _call(address(relay2), abi.encodeCall(RelayPeripheral.noop, ()));
         vm.prank(alice);
-        bytes memory ret = acct.exec(address(relay), 0, abi.encodeCall(RelayPeripheral.run, (inner)));
+        bytes memory ret = acct.execWithCallback(address(relay), 0, abi.encodeCall(RelayPeripheral.run, (inner)));
         bytes[] memory results = abi.decode(ret, (bytes[]));
         assertEq(abi.decode(results[1], (uint256)), 42);
         assertEq(usdc.balanceOf(bob), 1e6);
@@ -334,7 +387,7 @@ contract AccountTest is Test {
         Call[] memory inner = _one(_call(address(relay2), abi.encodeCall(RelayPeripheral.run, (deep))));
         vm.prank(alice);
         vm.expectRevert(OilskinAccount.NotActivePeripheral.selector);
-        acct.exec(address(relay), 0, abi.encodeCall(RelayPeripheral.run, (inner)));
+        acct.execWithCallback(address(relay), 0, abi.encodeCall(RelayPeripheral.run, (inner)));
         assertEq(usdc.balanceOf(bob), 0);
     }
 
@@ -345,12 +398,12 @@ contract AccountTest is Test {
         bytes memory nestedData = abi.encodeCall(RelayPeripheral.run, (deep));
         Call[] memory outer = new Call[](0);
         vm.startPrank(alice);
-        acct.exec(address(relay), 0, abi.encodeCall(RelayPeripheral.runNested, (address(relay2), 0, nestedData)));
+        acct.execWithCallback(address(relay), 0, abi.encodeCall(RelayPeripheral.runNested, (address(relay2), 0, nestedData)));
         // Prove restoration: in one exec, relay does nested then a plain run.
         bytes[] memory none = new bytes[](0);
         none;
         outer;
-        acct.exec(address(relay), 0, abi.encodeCall(RelayPeripheral.run, (afterwards)));
+        acct.execWithCallback(address(relay), 0, abi.encodeCall(RelayPeripheral.run, (afterwards)));
         vm.stopPrank();
         assertEq(usdc.balanceOf(bob), 1e6);
         assertEq(weth.balanceOf(bob), 1e18);
@@ -474,7 +527,7 @@ contract AccountTest is Test {
         vm.warp(block.timestamp - 30 days);
         vm.prank(alice);
         acct.revoke(keeper, address(usdc), IERC20.transfer.selector);
-        (bool active,,,,,) = acct.grantOf(keeper, address(usdc), IERC20.transfer.selector);
+        (bool active,,,,,,) = acct.grantOf(keeper, address(usdc), IERC20.transfer.selector);
         assertFalse(active);
         vm.prank(keeper);
         vm.expectRevert();
@@ -530,9 +583,14 @@ contract AccountTest is Test {
     function test_keeper_valueBudget() public {
         EthSink sink = new EthSink();
         vm.prank(alice);
-        acct.grant(keeper, _perm(address(sink), bytes4(0), address(0), 0, 1 ether));
+        acct.grant(keeper, _perm(address(sink), EthSink.pay.selector, address(0), 0, 1 ether));
         Call[] memory c = new Call[](1);
-        c[0] = Call({target: address(sink), value: 0.6 ether, data: ""});
+        c[0] = Call({
+            target: address(sink),
+            value: 0.6 ether,
+            data: abi.encodeCall(EthSink.pay, ()),
+            callback: false
+        });
         vm.startPrank(keeper);
         acct.execAsKeeper(c);
         c[0].value = 0.5 ether;
@@ -621,28 +679,28 @@ contract AccountTest is Test {
         // Grant the relay's run() as a keeper root with a 50 USDC budget; the relay then asks the
         // account to transfer 60 → must revert on the INNER op.
         vm.prank(alice);
-        acct.grant(keeper, _perm(address(relay), RelayPeripheral.run.selector, address(usdc), 50e6, 0));
+        acct.grant(keeper, _permP(address(relay), RelayPeripheral.run.selector, address(usdc), 50e6, 0));
         Call[] memory inner = _one(_transfer(address(usdc), keeper, 60e6));
         vm.prank(keeper);
         vm.expectRevert(
             abi.encodeWithSelector(OilskinAccount.TokenBudgetExceeded.selector, address(usdc), 60e6, 50e6)
         );
-        acct.execAsKeeper(_one(_call(address(relay), abi.encodeCall(RelayPeripheral.run, (inner)))));
+        acct.execAsKeeper(_one(_callP(address(relay), abi.encodeCall(RelayPeripheral.run, (inner)))));
 
         inner = _one(_transfer(address(usdc), keeper, 50e6));
         vm.prank(keeper);
-        acct.execAsKeeper(_one(_call(address(relay), abi.encodeCall(RelayPeripheral.run, (inner)))));
+        acct.execAsKeeper(_one(_callP(address(relay), abi.encodeCall(RelayPeripheral.run, (inner)))));
         assertEq(usdc.balanceOf(keeper), 50e6);
         // Any further inner op in this period fails.
         inner = _one(_transfer(address(usdc), keeper, 1));
         vm.prank(keeper);
         vm.expectRevert();
-        acct.execAsKeeper(_one(_call(address(relay), abi.encodeCall(RelayPeripheral.run, (inner)))));
+        acct.execAsKeeper(_one(_callP(address(relay), abi.encodeCall(RelayPeripheral.run, (inner)))));
     }
 
     function test_keeper_nestedPeripheralOpsAreCounted() public {
         vm.prank(alice);
-        acct.grant(keeper, _perm(address(relay), RelayPeripheral.runNested.selector, address(weth), 1e18, 0));
+        acct.grant(keeper, _permP(address(relay), RelayPeripheral.runNested.selector, address(weth), 1e18, 0));
         Call[] memory deep = _one(_transfer(address(weth), keeper, 2e18));
         bytes memory nested = abi.encodeCall(RelayPeripheral.run, (deep));
         vm.prank(keeper);
@@ -657,14 +715,14 @@ contract AccountTest is Test {
     function test_keeper_innerValueCountedAgainstRootValueBudget() public {
         EthSink sink = new EthSink();
         vm.prank(alice);
-        acct.grant(keeper, _perm(address(relay), RelayPeripheral.run.selector, address(0), 0, 1 ether));
+        acct.grant(keeper, _permP(address(relay), RelayPeripheral.run.selector, address(0), 0, 1 ether));
         Call[] memory inner = new Call[](1);
-        inner[0] = Call({target: address(sink), value: 2 ether, data: ""});
+        inner[0] = Call({target: address(sink), value: 2 ether, data: "", callback: false});
         vm.prank(keeper);
         vm.expectRevert(
             abi.encodeWithSelector(OilskinAccount.ValueBudgetExceeded.selector, 2 ether, 1 ether)
         );
-        acct.execAsKeeper(_one(_call(address(relay), abi.encodeCall(RelayPeripheral.run, (inner)))));
+        acct.execAsKeeper(_one(_callP(address(relay), abi.encodeCall(RelayPeripheral.run, (inner)))));
     }
 
     function test_keeper_cannotUsePeripheralDoorsDirectly() public {

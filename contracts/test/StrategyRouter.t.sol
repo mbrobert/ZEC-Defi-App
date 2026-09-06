@@ -67,8 +67,13 @@ contract StrategyRouterTest is Fixture {
         u.collateralAsset = address(cbbtc);
         u.positionIds = ids;
         u.band = _band(poolWethUsdc, 1000);
-        u.swapMinOut = 1;
-        u.swapRouteData = abi.encode(int24(100));
+        // A real quote at the mock router's live rate (1 WETH = 2,453.45 USDC), 1 % tolerance.
+        u.swap = StrategyRouter.SwapQuote({
+            quotedIn: 1e18,
+            quotedOut: 2453_450000,
+            maxSlippageBps: 100,
+            routeData: abi.encode(int24(100))
+        });
         u.repayAmount = repay;
         u.withdrawAmount = withdraw;
         u.deadline = block.timestamp + 10 minutes;
@@ -124,7 +129,7 @@ contract StrategyRouterTest is Fixture {
         StrategyRouter.OpenParams memory p = _open(COLLATERAL, BORROW, 7);
         p.permit.signature =
             _signPermitWith(bobKey, address(cbbtc), COLLATERAL, 7, block.timestamp + 10 minutes, predicted);
-        Call[] memory calls = _one(_call(address(router), abi.encodeCall(StrategyRouter.openLeveragedLp, (p))));
+        Call[] memory calls = _one(_callP(address(router), abi.encodeCall(StrategyRouter.openLeveragedLp, (p))));
         vm.prank(bobEoa);
         (address account,) = factory.createAccountAndExec(calls);
         assertEq(account, predicted);
@@ -142,7 +147,7 @@ contract StrategyRouterTest is Fixture {
         bytes memory data = abi.encodeCall(StrategyRouter.openLeveragedLp, (p));
         vm.prank(alice);
         vm.expectRevert(); // EntryHfTooLow(hf, floor) — hf value is data-dependent
-        acct.exec(address(router), 0, data);
+        acct.execWithCallback(address(router), 0, data);
         assertEq(aaveVenue.debt(address(acct), address(usdc)), 0, "atomic: nothing borrowed");
         assertEq(cbbtc.balanceOf(alice), 10e8, "atomic: nothing pulled");
         // exactly the offered maximum (50 %) passes: HF 1.56
@@ -163,12 +168,12 @@ contract StrategyRouterTest is Fixture {
                 StrategyRouter.AssetDisabled.selector, address(cbzec), "no collateral market on Base yet"
             )
         );
-        acct.exec(address(router), 0, data);
+        acct.execWithCallback(address(router), 0, data);
         p.collateralAsset = address(aero);
         data = abi.encodeCall(StrategyRouter.openLeveragedLp, (p));
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(StrategyRouter.AssetNotRegistered.selector, address(aero)));
-        acct.exec(address(router), 0, data);
+        acct.execWithCallback(address(router), 0, data);
     }
 
     function test_openLeveragedLp_poolMustContainUsdc() public {
@@ -180,7 +185,7 @@ contract StrategyRouterTest is Fixture {
         bytes memory data = abi.encodeCall(StrategyRouter.openLeveragedLp, (p));
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(StrategyRouter.PoolWithoutUsdc.selector, pid));
-        acct.exec(address(router), 0, data);
+        acct.execWithCallback(address(router), 0, data);
     }
 
     function test_openLeveragedLp_deadlineAndZeroBorrow() public {
@@ -189,12 +194,12 @@ contract StrategyRouterTest is Fixture {
         bytes memory data = abi.encodeCall(StrategyRouter.openLeveragedLp, (p));
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(StrategyRouter.Expired.selector, block.timestamp - 1));
-        acct.exec(address(router), 0, data);
+        acct.execWithCallback(address(router), 0, data);
         p = _open(COLLATERAL, 0, 1);
         data = abi.encodeCall(StrategyRouter.openLeveragedLp, (p));
         vm.prank(alice);
         vm.expectRevert(StrategyRouter.ZeroBorrow.selector);
-        acct.exec(address(router), 0, data);
+        acct.execWithCallback(address(router), 0, data);
     }
 
     function test_openLeveragedLp_bandProtectsTheDeposit() public {
@@ -204,7 +209,7 @@ contract StrategyRouterTest is Fixture {
         bytes memory data = abi.encodeCall(StrategyRouter.openLeveragedLp, (p));
         vm.prank(alice);
         vm.expectRevert();
-        acct.exec(address(router), 0, data);
+        acct.execWithCallback(address(router), 0, data);
         assertEq(aaveVenue.debt(address(acct), address(usdc)), 0, "nothing borrowed when the LP leg fails");
     }
 
@@ -234,13 +239,13 @@ contract StrategyRouterTest is Fixture {
         bytes memory data = abi.encodeCall(StrategyRouter.openLeveragedLp, (p));
         vm.prank(alice);
         vm.expectRevert(MockPermit2.InvalidSigner.selector);
-        acct.exec(address(router), 0, data);
+        acct.execWithCallback(address(router), 0, data);
 
         _openViaAccount(_open(COLLATERAL, BORROW, 1));
         data = abi.encodeCall(StrategyRouter.openLeveragedLp, (_open(COLLATERAL, BORROW, 1)));
         vm.prank(alice);
         vm.expectRevert(MockPermit2.InvalidNonce.selector);
-        acct.exec(address(router), 0, data);
+        acct.execWithCallback(address(router), 0, data);
     }
 
     // ---------------------------------------------------------------- unwind
@@ -304,7 +309,7 @@ contract StrategyRouterTest is Fixture {
         bytes memory data = abi.encodeCall(StrategyRouter.unwind, (u));
         vm.prank(alice);
         vm.expectRevert(); // ExitHfTooLow
-        acct.exec(address(router), 0, data);
+        acct.execWithCallback(address(router), 0, data);
         assertEq(aaveVenue.collateral(address(acct), address(cbbtc)), COLLATERAL);
         // a withdraw that keeps HF ≥ floor passes
         u = _unwind(none, 0, 0.1e8);
@@ -312,20 +317,52 @@ contract StrategyRouterTest is Fixture {
         assertEq(cbbtc.balanceOf(address(acct)), 0.1e8);
     }
 
-    function test_unwind_swapMinOutEnforced() public {
+    /// FIX B-MED-3. `swapMinOut` used to be a bare absolute floor whose only rule was "not zero", so
+    /// a value of 1 was legal and took the whole leg. The floor is now derived from the caller's
+    /// quote, scaled to the amount actually swapped, with the tolerance capped on chain.
+    function test_FIX_B6_swapFloorIsRelativeToTheQuote() public {
         (uint256 id,) = _openViaAccount(_open(COLLATERAL, BORROW, 1));
         engine.setPendingFee(id, address(weth), 1e18);
         StrategyRouter.UnwindParams memory u = _unwind(_ids(id), 0, 0);
-        u.swapMinOut = 10_000e6; // 0.9 WETH is worth ~2208 USDC
+
+        // An over-optimistic quote (4x the market) is refused by the swap, not silently accepted.
+        u.swap.quotedOut = 4 * 2453_450000;
         bytes memory data = abi.encodeCall(StrategyRouter.unwind, (u));
         vm.prank(alice);
         vm.expectRevert(MockAerodromeSwapRouter.TooLittleReceived.selector);
-        acct.exec(address(router), 0, data);
-        u.swapMinOut = 0;
+        acct.execWithCallback(address(router), 0, data);
+
+        // A zero quote is refused: there is no way to express "accept anything".
+        u.swap.quotedOut = 0;
         data = abi.encodeCall(StrategyRouter.unwind, (u));
         vm.prank(alice);
-        vm.expectRevert(AerodromeSwapAdapter.ZeroMinOut.selector);
-        acct.exec(address(router), 0, data);
+        vm.expectRevert(AerodromeSwapAdapter.ZeroQuote.selector);
+        acct.execWithCallback(address(router), 0, data);
+
+        // …and neither is a tolerance above the adapter's own cap.
+        u.swap.quotedOut = 2453_450000;
+        u.swap.maxSlippageBps = 5001;
+        data = abi.encodeCall(StrategyRouter.unwind, (u));
+        vm.prank(alice);
+        vm.expectRevert(
+            abi.encodeWithSelector(AerodromeSwapAdapter.SlippageTooHigh.selector, uint16(5001), uint16(500))
+        );
+        acct.execWithCallback(address(router), 0, data);
+    }
+
+    /// The sandwich the old floor allowed: 0.9 WETH ($2,208) settling for 0.90 USDC. With the quote
+    /// floor it reverts instead of returning a "successful" transaction.
+    function test_FIX_B6b_aSandwichedLegRevertsInsteadOfSettlingForDust() public {
+        (uint256 id,) = _openViaAccount(_open(COLLATERAL, BORROW, 1));
+        engine.setPendingFee(id, address(weth), 1e18);
+        engine.setStaked(id, true);
+        aeroRouter.setRate(address(weth), address(usdc), 1e6, 1e18); // 1 WETH → 1 USDC
+        StrategyRouter.UnwindParams memory u = _unwind(_ids(id), type(uint256).max, 0);
+        bytes memory data = abi.encodeCall(StrategyRouter.unwind, (u));
+        vm.prank(alice);
+        vm.expectRevert(MockAerodromeSwapRouter.TooLittleReceived.selector);
+        acct.execWithCallback(address(router), 0, data);
+        assertEq(aaveVenue.debt(address(acct), address(usdc)), BORROW, "atomic: nothing repaid at a robbed price");
     }
 
     function test_unwind_skipsRefusedIdsAndReports() public {
@@ -362,7 +399,7 @@ contract StrategyRouterTest is Fixture {
         bytes memory data = abi.encodeCall(StrategyRouter.unwind, (u));
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(StrategyRouter.Expired.selector, block.timestamp - 1));
-        acct.exec(address(router), 0, data);
+        acct.execWithCallback(address(router), 0, data);
     }
 
     function test_unwind_byKeeperWithinGrant() public {
@@ -382,7 +419,7 @@ contract StrategyRouterTest is Fixture {
             )
         );
         StrategyRouter.UnwindParams memory u = _unwind(_ids(id), 15_000e6, 0);
-        Call[] memory calls = _one(_call(address(router), abi.encodeCall(StrategyRouter.unwind, (u))));
+        Call[] memory calls = _one(_callP(address(router), abi.encodeCall(StrategyRouter.unwind, (u))));
         vm.prank(keeper);
         acct.execAsKeeper(calls);
         assertEq(aaveVenue.debt(address(acct), address(usdc)), BORROW - 15_000e6);
@@ -390,7 +427,7 @@ contract StrategyRouterTest is Fixture {
         assertEq(weth.balanceOf(keeper), 0);
         // Over budget: a second repay of 1 USDC in the same period is refused.
         u = _unwind(new uint256[](0), 1, 0);
-        calls = _one(_call(address(router), abi.encodeCall(StrategyRouter.unwind, (u))));
+        calls = _one(_callP(address(router), abi.encodeCall(StrategyRouter.unwind, (u))));
         vm.prank(keeper);
         vm.expectRevert();
         acct.execAsKeeper(calls);
@@ -398,7 +435,7 @@ contract StrategyRouterTest is Fixture {
 
     function test_keeperCannotOpenWithoutGrant() public {
         StrategyRouter.OpenParams memory p = _open(0, BORROW, 1);
-        Call[] memory calls = _one(_call(address(router), abi.encodeCall(StrategyRouter.openLeveragedLp, (p))));
+        Call[] memory calls = _one(_callP(address(router), abi.encodeCall(StrategyRouter.openLeveragedLp, (p))));
         vm.prank(keeper);
         vm.expectRevert();
         acct.execAsKeeper(calls);
@@ -444,10 +481,10 @@ contract StrategyRouterTest is Fixture {
         vm.prank(alice);
         if (expectedHf < ENTRY_HF_FLOOR_WAD) {
             vm.expectRevert();
-            acct.exec(address(router), 0, data);
+            acct.execWithCallback(address(router), 0, data);
             assertEq(aaveVenue.debt(address(acct), address(usdc)), 0);
         } else {
-            acct.exec(address(router), 0, data);
+            acct.execWithCallback(address(router), 0, data);
             assertGe(aaveVenue.healthFactor(address(acct)), ENTRY_HF_FLOOR_WAD);
         }
         _assertRouterEmpty();
@@ -460,18 +497,27 @@ contract AerodromeSwapAdapterTest is Fixture {
         usdc.mint(address(acct), 100_000e6);
     }
 
-    function _swap(address tIn, address tOut, uint256 amt, uint256 minOut, uint256 deadline)
+    /// A quote of (amt → quotedOut) with a 1 % tolerance: the shape every caller must now pass.
+    function _swap(address tIn, address tOut, uint256 amt, uint256 quotedOut, uint256 deadline)
         internal
         pure
         returns (bytes memory)
     {
-        return abi.encodeCall(ISwapAdapter.swap, (tIn, tOut, amt, minOut, deadline, abi.encode(int24(100))));
+        return abi.encodeCall(
+            ISwapAdapter.swap,
+            (tIn, tOut, amt, amt, quotedOut, uint16(100), deadline, abi.encode(int24(100)))
+        );
     }
 
     function test_swapPaysTheAccountAndResetsAllowance() public {
         uint256 expected = aeroRouter.quote(address(usdc), address(weth), 2453_450000);
         bytes memory ret = _ownerExec(
             address(swapAdapter), _swap(address(usdc), address(weth), 2453_450000, expected, block.timestamp + 60)
+        );
+        assertEq(
+            swapAdapter.minOutFor(2453_450000, 2453_450000, expected, 100),
+            (expected * 9_900) / 10_000,
+            "the floor a caller sees is the floor the swap enforces"
         );
         assertEq(abi.decode(ret, (uint256)), expected);
         assertEq(weth.balanceOf(address(acct)), expected);
@@ -480,17 +526,32 @@ contract AerodromeSwapAdapterTest is Fixture {
     }
 
     function test_swapGuards() public {
+        uint256 fair = aeroRouter.quote(address(usdc), address(weth), 1e6);
         vm.startPrank(alice);
-        vm.expectRevert(AerodromeSwapAdapter.ZeroMinOut.selector);
-        acct.exec(address(swapAdapter), 0, _swap(address(usdc), address(weth), 1e6, 0, block.timestamp + 60));
+        vm.expectRevert(AerodromeSwapAdapter.ZeroQuote.selector);
+        acct.execWithCallback(address(swapAdapter), 0, _swap(address(usdc), address(weth), 1e6, 0, block.timestamp + 60));
         vm.expectRevert(abi.encodeWithSelector(AerodromeSwapAdapter.Expired.selector, block.timestamp - 1));
-        acct.exec(address(swapAdapter), 0, _swap(address(usdc), address(weth), 1e6, 1, block.timestamp - 1));
+        acct.execWithCallback(address(swapAdapter), 0, _swap(address(usdc), address(weth), 1e6, fair, block.timestamp - 1));
         vm.expectRevert(AerodromeSwapAdapter.SameToken.selector);
-        acct.exec(address(swapAdapter), 0, _swap(address(usdc), address(usdc), 1e6, 1, block.timestamp + 60));
+        acct.execWithCallback(address(swapAdapter), 0, _swap(address(usdc), address(usdc), 1e6, fair, block.timestamp + 60));
         vm.expectRevert(AerodromeSwapAdapter.ZeroAmount.selector);
-        acct.exec(address(swapAdapter), 0, _swap(address(usdc), address(weth), 0, 1, block.timestamp + 60));
+        acct.execWithCallback(address(swapAdapter), 0, _swap(address(usdc), address(weth), 0, fair, block.timestamp + 60));
         vm.expectRevert(MockAerodromeSwapRouter.TooLittleReceived.selector);
-        acct.exec(address(swapAdapter), 0, _swap(address(usdc), address(weth), 1e6, 1e18, block.timestamp + 60));
+        acct.execWithCallback(
+            address(swapAdapter), 0, _swap(address(usdc), address(weth), 1e6, 1e18, block.timestamp + 60)
+        );
+        // A tolerance above the on-chain cap is refused outright.
+        vm.expectRevert(
+            abi.encodeWithSelector(AerodromeSwapAdapter.SlippageTooHigh.selector, uint16(501), uint16(500))
+        );
+        acct.execWithCallback(
+            address(swapAdapter),
+            0,
+            abi.encodeCall(
+                ISwapAdapter.swap,
+                (address(usdc), address(weth), 1e6, 1e6, fair, uint16(501), block.timestamp + 60, abi.encode(int24(100)))
+            )
+        );
         vm.stopPrank();
         vm.expectRevert(AerodromeSwapAdapter.ZeroAddress.selector);
         new AerodromeSwapAdapter(IAerodromeSwapRouter(address(0)));
@@ -500,13 +561,27 @@ contract AerodromeSwapAdapterTest is Fixture {
         vm.prank(alice);
         acct.grant(keeper, _perm(address(swapAdapter), ISwapAdapter.swap.selector, _limits1(address(usdc), 1_000e6), 0));
         Call[] memory calls = _one(
-            _call(address(swapAdapter), _swap(address(usdc), address(weth), 1_000e6, 1, block.timestamp + 60))
+            _callP(
+                address(swapAdapter),
+                _swap(
+                    address(usdc),
+                    address(weth),
+                    1_000e6,
+                    aeroRouter.quote(address(usdc), address(weth), 1_000e6),
+                    block.timestamp + 60
+                )
+            )
         );
         vm.prank(keeper);
         acct.execAsKeeper(calls);
         assertGt(weth.balanceOf(address(acct)), 0, "output lands in the account");
         assertEq(weth.balanceOf(keeper), 0);
-        calls = _one(_call(address(swapAdapter), _swap(address(usdc), address(weth), 1, 1, block.timestamp + 60)));
+        calls = _one(
+            _callP(
+                address(swapAdapter),
+                _swap(address(usdc), address(weth), 1, aeroRouter.quote(address(usdc), address(weth), 1) + 1, block.timestamp + 60)
+            )
+        );
         vm.prank(keeper);
         vm.expectRevert();
         acct.execAsKeeper(calls);
