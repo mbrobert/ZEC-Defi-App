@@ -74,6 +74,25 @@ export const aaveOracleAbi = [
 
 export const chainlinkAggregatorAbi = [
   {
+    // Historical rounds: the ONLY on-chain source of a feed's real cadence.
+    // The keeper derives each feed's staleness bound from the gaps between its
+    // own recent rounds (agent/src/engine/feeds.ts) instead of applying one
+    // global constant that is wrong for every feed at once (audit C-HIGH-2:
+    // the live USDC/USD round was 44,475 s old against a 10,800 s window, so
+    // every borrower read UNKNOWN and the ladder never ran).
+    type: "function",
+    name: "getRoundData",
+    stateMutability: "view",
+    inputs: [{ name: "roundId", type: "uint80" }],
+    outputs: [
+      { name: "roundId", type: "uint80" },
+      { name: "answer", type: "int256" },
+      { name: "startedAt", type: "uint256" },
+      { name: "updatedAt", type: "uint256" },
+      { name: "answeredInRound", type: "uint80" },
+    ],
+  },
+  {
     type: "function",
     name: "latestRoundData",
     stateMutability: "view",

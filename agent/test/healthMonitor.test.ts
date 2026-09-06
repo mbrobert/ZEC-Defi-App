@@ -10,7 +10,7 @@ import { Logger, memorySink } from "../src/log.js";
 import { HealthMonitor, rotate, type MonitorConfig } from "../src/monitors/healthMonitor.js";
 import { AaveReader, aaveAddressesFromShared, reserveSpecsFromShared } from "../src/services/chain.js";
 import { AccountDiscovery } from "../src/services/discovery.js";
-import { KeeperStore, type DispatchRecord } from "../src/store/keeperStore.js";
+import { KeeperStore, StoreTamperedError, type DispatchRecord } from "../src/store/keeperStore.js";
 import type { Address } from "../src/types/evm.js";
 import { ProgressWatchdog, type TickHandle } from "../src/watchdog.js";
 import { ACCOUNT_A, ACCOUNT_B, FACTORY, OWNER_A, OWNER_B, USDC, cbBtcPosition, debtForHf, newMockChain } from "./fixtures.js";
@@ -55,6 +55,11 @@ const CONFIG: MonitorConfig = {
   discoveryFromBlock: 0n,
   unknownEscalationStreak: 2,
   maxDispatchAttempts: 3,
+  maxResumePerTick: 25,
+  dispatchDeadlineMs: 5_000,
+  maxRecordStalls: 3,
+  maxRungRefires: 2,
+  clockDriftMaxS: 120,
 };
 
 interface Rig {
@@ -64,6 +69,8 @@ interface Rig {
   monitor: HealthMonitor;
   sink: ReturnType<typeof memorySink>;
   escalations: { account: Address; reasons: string[]; streak: number }[];
+  fatals: Error[];
+  events: { kind: string; account?: string; reasons?: string[] }[];
   tick: () => Promise<Awaited<ReturnType<HealthMonitor["tick"]>>>;
   watchdog: ProgressWatchdog;
   storePath: string;
@@ -100,6 +107,8 @@ async function rig(opts: { chain?: MockChain; storePath?: string; config?: Parti
   });
   const dispatcher = new FakeDispatcher(storePath);
   const escalations: Rig["escalations"] = [];
+  const fatals: Error[] = [];
+  const events: Rig["events"] = [];
   const watchdog = new ProgressWatchdog({ stallMs: 10_000, backoff: { initialMs: 10, maxMs: 100, factor: 2 } });
   const monitor = new HealthMonitor({
     reader,
@@ -112,9 +121,15 @@ async function rig(opts: { chain?: MockChain; storePath?: string; config?: Parti
     // The monitor's clock is the mock chain's clock (feed staleness is judged against it).
     now: () => new Date(Number(chain.nowS) * 1000),
     onEscalate: (e) => escalations.push(e),
+    onFatal: (e) => fatals.push(e),
+    notifier: {
+      failures: 0,
+      channels: ["test"],
+      deliver: async (e) => void events.push({ kind: e.kind, account: e.account, reasons: e.reasons }),
+    },
   });
   const tick = () => monitor.tick(watchdog.beginTick());
-  return { chain, store, dispatcher, monitor, sink, escalations, tick, watchdog, storePath, readsInFlight };
+  return { chain, store, dispatcher, monitor, sink, escalations, fatals, events, tick, watchdog, storePath, readsInFlight };
 }
 
 const keyOf = (r: Rig, i: number) => r.dispatcher.calls[i].intent.record.key;
@@ -238,7 +253,12 @@ describe("health monitor — ladder, hysteresis, re-arm, episodes", () => {
     await r.tick();
     cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.19));
     await r.tick();
-    assert.equal(keyOf(r, 3), `${ACCOUNT_A.toLowerCase()}:1:4:derisk`);
+    // FIX C-10: `repay` CONFIRMED but HF never cleared its trigger, so it is
+    // re-armed once and fires again (bounded by maxRungRefires) instead of
+    // latching for a 0.15-wide band while the position rots.
+    assert.equal(keyOf(r, 3), `${ACCOUNT_A.toLowerCase()}:1:4:repay`);
+    assert.equal(r.store.getAccount(ACCOUNT_A)?.rungRefires?.repay, 2);
+    assert.equal(keyOf(r, 4), `${ACCOUNT_A.toLowerCase()}:1:5:derisk`);
     await r.store.close();
   });
 
@@ -438,11 +458,38 @@ describe("health monitor — isolation, concurrency, fail-closed, escalation", (
     doc.counters.episode = 41;
     await writeFile(r.storePath, JSON.stringify(doc));
     cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.3)); // repay rung
+    await r.tick();
+    assert.equal(r.dispatcher.calls.length, 0, "nothing is dispatched without a store that can key it");
+    // FIX C-6: an untrusted store is now FATAL — the keeper stops so a
+    // supervisor restarts it into a clean re-read, instead of staying up,
+    // heartbeating, and being unable to fire a single rung ever again.
+    assert.ok(r.store.fatal instanceof StoreTamperedError);
+    assert.ok(r.fatals.some((e) => e.name === "StoreTamperedError"));
+    assert.ok(r.sink.lines.some((l) => l.includes("STORE UNUSABLE")));
+    await r.store.close();
+  });
+
+  it("a non-fatal write failure before dispatch still refuses to act and escalates (no un-keyed dispatch)", async () => {
+    const r = await rig();
+    r.chain.emitAccountCreated(OWNER_A, ACCOUNT_A, 1n);
+    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(2.0));
+    await r.tick(); // registered, healthy
+    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.3)); // repay rung
+    const realMutate = r.store.mutate.bind(r.store);
+    // Fail the SECOND write of the next tick: the first is the tick counter,
+    // the second is the pre-dispatch idempotency record.
+    let calls = 0;
+    (r.store as unknown as { mutate: typeof realMutate }).mutate = ((fn) => {
+      calls += 1;
+      if (calls === 2) return Promise.reject(new Error("disk hiccup"));
+      return realMutate(fn);
+    }) as typeof realMutate;
     const rep = await r.tick();
     assert.equal(r.dispatcher.calls.length, 0);
     assert.ok(r.escalations.some((e) => e.reasons[0].includes("store write failed before dispatch")));
     assert.ok(r.sink.lines.some((l) => l.includes("STORE WRITE FAILED BEFORE DISPATCH")));
-    assert.ok(rep.outcomes.some((o) => o.error?.includes("StoreTamperedError")));
+    assert.ok(r.events.some((e) => e.kind === "store-failure"), "a store failure must reach the notifier");
+    assert.ok(rep.outcomes.some((o) => o.error?.includes("disk hiccup")));
     await r.store.close();
   });
 

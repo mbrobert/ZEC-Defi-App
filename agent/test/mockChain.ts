@@ -34,6 +34,10 @@ export interface MockReserve {
   aavePrice: bigint;
   feed: Address | null;
   chainlink: { roundId: bigint; answer: bigint; updatedAt: bigint; answeredInRound: bigint; decimals: number } | null;
+  /** Seconds between this feed's published rounds (drives getRoundData history). */
+  heartbeatS?: bigint;
+  /** Historical rounds are unavailable on this proxy (probe falls back). */
+  noRoundHistory?: boolean;
 }
 
 export interface MockUserReserve {
@@ -179,7 +183,10 @@ export class MockChain {
         return numberToHex(this.gasPrice);
       case "eth_maxPriorityFeePerGas":
         return numberToHex(1_000n);
-      case "eth_getBlockByNumber":
+      case "eth_getBlockByNumber": {
+        this.calls.push({ method, label: "eth_getBlockByNumber" });
+        const bf = await this.applyFault("eth_getBlockByNumber");
+        if (bf) return bf;
         return {
           number: numberToHex(this.blockNumber),
           baseFeePerGas: numberToHex(this.gasPrice),
@@ -203,6 +210,7 @@ export class MockChain {
           uncles: [],
           mixHash: padHex("0x0", { size: 32 }),
         };
+      }
       case "eth_getTransactionCount": {
         const a = String(p[0]).toLowerCase();
         return numberToHex(this.txCount.get(a) ?? 0);
@@ -320,6 +328,22 @@ export class MockChain {
             abi: chainlinkAggregatorAbi,
             functionName,
             result: [c.roundId, c.answer, c.updatedAt, c.updatedAt, c.answeredInRound],
+          });
+        }
+        if (functionName === "getRoundData") {
+          const c = r.chainlink;
+          if (r.noRoundHistory) throw rpcError(3, "execution reverted: No data present");
+          const { args } = decodeFunctionData({ abi: chainlinkAggregatorAbi, data: tx.data });
+          const [want] = args as [bigint];
+          if (want <= 0n || want > c.roundId) throw rpcError(3, "execution reverted: No data present");
+          // A feed publishes on its heartbeat: round n was published
+          // `heartbeat × (latest − n)` seconds before the latest one.
+          const beat = r.heartbeatS ?? 3600n;
+          const updatedAt = c.updatedAt - beat * (c.roundId - want);
+          return encodeFunctionResult({
+            abi: chainlinkAggregatorAbi,
+            functionName,
+            result: [want, c.answer, updatedAt, updatedAt, want],
           });
         }
         return encodeFunctionResult({ abi: chainlinkAggregatorAbi, functionName: "decimals", result: r.chainlink.decimals });

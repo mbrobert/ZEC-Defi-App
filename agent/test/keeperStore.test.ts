@@ -8,7 +8,9 @@ import {
   KeeperStore,
   StoreError,
   StoreLockedError,
+  StoreLockLostError,
   StoreTamperedError,
+  StoreWriteError,
   dispatchKey,
   emptyState,
   validateState,
@@ -95,7 +97,18 @@ describe("keeper store — basics", () => {
     doc.dispatches.push({ key: "k", account: ACCOUNT_A, episode: 3, seq: 1, action: "repay", rung: "repay", hf: 1, status: "PENDING", attempts: 0, createdAt: "x", updatedAt: "x" });
     await writeFile(p3, JSON.stringify(doc));
     await assert.rejects(new KeeperStore(p3).open(), /exceeds persisted counters/);
-    assert.throws(() => validateState({ ...emptyState(), counters: { episode: -1, dispatchSeq: 0 } }), /counters malformed/);
+    assert.throws(() => validateState({ ...emptyState(), counters: { episode: -1, dispatchSeq: 0, tick: 0 } }), /counters malformed/);
+    assert.throws(() => validateState({ ...emptyState(), counters: { episode: 0, dispatchSeq: 0 } }), /counters.tick malformed/);
+
+    // FIX C-4: a v2 store (no tick counter) is MIGRATED, not refused — refusing
+    // to start is how a keeper stops protecting anybody.
+    const p4 = fresh();
+    const v2 = { ...emptyState(), version: 2, counters: { episode: 0, dispatchSeq: 0 } };
+    await writeFile(p4, JSON.stringify(v2));
+    const migrated = new KeeperStore(p4);
+    await migrated.open();
+    assert.deepEqual(migrated.counters, { episode: 0, dispatchSeq: 0, tick: 0 });
+    await migrated.close();
   });
 });
 
@@ -122,9 +135,9 @@ describe("keeper store — crash safety and locking", () => {
 
   it("temp-file + link() lock: a second opener is refused while the first holds it", async () => {
     const p = fresh();
-    const a = new KeeperStore(p, { pid: 1001, isPidAlive: () => true });
+    const a = new KeeperStore(p, { pid: 1001 });
     await a.open();
-    const b = new KeeperStore(p, { pid: 1002, isPidAlive: () => true });
+    const b = new KeeperStore(p, { pid: 1002 });
     await assert.rejects(b.open(), StoreLockedError);
     await assert.rejects(b.open(), /held by pid 1001/);
     await a.close();
@@ -132,27 +145,46 @@ describe("keeper store — crash safety and locking", () => {
     await b.close();
   });
 
-  it("a lock left by a dead pid on this host is reclaimed once; a live pid's lock is not", async () => {
+  it("FIX C-6/C-9: the lock is reclaimed on a STALE HEARTBEAT, never on a pid guess", async () => {
     const p = fresh();
-    const stale = new KeeperStore(p, { pid: 424242, isPidAlive: () => true });
-    await stale.open();
-    // Simulate a crash: the lock file stays, the process is gone.
-    (stale as unknown as { locked: boolean }).locked = false;
-    const s = new KeeperStore(p, { pid: 7, isPidAlive: (pid) => pid !== 424242 });
+    // A crashed keeper: the lock file stays behind with an old heartbeat.
+    const crashed = new KeeperStore(p, { pid: 424242, now: () => new Date(Date.now() - 3_600_000) });
+    await crashed.open();
+    (crashed as unknown as { locked: boolean }).locked = false;
+    // A REUSED pid must not block the restart (audit C-LOW-2) …
+    const s = new KeeperStore(p, { pid: 424242, lockStaleMs: 60_000 });
     await s.open();
-    assert.equal(JSON.parse(await readFile(`${p}.lock`, "utf8")).pid, 7);
+    assert.equal(JSON.parse(await readFile(`${p}.lock`, "utf8")).pid, 424242);
+    const firstInstance = s.instanceId;
     await s.close();
-    // Live holder: refuse.
-    const holder = new KeeperStore(p, { pid: 9, isPidAlive: () => true });
+
+    // … and a LIVE holder is refused even from another pid namespace where the
+    // holder's pid looks dead (audit C-MED-6: two containers, one volume).
+    const holder = new KeeperStore(p, { pid: 9 });
     await holder.open();
-    const other = new KeeperStore(p, { pid: 10, isPidAlive: () => true });
+    const other = new KeeperStore(p, { pid: 9 }); // same pid, different "namespace"
     await assert.rejects(other.open(), StoreLockedError);
+    await assert.rejects(other.open(), /reclaimable after/);
     await holder.close();
+    assert.notEqual(firstInstance, holder.instanceId, "each opener gets its own instance id");
+  });
+
+  it("FIX C-6: a lock stolen by another instance makes every later write FATAL, not an endless caught exception", async () => {
+    const p = fresh();
+    const a = new KeeperStore(p, { pid: 1 });
+    await a.open();
+    await a.registerAccount({ account: ACCOUNT_A, owner: OWNER_A, discoveredAtBlock: 1n }, new Date());
+    // Somebody else takes the lock (stale-heartbeat reclaim, or a manual rm).
+    await writeFile(`${p}.lock`, JSON.stringify({ instanceId: "someone-else", pid: 2, host: "vm", at: new Date().toISOString(), heartbeatAt: new Date().toISOString() }));
+    await assert.rejects(a.updateAccount(ACCOUNT_A, { unknownStreak: 1 }), StoreLockLostError);
+    assert.ok(a.fatal instanceof StoreLockLostError, "the store must poison itself so the keeper stops");
+    await assert.rejects(a.updateAccount(ACCOUNT_A, { unknownStreak: 2 }), StoreLockLostError);
+    await a.close();
   });
 
   it("the lock is a hard link (link() semantics), so a racing link() fails with EEXIST", async () => {
     const p = fresh();
-    const s = new KeeperStore(p, { pid: 1, isPidAlive: () => true });
+    const s = new KeeperStore(p, { pid: 1 });
     await s.open();
     const tmp = `${p}.racer`;
     await writeFile(tmp, "{}");
@@ -226,7 +258,7 @@ describe("keeper store — counters and episodes", () => {
     // Counters survive a restart and never go backwards.
     const s2 = new KeeperStore(p);
     await s2.open();
-    assert.deepEqual(s2.counters, { episode: 2, dispatchSeq: 2 });
+    assert.deepEqual(s2.counters, { episode: 2, dispatchSeq: 2, tick: 0 });
     await s2.registerAccount({ account: ACCOUNT_B, owner: OWNER_B, discoveredAtBlock: 1n }, NOW);
     assert.equal(await s2.beginEpisode(ACCOUNT_B), 3);
     await s2.close();

@@ -87,6 +87,21 @@ export async function mapBounded<T, R>(
       }
     }
   });
-  await Promise.all(workers);
+  // Return as soon as the signal aborts. Awaiting `Promise.all(workers)` meant
+  // one worker stuck in an await that ignores its signal held the whole tick
+  // open for ever — the fleet-wide wedge in audit C-HIGH-3. The orphaned
+  // promise is left to settle on its own; its result is discarded because the
+  // caller checks the same signal before writing anything.
+  const aborted = new Promise<void>((resolve) => {
+    if (!signal) return;
+    if (signal.aborted) return resolve();
+    signal.addEventListener("abort", () => resolve(), { once: true });
+  });
+  await Promise.race([Promise.all(workers), aborted]);
+  for (let i = 0; i < items.length; i++) {
+    if (results[i] === undefined) {
+      results[i] = { status: "rejected", reason: new AbortedError(`item ${i}`, signal?.reason) };
+    }
+  }
   return results;
 }

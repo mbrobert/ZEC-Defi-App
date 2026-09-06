@@ -61,6 +61,12 @@ export interface ReserveContext {
 
 export type ReserveContextResult = { ok: true; ctx: ReserveContext } | { ok: false; reason: string };
 
+/** One published aggregator round, reduced to what a cadence probe needs. */
+export interface RoundRead {
+  roundId: bigint;
+  updatedAt: bigint;
+}
+
 export interface ReaderOptions {
   deadlineMs: number;
   /** Called after each completed RPC (feeds the progress watchdog). */
@@ -94,6 +100,17 @@ export class AaveReader {
 
   async blockNumber(signal?: AbortSignal): Promise<bigint> {
     return this.call("eth_blockNumber", signal, () => this.client.getBlockNumber({ cacheTime: 0 }));
+  }
+
+  /**
+   * Chain head with its timestamp. Everything time-dependent — feed staleness,
+   * transaction deadlines — is measured against CHAIN time, not the keeper
+   * host's clock: a host 10 minutes slow read every feed as "updated in the
+   * future" and made every account UNKNOWN (audit C-LOW-1).
+   */
+  async head(signal?: AbortSignal): Promise<{ number: bigint; timestamp: bigint }> {
+    const b = await this.call("eth_getBlockByNumber(latest)", signal, () => this.client.getBlock({ blockTag: "latest" }));
+    return { number: b.number ?? 0n, timestamp: b.timestamp };
   }
 
   async chainId(signal?: AbortSignal): Promise<number> {
@@ -154,6 +171,35 @@ export class AaveReader {
     ]);
     const [roundId, answer, , updatedAt, answeredInRound] = round;
     return { roundId, answer, updatedAt, answeredInRound, decimals: Number(decimals) };
+  }
+
+  /**
+   * Walk a feed's own recent rounds, newest first: `latestRoundData` then
+   * `getRoundData(roundId − 1 …)`. This is the only on-chain source of a
+   * feed's real cadence, and it is what the per-feed staleness bound is built
+   * from (engine/feeds.ts). A proxy that reverts on a historical round (phase
+   * boundary, unsupported) simply yields fewer samples — never an error.
+   */
+  async readRoundHistory(spec: ReserveSpec, feed: Address, rounds: number, signal?: AbortSignal): Promise<RoundRead[]> {
+    const out: RoundRead[] = [];
+    const latest = await this.call(`latestRoundData(${spec.symbol})`, signal, () =>
+      this.client.readContract({ address: feed, abi: chainlinkAggregatorAbi, functionName: "latestRoundData" })
+    );
+    out.push({ roundId: latest[0], updatedAt: latest[3] });
+    for (let i = 1; i < rounds; i++) {
+      const id = out[out.length - 1].roundId - 1n;
+      if (id <= 0n) break;
+      try {
+        const r = await this.call(`getRoundData(${spec.symbol},${id})`, signal, () =>
+          this.client.readContract({ address: feed, abi: chainlinkAggregatorAbi, functionName: "getRoundData", args: [id] })
+        );
+        if (r[3] === 0n) break; // unset round: end of this aggregator phase
+        out.push({ roundId: r[0], updatedAt: r[3] });
+      } catch {
+        break;
+      }
+    }
+    return out;
   }
 
   /**

@@ -78,18 +78,64 @@ export interface AccountSnapshot {
 }
 
 export interface ValuationParams {
-  /** Unix seconds "now" for staleness checks. */
+  /**
+   * Unix seconds "now" for staleness checks. The monitor and the dispatcher
+   * take this from the CHAIN HEAD's block timestamp, not the host clock: a
+   * keeper host 10 minutes slow used to read every feed as "updated in the
+   * future" and every account as UNKNOWN (audit C-LOW-1).
+   */
   nowS: bigint;
+  /**
+   * Fallback staleness bound, in seconds, for a feed with no per-feed policy.
+   * Kept only as a floor for feeds whose cadence could not be probed.
+   */
   priceMaxAgeS: number;
+  /**
+   * PER-FEED staleness bounds, keyed by reserve symbol, derived at startup
+   * from each aggregator's OWN observed round cadence (engine/feeds.ts).
+   *
+   * One global constant cannot be right for two feeds at once: the live
+   * USDC/USD round was 44,475 s old — a $1-pegged asset on a long heartbeat,
+   * perfectly healthy — against a 10,800 s default, so EVERY borrower (they
+   * all carry USDC debt) read UNKNOWN on every tick and the ladder never ran,
+   * while raising that one constant past 24 h would have disabled the guard
+   * for cbBTC and WETH, the assets that actually move (audit C-HIGH-2).
+   */
+  priceMaxAgeBySymbol?: ReadonlyMap<string, number>;
   oracleDeviationBps: number;
   hfToleranceBps: number;
 }
+
+/** The staleness bound this valuation will apply to `symbol`. */
+export function maxAgeFor(p: ValuationParams, symbol: string): number {
+  return p.priceMaxAgeBySymbol?.get(symbol) ?? p.priceMaxAgeS;
+}
+
+/**
+ * Reason prefix for "this account holds collateral Oilskin cannot value".
+ * Distinct from every other G3 mismatch because it is ACTIONABLE by the user
+ * (audit C-MED-5): the pool reports more collateral than the reserves the
+ * keeper knows, so protection is off for that account and nobody else.
+ */
+export const UNTRACKED_COLLATERAL = "G3 UNTRACKED_COLLATERAL";
 
 export interface CollateralShare {
   asset: Address;
   symbol: ReserveSymbol;
   valueBase: bigint;
   liquidationThresholdBps: bigint;
+}
+
+/** One reserve carrying debt, with everything needed to size a repay in its own units. */
+export interface DebtShare {
+  asset: Address;
+  symbol: ReserveSymbol;
+  decimals: number;
+  /** Raw debt in the asset's own units. */
+  amount: bigint;
+  /** Aave oracle price, 8 decimals — the same price the pool values it at. */
+  price8: bigint;
+  valueBase: bigint;
 }
 
 export type Valuation =
@@ -103,6 +149,8 @@ export type Valuation =
       collateralBase: bigint;
       /** Collateral reserves ordered by value, largest first. */
       collateral: CollateralShare[];
+      /** Debt reserves ordered by value, largest first. */
+      debt: DebtShare[];
       /** The asset whose ladder applies (largest collateral share). */
       dominantCollateral: CollateralShare;
     }
@@ -148,8 +196,9 @@ function checkChainlink(row: ReserveRow, p: ValuationParams, reasons: string[]):
   if (cl.answer <= 0n) reasons.push(`G2 ${row.symbol}: feed answer ${cl.answer} ≤ 0`);
   if (cl.updatedAt === 0n) reasons.push(`G2 ${row.symbol}: feed never updated`);
   if (cl.updatedAt > p.nowS + FUTURE_SKEW_S) reasons.push(`G2 ${row.symbol}: feed updatedAt in the future`);
-  if (cl.updatedAt < p.nowS && p.nowS - cl.updatedAt > BigInt(p.priceMaxAgeS)) {
-    reasons.push(`G2 ${row.symbol}: feed stale by ${(p.nowS - cl.updatedAt).toString()}s`);
+  const maxAge = maxAgeFor(p, row.symbol);
+  if (cl.updatedAt < p.nowS && p.nowS - cl.updatedAt > BigInt(maxAge)) {
+    reasons.push(`G2 ${row.symbol}: feed stale by ${(p.nowS - cl.updatedAt).toString()}s (max ${maxAge}s for this feed)`);
   }
   if (cl.answeredInRound < cl.roundId) reasons.push(`G2 ${row.symbol}: feed round not finalised`);
   if (cl.answer > 0n) {
@@ -193,6 +242,7 @@ export function evaluateSnapshot(s: AccountSnapshot, p: ValuationParams): Valuat
   let collateralSum = 0n;
   let weightedLt = 0n; // Σ value_i × LT_i
   const collateral: CollateralShare[] = [];
+  const debtRows: DebtShare[] = [];
   let anyReserveDebt = false;
 
   for (const r of validRows) {
@@ -209,6 +259,7 @@ export function evaluateSnapshot(s: AccountSnapshot, p: ValuationParams): Valuat
         reasons.push(`G3 ${r.symbol}: debt ${r.debt} values to 0 base units — dust cannot be valued`);
       }
       debtSum += v;
+      debtRows.push({ asset: r.asset, symbol: r.symbol, decimals: r.decimals, amount: r.debt, price8: r.aavePrice, valueBase: v });
     }
     if (r.aTokenBalance > 0n && r.usingAsCollateral) {
       if (r.liquidationThresholdBps === 0n) {
@@ -228,7 +279,15 @@ export function evaluateSnapshot(s: AccountSnapshot, p: ValuationParams): Valuat
     reasons.push(`G3 Σ reserve debt ${debtSum} ≠ pool totalDebtBase ${s.totalDebtBase}`);
   }
   if (!withinBps(collateralSum, s.totalCollateralBase, p.hfToleranceBps)) {
-    reasons.push(`G3 Σ reserve collateral ${collateralSum} ≠ pool totalCollateralBase ${s.totalCollateralBase}`);
+    // Which direction matters: the pool seeing MORE collateral than the keeper
+    // can value means the account holds a reserve outside AAVE_V3_RESERVES —
+    // a user action, permanent until they withdraw it, and something the
+    // dashboard can tell that one user. Anything else is an accounting fault.
+    reasons.push(
+      s.totalCollateralBase > collateralSum
+        ? `${UNTRACKED_COLLATERAL}: pool totalCollateralBase ${s.totalCollateralBase} exceeds Σ reserves the keeper values ${collateralSum} — this account holds collateral Oilskin cannot value, so protection is OFF for it`
+        : `G3 Σ reserve collateral ${collateralSum} ≠ pool totalCollateralBase ${s.totalCollateralBase}`
+    );
   }
   if (collateralSum > 0n) {
     const ltLocal = weightedLt / collateralSum;
@@ -263,6 +322,7 @@ export function evaluateSnapshot(s: AccountSnapshot, p: ValuationParams): Valuat
   if (reasons.length) return { kind: "UNKNOWN", reasons };
 
   collateral.sort((a, b) => (b.valueBase > a.valueBase ? 1 : b.valueBase < a.valueBase ? -1 : 0));
+  debtRows.sort((a, b) => (b.valueBase > a.valueBase ? 1 : b.valueBase < a.valueBase ? -1 : 0));
   const dominant = collateral[0];
   const hf = Number(hfLocalWad) / Number(WAD);
   if (!Number.isFinite(hf) || hf <= 0) return { kind: "UNKNOWN", reasons: ["G4 HF not a finite positive number"] };
@@ -274,6 +334,7 @@ export function evaluateSnapshot(s: AccountSnapshot, p: ValuationParams): Valuat
     debtBase: debtSum,
     collateralBase: collateralSum,
     collateral,
+    debt: debtRows,
     dominantCollateral: dominant,
   };
 }

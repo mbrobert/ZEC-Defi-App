@@ -49,8 +49,53 @@ export interface KeeperConfig {
   watchdogStallMs: number;
   /** Exponential backoff ceiling after a stalled tick. */
   backoffMaxMs: number;
-  /** Chainlink answer older than this is stale ⇒ valuation UNKNOWN. */
+  /**
+   * FALLBACK Chainlink staleness bound. The bound actually enforced is PER
+   * FEED, measured at startup from each aggregator's own round cadence
+   * (engine/feeds.ts) and floored by this value. One global constant was wrong
+   * for every feed at once: 10,800 s against a live USDC/USD round 44,475 s
+   * old made every borrower UNKNOWN on every tick (audit C-HIGH-2).
+   */
   priceMaxAgeS: number;
+  /** Per-reserve operator overrides, from PRICE_MAX_AGE_S_<SYMBOL>. */
+  priceMaxAgeOverridesS: Record<string, number>;
+  /** Multiplier on a feed's largest observed inter-round gap. */
+  feedHeartbeatSlack: number;
+  /** Floor under a probed staleness bound (a fast feed must not get a hair trigger). */
+  feedMinMaxAgeS: number;
+  /** Historical rounds walked back per feed when measuring that gap. */
+  feedHeartbeatRounds: number;
+  /**
+   * What to do when the resolved policy would make EVERY account UNKNOWN.
+   * `fatal` (default) refuses to start; `warn` is an explicit operator override.
+   */
+  feedSelfCheck: "fatal" | "warn";
+  /** Ceiling for the retry-widened LP price band. */
+  bandMaxToleranceBps: number;
+  /** Slippage tolerance handed to the swap adapter (its on-chain cap is 500). */
+  swapMaxSlippageBps: number;
+  /** Single-id value probes per dispatch (sizing a rung by value, not id count). */
+  maxValueProbes: number;
+  /** Warn/escalate when the protection grant expires within this many seconds. */
+  grantExpiryWarnS: number;
+  /** Unfinished dispatch records resumed per tick. */
+  maxResumePerTick: number;
+  /** Wall clock for one dispatch (fresh or resumed); beyond it the fleet moves on. */
+  dispatchDeadlineMs: number;
+  /** Stalls before a wedged dispatch record is quarantined. */
+  maxRecordStalls: number;
+  /** Times a rung may be re-armed after an action that did not clear it. */
+  maxRungRefires: number;
+  /** Host-vs-chain clock difference (seconds) worth a warning. */
+  clockDriftMaxS: number;
+  /** Where rung notifications and escalations are POSTed. Absent ⇒ log only. */
+  notifyWebhookUrl?: string;
+  notifyWebhookToken?: string;
+  notifyDeadlineMs: number;
+  /** Terminal dispatch records kept per account before pruning. */
+  storeKeepTerminalPerAccount: number;
+  /** A store lock whose heartbeat is older than this is reclaimable. */
+  storeLockStaleMs: number;
   /** Chainlink vs Aave-oracle disagreement beyond this ⇒ UNKNOWN. */
   oracleDeviationBps: number;
   /** Chain HF vs locally recomputed HF disagreement beyond this ⇒ UNKNOWN. */
@@ -141,8 +186,34 @@ export const CONFIG_DEFAULTS = {
   oracleDeviationBps: 300,
   hfToleranceBps: 100,
   bandToleranceBps: 100,
+  bandMaxToleranceBps: 500,
+  swapMaxSlippageBps: 100,
+  maxValueProbes: 24,
+  grantExpiryWarnS: 7 * 86_400,
+  maxResumePerTick: 25,
+  dispatchDeadlineMs: 60_000,
+  maxRecordStalls: 3,
+  maxRungRefires: 2,
+  clockDriftMaxS: 120,
+  feedHeartbeatSlack: 2,
+  feedMinMaxAgeS: 300,
+  feedHeartbeatRounds: 6,
+  notifyDeadlineMs: 10_000,
+  storeKeepTerminalPerAccount: 50,
+  storeLockStaleMs: 5 * 60_000,
   txDeadlineS: 180,
 } as const;
+
+/** `PRICE_MAX_AGE_S_<SYMBOL>` — a deliberate per-feed override by an operator. */
+export function readPriceMaxAgeOverrides(env: NodeJS.ProcessEnv): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const key of Object.keys(env)) {
+    const m = /^PRICE_MAX_AGE_S_([A-Za-z0-9]+)$/.exec(key);
+    if (!m) continue;
+    out[m[1]] = num(env, key, 0, { min: 1, integer: true });
+  }
+  return out;
+}
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): KeeperConfig {
   const rpcUrl = readRaw(env, "BASE_RPC_URL");
@@ -190,6 +261,24 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): KeeperConfig {
     throw new ConfigError("WATCHDOG_STALL_MS", `must exceed RPC_DEADLINE_MS (${rpcDeadlineMs})`);
   }
 
+  const dispatchDeadlineMs = num(env, "DISPATCH_DEADLINE_MS", CONFIG_DEFAULTS.dispatchDeadlineMs, { min: 1, integer: true });
+  if (dispatchDeadlineMs < rpcDeadlineMs) {
+    // A resume bound shorter than one RPC deadline would quarantine records
+    // that are merely waiting on a slow node.
+    throw new ConfigError("DISPATCH_DEADLINE_MS", `must be ≥ RPC_DEADLINE_MS (${rpcDeadlineMs})`);
+  }
+
+  const notifyWebhookUrl = readRaw(env, "NOTIFY_WEBHOOK_URL");
+  if (notifyWebhookUrl !== undefined) {
+    let u: URL;
+    try {
+      u = new URL(notifyWebhookUrl);
+    } catch {
+      throw new ConfigError("NOTIFY_WEBHOOK_URL", "is not a valid URL");
+    }
+    if (u.protocol !== "http:" && u.protocol !== "https:") throw new ConfigError("NOTIFY_WEBHOOK_URL", "must be http(s)");
+  }
+
   return {
     rpcUrl,
     chainId: num(env, "CHAIN_ID", CONFIG_DEFAULTS.chainId, { min: 1, integer: true }),
@@ -213,6 +302,30 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): KeeperConfig {
     watchdogStallMs,
     backoffMaxMs: num(env, "BACKOFF_MAX_MS", CONFIG_DEFAULTS.backoffMaxMs, { min: 1, integer: true }),
     priceMaxAgeS: num(env, "PRICE_MAX_AGE_S", CONFIG_DEFAULTS.priceMaxAgeS, { min: 1, integer: true }),
+    priceMaxAgeOverridesS: readPriceMaxAgeOverrides(env),
+    feedHeartbeatSlack: num(env, "FEED_HEARTBEAT_SLACK", CONFIG_DEFAULTS.feedHeartbeatSlack, { min: 1, max: 100 }),
+    feedMinMaxAgeS: num(env, "FEED_MIN_MAX_AGE_S", CONFIG_DEFAULTS.feedMinMaxAgeS, { min: 1, integer: true }),
+    feedHeartbeatRounds: num(env, "FEED_HEARTBEAT_ROUNDS", CONFIG_DEFAULTS.feedHeartbeatRounds, { min: 2, max: 50, integer: true }),
+    feedSelfCheck: oneOf(env, "FEED_SELFCHECK", ["fatal", "warn"] as const, "fatal"),
+    bandMaxToleranceBps: num(env, "BAND_MAX_TOLERANCE_BPS", CONFIG_DEFAULTS.bandMaxToleranceBps, { min: 1, max: 5_000, integer: true }),
+    // The adapter reverts SlippageTooHigh above 500 bps; refuse it here instead.
+    swapMaxSlippageBps: num(env, "SWAP_MAX_SLIPPAGE_BPS", CONFIG_DEFAULTS.swapMaxSlippageBps, { min: 1, max: 500, integer: true }),
+    maxValueProbes: num(env, "MAX_VALUE_PROBES", CONFIG_DEFAULTS.maxValueProbes, { min: 1, max: 200, integer: true }),
+    grantExpiryWarnS: num(env, "GRANT_EXPIRY_WARN_S", CONFIG_DEFAULTS.grantExpiryWarnS, { min: 1, integer: true }),
+    maxResumePerTick: num(env, "MAX_RESUME_PER_TICK", CONFIG_DEFAULTS.maxResumePerTick, { min: 1, max: 1_000, integer: true }),
+    dispatchDeadlineMs,
+    maxRecordStalls: num(env, "MAX_RECORD_STALLS", CONFIG_DEFAULTS.maxRecordStalls, { min: 1, max: 100, integer: true }),
+    maxRungRefires: num(env, "MAX_RUNG_REFIRES", CONFIG_DEFAULTS.maxRungRefires, { min: 0, max: 100, integer: true }),
+    clockDriftMaxS: num(env, "CLOCK_DRIFT_MAX_S", CONFIG_DEFAULTS.clockDriftMaxS, { min: 1, integer: true }),
+    notifyWebhookUrl,
+    notifyWebhookToken: readRaw(env, "NOTIFY_WEBHOOK_TOKEN"),
+    notifyDeadlineMs: num(env, "NOTIFY_DEADLINE_MS", CONFIG_DEFAULTS.notifyDeadlineMs, { min: 1, integer: true }),
+    storeKeepTerminalPerAccount: num(env, "STORE_KEEP_TERMINAL_PER_ACCOUNT", CONFIG_DEFAULTS.storeKeepTerminalPerAccount, {
+      min: 1,
+      max: 100_000,
+      integer: true,
+    }),
+    storeLockStaleMs: num(env, "STORE_LOCK_STALE_MS", CONFIG_DEFAULTS.storeLockStaleMs, { min: 1_000, integer: true }),
     oracleDeviationBps: num(env, "ORACLE_DEVIATION_BPS", CONFIG_DEFAULTS.oracleDeviationBps, {
       min: 1,
       max: 5_000,
@@ -245,8 +358,28 @@ export function describeConfig(c: KeeperConfig): Record<string, unknown> {
     watchdogStallMs: c.watchdogStallMs,
     backoffMaxMs: c.backoffMaxMs,
     priceMaxAgeS: c.priceMaxAgeS,
+    priceMaxAgeOverridesS: c.priceMaxAgeOverridesS,
+    feedHeartbeatSlack: c.feedHeartbeatSlack,
+    feedMinMaxAgeS: c.feedMinMaxAgeS,
+    feedHeartbeatRounds: c.feedHeartbeatRounds,
+    feedSelfCheck: c.feedSelfCheck,
     oracleDeviationBps: c.oracleDeviationBps,
     hfToleranceBps: c.hfToleranceBps,
+    bandMaxToleranceBps: c.bandMaxToleranceBps,
+    swapMaxSlippageBps: c.swapMaxSlippageBps,
+    maxValueProbes: c.maxValueProbes,
+    grantExpiryWarnS: c.grantExpiryWarnS,
+    maxResumePerTick: c.maxResumePerTick,
+    dispatchDeadlineMs: c.dispatchDeadlineMs,
+    maxRecordStalls: c.maxRecordStalls,
+    maxRungRefires: c.maxRungRefires,
+    clockDriftMaxS: c.clockDriftMaxS,
+    // The URL is reduced to its origin by the logger's redaction; the token is
+    // never serialised at all, only its presence.
+    notify: c.notifyWebhookUrl ? { webhook: redactString(c.notifyWebhookUrl), token: c.notifyWebhookToken ? "set" : "unset" } : null,
+    notifyDeadlineMs: c.notifyDeadlineMs,
+    storeKeepTerminalPerAccount: c.storeKeepTerminalPerAccount,
+    storeLockStaleMs: c.storeLockStaleMs,
     logLevel: c.logLevel,
   };
 }

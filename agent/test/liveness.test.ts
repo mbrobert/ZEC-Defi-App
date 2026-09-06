@@ -149,12 +149,12 @@ describe("runKeeper in-process — end to end in keeper mode", () => {
     const oil = new MockOilskin(chain, { router: ROUTER, lpVenue: LP_VENUE });
     oil.install([ACCOUNT_A, ACCOUNT_B]);
     const keeper = privateKeyToAccount(KEY).address;
+    // EXACTLY the one Permission the web signs.
     oil.grant(keeper, ROUTER, GRANT_SELECTORS["StrategyRouter.unwind"]);
-    oil.grant(keeper, LP_VENUE, GRANT_SELECTORS["SnuggleLpVenue.closeMany"]);
     const POOL = ("0x" + "aa".repeat(32)) as Hex;
     oil.poolPrices.set(POOL, 10n ** 30n);
     oil.setPositions(ACCOUNT_A, [{ id: 1n, poolId: POOL }, { id: 2n, poolId: POOL }, { id: 3n, poolId: POOL }]);
-    oil.defaultCloseYield = 15_000_000_000n; // 15,000 USDC per closed id
+    oil.defaultCloseYield = { usdc: 15_000_000_000n, other: 0n }; // 15,000 USDC per closed id
 
     const storePath = join(dir, "e2e.json");
     const sink = memorySink();

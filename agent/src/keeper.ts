@@ -1,13 +1,15 @@
 import { createPublicClient, createWalletClient, http, type Account, type Chain, type PublicClient, type Transport, type WalletClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { base } from "viem/chains";
-import { HF_LADDER } from "@zyo/shared";
+import { AAVE_V3_RESERVES, BORROW_ASSET, COLLATERAL_ASSETS, HF_LADDER } from "@zyo/shared";
 import { accountCreatedEvent, strategyRouterAbi } from "./abi/oilskin.js";
 import { describeConfig, loadConfig, type KeeperConfig } from "./config.js";
 import { KeeperDispatcher } from "./dispatch/keeperDispatcher.js";
 import { ObserveOnlyDispatcher } from "./dispatch/observeOnly.js";
 import type { Dispatcher } from "./dispatch/types.js";
+import { buildFeedPolicies, FeedSelfCheckError, logFeedPolicies, policyMap, selfCheckFeeds, type FeedPolicy } from "./engine/feeds.js";
 import { Logger, stdoutSink, type LogSink } from "./log.js";
+import { logChannel, MultiNotifier, webhookChannel, type KeeperEvent, type Notifier } from "./notify/notifier.js";
 import { HealthMonitor, type TickReport } from "./monitors/healthMonitor.js";
 import { AaveReader, aaveAddressesFromShared, reserveSpecsFromShared } from "./services/chain.js";
 import { sleep } from "./services/deadline.js";
@@ -37,7 +39,12 @@ export interface RunOptions {
   /** Test hook: a wallet client over the same transport as the public client. */
   makeWallet?: (config: KeeperConfig, account: Account) => WalletClient<Transport, Chain, Account>;
   makeDispatcher?: (config: KeeperConfig, log: Logger) => Dispatcher;
-  notify?: (record: import("./store/keeperStore.js").DispatchRecord) => Promise<void> | void;
+  /** Extra delivery channel (tests, or an operator's own transport). */
+  notifyChannel?: { name: string; send: (e: KeeperEvent) => Promise<void> };
+  /** Replaces the whole notifier (tests). */
+  notifier?: Notifier;
+  /** Injected for tests; defaults to the global fetch. */
+  fetchImpl?: typeof fetch;
   /** Consecutive UNKNOWN valuations before escalation. */
   unknownEscalationStreak?: number;
   maxDispatchAttempts?: number;
@@ -86,8 +93,47 @@ export async function runKeeper(env: NodeJS.ProcessEnv, opts: RunOptions = {}): 
     throw new Error(`RPC reports chain id ${chainId}, config expects ${config.chainId}`);
   }
 
-  const store = new KeeperStore(config.storePath);
+  // ---- feed self-check: the keeper must not run silently blind ------------
+  // Every wired feed is probed for its OWN cadence and the bound that will be
+  // enforced is logged. If that policy would make every account UNKNOWN, this
+  // is a loud fatal — the alternative is what shipped: a daemon that heartbeats
+  // for ever and protects nobody (audit C-HIGH-2).
+  const feedPolicies: FeedPolicy[] = await buildFeedPolicies(
+    reader,
+    reserveSpecsFromShared(),
+    (await reader.head()).timestamp,
+    {
+      fallbackMaxAgeS: config.priceMaxAgeS,
+      minMaxAgeS: config.feedMinMaxAgeS,
+      slack: config.feedHeartbeatSlack,
+      rounds: config.feedHeartbeatRounds,
+      overrides: config.priceMaxAgeOverridesS,
+    }
+  );
+  logFeedPolicies(log, feedPolicies);
+  const priceMaxAgeBySymbol = policyMap(feedPolicies);
+  const check = selfCheckFeeds(feedPolicies, BORROW_ASSET, Object.keys(COLLATERAL_ASSETS).filter((s) => AAVE_V3_RESERVES.includes(s as never)));
+  if (check.fatal) {
+    log.error("FEED SELF-CHECK FAILED — the configured staleness policy would make every account UNKNOWN", {
+      reason: check.reason,
+      stale: check.stale,
+      mode: config.feedSelfCheck,
+    });
+    if (config.feedSelfCheck === "fatal") throw new FeedSelfCheckError(check.reason ?? "unknown");
+  } else if (check.stale.length) {
+    log.warn("some feeds are stale against their own measured cadence", { stale: check.stale });
+  }
+
+  const store = new KeeperStore(config.storePath, {
+    keepTerminalPerAccount: config.storeKeepTerminalPerAccount,
+    lockStaleMs: config.storeLockStaleMs,
+  });
   await store.open();
+  if (store.recoveredFromBackup) {
+    log.error("STORE RECOVERED FROM BACKUP — the primary store was unreadable; episode/idempotency state may be behind", {
+      path: config.storePath,
+    });
+  }
   log.info("store open", { path: config.storePath, accounts: store.listAccounts().length, counters: store.counters });
 
   const discovery = new AccountDiscovery(client, {
@@ -98,6 +144,18 @@ export async function runKeeper(env: NodeJS.ProcessEnv, opts: RunOptions = {}): 
     deadlineMs: config.rpcDeadlineMs,
     onProgress,
   });
+
+  // ---- notifications: every rung and every escalation leaves this process --
+  const channels = [logChannel(log), ...(opts.notifyChannel ? [opts.notifyChannel] : [])];
+  if (config.notifyWebhookUrl) {
+    channels.push(webhookChannel({ url: config.notifyWebhookUrl, token: config.notifyWebhookToken, fetchImpl: opts.fetchImpl }));
+  } else if (!opts.notifyChannel) {
+    log.warn(
+      "NO NOTIFICATION CHANNEL: set NOTIFY_WEBHOOK_URL. Rung warnings and escalations will reach this log and nothing else — " +
+        "the user is shown a per-rung promise before they sign, and it cannot be kept from here"
+    );
+  }
+  const notifier: Notifier = opts.notifier ?? new MultiNotifier(log, channels, config.notifyDeadlineMs);
 
   let dispatcher: Dispatcher;
   if (opts.makeDispatcher) {
@@ -126,18 +184,28 @@ export async function runKeeper(env: NodeJS.ProcessEnv, opts: RunOptions = {}): 
       config: {
         deadlineMs: config.rpcDeadlineMs,
         bandToleranceBps: config.bandToleranceBps,
+        bandMaxToleranceBps: config.bandMaxToleranceBps,
         txDeadlineS: config.txDeadlineS,
         priceMaxAgeS: config.priceMaxAgeS,
+        priceMaxAgeBySymbol,
         oracleDeviationBps: config.oracleDeviationBps,
         hfToleranceBps: config.hfToleranceBps,
+        swapMaxSlippageBps: config.swapMaxSlippageBps,
+        maxValueProbes: config.maxValueProbes,
+        grantExpiryWarnS: config.grantExpiryWarnS,
       },
-      notify: opts.notify,
+      notifier,
     });
     log.info("keeper mode", { keeper: account.address, router: config.routerAddress, lpVenue, usdc });
   } else {
-    dispatcher = new ObserveOnlyDispatcher(log, opts.notify, config.rpcDeadlineMs);
+    dispatcher = new ObserveOnlyDispatcher(log, notifier);
     log.warn("observe-only: no KEEPER_PRIVATE_KEY — rungs are recorded and warnings delivered, on-chain actions refused");
   }
+
+  // ---- lifecycle -----------------------------------------------------------
+  const stop = new AbortController();
+  let stopReason = "";
+  let fatalStoreError: Error | null = null;
 
   const monitor = new HealthMonitor({
     reader,
@@ -149,15 +217,29 @@ export async function runKeeper(env: NodeJS.ProcessEnv, opts: RunOptions = {}): 
     config: {
       concurrency: config.concurrency,
       priceMaxAgeS: config.priceMaxAgeS,
+      priceMaxAgeBySymbol,
       oracleDeviationBps: config.oracleDeviationBps,
       hfToleranceBps: config.hfToleranceBps,
       discoveryFromBlock: config.discoveryFromBlock,
       unknownEscalationStreak: opts.unknownEscalationStreak ?? KEEPER_DEFAULTS.unknownEscalationStreak,
       maxDispatchAttempts: opts.maxDispatchAttempts ?? KEEPER_DEFAULTS.maxDispatchAttempts,
+      maxResumePerTick: config.maxResumePerTick,
+      dispatchDeadlineMs: config.dispatchDeadlineMs,
+      maxRecordStalls: config.maxRecordStalls,
+      maxRungRefires: config.maxRungRefires,
+      clockDriftMaxS: config.clockDriftMaxS,
     },
+    notifier,
     onEscalate: (e) => {
       log.error("ESCALATION", e);
       opts.onEscalate?.(e);
+    },
+    onFatal: (e) => {
+      // The store can no longer be trusted. Stop the loop and exit non-zero so
+      // the supervisor restarts into a clean re-read, instead of staying up,
+      // heartbeating, and being unable to fire a single rung.
+      fatalStoreError = e;
+      if (!stop.signal.aborted) stop.abort(e);
     },
   });
 
@@ -167,9 +249,6 @@ export async function runKeeper(env: NodeJS.ProcessEnv, opts: RunOptions = {}): 
     onStall: (i) => log.error("WATCHDOG: tick stalled — aborted, backing off (process stays up)", i),
   });
 
-  // ---- lifecycle -----------------------------------------------------------
-  const stop = new AbortController();
-  let stopReason = "";
   const onSignal = (sig: string) => {
     if (stop.signal.aborted) return;
     stopReason = sig;
@@ -209,7 +288,13 @@ export async function runKeeper(env: NodeJS.ProcessEnv, opts: RunOptions = {}): 
     process.off("SIGTERM", sigterm);
     process.off("SIGINT", sigint);
     await store.close();
-    log.info("stopped", { ticks, reason: stopReason || "maxTicks" });
+    log.info("stopped", {
+      ticks,
+      reason: stopReason || (fatalStoreError ? "store fatal" : "maxTicks"),
+      notifyFailures: notifier.failures,
+      channels: notifier.channels,
+    });
   }
+  if (fatalStoreError) throw fatalStoreError;
   return { ticks };
 }

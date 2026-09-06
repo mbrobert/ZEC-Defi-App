@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
-import { closeSync, fsyncSync, openSync, writeSync } from "node:fs";
-import { link, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { closeSync, fstatSync, fsyncSync, openSync, writeSync } from "node:fs";
+import { copyFile, link, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
 import { dirname, isAbsolute } from "node:path";
 import type { Address, Hex } from "../types/evm.js";
@@ -32,9 +32,33 @@ import type { LadderState } from "../engine/ladder.js";
  *     dispatch/dispatcher.ts).
  *   • Serialised mutations — every `mutate` runs to completion (including the
  *     fsync'd rename) before the next begins.
+ *   • SHORT WRITES ARE FATAL, NOT SILENT (audit C-HIGH-4). `write(2)` returns a
+ *     short count on ENOSPC instead of throwing. The old `persist()` discarded
+ *     that count, fsync'd a truncated temp file, renamed it over the good
+ *     store, and reported success — and the fingerprint agreed, because it
+ *     hashed the intended content while stat-ing the truncated file. The
+ *     keeper then ran on state that no longer existed on disk and could never
+ *     restart ("not valid JSON — refusing to start on a corrupt store", exit 1,
+ *     supervisor crash-loop, every account's protection gone). Now every write
+ *     loops to completion, the fd is `fstat`ed before the fsync, and any
+ *     mismatch unlinks the temp file and throws.
+ *   • A LAST-GOOD COPY — each successful write leaves `<store>.bak`, and a
+ *     corrupt store degrades to "resume from the last good one" instead of
+ *     "never start again".
+ *   • TERMINAL RECORDS ARE PRUNED — dispatch records used to accumulate for
+ *     ever, which is what filled the disk in the first place.
+ *   • The single-writer lock is HEARTBEAT-based, not pid-based (audit C-MED-6,
+ *     C-LOW-2): `process.kill(pid, 0)` answers about the CHECKING process's pid
+ *     namespace, so a second container on the same volume saw the same
+ *     hostname, a "dead" pid, stole the lock, and both wrote; and after a crash
+ *     a REUSED pid made the lock unreclaimable for ever. A lock now carries a
+ *     random instance id and a heartbeat, is reclaimable only when the
+ *     heartbeat has gone stale, and is re-verified before every write.
  */
 
-export const STORE_VERSION = 2 as const;
+export const STORE_VERSION = 3 as const;
+/** Versions this build can read. A v2 store is migrated in place on load. */
+export const READABLE_VERSIONS = [2, 3] as const;
 
 export type ValuationKind = "OK" | "NO_DEBT" | "UNKNOWN";
 
@@ -52,6 +76,19 @@ export interface AccountRecord {
   lastEvaluatedAt: string | null;
   /** Consecutive UNKNOWN valuations (for escalation). */
   unknownStreak: number;
+  /** Reasons behind the last UNKNOWN, so a dashboard can say WHY protection is off. */
+  lastReasons?: string[];
+  /** Last on-chain grant state seen for this account (expiry surfaced, not discarded). */
+  grant?: {
+    target: Address;
+    selector: Hex;
+    active: boolean;
+    allowCallback: boolean;
+    expiry: number;
+    checkedAt: string;
+  };
+  /** Times a rung was re-armed because the action it fired did not clear it. */
+  rungRefires?: Record<string, number>;
 }
 
 /**
@@ -102,12 +139,28 @@ export interface DispatchRecord {
   error?: string;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Keeper nonce persisted BEFORE the broadcast. A crash between the send and
+   * the store write used to replay the action and close a further slice of the
+   * user's LP (audit C-MED-1); on resume this says a transaction may already
+   * be out, and the plan is re-sized against the CURRENT debt rather than
+   * blindly taking another fraction.
+   */
+  sentNonce?: number;
+  /** Ids the plan intended to close, persisted with the key. */
+  closeIds?: string[];
+  /** Times this record wedged a tick. Quarantined at the cap. */
+  stalls?: number;
 }
 
 export interface StoreState {
   version: typeof STORE_VERSION;
   cursor: { lastScannedBlock: string } | null;
-  counters: { episode: number; dispatchSeq: number };
+  /** `tick` drives evaluation rotation: a persisted counter, never the block
+   *  number — at a 30 s poll Base advances ~15 blocks a tick, so `head % n`
+   *  was a FIXED permutation for every account count dividing 15 and the same
+   *  accounts were truncated every time (audit C-LOW-3). */
+  counters: { episode: number; dispatchSeq: number; tick: number };
   accounts: AccountRecord[];
   dispatches: DispatchRecord[];
 }
@@ -116,7 +169,7 @@ export function emptyState(): StoreState {
   return {
     version: STORE_VERSION,
     cursor: null,
-    counters: { episode: 0, dispatchSeq: 0 },
+    counters: { episode: 0, dispatchSeq: 0, tick: 0 },
     accounts: [],
     dispatches: [],
   };
@@ -139,6 +192,30 @@ export class StoreTamperedError extends StoreError {
     super(`external edit detected — ${msg}`);
     this.name = "StoreTamperedError";
   }
+}
+/**
+ * The lock we hold is gone or belongs to somebody else. Another writer is on
+ * this store; this process must not write another byte. Fatal by construction:
+ * the supervisor restarts into a clean re-read rather than the old behaviour
+ * (an endless stream of caught exceptions in a process that looks healthy and
+ * can no longer fire a single rung).
+ */
+export class StoreLockLostError extends StoreError {
+  constructor(msg: string) {
+    super(`lock lost — ${msg}`);
+    this.name = "StoreLockLostError";
+  }
+}
+/** A write that did not reach the disk intact (short write / ENOSPC). */
+export class StoreWriteError extends StoreError {
+  constructor(msg: string) {
+    super(`write failed — ${msg}`);
+    this.name = "StoreWriteError";
+  }
+}
+/** Errors after which the keeper must stop rather than keep pretending. */
+export function isFatalStoreError(e: unknown): boolean {
+  return e instanceof StoreTamperedError || e instanceof StoreLockLostError || e instanceof StoreWriteError;
 }
 export class DuplicateIdError extends StoreError {
   constructor(kind: string, id: string) {
@@ -170,6 +247,9 @@ function isNonNegInt(v: unknown): v is number {
 export function validateState(doc: unknown): StoreState {
   if (!isRecord(doc)) throw new StoreError("document is not an object");
   if (doc.version !== STORE_VERSION) throw new StoreError(`unsupported version ${String(doc.version)}`);
+  if (!isRecord(doc.counters) || !isNonNegInt((doc.counters as Record<string, unknown>).tick)) {
+    throw new StoreError("counters.tick malformed");
+  }
   if (doc.cursor !== null && !(isRecord(doc.cursor) && typeof doc.cursor.lastScannedBlock === "string" && /^\d+$/.test(doc.cursor.lastScannedBlock))) {
     throw new StoreError("cursor malformed");
   }
@@ -213,12 +293,58 @@ export function validateState(doc: unknown): StoreState {
   return doc as unknown as StoreState;
 }
 
+/** Parse + validate, with the corrupt-JSON message the operator sees. */
+export function parseStore(raw: string, path: string): StoreState {
+  let doc: unknown;
+  try {
+    doc = JSON.parse(raw);
+  } catch {
+    throw new StoreError(`${path} is not valid JSON — refusing to start on a corrupt store`);
+  }
+  return validateState(migrateDoc(doc));
+}
+
+/** v2 → v3: the persisted tick counter that drives rotation did not exist. */
+function migrateDoc(doc: unknown): unknown {
+  if (!isRecord(doc)) return doc;
+  if (doc.version === 2 && isRecord(doc.counters)) {
+    return { ...doc, version: STORE_VERSION, counters: { ...doc.counters, tick: 0 } };
+  }
+  return doc;
+}
+
+function migrate(s: StoreState): StoreState {
+  return s;
+}
+
 export interface KeeperStoreOptions {
   /** Injected for tests; defaults to process.pid. */
   pid?: number;
-  /** Injected for tests; defaults to process.kill(pid, 0) liveness. */
-  isPidAlive?: (pid: number) => boolean;
+  /**
+   * A lock whose heartbeat is older than this is reclaimable. Pid liveness is
+   * NOT consulted: it answers about the checking process's pid namespace, and
+   * it is wrong in both directions (stolen locks across containers; a reused
+   * pid blocking a restart for ever).
+   */
+  lockStaleMs?: number;
+  /** Injected for tests. */
+  now?: () => Date;
+  /** Terminal dispatch records kept per account (older ones are pruned). */
+  keepTerminalPerAccount?: number;
+  /**
+   * Test hook for the raw write. Defaults to `writeSync`. A short return is
+   * exactly what `write(2)` does on ENOSPC, and discarding it is what silently
+   * truncated the store (audit C-HIGH-4) — so it must be testable.
+   */
+  writeChunk?: (fd: number, buf: Buffer, offset: number, length: number) => number;
 }
+
+export const STORE_DEFAULTS = {
+  lockStaleMs: 5 * 60_000,
+  keepTerminalPerAccount: 50,
+} as const;
+
+const TERMINAL_STATUSES: readonly DispatchStatus[] = ["CONFIRMED", "NOTIFIED", "SUPERSEDED", "ABANDONED"];
 
 export class KeeperStore {
   private state: StoreState | null = null;
@@ -226,8 +352,18 @@ export class KeeperStore {
   private queue: Promise<unknown> = Promise.resolve();
   private locked = false;
   private readonly lockPath: string;
+  private readonly bakPath: string;
   private readonly pid: number;
-  private readonly isPidAlive: (pid: number) => boolean;
+  private readonly lockStaleMs: number;
+  private readonly keepTerminalPerAccount: number;
+  private readonly writeChunk: (fd: number, buf: Buffer, offset: number, length: number) => number;
+  private readonly now: () => Date;
+  /** Random per-process id written into the lock and re-verified before every write. */
+  readonly instanceId: string = randomUUID();
+  /** Set once an unrecoverable store error happens; every later write repeats it. */
+  private fatalError: Error | null = null;
+  /** True when this store was loaded from `<path>.bak` after the primary was corrupt. */
+  recoveredFromBackup = false;
 
   constructor(
     readonly path: string,
@@ -235,17 +371,22 @@ export class KeeperStore {
   ) {
     if (!isAbsolute(path)) throw new StoreError(`path must be absolute: ${path}`);
     this.lockPath = `${path}.lock`;
+    this.bakPath = `${path}.bak`;
     this.pid = opts.pid ?? process.pid;
-    this.isPidAlive =
-      opts.isPidAlive ??
-      ((pid: number) => {
-        try {
-          process.kill(pid, 0);
-          return true;
-        } catch (e) {
-          return (e as NodeJS.ErrnoException).code === "EPERM";
-        }
-      });
+    this.lockStaleMs = opts.lockStaleMs ?? STORE_DEFAULTS.lockStaleMs;
+    this.keepTerminalPerAccount = opts.keepTerminalPerAccount ?? STORE_DEFAULTS.keepTerminalPerAccount;
+    this.writeChunk = opts.writeChunk ?? ((fd, buf, offset, length) => writeSync(fd, buf, offset, length));
+    this.now = opts.now ?? (() => new Date());
+  }
+
+  /** The error that poisoned this store, if any. The keeper exits on it. */
+  get fatal(): Error | null {
+    return this.fatalError;
+  }
+
+  private poison<T extends Error>(e: T): T {
+    if (isFatalStoreError(e)) this.fatalError = e;
+    return e;
   }
 
   // ---- lifecycle ----------------------------------------------------------
@@ -269,10 +410,19 @@ export class KeeperStore {
     this.fingerprint = null;
   }
 
+  private lockBody(): string {
+    return JSON.stringify({
+      instanceId: this.instanceId,
+      pid: this.pid,
+      host: hostname(),
+      at: this.now().toISOString(),
+      heartbeatAt: this.now().toISOString(),
+    });
+  }
+
   private async acquireLock(): Promise<void> {
     const tmp = `${this.lockPath}.${this.pid}.${process.hrtime.bigint().toString(36)}`;
-    const body = JSON.stringify({ pid: this.pid, host: hostname(), at: new Date().toISOString() });
-    await writeFile(tmp, body);
+    await writeFile(tmp, this.lockBody());
     try {
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
@@ -282,13 +432,19 @@ export class KeeperStore {
         } catch (e) {
           if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
           const holder = await this.readLockHolder();
-          if (attempt === 0 && holder && holder.host === hostname() && !this.isPidAlive(holder.pid)) {
-            // Dead holder on this host: reclaim once.
+          const heartbeatAgeMs =
+            holder && holder.heartbeatAt ? this.now().getTime() - Date.parse(holder.heartbeatAt) : Number.POSITIVE_INFINITY;
+          if (attempt === 0 && (!holder || heartbeatAgeMs > this.lockStaleMs)) {
+            // The holder stopped heartbeating: it is gone, whatever its pid says
+            // (a pid can be reused, and a pid from another namespace is not ours
+            // to judge). Reclaim once.
             await unlink(this.lockPath).catch(() => undefined);
             continue;
           }
           throw new StoreLockedError(
-            holder ? `held by pid ${holder.pid} on ${holder.host} since ${holder.at}` : `${this.lockPath} exists`
+            holder
+              ? `held by pid ${holder.pid} on ${holder.host} since ${holder.at} (heartbeat ${Math.round(heartbeatAgeMs / 1000)}s ago; reclaimable after ${Math.round(this.lockStaleMs / 1000)}s)`
+              : `${this.lockPath} exists`
           );
         }
       }
@@ -298,12 +454,29 @@ export class KeeperStore {
     }
   }
 
-  private async readLockHolder(): Promise<{ pid: number; host: string; at: string } | null> {
+  /** Refresh the heartbeat and prove the lock is still ours. Fatal if it is not. */
+  private async assertLockOurs(): Promise<void> {
+    if (!this.locked) throw this.poison(new StoreLockLostError("this process does not hold the lock"));
+    const holder = await this.readLockHolder();
+    if (!holder) throw this.poison(new StoreLockLostError(`${this.lockPath} vanished — another writer may have reclaimed it`));
+    if (holder.instanceId !== undefined && holder.instanceId !== this.instanceId) {
+      throw this.poison(new StoreLockLostError(`held by another instance (${holder.instanceId}) — two writers on one store`));
+    }
+    await writeFile(this.lockPath, this.lockBody()).catch(() => undefined);
+  }
+
+  private async readLockHolder(): Promise<{ pid: number; host: string; at: string; heartbeatAt?: string; instanceId?: string } | null> {
     try {
       const raw = await readFile(this.lockPath, "utf8");
-      const j = JSON.parse(raw) as { pid?: unknown; host?: unknown; at?: unknown };
+      const j = JSON.parse(raw) as Record<string, unknown>;
       if (typeof j.pid === "number" && typeof j.host === "string") {
-        return { pid: j.pid, host: j.host, at: typeof j.at === "string" ? j.at : "?" };
+        return {
+          pid: j.pid,
+          host: j.host,
+          at: typeof j.at === "string" ? j.at : "?",
+          heartbeatAt: typeof j.heartbeatAt === "string" ? j.heartbeatAt : typeof j.at === "string" ? j.at : undefined,
+          instanceId: typeof j.instanceId === "string" ? j.instanceId : undefined,
+        };
       }
       return null;
     } catch {
@@ -329,14 +502,30 @@ export class KeeperStore {
       }
       throw e;
     }
-    let doc: unknown;
     try {
-      doc = JSON.parse(raw);
-    } catch {
-      throw new StoreError(`${this.path} is not valid JSON — refusing to start on a corrupt store`);
+      this.state = migrate(parseStore(raw, this.path));
+      this.fingerprint = await this.fingerprintOf(raw);
+      return;
+    } catch (primary) {
+      // The primary store is unreadable. Before refusing to start — which is
+      // an unstartable keeper and a crash-looping supervisor, i.e. every
+      // account unprotected — try the last good copy we kept beside it.
+      let bak: string;
+      try {
+        bak = await readFile(this.bakPath, "utf8");
+      } catch {
+        throw primary;
+      }
+      let recovered: StoreState;
+      try {
+        recovered = migrate(parseStore(bak, this.bakPath));
+      } catch {
+        throw primary;
+      }
+      this.state = recovered;
+      this.recoveredFromBackup = true;
+      await this.persist(); // rewrite the primary from the recovered state
     }
-    this.state = validateState(doc);
-    this.fingerprint = await this.fingerprintOf(raw);
   }
 
   private async fingerprintOf(content: string): Promise<Fingerprint> {
@@ -351,30 +540,69 @@ export class KeeperStore {
     try {
       st = await stat(this.path);
     } catch {
-      throw new StoreTamperedError("store file vanished");
+      throw this.poison(new StoreTamperedError("store file vanished"));
     }
     const fp = this.fingerprint;
     if (st.size !== fp.size || st.ino !== fp.ino || st.mtimeMs !== fp.mtimeMs) {
       const raw = await readFile(this.path, "utf8").catch(() => "");
-      if (sha256(raw) !== fp.sha256) throw new StoreTamperedError(`${this.path} changed on disk since last write`);
+      if (sha256(raw) !== fp.sha256) throw this.poison(new StoreTamperedError(`${this.path} changed on disk since last write`));
       // Same content, different metadata (e.g. copied back): accept and re-pin.
       this.fingerprint = { size: st.size, mtimeMs: st.mtimeMs, ino: st.ino, sha256: fp.sha256 };
     }
   }
 
+  /**
+   * Atomic, VERIFIED write: temp file → every byte written → fstat the fd →
+   * fsync → keep the previous store as `<path>.bak` → rename.
+   *
+   * The `writeSync` loop and the `fstat` are the fix for audit C-HIGH-4: on a
+   * full disk `write(2)` returns a short count instead of throwing, so the old
+   * one-shot `writeSync(fd, content)` fsync'd and renamed a TRUNCATED file over
+   * a good store, reported success to every caller, and left a keeper that
+   * could never restart.
+   */
   private async persist(): Promise<void> {
     if (!this.state) throw new StoreError("not open");
     const content = JSON.stringify(this.state, null, 2);
+    const bytes = Buffer.from(content, "utf8");
     const tmp = `${this.path}.tmp.${this.pid}.${process.hrtime.bigint().toString(36)}`;
-    const fd = openSync(tmp, "w", 0o600);
+    let fd: number | null = null;
     try {
-      writeSync(fd, content);
+      fd = openSync(tmp, "w", 0o600);
+      let written = 0;
+      while (written < bytes.length) {
+        const n = this.writeChunk(fd, bytes, written, bytes.length - written);
+        if (n <= 0) {
+          throw this.poison(
+            new StoreWriteError(`wrote ${written} of ${bytes.length} bytes to ${tmp} and made no progress (disk full?)`)
+          );
+        }
+        written += n;
+      }
+      const st = fstatSync(fd);
+      if (st.size !== bytes.length) {
+        throw this.poison(new StoreWriteError(`${tmp} is ${st.size} bytes on disk, expected ${bytes.length} (disk full?)`));
+      }
       fsyncSync(fd);
+    } catch (e) {
+      if (fd !== null) closeSync(fd);
+      fd = null;
+      await unlink(tmp).catch(() => undefined);
+      throw e instanceof StoreError ? e : this.poison(new StoreWriteError(`${tmp}: ${(e as Error).message}`));
     } finally {
-      closeSync(fd);
+      if (fd !== null) closeSync(fd);
     }
+    // Last-good copy, best effort: a corrupt primary then degrades to
+    // "resume from the previous store" instead of "never start again".
+    await copyFile(this.path, this.bakPath).catch(() => undefined);
     await rename(tmp, this.path);
-    this.fingerprint = await this.fingerprintOf(content);
+    // Fingerprint the FILE, not the intended content: hashing what we meant to
+    // write is how a truncation stayed invisible.
+    const onDisk = await readFile(this.path, "utf8");
+    if (onDisk.length !== content.length) {
+      throw this.poison(new StoreWriteError(`${this.path} is ${onDisk.length} chars after rename, expected ${content.length}`));
+    }
+    this.fingerprint = await this.fingerprintOf(onDisk);
   }
 
   // ---- reads --------------------------------------------------------------
@@ -430,7 +658,9 @@ export class KeeperStore {
    */
   mutate<T>(fn: (s: StoreState) => T): Promise<T> {
     const run = async (): Promise<T> => {
+      if (this.fatalError) throw this.fatalError;
       if (!this.locked) throw new StoreError("not open");
+      await this.assertLockOurs();
       await this.assertUntampered();
       const before = JSON.stringify(this.state);
       let result: T;
@@ -544,7 +774,61 @@ export class KeeperStore {
     });
   }
 
-  updateDispatch(key: string, patch: Partial<Pick<DispatchRecord, "status" | "txHash" | "attempts" | "error">>, now: Date): Promise<DispatchRecord> {
+  /** Advance and return the persisted tick counter (drives evaluation rotation). */
+  nextTick(): Promise<number> {
+    return this.mutate((s) => {
+      s.counters.tick += 1;
+      return s.counters.tick;
+    });
+  }
+
+  /**
+   * Drop terminal dispatch records beyond `keepTerminalPerAccount` per account,
+   * newest first. Records used to accumulate for ever — the store only grew,
+   * which is what eventually filled the disk (audit C-HIGH-4 / INFO note).
+   * Live records (PENDING/SENT/FAILED/REFUSED) are never pruned.
+   */
+  prune(): Promise<number> {
+    // Cheap pre-check: pruning nothing must not cost a write (every persist is
+    // an fsync, and the disk-full path is exactly what this guards against).
+    if (!this.needsPrune()) return Promise.resolve(0);
+    return this.mutate((s) => {
+      const keep = this.keepTerminalPerAccount;
+      const terminalByAccount = new Map<string, DispatchRecord[]>();
+      for (const d of s.dispatches) {
+        if (!TERMINAL_STATUSES.includes(d.status)) continue;
+        const arr = terminalByAccount.get(d.account) ?? [];
+        arr.push(d);
+        terminalByAccount.set(d.account, arr);
+      }
+      const drop = new Set<string>();
+      for (const [, list] of terminalByAccount) {
+        if (list.length <= keep) continue;
+        list.sort((a, b) => b.seq - a.seq);
+        for (const d of list.slice(keep)) drop.add(d.key);
+      }
+      if (drop.size === 0) return 0;
+      s.dispatches = s.dispatches.filter((d) => !drop.has(d.key));
+      return drop.size;
+    });
+  }
+
+  private needsPrune(): boolean {
+    const counts = new Map<string, number>();
+    for (const d of this.snapshot().dispatches) {
+      if (!TERMINAL_STATUSES.includes(d.status)) continue;
+      const n = (counts.get(d.account) ?? 0) + 1;
+      if (n > this.keepTerminalPerAccount) return true;
+      counts.set(d.account, n);
+    }
+    return false;
+  }
+
+  updateDispatch(
+    key: string,
+    patch: Partial<Pick<DispatchRecord, "status" | "txHash" | "attempts" | "error" | "sentNonce" | "closeIds" | "stalls">>,
+    now: Date
+  ): Promise<DispatchRecord> {
     return this.mutate((s) => {
       const d = s.dispatches.find((x) => x.key === key);
       if (!d) throw new StoreError(`dispatch ${key} not found`);

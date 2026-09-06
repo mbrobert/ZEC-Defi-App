@@ -19,9 +19,17 @@ const agentRoot = resolve(here, "..");
 const contractsOut = resolve(agentRoot, "..", "contracts", "out");
 const strict = process.env.VERIFY_ABI_STRICT === "1";
 
-const { oilskinAccountAbi, oilskinAccountFactoryAbi, strategyRouterAbi, lpVenueAbi, KEEPER_SELECTORS, GRANT_SELECTORS } = await import(
-  join(agentRoot, "dist", "src", "abi", "oilskin.js")
-);
+const {
+  oilskinAccountAbi,
+  oilskinAccountFactoryAbi,
+  strategyRouterAbi,
+  lpVenueAbi,
+  swapAdapterAbi,
+  clPoolAbi,
+  KEEPER_SELECTORS,
+  GRANT_SELECTORS,
+  KEEPER_GRANT_SHAPE,
+} = await import(join(agentRoot, "dist", "src", "abi", "oilskin.js"));
 const { aavePoolAbi, aavePoolDataProviderAbi, aaveOracleAbi, chainlinkAggregatorAbi } = await import(
   join(agentRoot, "dist", "src", "abi", "aave.js")
 );
@@ -102,10 +110,11 @@ compare("OilskinAccount", oilskinAccountAbi, loadArtifact("OilskinAccount"));
 compare("OilskinAccountFactory", oilskinAccountFactoryAbi, loadArtifact("OilskinAccountFactory"));
 compare("StrategyRouter", strategyRouterAbi, loadArtifact("StrategyRouter"));
 compare("SnuggleLpVenue", lpVenueAbi, loadArtifact("SnuggleLpVenue"));
+compare("AerodromeSwapAdapter", swapAdapterAbi, loadArtifact("AerodromeSwapAdapter"));
 
 // Grant selectors: the keeper refuses to act unless grantOf(keeper, target, selector) is active
 // for exactly these; a drift here would make every dispatch REFUSED (or worse, check the wrong grant).
-const grantSources = { "StrategyRouter.unwind": [strategyRouterAbi, "unwind"], "SnuggleLpVenue.closeMany": [lpVenueAbi, "closeMany"] };
+const grantSources = { "StrategyRouter.unwind": [strategyRouterAbi, "unwind"] };
 for (const [name, sel] of Object.entries(GRANT_SELECTORS ?? {})) {
   checks += 1;
   const [abi, fn] = grantSources[name];
@@ -116,6 +125,20 @@ for (const [name, sel] of Object.entries(GRANT_SELECTORS ?? {})) {
     console.log(`verify-abi: FAIL GRANT_SELECTORS.${name} = ${sel}, ABI says ${expected}`);
   }
   // …and the artifact agrees with our fragment (compare() above already checked the signature).
+}
+
+// The keeper makes exactly ONE kind of root call, and the grant the user signs must name it.
+// More than one entry here means the keeper plans a call outside the single signed Permission —
+// which is audit C-HIGH-1 (every protective rung REFUSED) coming back.
+checks += 1;
+if (Object.keys(GRANT_SELECTORS ?? {}).length !== 1 || !GRANT_SELECTORS["StrategyRouter.unwind"]) {
+  failures += 1;
+  console.log(`verify-abi: FAIL GRANT_SELECTORS must be exactly {StrategyRouter.unwind}, got ${JSON.stringify(Object.keys(GRANT_SELECTORS ?? {}))}`);
+}
+checks += 1;
+if (KEEPER_GRANT_SHAPE?.selector !== GRANT_SELECTORS["StrategyRouter.unwind"] || KEEPER_GRANT_SHAPE?.allowCallback !== true) {
+  failures += 1;
+  console.log("verify-abi: FAIL KEEPER_GRANT_SHAPE must name unwind with allowCallback=true (the router acts back on the account)");
 }
 
 // Selectors the keeper hard-codes for grant checks must equal the ABI's.
@@ -142,9 +165,11 @@ const PINNED = {
   "getUserReserveData(address,address)": "0x28dd2d01",
   "getAssetPrice(address)": "0xb3596f07",
   "latestRoundData()": "0xfeaf968c",
+  "getRoundData(uint80)": "0x9a6fc8f5",
   "decimals()": "0x313ce567",
+  "tickSpacing()": "0xd0c93a7c",
 };
-for (const abi of [aavePoolAbi, aavePoolDataProviderAbi, aaveOracleAbi, chainlinkAggregatorAbi]) {
+for (const abi of [aavePoolAbi, aavePoolDataProviderAbi, aaveOracleAbi, chainlinkAggregatorAbi, clPoolAbi]) {
   for (const item of abi) {
     if (item.type !== "function") continue;
     checks += 1;

@@ -1,8 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { ObserveOnlyDispatcher } from "../src/dispatch/observeOnly.js";
-import { DeadlineError } from "../src/services/deadline.js";
 import { Logger, memorySink } from "../src/log.js";
+import { MultiNotifier, type KeeperEvent } from "../src/notify/notifier.js";
 import type { DispatchRecord } from "../src/store/keeperStore.js";
 import { ACCOUNT_A } from "./fixtures.js";
 
@@ -12,27 +12,33 @@ function rec(action: string): DispatchRecord {
 }
 
 describe("ObserveOnlyDispatcher (no keeper key)", () => {
-  it("delivers notify, refuses every on-chain action, never confirms", async () => {
+  it("delivers notify, refuses every on-chain action permanently, never confirms", async () => {
     const m = memorySink();
-    const notified: string[] = [];
-    const d = new ObserveOnlyDispatcher(new Logger(m.sink, "debug"), (r) => void notified.push(r.key));
+    const log = new Logger(m.sink, "debug");
+    const seen: KeeperEvent[] = [];
+    const notifier = new MultiNotifier(log, [{ name: "test", send: async (e) => void seen.push(e) }], 1_000);
+    const d = new ObserveOnlyDispatcher(log, notifier);
     assert.deepEqual(await d.dispatch({ record: rec("notify"), valuation: null }), { status: "NOTIFIED" });
-    assert.deepEqual(notified, [rec("notify").key]);
+    assert.deepEqual(seen.map((e) => e.key), [rec("notify").key]);
     for (const a of ["repay", "derisk", "emergency-unwind"]) {
       const r = await d.dispatch({ record: rec(a), valuation: null });
       assert.equal(r.status, "REFUSED");
+      assert.equal((r as { permanent?: boolean }).permanent, true);
       assert.match((r as { reason: string }).reason, /observe-only/);
     }
     assert.equal((await d.confirm()).status, "REFUSED");
     assert.ok(m.lines.some((l) => l.includes("NOTIFY: health warning")));
   });
 
-  it("a hanging notify hook is bounded by the deadline / tick signal", async () => {
-    const d = new ObserveOnlyDispatcher(new Logger(memorySink().sink, "error"), () => new Promise<void>(() => undefined), 30);
-    await assert.rejects(d.dispatch({ record: rec("notify"), valuation: null }), DeadlineError);
-    const c = new AbortController();
-    const p = new ObserveOnlyDispatcher(new Logger(memorySink().sink, "error"), () => new Promise<void>(() => undefined), 10_000).dispatch({ record: rec("notify"), valuation: null }, c.signal);
-    setTimeout(() => c.abort(new Error("watchdog")), 5);
-    await assert.rejects(p, /aborted/);
+  it("FIX C-7: a hanging channel is bounded and the rung is FAILED — not silently 'NOTIFIED'", async () => {
+    const m = memorySink();
+    const log = new Logger(m.sink, "error");
+    const notifier = new MultiNotifier(log, [{ name: "wedged", send: () => new Promise<void>(() => undefined) }], 30);
+    const d = new ObserveOnlyDispatcher(log, notifier);
+    const r = await d.dispatch({ record: rec("notify"), valuation: null });
+    assert.equal(r.status, "FAILED");
+    assert.match((r as { error: string }).error, /not delivered/);
+    assert.equal(notifier.failures, 1);
+    assert.ok(m.lines.some((l) => l.includes("NOTIFICATION NOT DELIVERED")), "a nobody-was-told event must be loud");
   });
 });

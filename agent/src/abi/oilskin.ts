@@ -9,12 +9,20 @@ import { toFunctionSelector, type AbiEvent } from "viem";
  * (AUDIT-FINDINGS Part 4: "the ABI seam broke twice").
  */
 
+/**
+ * `Call` — the 4-tuple the account executes. `callback` is the PERIPHERAL
+ * OPT-IN (contracts fix round 1, D3): false = the target gets no rights over
+ * the account. On the KEEPER path the flag on the call is ignored — the
+ * account reads `Permission.allowCallback` from the grant — so the keeper
+ * sends `callback: false` and the grant must carry `allowCallback: true`.
+ */
 export const callStruct = {
   type: "tuple",
   components: [
     { name: "target", type: "address" },
     { name: "value", type: "uint256" },
     { name: "data", type: "bytes" },
+    { name: "callback", type: "bool" },
   ],
 } as const;
 
@@ -83,6 +91,7 @@ export const oilskinAccountAbi = [
       { name: "period", type: "uint40" },
       { name: "expiry", type: "uint40" },
       { name: "periodStart", type: "uint40" },
+      { name: "allowCallback", type: "bool" },
     ],
   },
   {
@@ -117,11 +126,16 @@ export const oilskinAccountAbi = [
   { type: "error", name: "TokenNotBudgeted", inputs: [{ name: "token", type: "address" }] },
   { type: "error", name: "TokenBudgetExceeded", inputs: [{ name: "token", type: "address" }, { name: "wanted", type: "uint256" }, { name: "remaining", type: "uint256" }] },
   { type: "error", name: "Reentrancy", inputs: [] },
+  // Raised INSIDE the router's frame when the grant's `allowCallback` is false:
+  // a mis-issued grant, not a market condition. Classified separately.
+  { type: "error", name: "NotActivePeripheral", inputs: [] },
+  { type: "error", name: "CallbackNotPermitted", inputs: [] },
+  { type: "error", name: "UnbudgetableSelector", inputs: [{ name: "target", type: "address" }, { name: "selector", type: "bytes4" }] },
 ] as const;
 
 /** Selectors the keeper hard-codes (grant checks). Pinned by verify-abi. */
 export const KEEPER_SELECTORS = {
-  "OilskinAccount.execAsKeeper": toFunctionSelector("execAsKeeper((address,uint256,bytes)[])"),
+  "OilskinAccount.execAsKeeper": toFunctionSelector("execAsKeeper((address,uint256,bytes,bool)[])"),
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -134,6 +148,23 @@ export const priceBandStruct = {
   components: [
     { name: "minSqrtPriceX96", type: "uint160" },
     { name: "maxSqrtPriceX96", type: "uint160" },
+  ],
+} as const;
+
+/**
+ * The swap quote the router hands the adapter for the non-USDC LP leg.
+ * The adapter enforces `amountIn × quotedOut / quotedIn × (10000 − maxSlippageBps) / 10000`
+ * on the amount ACTUALLY swapped, so the quote is a RATE, not an absolute floor —
+ * a leg that comes back larger or smaller than quoted is protected in proportion.
+ * `swapMinOut: 1` is not expressible any more, and that is the point.
+ */
+export const swapQuoteStruct = {
+  type: "tuple",
+  components: [
+    { name: "quotedIn", type: "uint256" },
+    { name: "quotedOut", type: "uint256" },
+    { name: "maxSlippageBps", type: "uint16" },
+    { name: "routeData", type: "bytes" },
   ],
 } as const;
 
@@ -150,8 +181,7 @@ export const strategyRouterAbi = [
           { name: "collateralAsset", type: "address" },
           { name: "positionIds", type: "uint256[]" },
           { name: "band", ...priceBandStruct },
-          { name: "swapMinOut", type: "uint256" },
-          { name: "swapRouteData", type: "bytes" },
+          { name: "swap", ...swapQuoteStruct },
           { name: "repayAmount", type: "uint256" },
           { name: "withdrawAmount", type: "uint256" },
           { name: "deadline", type: "uint256" },
@@ -167,10 +197,14 @@ export const strategyRouterAbi = [
   },
   { type: "function", name: "USDC", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
   { type: "function", name: "LP_VENUE", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
+  { type: "function", name: "SWAP", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
   { type: "error", name: "Expired", inputs: [{ name: "deadline", type: "uint256" }] },
   { type: "error", name: "ExitHfTooLow", inputs: [{ name: "healthFactor", type: "uint256" }, { name: "floor", type: "uint256" }] },
   { type: "error", name: "AssetNotRegistered", inputs: [{ name: "asset", type: "address" }] },
-  { type: "error", name: "RouterHoldsBalance", inputs: [{ name: "token", type: "address" }, { name: "amount", type: "uint256" }] },
+  { type: "error", name: "VenueDisabled", inputs: [{ name: "venue", type: "address" }] },
+  // The DELTA form. `RouterHoldsBalance` (an absolute zero-balance assertion, and a
+  // permanent denial of service for one base unit of anybody's USDC) is gone.
+  { type: "error", name: "RouterBalanceChanged", inputs: [{ name: "token", type: "address" }, { name: "balanceBefore", type: "uint256" }, { name: "balanceAfter", type: "uint256" }] },
 ] as const;
 
 export const lpVenueAbi = [
@@ -208,13 +242,48 @@ export const lpVenueAbi = [
   },
   {
     type: "function",
+    name: "poolTokens",
+    stateMutability: "view",
+    inputs: [{ name: "poolId", type: "bytes32" }],
+    outputs: [
+      { name: "token0", type: "address" },
+      { name: "token1", type: "address" },
+      { name: "pool", type: "address" },
+    ],
+  },
+  {
+    type: "function",
     name: "poolSqrtPriceX96",
     stateMutability: "view",
     inputs: [{ name: "poolId", type: "bytes32" }],
     outputs: [{ name: "", type: "uint256" }],
   },
+  { type: "function", name: "MAX_BAND_BPS", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
   { type: "error", name: "PriceOutOfBand", inputs: [{ name: "sqrtPriceX96", type: "uint256" }, { name: "min", type: "uint160" }, { name: "max", type: "uint160" }] },
   { type: "error", name: "BandRequired", inputs: [] },
+  { type: "error", name: "BandTooWide", inputs: [{ name: "min", type: "uint160" }, { name: "max", type: "uint160" }, { name: "maxBps", type: "uint256" }] },
+  { type: "error", name: "EnumerationFailed", inputs: [{ name: "reason", type: "bytes" }] },
+  { type: "error", name: "PriceUnreadable", inputs: [{ name: "pool", type: "address" }] },
+] as const;
+
+/** AerodromeSwapAdapter — the keeper never calls it directly; it decodes its reverts. */
+export const swapAdapterAbi = [
+  {
+    type: "function",
+    name: "minOutFor",
+    stateMutability: "pure",
+    inputs: [
+      { name: "amountIn", type: "uint256" },
+      { name: "quotedIn", type: "uint256" },
+      { name: "quotedOut", type: "uint256" },
+      { name: "maxSlippageBps", type: "uint16" },
+    ],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  { type: "function", name: "MAX_SLIPPAGE_BPS", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint16" }] },
+  { type: "error", name: "ZeroQuote", inputs: [] },
+  { type: "error", name: "SlippageTooHigh", inputs: [{ name: "bps", type: "uint16" }, { name: "cap", type: "uint16" }] },
+  { type: "error", name: "InsufficientOutput", inputs: [{ name: "out", type: "uint256" }, { name: "minOut", type: "uint256" }] },
 ] as const;
 
 export const erc20BalanceAbi = [
@@ -225,12 +294,48 @@ export const erc20BalanceAbi = [
     inputs: [{ name: "account", type: "address" }],
     outputs: [{ name: "", type: "uint256" }],
   },
+  {
+    type: "function",
+    name: "decimals",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint8" }],
+  },
 ] as const;
 
-/** Selectors of the root calls the keeper needs grants for (pinned by verify-abi). */
+/**
+ * Aerodrome Slipstream CL pool — the keeper reads `tickSpacing()` from the pool
+ * behind an engine poolId to build the adapter's `routeData`
+ * (`abi.encode(int24 tickSpacing)`). No in-repo artifact exists for a live
+ * pool; the selector is pinned in scripts/verify-abi.mjs.
+ */
+export const clPoolAbi = [
+  { type: "function", name: "tickSpacing", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "int24" }] },
+] as const;
+
+/**
+ * Selectors of the ROOT calls the keeper needs grants for (pinned by verify-abi).
+ *
+ * There is exactly one. The keeper's whole plan is one `StrategyRouter.unwind`
+ * per pool — the router closes the LP ids itself through the nested path — so
+ * the single `Permission` the user signs covers every rung. A separate root
+ * `SnuggleLpVenue.closeMany` (what the keeper planned before fix round 1) was
+ * outside that grant, and every protective rung was refused (audit C-HIGH-1).
+ */
 export const GRANT_SELECTORS = {
   "StrategyRouter.unwind": toFunctionSelector(
-    "unwind((address,uint256[],(uint160,uint160),uint256,bytes,uint256,uint256,uint256))"
+    "unwind((address,uint256[],(uint160,uint160),(uint256,uint256,uint16,bytes),uint256,uint256,uint256))"
   ),
-  "SnuggleLpVenue.closeMany": toFunctionSelector("closeMany(uint256[],(uint160,uint160))"),
+} as const;
+
+/**
+ * The grant the web must sign for the keeper, in full. `allowCallback` MUST be
+ * true: the router acts back on the account (`execNestedPeripheral`) and a
+ * grant without it fails with `NotActivePeripheral()` raised inside the
+ * router's frame — a mis-issued grant, not a market condition.
+ */
+export const KEEPER_GRANT_SHAPE = {
+  targetRole: "StrategyRouter",
+  selector: GRANT_SELECTORS["StrategyRouter.unwind"],
+  allowCallback: true,
 } as const;

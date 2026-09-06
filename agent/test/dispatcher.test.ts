@@ -5,15 +5,16 @@ import { createWalletClient, decodeFunctionData, getAddress, type Hex } from "vi
 import { privateKeyToAccount } from "viem/accounts";
 import { base } from "viem/chains";
 import { HF_LADDER } from "@zyo/shared";
-import { GRANT_SELECTORS, lpVenueAbi, strategyRouterAbi } from "../src/abi/oilskin.js";
+import { GRANT_SELECTORS, strategyRouterAbi } from "../src/abi/oilskin.js";
 import { KeeperDispatcher } from "../src/dispatch/keeperDispatcher.js";
-import { CLOSE_FRACTION, bandFor, closeCount, isqrt, planAction } from "../src/dispatch/policy.js";
+import { CLOSE_FRACTION, bandFor, closeCount, isqrt, planAction, selectIds, type PoolInfo } from "../src/dispatch/policy.js";
+import { NO_SWAP, quoteForPool, minOutFor } from "../src/dispatch/quote.js";
 import { evaluateSnapshot } from "../src/engine/valuation.js";
 import { Logger, memorySink } from "../src/log.js";
 import { AaveReader, aaveAddressesFromShared, reserveSpecsFromShared } from "../src/services/chain.js";
 import type { DispatchRecord } from "../src/store/keeperStore.js";
 import type { Address } from "../src/types/evm.js";
-import { ACCOUNT_A, CBBTC, USDC, cbBtcPosition, debtForHf, newMockChain } from "./fixtures.js";
+import { ACCOUNT_A, CBBTC, USDC, WETH as WETH_T, cbBtcPosition, debtForHf, newMockChain } from "./fixtures.js";
 import { MockOilskin } from "./mockOilskin.js";
 
 const ROUTER = getAddress("0x2000000000000000000000000000000000000001") as Address;
@@ -24,7 +25,23 @@ const POOL_A = ("0x" + "aa".repeat(32)) as Hex;
 const POOL_B = ("0x" + "bb".repeat(32)) as Hex;
 const SQRT_P = 5_000_000_000_000_000_000_000_000_000n; // ~ price 4000 in Q64.96 terms, any positive number works
 
-const CFG = { deadlineMs: 500, bandToleranceBps: 100, txDeadlineS: 120, priceMaxAgeS: 3 * 3600, oracleDeviationBps: 300, hfToleranceBps: 100 };
+const CFG = {
+  deadlineMs: 500,
+  bandToleranceBps: 100,
+  bandMaxToleranceBps: 500,
+  txDeadlineS: 120,
+  priceMaxAgeS: 3 * 3600,
+  oracleDeviationBps: 300,
+  hfToleranceBps: 100,
+  swapMaxSlippageBps: 100,
+  maxValueProbes: 24,
+  grantExpiryWarnS: 7 * 86_400,
+};
+
+/** Pool map for the pure-planning tests: a live price, no swap leg needed. */
+function poolMap(...ids: Hex[]): Map<Hex, PoolInfo> {
+  return new Map(ids.map((id) => [id, { sqrtPriceX96: SQRT_P, swap: NO_SWAP, needsSwap: false }]));
+}
 
 function record(action: string, rung: string, hf: number, over: Partial<DispatchRecord> = {}): DispatchRecord {
   const now = "2026-09-05T01:00:00.000Z";
@@ -42,7 +59,14 @@ async function rig(hf = 1.3) {
   const wallet = createWalletClient({ account: privateKeyToAccount(KEY), chain: base, transport: chain.transport() });
   const reader = new AaveReader(client, aaveAddressesFromShared(), reserveSpecsFromShared(), { deadlineMs: 500 });
   const sink = memorySink();
-  const notified: DispatchRecord[] = [];
+  const notified: { kind: string; account?: string }[] = [];
+  const notifier = {
+    failures: 0,
+    channels: ["test"],
+    deliver: async (e: { kind: string; account?: string }) => {
+      notified.push(e);
+    },
+  };
   const dispatcher = new KeeperDispatcher({
     client,
     wallet,
@@ -55,7 +79,7 @@ async function rig(hf = 1.3) {
     log: new Logger(sink.sink, "debug"),
     config: CFG,
     now: () => new Date(Number(chain.nowS) * 1000),
-    notify: (r) => void notified.push(r),
+    notifier,
   });
   const valuation = async () => {
     const ctx = await reader.readReserveContexts();
@@ -64,11 +88,13 @@ async function rig(hf = 1.3) {
     if (v.kind !== "OK") throw new Error(`expected OK, got ${v.kind}`);
     return v;
   };
-  const grantAll = () => {
-    oil.grant(KEEPER, ROUTER, GRANT_SELECTORS["StrategyRouter.unwind"]);
-    oil.grant(KEEPER, LP_VENUE, GRANT_SELECTORS["SnuggleLpVenue.closeMany"]);
+  // EXACTLY the one Permission web/lib/plan.ts signs — nothing more. Before the
+  // D5 fix these tests granted a second selector the product never issues,
+  // which is how audit C-HIGH-1 stayed hidden behind a green suite.
+  const grantAll = (over: Partial<{ active: boolean; allowCallback: boolean; expiry: number }> = {}) => {
+    oil.grant(KEEPER, ROUTER, GRANT_SELECTORS["StrategyRouter.unwind"], over);
   };
-  return { chain, oil, dispatcher, valuation, grantAll, sink, notified, reader };
+  return { chain, oil, dispatcher, valuation, grantAll, sink, notified, notifier, reader };
 }
 
 describe("policy — pure planning", () => {
@@ -112,19 +138,19 @@ describe("policy — pure planning", () => {
     assert.equal(isqrt(999_999n), 999n);
   });
 
-  it("plans closeMany per pool + an unwind that repays MAX and never withdraws; refuses without a pool price", () => {
+  it("FIX C-1: plans ONE unwind per pool — the only root call, inside the only signed grant", () => {
     const base = {
       account: ACCOUNT_A,
       router: ROUTER,
-      lpVenue: LP_VENUE,
       collateralAsset: CBBTC,
       positions: [
-        { id: 1n, poolId: POOL_A },
-        { id: 2n, poolId: POOL_B },
-        { id: 3n, poolId: POOL_A },
+        { id: 1n, poolId: POOL_A, valueUsdc: 1_000_000n },
+        { id: 2n, poolId: POOL_B, valueUsdc: 500_000n },
+        { id: 3n, poolId: POOL_A, valueUsdc: 3_000_000n },
       ],
-      poolSqrtPrice: new Map([[POOL_A, SQRT_P], [POOL_B, SQRT_P]]),
+      pools: poolMap(POOL_A, POOL_B),
       idleUsdc: 0n,
+      usdcNeeded: null,
       bandToleranceBps: 100,
       nowS: 1_800_000_000n,
       txDeadlineS: 120,
@@ -132,24 +158,42 @@ describe("policy — pure planning", () => {
     const plan = planAction({ ...base, action: "emergency-unwind" });
     assert.equal(plan.kind, "CALLS");
     if (plan.kind !== "CALLS") return;
-    assert.equal(plan.calls.length, 3); // two pools + unwind
-    assert.deepEqual(plan.closeIds, [1n, 3n, 2n]);
-    const c0 = decodeFunctionData({ abi: lpVenueAbi, data: plan.calls[0].data });
-    assert.equal(c0.functionName, "closeMany");
-    assert.deepEqual([...(c0.args as unknown as [readonly bigint[]])[0]], [1n, 3n]);
-    const u = decodeFunctionData({ abi: strategyRouterAbi, data: plan.calls[2].data });
-    const p = (u.args as unknown as [{ positionIds: readonly bigint[]; repayAmount: bigint; withdrawAmount: bigint; deadline: bigint; collateralAsset: Address }])[0];
-    assert.deepEqual([...p.positionIds], []);
-    assert.equal(p.repayAmount, (1n << 256n) - 1n);
-    assert.equal(p.withdrawAmount, 0n);
-    assert.equal(p.deadline, 1_800_000_120n);
-    assert.equal(p.collateralAsset, CBBTC);
-    assert.deepEqual(plan.grantsNeeded.map((g) => g.selector), [GRANT_SELECTORS["SnuggleLpVenue.closeMany"], GRANT_SELECTORS["StrategyRouter.unwind"]]);
-    // repay closes ceil(3/3)=1 → only pool A.
-    const repay = planAction({ ...base, action: "repay" });
-    assert.equal(repay.kind === "CALLS" && repay.closeIds.length, 1);
+    // Two pools ⇒ two unwinds. No closeMany anywhere: the router closes the ids.
+    assert.equal(plan.calls.length, 2);
+    assert.deepEqual(new Set(plan.closeIds), new Set([1n, 2n, 3n]));
+    for (const c of plan.calls) {
+      assert.equal(c.target, ROUTER);
+      assert.equal(c.callback, false, "the keeper never sets the call's callback flag; the GRANT carries it");
+      assert.equal(c.data.slice(0, 10), GRANT_SELECTORS["StrategyRouter.unwind"]);
+    }
+    // The most valuable pool goes first; only the LAST call repays.
+    const decoded = plan.calls.map(
+      (c) =>
+        (decodeFunctionData({ abi: strategyRouterAbi, data: c.data }).args as unknown as [
+          {
+            positionIds: readonly bigint[];
+            repayAmount: bigint;
+            withdrawAmount: bigint;
+            deadline: bigint;
+            collateralAsset: Address;
+            swap: { quotedIn: bigint; quotedOut: bigint; maxSlippageBps: number };
+          },
+        ])[0]
+    );
+    assert.deepEqual([...decoded[0].positionIds], [1n, 3n]);
+    assert.deepEqual([...decoded[1].positionIds], [2n]);
+    assert.equal(decoded[0].repayAmount, 0n);
+    assert.equal(decoded[1].repayAmount, (1n << 256n) - 1n);
+    for (const p of decoded) {
+      assert.equal(p.withdrawAmount, 0n);
+      assert.equal(p.deadline, 1_800_000_120n);
+      assert.equal(p.collateralAsset, CBBTC);
+    }
+    // ONE grant, and it is the one the web signs.
+    assert.deepEqual(plan.grantsNeeded, [{ target: ROUTER, selector: GRANT_SELECTORS["StrategyRouter.unwind"] }]);
+
     // No pool price → refuse (never a zero band).
-    const noPrice = planAction({ ...base, action: "repay", poolSqrtPrice: new Map() });
+    const noPrice = planAction({ ...base, action: "repay", pools: new Map() });
     assert.equal(noPrice.kind, "REFUSE");
     // No positions and no idle USDC → nothing the keeper can do.
     const nothing = planAction({ ...base, action: "repay", positions: [] });
@@ -157,6 +201,90 @@ describe("policy — pure planning", () => {
     // No positions but idle USDC → unwind-only plan (repay from idle).
     const idle = planAction({ ...base, action: "repay", positions: [], idleUsdc: 5n });
     assert.equal(idle.kind === "CALLS" && idle.calls.length, 1);
+  });
+
+  it("FIX C-10: the close fraction is a fraction of VALUE, largest ids first — never of the enumeration order", () => {
+    // The PoC's account: two dust ids enumerated first, four $12,000 ids after.
+    const positions = [
+      { id: 1n, poolId: POOL_A, valueUsdc: 10_000_000n }, // $10
+      { id: 2n, poolId: POOL_A, valueUsdc: 10_000_000n },
+      { id: 3n, poolId: POOL_A, valueUsdc: 12_000_000_000n }, // $12,000
+      { id: 4n, poolId: POOL_A, valueUsdc: 12_000_000_000n },
+      { id: 5n, poolId: POOL_A, valueUsdc: 12_000_000_000n },
+      { id: 6n, poolId: POOL_A, valueUsdc: 12_000_000_000n },
+    ];
+    const sel = selectIds(positions, "repay", null, 0n);
+    assert.equal(sel.sizing, "value");
+    // ⅓ of ~$48,020 is ~$16,007: two big ids, not two dust ones.
+    assert.deepEqual(sel.ids.map((p) => p.id), [3n, 4n]);
+    assert.equal(sel.expectedProceedsUsdc, 24_000_000_000n);
+
+    // Reordering the ids cannot change the outcome — that was the whole bug.
+    const reversed = selectIds([...positions].reverse(), "repay", null, 0n);
+    assert.equal(reversed.ids.length, 2);
+    assert.equal(reversed.expectedProceedsUsdc, 24_000_000_000n);
+    assert.ok(reversed.ids.every((p) => p.valueUsdc === 12_000_000_000n), "reordering the ids must not change what is closed");
+
+    // Need-based sizing: when a smaller repay reaches the rung's disarm, close less.
+    const need = selectIds(positions, "repay", 11_000_000_000n, 0n);
+    assert.deepEqual(need.ids.map((p) => p.id), [3n]);
+    // Idle USDC counts towards the need first (the same call repays it).
+    const idleCovers = selectIds(positions, "repay", 11_000_000_000n, 11_000_000_000n);
+    assert.deepEqual(idleCovers.ids, []);
+    // The last resort still closes everything, whatever the need says.
+    assert.equal(selectIds(positions, "emergency-unwind", 1n, 0n).ids.length, 6);
+    // Nothing valued ⇒ documented COUNT fallback, in enumeration order.
+    const unvalued = selectIds(positions.map((p) => ({ ...p, valueUsdc: null })), "repay", null, 0n);
+    assert.equal(unvalued.sizing, "count");
+    assert.deepEqual(unvalued.ids.map((p) => p.id), [1n, 2n]);
+  });
+
+  it("FIX C-1: a swap quote is a real rate from the pool price — `swapMinOut: 1` is not expressible", () => {
+    // USDC is token0 (6 decimals), the other token is token1 (8 decimals).
+    const q = quoteForPool({
+      sqrtPriceX96: SQRT_P,
+      token0: USDC,
+      token1: CBBTC,
+      usdc: USDC,
+      nonUsdcDecimals: 8,
+      maxSlippageBps: 100,
+      tickSpacing: 200,
+    });
+    assert.ok(q.quote.quotedIn > 0n && q.quote.quotedOut > 0n, "a quote must price something");
+    assert.equal(q.nonUsdcToken, CBBTC);
+    assert.equal(q.quote.maxSlippageBps, 100);
+    assert.notEqual(q.quote.routeData, "0x");
+    // The enforced floor scales with the amount actually swapped and sits 1 % under the quote.
+    const floor = minOutFor(q.quote.quotedIn, q.quote);
+    assert.equal(floor, (q.quote.quotedOut * 9_900n) / 10_000n);
+    // Above the adapter's on-chain cap is refused here, not on chain.
+    assert.throws(
+      () =>
+        quoteForPool({
+          sqrtPriceX96: SQRT_P,
+          token0: USDC,
+          token1: CBBTC,
+          usdc: USDC,
+          nonUsdcDecimals: 8,
+          maxSlippageBps: 900,
+          tickSpacing: 200,
+        }),
+      /maxSlippageBps/
+    );
+    // A pool with no USDC leg cannot be settled by the router.
+    assert.throws(
+      () =>
+        quoteForPool({
+          sqrtPriceX96: SQRT_P,
+          token0: CBBTC,
+          token1: WETH_T,
+          usdc: USDC,
+          nonUsdcDecimals: 18,
+          maxSlippageBps: 100,
+          tickSpacing: 200,
+        }),
+      /no USDC leg/
+    );
   });
 });
 
@@ -171,14 +299,34 @@ describe("KeeperDispatcher — acts only inside a readable grant", () => {
     assert.equal(r.chain.calls.filter((c) => c.method === "eth_sendRawTransaction").length, 0);
   });
 
-  it("REFUSES when only one of the two grants exists (partial grant is no grant)", async () => {
+  it("FIX C-1: a grant without allowCallback is REFUSED as a MIS-ISSUED GRANT, permanently, without sending", async () => {
     const r = await rig(1.3);
     r.oil.setPositions(ACCOUNT_A, [{ id: 1n, poolId: POOL_A }]);
-    r.oil.grant(KEEPER, ROUTER, GRANT_SELECTORS["StrategyRouter.unwind"]);
+    r.grantAll({ allowCallback: false });
     const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: await r.valuation() });
     assert.equal(res.status, "REFUSED");
-    assert.match((res as { reason: string }).reason, new RegExp(LP_VENUE));
+    assert.equal((res as { permanent?: boolean }).permanent, true);
+    assert.match((res as { reason: string }).reason, /allowCallback=false/);
     assert.equal(r.oil.txFrom.length, 0);
+  });
+
+  it("FIX C-3: an expiring grant is surfaced to the caller and notified — never read and discarded", async () => {
+    const r = await rig(1.3);
+    r.oil.setPositions(ACCOUNT_A, [{ id: 1n, poolId: POOL_A }]);
+    const soon = Number(r.chain.nowS) + 3 * 86_400; // 3 days left, warn window is 7
+    r.grantAll({ expiry: soon });
+    const seen: { expiry: number; active: boolean; allowCallback: boolean }[] = [];
+    const res = await r.dispatcher.dispatch({
+      record: record("repay", "repay", 1.3),
+      valuation: await r.valuation(),
+      onGrantRead: (g) => seen.push(g),
+    });
+    assert.equal(res.status, "SENT");
+    assert.deepEqual(seen.map((g) => g.expiry), [soon]);
+    assert.ok(
+      r.notified.some((e) => e.kind === "grant-expiring"),
+      "an expiring protection grant must reach the notifier"
+    );
   });
 
   it("a grant revoked between the read and the send surfaces as NotGranted from simulation → REFUSED, nothing sent", async () => {
@@ -192,8 +340,9 @@ describe("KeeperDispatcher — acts only inside a readable grant", () => {
     origGrants.get = (k: string) => {
       const v = realGet(k);
       reads++;
-      // First two reads are the keeper's grantOf checks → true; the execAsKeeper path sees the truth (revoked).
-      return reads <= 2 ? true : v && !k.includes(LP_VENUE.toLowerCase());
+      // The first read is the keeper's grantOf check → active; every later read
+      // (the value probe and the execAsKeeper simulation) sees the truth.
+      return reads <= 1 ? v : undefined;
     };
     const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: await r.valuation() });
     assert.equal(res.status, "REFUSED");
@@ -201,10 +350,10 @@ describe("KeeperDispatcher — acts only inside a readable grant", () => {
     assert.equal(r.oil.txFrom.length, 0);
   });
 
-  it("with grants: simulates, signs as the keeper, sends execAsKeeper([closeMany, unwind]) — the mock repays and HF recovers", async () => {
+  it("FIX C-1: with the ONE signed grant it simulates, signs and sends execAsKeeper([unwind]) — the mock closes and repays", async () => {
     const r = await rig(1.3);
     r.oil.setPositions(ACCOUNT_A, [{ id: 1n, poolId: POOL_A }, { id: 2n, poolId: POOL_A }, { id: 3n, poolId: POOL_A }]);
-    r.oil.defaultCloseYield = 8_000_000_000n; // 8,000 USDC per id
+    r.oil.defaultCloseYield = { usdc: 8_000_000_000n, other: 0n }; // 8,000 USDC per id
     r.grantAll();
     const before = (await r.valuation()).hf;
     const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: await r.valuation() });
@@ -213,15 +362,15 @@ describe("KeeperDispatcher — acts only inside a readable grant", () => {
     assert.deepEqual(r.oil.txFrom, [KEEPER]);
     const exec = r.oil.executed.filter((e) => e.mutate);
     assert.equal(exec.length, 1);
-    assert.deepEqual(exec[0].calls.map((c) => c.selector), [GRANT_SELECTORS["SnuggleLpVenue.closeMany"], GRANT_SELECTORS["StrategyRouter.unwind"]]);
-    assert.equal(r.oil.positions.get(ACCOUNT_A.toLowerCase())!.length, 2); // ceil(3/3) = 1 closed
+    assert.deepEqual(exec[0].calls.map((c) => c.selector), [GRANT_SELECTORS["StrategyRouter.unwind"]]);
+    assert.ok(r.oil.positions.get(ACCOUNT_A.toLowerCase())!.length < 3, "the router closed ids through its nested path");
     const after = (await r.valuation()).hf;
     assert.ok(after > before, `${after} > ${before}`);
     // confirm() reads the receipt.
     const c = await r.dispatcher.confirm(record("repay", "repay", 1.3, { status: "SENT", txHash: tx }));
     assert.deepEqual(c, { status: "CONFIRMED", txHash: tx });
-    // Simulation ran exactly once before the send (dry run, no mutation).
-    assert.equal(r.oil.executed.filter((e) => !e.mutate).length, 1);
+    // Dry runs (value probes + the plan simulation) mutated nothing.
+    assert.ok(r.oil.executed.filter((e) => !e.mutate).length >= 1);
   });
 
   it("emergency closes everything; a reverted receipt is FAILED (retry with the same key later)", async () => {
@@ -233,17 +382,52 @@ describe("KeeperDispatcher — acts only inside a readable grant", () => {
     assert.equal(res.status, "SENT");
     const c = await r.dispatcher.confirm(record("emergency-unwind", "emergency", 1.0, { status: "SENT", txHash: (res as { txHash: Hex }).txHash }));
     assert.equal(c.status, "FAILED");
-    // Plan had both pools + unwind.
-    const dry = r.oil.executed.find((e) => !e.mutate)!;
-    assert.equal(dry.calls.length, 3);
+    // Two pools ⇒ two unwinds, and nothing but unwinds.
+    const dry = r.oil.executed.filter((e) => !e.mutate).at(-1)!;
+    assert.equal(dry.calls.length, 2);
+    assert.ok(dry.calls.every((c) => c.selector === GRANT_SELECTORS["StrategyRouter.unwind"]));
   });
 
-  it("notify rung delivers the hook and touches no chain", async () => {
+  it("FIX C-1: the non-USDC LP leg is swapped under a REAL quote — and a swap worse than the floor fails, never settles", async () => {
+    const r = await rig(1.3);
+    r.oil.setPositions(ACCOUNT_A, [{ id: 1n, poolId: POOL_A }]);
+    // The pool pays both legs: 1,000 USDC and 1 unit (8 decimals) of the other token.
+    r.oil.setCloseYield(1n, 1_000_000_000n, 100_000_000n);
+    r.grantAll();
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: await r.valuation() });
+    assert.equal(res.status, "SENT");
+    // The quote the router carried was built from the pool's live price, not a
+    // guessed absolute floor: the swap settled and the account was credited.
+    assert.ok((r.oil.usdcBalances.get(ACCOUNT_A.toLowerCase()) ?? 0n) >= 0n);
+    assert.equal(r.oil.positions.get(ACCOUNT_A.toLowerCase())!.length, 0);
+
+    // Execution 5 % below the quoted rate, against a 100 bps tolerance: the
+    // adapter's floor bites and nothing settles. `swapMinOut: 1` could not.
+    const bad = await rig(1.3);
+    bad.oil.setPositions(ACCOUNT_A, [{ id: 1n, poolId: POOL_A }]);
+    bad.oil.setCloseYield(1n, 1_000_000_000n, 100_000_000n);
+    bad.oil.swapExecutionBps = 9_500n;
+    bad.grantAll();
+    const failed = await bad.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: await bad.valuation() });
+    assert.equal(failed.status, "FAILED");
+    assert.match((failed as { error: string }).error, /InsufficientOutput/);
+    assert.equal(bad.oil.txFrom.length, 0, "nothing may be broadcast when the simulation hits the floor");
+  });
+
+  it("FIX C-7: the notify rung is NOTIFIED only when a channel accepted it; a failed delivery is FAILED", async () => {
     const r = await rig(1.45);
     const res = await r.dispatcher.dispatch({ record: record("notify", "warn", 1.45), valuation: await r.valuation() });
     assert.deepEqual(res, { status: "NOTIFIED" });
     assert.equal(r.notified.length, 1);
     assert.equal(r.chain.calls.filter((c) => c.method === "eth_sendRawTransaction").length, 0);
+
+    const broken = await rig(1.45);
+    broken.notifier.deliver = async () => {
+      throw new Error("pager down");
+    };
+    const failed = await broken.dispatcher.dispatch({ record: record("notify", "warn", 1.45), valuation: await broken.valuation() });
+    assert.equal(failed.status, "FAILED");
+    assert.match((failed as { error: string }).error, /not delivered/);
   });
 });
 

@@ -1,34 +1,47 @@
 import type { TokenSymbol } from "@zyo/shared";
 import type { Dispatcher, DispatchResult } from "../dispatch/types.js";
-import { stepLadder, validateLadder, type LadderRung } from "../engine/ladder.js";
-import { evaluateSnapshot, type Valuation } from "../engine/valuation.js";
+import { stepLadder, validateLadder, type LadderRung, type LadderState } from "../engine/ladder.js";
+import { evaluateSnapshot, UNTRACKED_COLLATERAL, type Valuation } from "../engine/valuation.js";
 import type { Logger } from "../log.js";
+import { eventNow, type KeeperEvent, type Notifier } from "../notify/notifier.js";
 import type { AaveReader, ReserveContextResult } from "../services/chain.js";
 import type { AccountDiscovery } from "../services/discovery.js";
-import { AbortedError, mapBounded } from "../services/deadline.js";
-import { DuplicateIdError, KeeperStore, type AccountRecord, type DispatchRecord } from "../store/keeperStore.js";
+import { AbortedError, DeadlineError, mapBounded, withDeadline } from "../services/deadline.js";
+import { DuplicateIdError, isFatalStoreError, KeeperStore, type AccountRecord, type DispatchRecord } from "../store/keeperStore.js";
 import type { Address } from "../types/evm.js";
 import type { TickHandle } from "../watchdog.js";
 
 /**
  * The keeper's per-tick work, in order:
- *   1. resume — any dispatch left PENDING/SENT by a previous process is
- *      finished FIRST, with its persisted key (crash-restart reuses the key);
- *   2. discover — new `AccountCreated` logs since the persisted cursor;
+ *   1. resume — dispatches left PENDING/SENT/FAILED/REFUSED by a previous
+ *      process are finished FIRST, with their persisted key, but BOUNDED: each
+ *      record gets its own deadline, only `maxResumePerTick` are touched, and
+ *      the list rotates. One record that never returns used to be picked up
+ *      first on every subsequent tick and wedge the WHOLE FLEET for ever
+ *      (audit C-HIGH-3); a record that stalls `maxRecordStalls` times is
+ *      quarantined and escalated instead of retried at the head of every tick;
+ *   2. discover — new `AccountCreated` logs since the persisted cursor.
+ *      Isolated: a failed head read or a discovery error no longer skips the
+ *      evaluation of every account (audit C-LOW-4);
  *   3. context — per-asset LT / prices, read once for the tick;
- *   4. evaluate — every registered account, bounded concurrency, rotating
- *      start so a slow tail never starves the same accounts twice, each
- *      account isolated (one failure = one UNKNOWN, never a stalled tick);
+ *   4. evaluate — every registered account, bounded concurrency, rotating by a
+ *      PERSISTED tick counter (rotating by block number was a fixed
+ *      permutation at the default poll — audit C-LOW-3), each account isolated;
  *   5. per account: valuation → ladder step → (episode + dispatch record +
- *      ladder state persisted in ONE atomic write) → dispatch → bookkeeping.
+ *      ladder state persisted in ONE atomic write) → dispatch → bookkeeping;
+ *   6. prune terminal dispatch records so the store cannot grow for ever.
  *
- * Progress is reported to the watchdog after every completed unit, so a slow
- * tick is distinguishable from a stuck one.
+ * Every rung and every escalation is delivered through the notifier: a
+ * protection nobody can see is not a protection (audit C-MED-7).
+ *
+ * Time comes from the CHAIN HEAD, not the host clock (audit C-LOW-1).
  */
 
 export interface MonitorConfig {
   concurrency: number;
   priceMaxAgeS: number;
+  /** Per-feed staleness bounds, from each feed's own measured cadence. */
+  priceMaxAgeBySymbol?: ReadonlyMap<string, number>;
   oracleDeviationBps: number;
   hfToleranceBps: number;
   discoveryFromBlock: bigint;
@@ -36,6 +49,19 @@ export interface MonitorConfig {
   unknownEscalationStreak: number;
   /** Attempts (same key) before a FAILED/REFUSED dispatch is ABANDONED and escalated. */
   maxDispatchAttempts: number;
+  /** Records resumed per tick. The rest wait for the next one. */
+  maxResumePerTick: number;
+  /**
+   * Wall clock for ONE dispatch — fresh or resumed. Beyond it the tick moves
+   * on to the rest of the fleet and the record is counted as stalled.
+   */
+  dispatchDeadlineMs: number;
+  /** Stalls (deadline hits) before a record is quarantined. */
+  maxRecordStalls: number;
+  /** Times a rung may be re-armed because its action did not clear it. */
+  maxRungRefires: number;
+  /** Host-vs-chain clock difference (seconds) worth an escalation. */
+  clockDriftMaxS: number;
 }
 
 export interface MonitorDeps {
@@ -47,8 +73,11 @@ export interface MonitorDeps {
   log: Logger;
   config: MonitorConfig;
   now?: () => Date;
+  notifier?: Notifier;
   /** Human escalation hook (webhook/pager). Never gates any action. */
   onEscalate?: (e: { account: Address; reasons: string[]; streak: number }) => void;
+  /** Called when the store can no longer be trusted: the process must stop. */
+  onFatal?: (e: Error) => void;
 }
 
 export interface AccountOutcome {
@@ -76,6 +105,10 @@ function errMsg(e: unknown): string {
 export class HealthMonitor {
   private readonly now: () => Date;
   private tickCount = 0;
+  private lastHead: bigint | null = null;
+  private headFailures = 0;
+  /** Dispatch keys this tick already acted on — never re-armed in the same pass. */
+  private handledThisTick = new Set<string>();
 
   constructor(private readonly d: MonitorDeps) {
     validateLadder(d.ladder);
@@ -83,30 +116,104 @@ export class HealthMonitor {
     this.now = d.now ?? (() => new Date());
   }
 
+  /** Most severe rung in the ladder — the one that must never be given up on. */
+  private get lastResortRung(): LadderRung {
+    return [...this.d.ladder].sort((a, b) => a.severity - b.severity)[this.d.ladder.length - 1];
+  }
+
+  private async emit(e: Omit<KeeperEvent, "at">): Promise<void> {
+    if (!this.d.notifier) return;
+    try {
+      await this.d.notifier.deliver(eventNow(e, this.now));
+    } catch {
+      // MultiNotifier already logged it at error. Delivery must never break a tick.
+    }
+  }
+
+  private async escalate(account: Address, reasons: string[], streak: number, kind: KeeperEvent["kind"] = "escalation"): Promise<void> {
+    try {
+      this.d.onEscalate?.({ account, reasons, streak });
+    } catch (e) {
+      this.d.log.error("escalation hook threw", { error: errMsg(e) });
+    }
+    await this.emit({ kind, severity: "critical", account, reasons, detail: { streak } });
+  }
+
+  private fatal(e: unknown): boolean {
+    if (!isFatalStoreError(e)) return false;
+    this.d.log.error("STORE UNUSABLE — stopping (a keeper that cannot record what it did must not act)", { error: errMsg(e) });
+    this.d.onFatal?.(e as Error);
+    return true;
+  }
+
   async tick(handle: TickHandle): Promise<TickReport> {
     const { signal } = handle;
     const log = this.d.log.child({ tick: ++this.tickCount });
+    this.handledThisTick.clear();
     const report: TickReport = { blockNumber: null, discovered: 0, resumed: 0, evaluated: 0, outcomes: [], aborted: false };
 
     try {
       report.resumed = await this.resumePending(handle, log);
 
-      const head = await this.d.reader.blockNumber(signal);
+      // ---- head: isolated. A failed eth_blockNumber must not cost the tick.
+      let head = this.lastHead ?? 0n;
+      let chainNowS = BigInt(Math.floor(this.now().getTime() / 1000));
+      try {
+        const h = await this.d.reader.head(signal);
+        head = h.number;
+        chainNowS = h.timestamp;
+        this.lastHead = head;
+        this.headFailures = 0;
+        const driftS = Math.abs(Math.floor(this.now().getTime() / 1000) - Number(chainNowS));
+        if (driftS > this.d.config.clockDriftMaxS) {
+          log.warn("host clock differs from chain time", { driftS, chainNowS: chainNowS.toString() });
+        }
+      } catch (e) {
+        if (signal.aborted || e instanceof AbortedError) throw e;
+        this.headFailures += 1;
+        log.error("head read failed — evaluating against the last known head", {
+          error: errMsg(e),
+          lastHead: this.lastHead?.toString() ?? null,
+          consecutive: this.headFailures,
+        });
+        if (this.headFailures >= 3) {
+          await this.emit({
+            kind: "escalation",
+            severity: "critical",
+            reasons: [`chain head unreadable ${this.headFailures} ticks running: ${errMsg(e)}`],
+          });
+        }
+      }
       handle.bump();
-      report.blockNumber = head;
+      report.blockNumber = head === 0n ? null : head;
 
-      report.discovered = await this.discover(head, handle, log);
+      // ---- discovery: isolated too.
+      if (head > 0n) {
+        try {
+          report.discovered = await this.discover(head, handle, log);
+        } catch (e) {
+          if (signal.aborted || e instanceof AbortedError) throw e;
+          if (this.fatal(e)) throw e;
+          log.error("discovery failed — evaluating the accounts already known", { error: errMsg(e) });
+        }
+      }
 
       const contexts = await this.d.reader.readReserveContexts(signal);
       handle.bump();
       for (const [sym, r] of contexts) if (!r.ok) log.warn("reserve context unreadable", { reserve: sym, reason: r.reason });
 
       const accounts = this.d.store.listAccounts();
-      const rotated = rotate(accounts, head);
+      let seq = this.tickCount;
+      try {
+        seq = await this.d.store.nextTick();
+      } catch (e) {
+        if (this.fatal(e)) throw e;
+      }
+      const rotated = rotate(accounts, BigInt(seq));
       const results = await mapBounded(
         rotated,
         this.d.config.concurrency,
-        (rec) => this.evaluateOne(rec, contexts, head, handle, log),
+        (rec) => this.evaluateOne(rec, contexts, head, chainNowS, handle, log),
         signal
       );
       for (let i = 0; i < results.length; i++) {
@@ -126,10 +233,22 @@ export class HealthMonitor {
           if (r.reason instanceof AbortedError) report.aborted = true;
         }
       }
+
+      if (!signal.aborted) {
+        try {
+          const pruned = await this.d.store.prune();
+          if (pruned) log.info("pruned terminal dispatch records", { pruned });
+        } catch (e) {
+          if (this.fatal(e)) throw e;
+          log.warn("prune failed", { error: errMsg(e) });
+        }
+      }
     } catch (e) {
       if (signal.aborted || e instanceof AbortedError) {
         report.aborted = true;
         log.warn("tick aborted", { error: errMsg(e) });
+      } else if (isFatalStoreError(e)) {
+        report.aborted = true;
       } else {
         log.error("tick failed", { error: errMsg(e) });
       }
@@ -153,9 +272,14 @@ export class HealthMonitor {
    *   PENDING / SENT        → always resumed, same key.
    *   FAILED / REFUSED      → retried with the same key while the account is
    *                           still in that episode and attempts < max;
-   *                           otherwise ABANDONED (+ escalation).
-   * The dispatcher re-checks the world before re-sending, so a resumed record
-   * whose rung has since cleared comes back SUPERSEDED, not double-acted.
+   *                           otherwise ABANDONED (+ escalation) — EXCEPT at
+   *                           the most severe rung, which is never abandoned
+   *                           for retry exhaustion while the account is still
+   *                           below it (audit C-MED-4: the protection of last
+   *                           resort used to give up permanently at HF ≈ 1).
+   * Every resume is bounded by its own deadline and the whole pass is bounded
+   * by `maxResumePerTick`, rotating so the head of the list cannot monopolise
+   * every tick.
    */
   private async resumePending(handle: TickHandle, log: Logger): Promise<number> {
     let n = 0;
@@ -165,9 +289,16 @@ export class HealthMonitor {
       ...this.d.store.listDispatches({ status: "FAILED" }),
       ...this.d.store.listDispatches({ status: "REFUSED" }),
     ].sort((a, b) => a.seq - b.seq);
-    for (const rec of candidates) {
+    const budget = Math.max(1, this.d.config.maxResumePerTick);
+    const slice = rotate(candidates, BigInt(this.tickCount)).slice(0, budget);
+    if (candidates.length > slice.length) {
+      log.info("resume budget reached — the rest wait for the next tick", { pending: candidates.length, resuming: slice.length });
+    }
+
+    for (const rec of slice) {
       if (handle.signal.aborted) break;
       const l = log.child({ account: rec.account, key: rec.key, action: rec.action, status: rec.status });
+      const isLastResort = rec.rung === this.lastResortRung.id;
       if (rec.status === "FAILED" || rec.status === "REFUSED") {
         const acct = this.d.store.getAccount(rec.account);
         if (!acct || acct.episode !== rec.episode) {
@@ -175,21 +306,48 @@ export class HealthMonitor {
           await this.setStatus(rec, "SUPERSEDED", "episode ended before retry", l);
           continue;
         }
-        if (rec.attempts >= this.d.config.maxDispatchAttempts) {
-          await this.setStatus(rec, "ABANDONED", `gave up after ${rec.attempts} attempts`, l);
-          l.error("dispatch ABANDONED — human intervention required", { attempts: rec.attempts, lastError: rec.error });
-          this.d.onEscalate?.({ account: rec.account, reasons: [`dispatch ${rec.key} abandoned: ${rec.error ?? "?"}`], streak: rec.attempts });
+        if (rec.error?.includes("permanent:")) {
+          // A refusal only the user can clear: retrying is noise.
+          await this.setStatus(rec, "ABANDONED", rec.error, l);
+          await this.escalate(rec.account, [`dispatch ${rec.key} needs the owner: ${rec.error}`], rec.attempts, "grant-misconfigured");
           continue;
+        }
+        if (rec.attempts >= this.d.config.maxDispatchAttempts) {
+          if (!isLastResort) {
+            await this.setStatus(rec, "ABANDONED", `gave up after ${rec.attempts} attempts`, l);
+            l.error("dispatch ABANDONED — human intervention required", { attempts: rec.attempts, lastError: rec.error });
+            await this.escalate(rec.account, [`dispatch ${rec.key} abandoned: ${rec.error ?? "?"}`], rec.attempts);
+            continue;
+          }
+          // Most severe rung: keep trying (with a wider band each attempt) and
+          // escalate every time, for as long as the account is below it.
+          l.error("LAST-RESORT rung still failing — retrying, not abandoning", { attempts: rec.attempts, lastError: rec.error });
+          await this.escalate(
+            rec.account,
+            [`emergency dispatch ${rec.key} has failed ${rec.attempts} times: ${rec.error ?? "?"} — still retrying`],
+            rec.attempts
+          );
+        }
+        if (isLastResort && rec.attempts === 1) {
+          // Escalate on the FIRST failure of the last resort, not the fifth.
+          await this.escalate(rec.account, [`emergency dispatch ${rec.key} failed: ${rec.error ?? "?"}`], rec.attempts);
         }
       }
       l.warn("resuming dispatch with its persisted key", { attempt: rec.attempts + 1 });
       let result: DispatchResult;
       try {
-        result =
+        result = await withDeadline(`resume ${rec.key}`, this.d.config.dispatchDeadlineMs, handle.signal, () =>
           rec.status === "SENT" && rec.txHash
-            ? await this.d.dispatcher.confirm(rec, handle.signal)
-            : await this.d.dispatcher.dispatch({ record: rec, valuation: null }, handle.signal);
+            ? this.d.dispatcher.confirm(rec, handle.signal)
+            : this.d.dispatcher.dispatch({ record: rec, valuation: null, persistBeforeSend: this.preSend(rec) }, handle.signal)
+        );
       } catch (e) {
+        if (e instanceof DeadlineError) {
+          await this.quarantineOrCount(rec, l);
+          n += 1;
+          handle.bump();
+          continue;
+        }
         result = { status: "FAILED", error: errMsg(e) };
       }
       handle.bump();
@@ -199,12 +357,59 @@ export class HealthMonitor {
     return n;
   }
 
+  /**
+   * A record whose dispatch did not return inside its own deadline. Count it;
+   * at the cap, quarantine it and re-arm its rung so the account is protected
+   * under a FRESH key instead of being held hostage by a wedged one.
+   */
+  private async quarantineOrCount(rec: DispatchRecord, l: Logger): Promise<void> {
+    const stalls = (rec.stalls ?? 0) + 1;
+    if (stalls < this.d.config.maxRecordStalls) {
+      l.error("resumed dispatch exceeded its deadline — moving on to the rest of the fleet", { stalls });
+      try {
+        await this.d.store.updateDispatch(rec.key, { stalls }, this.now());
+      } catch (e) {
+        if (!this.fatal(e)) l.error("bookkeeping write failed", { error: errMsg(e) });
+      }
+      await this.emit({
+        kind: "escalation",
+        severity: "warn",
+        account: rec.account,
+        key: rec.key,
+        reasons: [`dispatch ${rec.key} stalled (${stalls}/${this.d.config.maxRecordStalls})`],
+      });
+      return;
+    }
+    l.error("QUARANTINING a dispatch that has stalled repeatedly — its rung is re-armed for a fresh attempt", { stalls });
+    try {
+      await this.d.store.updateDispatch(rec.key, { status: "ABANDONED", stalls, error: `quarantined after ${stalls} stalls` }, this.now());
+      await this.d.store.mutate((s) => {
+        const a = s.accounts.find((x) => x.account === rec.account);
+        if (!a) return;
+        a.ladder = { fired: a.ladder.fired.filter((id) => id !== rec.rung) };
+      });
+    } catch (e) {
+      if (!this.fatal(e)) l.error("bookkeeping write failed", { error: errMsg(e) });
+    }
+    await this.escalate(rec.account, [`dispatch ${rec.key} quarantined after ${stalls} stalls — rung ${rec.rung} re-armed`], stalls);
+  }
+
+  private preSend(rec: DispatchRecord): (info: { nonce?: number; closeIds: bigint[] }) => Promise<void> {
+    return async (info) => {
+      await this.d.store.updateDispatch(
+        rec.key,
+        { sentNonce: info.nonce, closeIds: info.closeIds.map(String) },
+        this.now()
+      );
+    };
+  }
+
   private async setStatus(rec: DispatchRecord, status: "SUPERSEDED" | "ABANDONED", error: string, l: Logger): Promise<void> {
     try {
       await this.d.store.updateDispatch(rec.key, { status, error }, this.now());
       l.info(`dispatch ${status}`, { reason: error });
     } catch (e) {
-      l.error("bookkeeping write failed", { error: errMsg(e) });
+      if (!this.fatal(e)) l.error("bookkeeping write failed", { error: errMsg(e) });
     }
   }
 
@@ -246,6 +451,7 @@ export class HealthMonitor {
     rec: AccountRecord,
     contexts: Map<TokenSymbol, ReserveContextResult>,
     head: bigint,
+    chainNowS: bigint,
     handle: TickHandle,
     log: Logger
   ): Promise<AccountOutcome> {
@@ -256,8 +462,9 @@ export class HealthMonitor {
     try {
       const snap = await this.d.reader.readAccount(rec.account, contexts, head, handle.signal);
       valuation = evaluateSnapshot(snap, {
-        nowS: BigInt(Math.floor(this.now().getTime() / 1000)),
+        nowS: chainNowS,
         priceMaxAgeS: this.d.config.priceMaxAgeS,
+        priceMaxAgeBySymbol: this.d.config.priceMaxAgeBySymbol,
         oracleDeviationBps: this.d.config.oracleDeviationBps,
         hfToleranceBps: this.d.config.hfToleranceBps,
       });
@@ -271,20 +478,27 @@ export class HealthMonitor {
     if (valuation.kind === "UNKNOWN") {
       const streak = rec.unknownStreak + 1;
       l.warn("valuation UNKNOWN — fail closed, no action", { reasons: valuation.reasons, streak });
-      await this.bookkeep(rec.account, { lastValuation: "UNKNOWN", unknownStreak: streak, lastEvaluatedAt: nowIso }, l, handle.signal);
-      if (streak >= this.d.config.unknownEscalationStreak && this.d.onEscalate) {
-        try {
-          this.d.onEscalate({ account: rec.account, reasons: valuation.reasons, streak });
-        } catch (e) {
-          l.error("escalation hook threw", { error: errMsg(e) });
-        }
+      await this.bookkeep(
+        rec.account,
+        { lastValuation: "UNKNOWN", unknownStreak: streak, lastEvaluatedAt: nowIso, lastReasons: valuation.reasons },
+        l,
+        handle.signal
+      );
+      const untracked = valuation.reasons.some((r) => r.startsWith(UNTRACKED_COLLATERAL));
+      if (untracked) {
+        // Actionable by THIS user, and by nobody else: they supplied a reserve
+        // Oilskin cannot value, so their protection is off (audit C-MED-5).
+        await this.escalate(rec.account, valuation.reasons, streak, "untracked-collateral");
+      } else if (streak >= this.d.config.unknownEscalationStreak) {
+        await this.escalate(rec.account, valuation.reasons, streak);
       }
       return { account: rec.account, valuation: "UNKNOWN", hf: null, fired: null, dispatch: null };
     }
 
     // ---- NO_DEBT: everything re-arms (HF = +∞) -------------------------
     const hf = valuation.kind === "OK" ? valuation.hf : Number.POSITIVE_INFINITY;
-    const step = stepLadder(this.d.ladder, rec.ladder, hf);
+    const { ladder: startState, refires, rearmedIds } = this.reArmIneffective(rec, hf, l);
+    const step = stepLadder(this.d.ladder, startState, hf);
 
     if (!step.fire) {
       // Nothing to dispatch: persist ladder state / re-arms / episode end.
@@ -294,6 +508,7 @@ export class HealthMonitor {
         lastValuation: valuation.kind,
         lastEvaluatedAt: nowIso,
         unknownStreak: 0,
+        rungRefires: refires,
       };
       if (step.episodeEnded) patch.episode = null;
       if (step.rearmed.length) l.info("rungs re-armed", { rungs: step.rearmed.map((r) => r.id), hf });
@@ -348,6 +563,7 @@ export class HealthMonitor {
         a.lastValuation = "OK";
         a.lastEvaluatedAt = nowIso;
         a.unknownStreak = 0;
+        a.rungRefires = refires;
         return structuredClone(d);
       });
     } catch (e) {
@@ -359,7 +575,8 @@ export class HealthMonitor {
         hf: okValuation.hf,
         error: errMsg(e),
       });
-      this.d.onEscalate?.({ account: rec.account, reasons: [`store write failed before dispatch: ${errMsg(e)}`], streak: 0 });
+      await this.escalate(rec.account, [`store write failed before dispatch: ${errMsg(e)}`], 0, "store-failure");
+      this.fatal(e);
       return { account: rec.account, valuation: "OK", hf: okValuation.hf, fired: fire.id, dispatch: null, error: errMsg(e) };
     }
 
@@ -370,18 +587,116 @@ export class HealthMonitor {
       episode: record.episode,
       key: record.key,
       crossed: step.crossed.map((r) => r.id),
+      rearmedFirst: rearmedIds,
       collateral: okValuation.dominantCollateral.symbol,
+    });
+    await this.emit({
+      kind: "rung-fired",
+      severity: fire.id === this.lastResortRung.id ? "critical" : "warn",
+      account: rec.account,
+      owner: rec.owner,
+      rung: fire.id,
+      action: fire.action,
+      hf: okValuation.hf,
+      key: record.key,
+      detail: { episode: record.episode, collateral: okValuation.dominantCollateral.symbol },
     });
 
     let result: DispatchResult;
     try {
-      result = await this.d.dispatcher.dispatch({ record, valuation: okValuation }, handle.signal);
+      result = await withDeadline(`dispatch ${record.key}`, this.d.config.dispatchDeadlineMs, handle.signal, () =>
+        this.d.dispatcher.dispatch(
+        {
+          record,
+          valuation: okValuation,
+          persistBeforeSend: this.preSend(record),
+          // The grant (expiry included) is SURFACED, not discarded: a dashboard
+          // can now say "protection expires in N days" instead of the user
+          // finding out on day 31 that nothing fires any more (audit C-MED-3).
+          onGrantRead: (g) => {
+            void this.bookkeep(
+              rec.account,
+              {
+                grant: {
+                  target: g.target,
+                  selector: g.selector,
+                  active: g.active,
+                  allowCallback: g.allowCallback,
+                  expiry: g.expiry,
+                  checkedAt: this.now().toISOString(),
+                },
+              },
+              l,
+              handle.signal
+            );
+          },
+        },
+        handle.signal
+        )
+      );
     } catch (e) {
+      if (e instanceof DeadlineError) {
+        // One account's wedged dispatch must not consume the tick: leave the
+        // record for the (bounded, quarantining) resume path and move on.
+        await this.quarantineOrCount(record, l);
+        handle.bump();
+        return { account: rec.account, valuation: "OK", hf: okValuation.hf, fired: fire.id, dispatch: null, error: errMsg(e) };
+      }
       result = { status: "FAILED", error: errMsg(e) };
     }
     handle.bump();
     await this.recordResult(record, result, l, handle.signal);
     return { account: rec.account, valuation: "OK", hf: okValuation.hf, fired: fire.id, dispatch: result };
+  }
+
+  /**
+   * Re-arm a rung whose action CONFIRMED but did not clear it.
+   *
+   * A rung that fires, sends a transaction that succeeds, and leaves the health
+   * factor exactly where it was (the classic case: the close was sized on dust)
+   * used to latch until HF climbed all the way to its disarm — a whole 0.15-wide
+   * band during which the keeper watched the position rot (audit C-MED-2).
+   * Bounded by `maxRungRefires` per rung so it can never become a loop, and
+   * never applied while a dispatch for the account is still in flight.
+   */
+  private reArmIneffective(
+    rec: AccountRecord,
+    hf: number,
+    l: Logger
+  ): { ladder: LadderState; refires: Record<string, number>; rearmedIds: string[] } {
+    const refires: Record<string, number> = { ...(rec.rungRefires ?? {}) };
+    if (!Number.isFinite(hf) || rec.ladder.fired.length === 0) return { ladder: rec.ladder, refires, rearmedIds: [] };
+    const live = this.d.store
+      .listDispatches({ account: rec.account })
+      .filter((d) => d.status === "PENDING" || d.status === "SENT");
+    if (live.length) return { ladder: rec.ladder, refires, rearmedIds: [] };
+
+    const byRung = new Map<string, DispatchRecord>();
+    for (const d of this.d.store.listDispatches({ account: rec.account })) {
+      if (rec.episode !== null && d.episode !== rec.episode) continue;
+      const prev = byRung.get(d.rung);
+      if (!prev || d.seq > prev.seq) byRung.set(d.rung, d);
+    }
+    const rearmedIds: string[] = [];
+    const fired = new Set(rec.ladder.fired);
+    for (const id of [...fired]) {
+      const rung = this.d.ladder.find((r) => r.id === id);
+      if (!rung || hf >= rung.hf) continue; // already cleared, or the normal disarm applies
+      const last = byRung.get(id);
+      if (!last || last.status !== "CONFIRMED") continue;
+      // Never re-arm on a confirmation this very tick produced: the chain state
+      // the valuation was read from may predate that transaction.
+      if (this.handledThisTick.has(last.key)) continue;
+      const used = refires[id] ?? 0;
+      if (used >= this.d.config.maxRungRefires) continue;
+      fired.delete(id);
+      refires[id] = used + 1;
+      rearmedIds.push(id);
+    }
+    if (rearmedIds.length) {
+      l.warn("re-arming rungs whose action did not clear them", { rungs: rearmedIds, hf, refires });
+    }
+    return { ladder: { fired: [...fired].sort() }, refires, rearmedIds };
   }
 
   /** Post-action bookkeeping. Never throws: a failed write is logged, not fatal. */
@@ -406,7 +721,7 @@ export class HealthMonitor {
         break;
       case "REFUSED":
         patch.status = "REFUSED";
-        patch.error = result.reason;
+        patch.error = result.permanent ? `permanent: ${result.reason}` : result.reason;
         break;
       case "SUPERSEDED":
         patch.status = "SUPERSEDED";
@@ -417,12 +732,30 @@ export class HealthMonitor {
         patch.error = result.error;
         break;
     }
+    this.handledThisTick.add(record.key);
     const level = result.status === "FAILED" || result.status === "REFUSED" ? "warn" : "info";
     l[level]("dispatch result", { key: record.key, ...result });
+    if (record.action !== "notify") {
+      await this.emit({
+        kind: "dispatch",
+        severity: result.status === "FAILED" || result.status === "REFUSED" ? "warn" : "info",
+        account: record.account,
+        rung: record.rung,
+        action: record.action,
+        hf: record.hf,
+        key: record.key,
+        status: result.status,
+        txHash: "txHash" in result ? result.txHash : undefined,
+        reasons: "reason" in result ? [result.reason] : "error" in result ? [result.error] : undefined,
+      });
+    }
+    if (result.status === "REFUSED" && result.permanent) {
+      await this.escalate(record.account, [`dispatch ${record.key} refused permanently: ${result.reason}`], record.attempts + 1, "grant-misconfigured");
+    }
     try {
       await this.d.store.updateDispatch(record.key, patch, this.now());
     } catch (e) {
-      l.error("bookkeeping write failed after dispatch (action already taken)", { key: record.key, error: errMsg(e) });
+      if (!this.fatal(e)) l.error("bookkeeping write failed after dispatch (action already taken)", { key: record.key, error: errMsg(e) });
     }
   }
 
@@ -434,14 +767,21 @@ export class HealthMonitor {
     try {
       await this.d.store.updateAccount(account, patch);
     } catch (e) {
-      l.error("bookkeeping write failed", { error: errMsg(e) });
+      if (!this.fatal(e)) l.error("bookkeeping write failed", { error: errMsg(e) });
     }
   }
 }
 
-/** Rotate the evaluation order by the block number so no account is always last. */
+/**
+ * Rotate the evaluation order by a PERSISTED counter so no account is always
+ * last. It used to rotate by the block number: Base makes a block every ~2 s,
+ * so at the default 30 s poll the head advances by ~15 per tick and `head % n`
+ * never moved for any account count dividing 15 — the rotation that exists to
+ * stop the same accounts being truncated truncated the same accounts
+ * (audit C-LOW-3).
+ */
 export function rotate<T>(items: readonly T[], seed: bigint): T[] {
   if (items.length === 0) return [];
-  const start = Number(seed % BigInt(items.length));
+  const start = Number(((seed % BigInt(items.length)) + BigInt(items.length)) % BigInt(items.length));
   return [...items.slice(start), ...items.slice(0, start)];
 }
