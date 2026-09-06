@@ -1,3 +1,5 @@
+> **History.** Founder-run pre-audit self-review of the pre-pivot design (PositionVault / RewardRouter / SnuggleAdapter, the NEAR-Intents 1-Click payout leg, the Rhea health monitor), 2026-08-16. That code was deleted in the Base-first pivot (`BASE-PIVOT-2026-09.md`); findings that transferred (fail-closed health mapping, ladder hysteresis, deposit idempotence) are re-implemented and tested on the new surface (`AUDIT.md`). Kept as the record of what was found.
+
 # Oilskin — internal security review (2026-08-16)
 
 **Scope:** the on-chain contracts (`PositionVault`, `RewardRouter`, `SnuggleAdapter`)

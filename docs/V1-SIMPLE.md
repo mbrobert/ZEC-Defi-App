@@ -1,3 +1,5 @@
+> **History.** Decision record for the pre-pivot "simple build" (ZEC deposit to a bridge address, Rhea collateral, one pre-committed Zcash payout address). That product no longer exists (`BASE-PIVOT-2026-09.md`). Decisions that survived into the Base-first v1: the Simple ⇄ Advanced split, the bounded 30 / 40 / top setting (now derived per asset from the live liquidation threshold), one pool at a time in Simple, Aerodrome × Snuggle only, the computed (never curated) gate, and empirical bands from the engine's own history. The numbers in this file are the dated samples of their day, not today's.
+
 # Oilskin v1 — the simple build (pivot decision record, 2026-08-13)
 
 Matt's call: the first live version must be stupid simple — good enough on

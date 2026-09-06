@@ -35,7 +35,7 @@ every one refusing to invent data:
    `closed-position-flows-v2`, below). Where these exist they replace the
    model everywhere in the UI.
 
-Zero runtime dependencies (mirrors `agent/`), plain `node:http`, TypeScript,
+Zero runtime dependencies (the keeper in `agent/` uses viem; this service does not), plain `node:http`, TypeScript,
 105-test offline suite on recorded on-chain fixtures (RPC mocked at the
 JSON-RPC boundary with real chain words).
 
@@ -131,8 +131,9 @@ Each is labeled in the API, not hidden.
 Topic constants in `src/engine/events.ts` come from the engine
 implementation's VERIFIED source ABI (SnuggleVaultUpgradeable at
 `0x359f90ee4c2e21cbf6e32c5a062eeef306822d28` behind proxy
-`0x7d27cdfbfcc878f7e7349e216d44204bfd2afd55`), hashed with the vendored
-keccak and matched 1:1 against a live 2,000-block log sweep. Every function
+`0x7d27cdfbfcc878f7e7349e216d44204bfd2afd55`), hashed with a test-verified
+keccak (now `packages/shared/src/keccak.ts`; the comment in `src/abi.ts` still names the
+deleted `agent/src/vendor/keccak.ts`) and matched 1:1 against a live 2,000-block log sweep. Every function
 selector the service uses (Aave, Voter, gauge, pool) is re-derived from its
 signature in the test suite. After any engine upgrade run
 `npm run backfill -- verify-events`.

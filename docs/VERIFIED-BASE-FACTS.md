@@ -19,7 +19,7 @@ the C-2 mainnet-bricking bug (see `AUDIT-FINDINGS-2026-09-03.md`).
 
 - PoolAddressesProvider `0xe20fCBdBfFC4Dd138cE8b2E6FBb6CB49777ad64D`
 - **Pool `0xA238Dd80C259a72e81d7e4664a9801593F98d1c5`**
-- PoolDataProvider `0x0F43731EB8d45a581f4A36Dd74F5F358bC90c73a`
+- PoolDataProvider `0x0F43731EB8d45A581f4a36DD74F5f358bc90C73A` (EIP-55 casing corrected 2026-09-05; the first print of this file had a non-checksum casing of the same hex, which viem's `getAddress` rejects — `packages/shared/src/base.ts` pins this form)
 - AaveOracle `0x2Cc0Fc26eD4563A5ce5e8bdcfe1A2878676Ae156`
 
 Reserve configuration, live (`getReserveConfigurationData`, bps) and rates (`getReserveData`, ray → %):
@@ -86,3 +86,13 @@ USDC → `0xf52d010c7d4ecbfda92c2509900593ce34535d86` (these are Aave's adapters
 4. **Every contract path that touches cbZEC must survive a token whose `multiplier()` can change** (never cache
    balances; re-read after every external call).
 5. Price feeds for v1 are Chainlink (cbBTC, ETH, USDC); the Pyth adapter with in-tx pull + max-age is v1.1.
+
+## Not verified by this read (probe before use — `AUDIT-SCOPE.md` "Not verified")
+
+- **Aerodrome Slipstream SwapRouter** — address not read; `contracts/script/Deploy.s.sol` requires it from `AERODROME_SWAP_ROUTER` and refuses mainnet without it; `exactInputSingle` shape unprobed.
+- **Multicall3** `0xcA11bde05977b3631167028862bE2a173976CA11` — not read; the web uses viem's `base` chain definition with a per-call fallback; the keeper does one `eth_call` per read.
+- **Morpho Blue market ids** for cbBTC/USDC and WETH/USDC — not discovered; `MorphoBlueVenue` ships disabled.
+- **CoW GPv2VaultRelayer** — not read; the web reads `settlement.vaultRelayer()` at runtime.
+- **The engine's live end-of-list revert shape** for `userPositions(address,uint256)` — logged by `test_fork_engineIndexGetterShape` when the fork suite runs with `FORK_URL`; never recorded here.
+- **cbZEC B20 policy state** (blocklist, pause) — `owner()` / `paused()` revert on the precompile; only `multiplier()` was read (1e18).
+- **Gauge emissions** for the curated pools other than cbZEC/USDC — the yield model's inputs are the 2026-08-31 words (block 50675328), not this read.

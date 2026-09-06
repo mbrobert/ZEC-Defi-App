@@ -1,3 +1,5 @@
+> **History / research.** Pool research of 2026-08-27 for the engine-supported Aerodrome menu; figures are that day's samples. The 13-pool table is the provenance for `packages/shared/src/pools.ts` (which cites this file). What changed since: the borrow leg is USDC on Aave v3 (not Rhea), the gate is emissions-only with an impermanent-loss drag (`YIELD-SERVICE.md`), and at the 2026-09-05 borrow read no pool in this table clears it (`MODEL-NUMBERS-2026-09-05.md`); the cbZEC/USDC pool is tracked but has no emissions.
+
 # Pool research — blue-chip Aerodrome pools the Snuggle engine supports
 
 Research date: **2026-08-27** (all figures are that day's samples; fee tiers

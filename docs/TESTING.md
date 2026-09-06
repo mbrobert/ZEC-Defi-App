@@ -1,104 +1,163 @@
-# Testing Oilskin — how to exercise everything
+# Testing — every suite, how to run it, what it proves
 
-Two audiences: **you, clicking the demo** (the tester's kit below), and **the
-automated suites** (contracts, agent, prototype fuzz).
+Counts are from running each suite on this tree on 2026-09-05 (not copied from
+build reports). Two audiences: the automated suites, and a person clicking the
+demo (the tester's kit at the end).
 
-## Demo addresses (fake, format-valid, not spendable)
+Abbreviations: RPC = remote procedure call (a chain node endpoint); ABI =
+application binary interface; HF = health factor; LT = liquidation threshold;
+LTV = loan-to-value; LP = liquidity provision; TWAP = time-weighted average
+price; EIP = Ethereum Improvement Proposal; CI = continuous integration.
 
-These match the app's real validators so its behaviour is identical to production,
-but they are **not real addresses and hold nothing** — never send funds to them.
-The in-app **🧪 Test kit** (bottom-right of `prototype/simple.html`) drops each one
-into the right field on tap.
+## Summary
 
-| Type | Address | Expected behaviour |
+| Area | Command | Counted result |
 |---|---|---|
-| Transparent `t1` | `t1Py8kAoQrfmRRWTbtHkDkGb6JuaXPmpGxy` | Accepted — this is where everything returns |
-| Transparent `t1` (alt) | `t1TEsT2aZxCvBnM4qWeRtY7uIoP9sDfG1hK` | Accepted |
-| Unified `u1` | `u1demo0testonly0notreal0zaddr0qp7r9s2t4v6x8y0a2c4e6g8j0l2n4q6s8u0w2` | Guided to the transparent address, not dead-ended |
-| Sapling `zs1` | `zs1demo0testonly0notreal0sapling0zaddr0qp7r9s2t4v6x8y0a2c4e6g8j0l2n4q6s8u0w2x4z6a8c0e2` | Guided to the transparent address |
-| Malformed | `t1short` | Stays blocked with a "keep going" hint |
+| Contracts (Foundry) | `cd contracts && forge test` | **181 passed, 0 failed, 8 skipped**, 13 suites — 5 invariants × 256 runs × depth 40 (10,240 calls each, 0 reverts); 8 fuzz tests × 512 runs |
+| Contracts, fork | `FORK_URL=<Base RPC> forge test --match-path test/fork/BaseFork.t.sol -vv` | 8 tests; **skipped without `FORK_URL`** (`vm.skip`), reported as skipped, never as passed. Not run from this container |
+| Root ABI seam | `node scripts/verify-abi.mjs` | 266 selectors / topics / errors across 17 contracts match `contracts/abi/oilskin-abi.json`; `--write` regenerates; exit 1 on drift |
+| Shared | `npm test -w @zyo/shared` | **52** (7 files: evm, base, health, collateral, fees, width, pools) |
+| Keeper | `npm test -w @zyo/agent` | tsc + `verify-abi` **36/36** + **139 tests / 29 suites** (~17 s) |
+| Yield | `npm test -w @zyo/yield` | tsc + **105 tests** (14 files; RPC mocked at the JSON-RPC boundary with recorded chain words) |
+| Web, unit | `npm test -w @zyo/web` | **89 tests** (11 files); the ABI-drift test and the MODEL-NUMBERS pin *ran* (they skip loudly only if the bundle / `/tmp/build/MODEL-NUMBERS.md` is absent) |
+| Web, e2e | `cd web && PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npx playwright test` | **12/12** (6 scenarios × desktop-1360 / phone-390) against a warm `next dev`; zero console errors asserted |
+| Prototypes | `CHROMIUM_PATH=/opt/pw-browsers/chromium node prototype/test/run-all.mjs` | **verify-simple 85 · verify-advanced 80 · verify-toggle 45 · fuzz 6** (3 seeds × 5,000 actions × 2 builds = 30,000 reducer actions, 0 invariant violations) |
 
-Amounts worth trying: `0.25` (min ✓), `12.5` (typical ✓), `50` (cap ✓), `0.1`
-(below min → blocked), `80` (over cap → blocked). All are one tap in the Test kit.
+Prerequisites: Node ≥ 22; `npm install` at the root; `npm run build -w
+@zyo/shared` (every consumer imports its `dist/`); Foundry with the two
+libraries cloned into `contracts/lib` (`SETUP.md`); Playwright Chromium.
+Offline container with a pre-fetched compiler: `FOUNDRY_PROFILE=local`.
 
-## What to click (every path)
+A note on the e2e count: on a cold `next dev` in a slow container the first
+scenario can miss its 15-second expectation while `/onboard` compiles
+(11/12 on the first cold run here); pre-warming the routes or pointing
+`E2E_BASE_URL` at a running server gives 12/12. That is compile latency, not
+a product failure — the phone-390 run of the same scenario, second on the
+same server, passes cold.
 
-1. **Risk setting** — pick each of Sheltered / Steady / Working hard; the headline
-   yield (13.2 / 17.4 / 21.5% with the default mix, at rates sampled 2026-08-27) and
-   the "ZEC would have to fall X%" line (57 / 43 / 29%) move together.
-2. **Pool mix** — toggle the eight curated pools; the yield recomputes live. Build a
-   stables-only mix and read the negative-carry warning ("earns less than the borrow
-   cost"); add AERO/WETH and read the impermanent-loss warning; try to remove the
-   last pool (blocked).
-3. **Deposit** — valid `t1` + an in-range amount → *Get my deposit address* → walk
-   the QR/progress steps → land on the position.
-4. **Add ZEC** — the risk selector **locks** to the position's setting and the button
-   shows your remaining room to the 50-ZEC cap. Try to push a ~40-ZEC position past
-   50 → it blocks with "room left".
-5. **Withdraw** — drag the slider for a partial exit; a **full** withdraw returns you
-   to the start and **unlocks** the selector.
-6. **Activity** — every row links to the right explorer (Zcash / NEAR / Base).
-7. **Docs** — custody table, risk table, "what can actually go wrong", fees.
-8. **Advanced toggle** (top-right) — jumps to the power-user build and back.
-9. **Mobile** — shrink to phone width; nav, cards, and the Test kit stay clean.
+## Contracts — what each suite proves (`contracts/test`)
 
-## Automated suites
+| File | Tests | Proves |
+|---|---|---|
+| `Account.t.sol` | 48 | CREATE2 prediction, idempotent `createAccount`, one-transaction `createAccountAndExec`; owner-only `exec` / `execBatch`; ERC-721/1155 receivers; reentrancy through every door; peripheral callback rights (active target only, non-transitive, nested delegation restores); keeper grants: not-granted, expiry, revoke, `revokeAll` epoch, period reset, value budget, every token selector incl. Permit2, inner and nested operations charged, malformed calldata fails closed; amount-based budgets vs a rebasing token; 2 fuzz |
+| `CollateralVenues.t.sol` | 27 | `AaveV3Venue` supply / borrow / repay(all) / withdraw(all) under the account; live LT / LTV / rate reads follow the venue; allowances reset; HF = LT/LTV; keeper repay within budget; keeper withdraw pays the account; `MorphoBlueVenue` disabled everywhere + `marketId`; registry `maxOfferedLtvBps` derived (7800 → 5000 cap; 7000 → 4516), floor bounds, decimals read from the token, cbZEC disabled with note, enable requires the venue to list the asset; 1 fuzz |
+| `SnuggleLpVenue.t.sol` | 41 | Single / dual open minted to the account; residual and bounce folding; dust floor per decimals; width [150, 5000] / delay / deadline / zero-amount guards; band required / out of range / `slot0` revert / short return / no-code pool; C-2 enumeration (empty, grows, prunes, re-key, 25 ids, glitch → `EnumerationFailed`, paused → `EngineUnreachable`, exit never depends on it); close fee on yield only; `harvest` vs `claimStakingRewards`; refused claims skipped; `closeMany` per-id try/catch; claim chokepoint + path independence; increase; keeper close within budget; cbZEC rebase / downward rebase / blocked / paused; 2 fuzz |
+| `StrategyRouter.t.sol` | 26 | Full open with a real EIP-712 Permit2 signature (spender = account); first-time user in one tx; entry-HF floor enforced exactly at the offered max; disabled / unregistered asset; pool must contain USDC; deadline / zero borrow; band protects the deposit; open against existing collateral; wrong-spender / reused-nonce permits; full unwind round trip; unwind on a disabled asset; repay-only; exit-HF floor; swap `minOut`; refused ids reported; keeper unwind within a two-token grant; `sweep` to owner only; router refuses EOAs; router holds nothing after every call; swap-adapter guards; 1 fuzz |
+| `B20.t.sol` | 10 | Router open → rebase → unwind; blocked account mid-flow; paused reward token never blocks the exit; cbZEC refused as collateral; blocked treasury never bricks the user; seized idle balance is not our loss; swap is amount-based; blocked swap leaves no allowance; keeper budget survives a rebase; 1 fuzz |
+| `PythOracleAdapter.t.sol` | 15 | TickMath canonical values and the two live pool ticks reproducing the verified prices (−198319 → 2,441 USDC/WETH; −23228 → 1,020 USDC/cbZEC); same-tx gate; stale update refused; max-age re-checked; excess fee refunded; peg break both directions; TWAP-not-spot; pool unreadable fails closed; non-positive price; `peek`; 1 fuzz |
+| `Deploy.t.sol` | 7 | Verified constants; guard refuses unknown chain / unconfirmed mainnet / missing env / no code; guard catches Aave provider drift; deploy wires everything (cbZEC disabled note, two-step registry ownership); optional Pyth adapter |
+| `invariant/Invariants.t.sol` | 5 invariants + 1 liveness test | User can always exit via raw `exec`; keeper never exceeds a grant; fee ≤ `performanceBps` of yield actually paid, never collateral; router + venues + adapter hold zero; no standing allowances; every handler path is live |
+| `fork/BaseFork.t.sol` | 8 (skipped) | Aave provider resolves to the verified addresses; reserve params live + cbZEC not listed; cbZEC B20 shape (`0xef` code, 8 decimals, `multiplier()`); cbZEC/USDC `slot0()` + token order + tick spacing 200; the engine's index-getter shape on the live engine (logs the live end-of-list revert — record it in `VERIFIED-BASE-FACTS.md` on first run); supply → borrow → repay → withdraw under the account; open → close on the live engine in the first active WETH/USDC pool; Permit2 / Morpho / Pyth code present |
 
-```bash
-# Contracts (Foundry). Libraries are not vendored — clone the pinned versions once:
-cd contracts
-git clone --depth 1 --branch v5.7.0 https://github.com/OpenZeppelin/openzeppelin-contracts lib/openzeppelin-contracts
-git clone --depth 1 --branch v1.16.2 https://github.com/foundry-rs/forge-std lib/forge-std
-forge test                      # 73 tests + 8 invariant suites (~82K+ transitions)
-forge test --match-test Fork    # live-engine fork suite (needs a Base archive RPC)
+Fuzz and invariant depth are set in `contracts/foundry.toml` (`[fuzz] runs =
+512`, `[invariant] runs = 256, depth = 40`); the build report also ran
+`--fuzz-runs 5000` and 768 × 64 green. Mocks (`test/mocks`) mirror the
+verified engine semantics (index getter, replace-on-rekey, ≈0 single-sided
+residual, long-leg bounce, new id per deposit, glitch / pause / refusal
+switches) and `MockB20` (rebase, block, pause).
 
-# Agent (zero deps; Node ≥ 20)
-cd agent && npm test            # 72 tests incl. adversarial / MEV-resistance suite
+## Keeper (`agent/test`)
 
-# Yield service (zero deps; Node ≥ 20)
-npm run test -w @zyo/yield      # 41 tests — decoders pinned against REAL captured
-                                # on-chain logs/receipts, rebalance re-key chains,
-                                # cohort/band math, RPC chunk-splitting, API integration
-```
+`npm test` runs `tsc`, then `scripts/verify-abi.mjs` (36 checks: selectors,
+output layouts, event indexed layout, error declarations on the right
+contract, the two grant selectors, `execAsKeeper`, six pinned Aave / Chainlink
+selectors — skips loudly if `contracts/out` is absent; `VERIFY_ABI_STRICT=1`
+makes that fatal), then `node --test` over 12 files. Inside: 4,000 poisoned
+valuation snapshots (+1,500 random, +1,000 sticky-UNKNOWN, +500 positive) via
+`fast-check`; 2,000 × 3 random HF paths through the ladder; 1,000 price
+bands; 6 real-process / end-to-end runs (a spawned `dist/src/index.js` over an
+HTTP JSON-RPC mock; in-process keeper mode over a behavioural
+account / router / LP-venue mock that executes signed raw transactions);
+config strictness; store atomicity, lock, tamper detection, duplicate
+rejection, monotonic counters; log redaction across full runs.
 
-### Prototype fuzz (Playwright)
+## Yield (`services/yield/test`)
 
-The demo carries a **demo-only test seam** (`window.__oil`, stripped in production
-like the Test kit) exposing the *real* pure functions, so the fuzz exercises the
-shipped logic rather than a re-implementation.
+14 files. Strict Aave decoding (12 / 10 words exactly, bounds, a half-readable
+sample refused; fixture reproduces 4.828 % / LT 7800 / 8300); gauge reads,
+outlier gate, `epochActive` re-derived at serve time; the gate's thirteen
+refusal reasons; the model; **`model-pin.test.ts`** replays the recorded words
+through the real `GaugeSource` + gate and asserts every served cell equals the
+Python sim's closed-form cell to 0.01 pt (54 cells) and that
+`samples/model-inputs.json` matches what `@zyo/shared` exports; server
+(503 on absent / stale rates); config (`near|rhea|oneclick|intents` knobs
+cannot reappear); event decoding; indexer; lifecycles; cohorts; bands;
+registry; RPC.
 
-- **Part A — logic grid (2,418 combinations):** every combination of
-  {6 addresses × 19 amounts (up to 10,000 ZEC) × 7 existing-position sizes × 3 risk
-  stops} for the gate, PLUS every menu pool (8, single-select) × 3 risk stops for
-  the yield model — asserting the real invariants: **uncapped** gating (floor 0.25
-  and address validity are the only gates — Matt's call 2026-08-27; a "cap ghost"
-  blocking any larger amount is a failure), apy = supply + LTV × (pool × 0.765 −
-  borrow), carry-sign correctness (a pool earning less than the borrow cost goes
-  below the supply-only baseline), LTV monotonicity, the liquidation-drop formula
-  (57 / 43 / 29%), selPool setter round-trip, and address classification.
-  Default-pool headline locks 12.9 / 17.2 / 21.5% (WETH/USDC, sampled 2026-08-27).
-- **Part B — UI state-machine fuzz (16 seeded sessions, ~90 real actions):**
-  randomized clicks through deposit / pool-select / top-up / withdraw / tab /
-  Test-kit flows on desktop and phone viewports, asserting **zero console errors**
-  plus: exactly ONE pool selected after any click sequence, deposits (incl. 80 and
-  250 ZEC — uncapped) open a position, top-ups lock risk AND pool selectors and
-  accept any amount, and a full withdraw returns to the start and unlocks both.
+## Web (`web/test`, `web/e2e`)
 
-Both are deterministic (seeded) and reproducible. Latest run: **2,418 + 90
-combinations, 0 failures.** The scripts live alongside the verification suites
-(`verify-simple.mjs` — 25 end-to-end checks incl. a live-mode pass that intercepts
-the yield API and asserts banded headlines + per-card band bars render from
-empirical percentiles; `verify-advanced.mjs` — 12 checks on the advanced build:
-logo-home, incentives-only claimable, 8-pool Aerodrome catalog with real engine
-ids, per-asset borrow model, footer disclaimer + BUILT-ON rail, internally
-consistent demo account at $487.20; `verify-toggle.mjs` — the Simple⇄Advanced
-round-trip).
-Console-error assertions tolerate exactly one message class: the boot-time
-`ERR_CONNECTION_REFUSED` from probing the local yield service — that is the
-designed static-fallback path, not a page bug.
+Unit: `abi.test.ts` (re-reads `contracts/abi/oilskin-abi.json`, fails on any
+signature / selector / output-layout drift and on a stale bundle hash),
+`snapshot.test.ts` (demo market equals the `VERIFIED-BASE-FACTS.md` Aave table
+and Chainlink answers — the test parses the doc; every external address the
+web uses appears in the doc; demo addresses do not; `demo-gate.json` equals
+`MODEL-NUMBERS.md` cell by cell), `copy.test.ts` (the disclosure list covers
+every BASE-PIVOT item-19 topic; the four banned entry words — `RISKS.md` §1
+lists them — do not appear under `app/`, `components/`, `lib/`),
+`plan.test.ts`, `execute.test.ts`, `gate.test.ts`,
+`math.test.ts`, `onboarding.test.ts`, `positions.test.ts`, `reads.test.ts`,
+`wizard.test.ts`.
 
-## Security review
+E2E (`e2e/demo-flow.spec.ts`, `NEXT_PUBLIC_FORCE_DEMO=1`, no wallet, no RPC):
+landing → onboarding (jurisdiction first, three steps, wallet-address help,
+pinned cbZEC + counterfeit check, already-on-Base); Simple wizard (collateral
+→ computed setting → one recommendation → review with plain sentences →
+simulated sign incl. keeper protection); Advanced wizard (every pool with the
+model's numbers, why-not list, custom controls, technical detail); dashboard
+(tiles, ladder band, position card, claim / unwind panels, Advanced raw
+data); spot (gated in Simple; demo quote, cbZEC pin, slippage guard,
+disclosures in Advanced); no horizontal overflow on every page and wizard
+step in both modes. Each at 1360 px and 390 px.
 
-The pre-audit self-review, its attack-vector map, and the findings it fixed are in
-`docs/SECURITY-REVIEW-2026-08.md`. A professional third-party audit is still required
-before mainnet.
+## Prototypes (`prototype/test`)
+
+`run-all.mjs` runs `verify-simple` (85), `verify-advanced` (80),
+`verify-toggle` (45) and `fuzz` (6). `verify-toggle` diffs the byte-equal
+shared block between the two pages, deep-equals `OIL_SHARED` against the built
+`@zyo/shared`, checks the derived functions against shared's, checks
+`OIL_CHAIN_READ` against `docs/VERIFIED-BASE-FACTS.md` and `OIL_MODEL` against
+`/tmp/build/MODEL-NUMBERS.md` (skipped with a named check if absent). Every
+suite runs the removed-vocabulary guard (`_harness.mjs: FORBIDDEN`) over the
+shipped pages and reports, as information, which docs still mention that
+vocabulary. The static checks scan the markup for any typed ±, HF, drop %,
+rung, LT or borrow literal.
+
+## Clicking the demo — the tester's kit
+
+Both prototypes carry a **🧪 Test kit** button (bottom-right; demo build only,
+like the `window.__oil` seam the fuzz uses). It drops demo values into the
+right field or flips a simulation:
+
+- **Wallets**: connect Coinbase Wallet (demo `0x7a3F…0c1E`) or a second wallet
+  (`0xB44e…e5F6`) — the second one sees "Nothing under this wallet"; disconnect.
+- **Amounts** per asset: min ✓ · typical ✓ · whole wallet ✓ · below min ·
+  over balance · negative · zero (the last four block at the reducer).
+- **Price**: −25 / −40 / −55 / +30 % and reset — watch the HF band and the
+  ladder rungs; a full crash walks through repay → de-risk → emergency.
+- **Fast-forward** 1 / 30 days in bounded ticks (accrual clamped per tick).
+- **Borrow rate** 9 % and reset — the gate re-runs on every pool.
+- **WHAT-IF emissions ×4 / off** — the only way to open the LP flow, because
+  nothing clears at today's numbers; every surface stamps "not today's
+  numbers" while it is on.
+- **Failures**: wallet rejects the signature; router reverts mid-hop (the
+  whole transaction is undone); engine bounces 12 % (refund folding + dust
+  left idle); position out of range / back in; keeper offline / back; corrupt
+  store (reset with a boot note); wipe store; "See an example" (never
+  persisted, never replaces a real position).
+
+Things to try to break: LTV above the per-asset top; width outside
+[150, 5000]; borrowing while the warn rung is fired; topping up into a pool
+that no longer clears; a second sign while one is in flight; closing the
+modal mid-flight; two tabs (a stale tab cannot clobber a credited deposit);
+Enter/Space ×4 on Confirm (one position); withdrawing collateral below the
+1.55 floor; closing an LP "to wallet" and expecting the debt to vanish. Each
+is prevented at the reducer and has a named check in `verify-simple.mjs` or
+`verify-advanced.mjs`.
+
+## CI (`.github/workflows/ci.yml`)
+
+Runs the contracts suite and the agent + yield suites on push to `main` and
+on pull requests. Gaps: no shared / web / prototype jobs; no fork job (needs
+a `BASE_RPC_URL` secret); the agent job runs before any contracts compile, so
+its `verify-abi` skips there — order the jobs and set `VERIFY_ABI_STRICT=1`;
+no static analysis.

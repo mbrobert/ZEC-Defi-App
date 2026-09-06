@@ -1,3 +1,5 @@
+> **History.** Design research from 2026-08 against the pre-pivot UI (references to a NEAR Intents bridge-in-transit state, `lib/estimates.ts`, and a 4-step wizard with a borrow-asset choice no longer apply). The cross-cutting decisions — one palette, health band with distance-to-danger, itemised net yield, logged-out full experience, one app with progressive disclosure — carried into `web/` and the prototypes.
+
 # UX teardown — Aerodrome · Curve · Convex · Morpho · Pendle → ZYO decisions
 
 Purpose: extract what the five reference apps do well and badly, and bind every

@@ -1,3 +1,5 @@
+> **History.** Feedback round 2 (2026-08-13) on the pre-pivot design — custody, why a Zcash wallet cannot "connect like MetaMask", venues, names. Superseded by `BASE-PIVOT-2026-09.md`: the v1 in the tree connects an EVM wallet on Base and has no NEAR leg.
+
 # Feedback round 2 — custody, wallet connections, venues, names (2026-08-13)
 
 Answers to the follow-up notes. Everything below is grounded in fresh research

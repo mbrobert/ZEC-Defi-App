@@ -1,3 +1,5 @@
+> **History.** Feedback round 1 (2026-08-13) on the pre-pivot design: Rhea Finance lending on NEAR, NEAR Intents, Zcash payout addresses. Everything about that design is superseded by `BASE-PIVOT-2026-09.md`; the research on the Rhea exploit and the alternative venues is why the lending leg left NEAR. `services/yield/src/model.ts` still cites §2 for the engine-fee observation.
+
 # Feedback round 1 — answers & decisions (2026-08-13)
 
 Every question from the 2026-08-13 feedback, answered. Research behind the

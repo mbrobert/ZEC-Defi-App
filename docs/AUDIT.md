@@ -1,138 +1,136 @@
-# Internal security review — v0.5 (2026-08-06)
+# Audit status — Base-first v1 (2026-09-05)
 
-## Round 3: guarded fork suite re-run + a via-IR test-harness footgun
+**No external audit has been performed on this code.** This page records what
+the tree itself proves, what the build carried over from the two pre-pivot
+review waves, what it deliberately dropped, and what an auditor is asked to
+attack. The scope, trust model, invariants and the unverified list are in
+`AUDIT-SCOPE.md`; the pre-pivot ledgers are `AUDIT-LEDGER-2026-08.md`,
+`SECURITY-REVIEW-2026-08.md` and `AUDIT-FINDINGS-2026-09-03.md` (history —
+the code they audited no longer exists).
 
-Re-ran the full fork suite (8 tests) against the live engine with the round-2
-guards in place: **7/8 passed first try; the 1 failure was root-caused to the
-test harness, not the protocol** — engine and adapter fully exonerated.
+Abbreviations: HF = health factor; LT = liquidation threshold; LTV =
+loan-to-value; LP = liquidity provision; ABI = application binary interface;
+EIP = Ethereum Improvement Proposal; CI = continuous integration; EOA =
+externally owned account.
 
-Fork-proven this round, on real Base liquidity:
+## Green baseline (run on this tree, 2026-09-05)
 
-- **Exposure cap live**: a $250k deposit against a $100k pool cap reverts
-  `PoolExposureCapExceeded` in the vault (~230k gas) — the engine is never
-  touched.
-- **Slippage floor live**: demanding more USDC out than the pool can return
-  reverts on the real engine close path.
-- **Moderate-size economics**: a $50k single-sided open → 50% partial →
-  full exit on Aerodrome WETH/USDC returned **49,999.999998 USDC of 50,000**
-  (loss ≈ $0.000002) once timing was correct.
+| Suite | Result | Command |
+|---|---|---|
+| Contracts | 181 passed, 0 failed, **8 skipped** (fork, no `FORK_URL`), 13 suites; 5 invariants × 256 runs × depth 40, 0 reverts | `cd contracts && forge test` |
+| Root ABI seam | 266 selectors / topics / errors across 17 contracts match `contracts/abi/oilskin-abi.json` | `node scripts/verify-abi.mjs` |
+| Keeper | 139 tests / 29 suites; `verify-abi` 36/36 against `contracts/out` | `npm test -w @zyo/agent` |
+| Yield | 105 tests | `npm test -w @zyo/yield` |
+| Web | 89 unit; Playwright 12/12 (warm server) | `npm test -w @zyo/web`; `npx playwright test` |
+| Shared | 52 | `npm test -w @zyo/shared` |
+| Prototypes | 85 + 80 + 45 + 6 checks; 30,000 fuzzed reducer actions, 0 invariant violations | `node prototype/test/run-all.mjs` |
 
-**T-1 (test-harness, would have masked/faked failures):** under `via_ir`,
-solc may legally CSE repeated `block.timestamp` reads inside one function
-(TIMESTAMP is transaction-invariant in real EVM), so a second
-`vm.warp(block.timestamp + x)` can silently re-warp to the SAME second. Our
-$50k fork test tripped exactly this: the post-partial warp was a no-op, the
-full exit executed 0s after the re-deposit, and the engine *correctly*
-reverted `MinimumHoldTimeNotMet`. Diagnosis confirmed two ways: (1) the
-engine's verified source — `MIN_POSITION_HOLD_TIME` is a flat
-`1 minutes` constant compared against per-position `depositTimestamp`
-(`_main.sol:41,534-544`; live value 60 via `cast call`); (2) an on-fork probe
-of the same $50k sequence succeeded at +90s. **Fix:** every multi-warp test
-now derives all warp targets from a single cached timestamp read
-(`EngineFork.t.sol`, `ScenarioMatrix.t.sol`) — warps can no longer be
-silently elided by codegen. Full local suite re-verified green after the
-change.
+## What the tests prove about the money path
 
-Product note (UX, feeds the app + agent): the engine's 60s hold restarts on
-*every* deposit — including the internal re-deposit that implements partial
-withdrawals. After any deposit **or partial withdrawal**, the remainder is
-untouchable for 60s. The UI surfaces this as a short cooldown; the agent
-treats `MinimumHoldTimeNotMet` (`0xb586467e`) as retry-after-60s, never as an
-error.
+- **Ownership.** Only the factory initialises an account, once; only the
+  owner can `exec` / `execBatch` / `grant` / `revoke`; the implementation is
+  bricked; `accountOf` is predictable and `createAccountAndExec` runs the batch
+  as the owner in one transaction (`Account.t.sol`, 48).
+- **Peripheral rights.** Only the active target of the current `exec` may call
+  back; rights are per-call and non-transitive; nested delegation restores the
+  caller; reentrancy through every door reverts (`Account.t.sol`).
+- **Keeper budgets.** Not-granted, expired, revoked, epoch-bumped and
+  period-rolled grants behave; every ERC-20 and Permit2 token selector is
+  charged, including inner and nested operations; malformed calldata fails
+  closed; budgets are amount-based so a rebase cannot fool them
+  (`Account.t.sol`, `B20.t.sol`); `invariant_keeperNeverExceedsGrant`.
+- **Router.** A real EIP-712 Permit2 signature with spender = account; the
+  entry-HF floor enforced exactly at the offered max; disabled / unregistered
+  asset refused; pool must contain USDC; deadline and zero-borrow guards; the
+  band protects the deposit; wrong-spender and reused-nonce permits refused;
+  full unwind round trip; unwind on a disabled asset; exit-HF floor; swap
+  `minOut`; refused ids reported; keeper unwind within a two-token grant;
+  `sweep` pays the owner only; the router refuses EOAs; the router holds
+  nothing after every call (`StrategyRouter.t.sol`, 26;
+  `invariant_routerAndPeripheralsHoldNothing`).
+- **LP venue.** Ids minted to the account; residual and bounce folding; dust
+  floor per decimals; width / delay / deadline / zero-amount guards; band
+  required / out of range / `slot0` revert / short return / no-code pool; the
+  C-2 enumeration (empty, grows, prunes, re-key, 25 ids, glitch →
+  `EnumerationFailed`, paused → `EngineUnreachable`, exit never depends on it);
+  fee on yield only and path-independent; refused claims skipped; per-id
+  try/catch close (`SnuggleLpVenue.t.sol`, 41; `invariant_feeNeverTouchesPrincipal`).
+- **Aave venue and registry.** Supply / borrow / repay(all) / withdraw(all)
+  under the account; live LT / LTV / rate reads follow the venue; allowances
+  reset; `maxOfferedLtvBps` derived (7800 → 5000 cap; 7000 → 4516); floor
+  bounds; cbZEC disabled with note; enabling requires the venue to list the
+  asset (`CollateralVenues.t.sol`, 27).
+- **B20.** Open → rebase → unwind; blocked account mid-flow (blocked leg
+  skipped, the rest exits, raw `exec` proves the issuer holds it); paused
+  reward token never blocks the exit; cbZEC refused as collateral; blocked
+  treasury never bricks the user; seized idle balance is not our loss; swap is
+  amount-based; blocked swap leaves no allowance; keeper budget survives a
+  rebase (`B20.t.sol`, 10).
+- **Deploy guard.** Refuses an unknown chain, an unconfirmed mainnet, missing
+  env, an address without code, Aave provider drift; wires cbZEC disabled with
+  its note and hands the registry over in two steps (`Deploy.t.sol`, 7).
+- **Keeper (off chain).** 4,000 poisoned valuation snapshots plus random,
+  sticky-UNKNOWN and positive sets; the audited "$9,500 debt at oracle price
+  0 → HF ∞ → HEALTHY" shape is `UNKNOWN` end to end; 2,000 × 3 random HF paths
+  through the ladder; idempotency keys survive a crash before and after send;
+  real-process liveness (spawned daemon, lock held, SIGTERM exit 0, bad config
+  exit 1 without echoing the key); redaction of keys, URL paths and secrets
+  across full runs (`agent/test/*`).
 
-## Round 2: fuzzing, invariants, adversarial + a fork-caught economic finding
+## Carried over from the pre-pivot findings (`AUDIT-FINDINGS-2026-09-03.md`)
 
-Testing this round: an **8-invariant stateful suite** driving ~10,000 random
-action sequences per invariant (≈82k state transitions) over every user- and
-operator-controllable action; a **540-scenario enumerated matrix**
-(pool × range × delay × pref × size × withdrawal-pattern), each asserting exact
-value conservation; **62 agent tests** including hostile-RPC, hostile-1Click,
-MEV/malicious-quote, and extreme-price grids; and **8 fork tests** against the
-live Base engine.
+Re-implemented on the new surface, each with a test: the engine's
+index-getter enumeration with a measured end-of-list shape (C-2); width
+bounds [150, 5000] as a *total* tick span with the ± derived off chain; refund
+folding after every deposit; the re-mint price band read from `slot0()`
+failing closed; `verify-abi` wired into the suites; fail-closed health
+mapping (`rungFor` throws on NaN; valuation `UNKNOWN`); ladder hysteresis and
+re-arm; a progress watchdog instead of an elapsed-time one; bounded accrual and
+deposit idempotence in the prototypes.
 
-| ID | Severity | Finding | Fix |
-|----|----------|---------|-----|
-| F-4 | **Medium** (fork-caught) | Large deposits relative to pool TVL incur real AMM price impact (>1% round-trip at ~2.5% of pool TVL); our close-and-reopen partial-withdraw makes the kept portion cross that impact again | (1) **Per-pool exposure cap** (`maxDepositPerPool`, tracked `poolExposure`) bounds any pool's concentration; (2) **withdrawal slippage floor** (`minOut0/minOut1`) lets the owner/agent set a hard minimum, reverting on MEV sandwich or deep impact. Both fork-proven. |
-| F-5 | Low | `withdraw` had no caller-supplied slippage protection — a sandwich on the engine close/re-deposit could silently reduce payout | `minOut0/minOut1` params on `withdraw`; `SlippageExceeded` revert; `poolTokensOf` view so the UI maps mins to the right assets |
+## Dropped with the design, not ported
 
-**Invariants proven to hold across the whole search space:** USDC conservation
-(nothing created/destroyed), adapter/vault never hold idle funds, matched token
-never stranded in the router, `active == (shares>0)`, no share inflation,
-intents payouts bounded by fees (principal never routed as reward).
+Operator custody (`PositionVault`, `RewardRouter`, `openFor`, `payoutHash`,
+`SimpleMultisig`), the NEAR Intents / 1-Click quote surface and its
+recipient-binding trust assumption, the Rhea health monitor, ZEC-address
+validation in the money path, per-pool exposure caps and per-token routing
+caps (there is no shared vault to cap), the `MAX_ENGINE_POSITIONS` bound (the
+account owns ids directly; nothing on chain iterates them on an exit path).
 
-**Adversarial results:** read client fails loud on every hostile transport
-(500/429/malformed/JSON-RPC error) — never returns plausible-but-wrong data;
-reward executor refuses every tampered quote (recipient swap, wrong dest asset,
-poison deposit address); health bands proven monotonic across HF 0.5→5.0; the
-claim engine never claims at a net loss across a 240-cell cost grid.
+## Open items an auditor should attack first
 
-### On the 1-minute hold (UX)
+1. **The grant seam.** The web grants `StrategyRouter.unwind` only; the keeper
+   plans `SnuggleLpVenue.closeMany` + `unwind` and is refused without the
+   second grant. Also: whether a grant on `closeMany` with pool-token budgets
+   lets a compromised keeper key churn value out through the engine's
+   internal swaps within budget (the fee transfers and the band are the only
+   floors).
+2. **`execFromPeripheral` reachability.** Any way for a target that is *not*
+   the active peripheral to obtain callback rights, including via tokens with
+   hooks (ERC-777-style) called from inside a venue's tree.
+3. **Budget accounting from calldata.** Token operations expressed through
+   selectors the account does not recognise (`permit`, `transferWithAuthorization`,
+   `safeTransferFrom` on ERC-721 ids, multicall wrappers) executed by a keeper
+   inside a granted tree.
+4. **The band.** `PriceBand` is a spot `slot0()` check; a same-block price
+   move within the tolerance, or a pool the caller controls, is the residual.
+5. **Unwind swap floor.** `swapMinOut` is caller-supplied; the web sizes it
+   from a cache and degrades to 1 on a zero value.
+6. **Hold path.** The borrow-and-hold batch bypasses the router's entry-HF
+   floor.
+7. **Fee path.** `_takeFee` measures the gain per token as a balance delta
+   around the claim; find a token / engine behaviour that inflates the delta
+   (a rebase up mid-claim is the obvious one — `B20.t.sol` covers the
+   downward case and the keeper-budget case).
+8. **Everything under "Not verified" in `AUDIT-SCOPE.md`**, beginning with the
+   fork suite and the SwapRouter.
 
-The engine enforces a 60-second minimum hold after any deposit — its own
-flash-loan/JIT-liquidity protection. It **cannot be removed** (third-party
-contract) and shouldn't be (it protects the pools our users deposit into). It's
-invisible to real users, who hold for days; it only appears if someone
-withdraws seconds after depositing. The one place it touched our UX — a partial
-withdrawal's re-deposit restarting the clock on the *remaining* funds — is now
-mitigated by the exposure cap (fewer forced large partials) and surfaced: the
-agent treats the revert as retry-later and the UI shows the unlock time. Fighting
-it further (e.g. wrapping deposits to mask it) would strip protection from users,
-so we surface it honestly instead.
+## Before mainnet, in order
 
----
-
-# Internal security review — v0.4 (2026-08-06)
-
-Self-audit by the building agent. **This does not replace a third-party audit**
-— commission one before mainnet TVL (note: the MaxFi/Snuggle engine itself
-discloses AI-only audits so far; weigh that in position limits).
-
-## Fixed this round
-
-| ID | Severity | Finding | Fix |
-|----|----------|---------|-----|
-| F-1 | **High** (fork-caught) | Partial-withdraw re-deposit called the engine's dual `deposit` with one side = 0 when a closed position returned single-sided funds → CL pool reverts minting zero liquidity → **partial withdrawals would brick** whenever price hadn't crossed the range | Branch to `depositSingleSided` when only one token remains; mock updated to mirror engine behavior (`ZeroLiquidityMinted`) |
-| F-2 | Medium | Unbounded engine-position array per vault position (`increase` appends) → gas-DoS of withdraw/claim loops | `MAX_ENGINE_POSITIONS = 16` cap + `TooManyEnginePositions` |
-| F-3 | Low | No local bounds on user LP params (engine would revert late, wasting gas, and future engines may not) | Vault rejects rangeWidth outside 10–5000 bps and delay > 30 days (`InvalidLpParams`) |
-
-## Engine behaviors that constrain us (fork-verified)
-
-- **`MinimumHoldTimeNotMet` (0xb586467e)**: 1-minute minimum hold after any
-  deposit — and our partial-withdraw re-deposit **restarts the clock**, as does
-  every compound/increase. Agent must treat this revert as retry-later;
-  UI should surface "withdrawals available ~1 min after last deposit".
-- Fees route through the engine with **15% performance fee** before reaching us.
-- `ref` (referral) locks on first deposit per depositor — adapter passes the
-  treasury; deploy adapters fresh if the referral must change.
-
-## Accepted risks / open items (unchanged from RISKS.md, restated)
-
-1. **Operator fund-attribution trust (High, by design, v1)**: `openFor`/
-   `increase` let the single trusted operator assign idle vault balances to
-   positions. A malicious operator could misattribute arriving bridge funds
-   between users (never exfiltrate — funds stay in user positions). Mitigation
-   now: one operator key, event trail, caps. Roadmap: deterministic per-strategy
-   deposit sub-accounts so attribution is trustless.
-2. **Reward routing quote binding (Medium)**: on-chain can't verify the 1-Click
-   deposit address pays the user's zaddr. Agent hard-verifies + quoteHash audit
-   trail + per-token caps; rewards only, never principal.
-3. **claimStakingRewards-vs-harvest probing (Low)**: adapter try/catches the
-   staking claim then falls back to harvest. If a future engine version makes
-   `claimStakingRewards` silently no-op on unstaked positions, claims would
-   under-collect (never lose funds). Re-verify on engine upgrades.
-4. **Re-deposit slippage (Low/Medium)**: the engine applies its own TWAP +
-   slippage config on deposits; our re-deposit trusts it. Fork round-trip loss
-   assertion (>90% back) guards regressions in CI.
-5. **rewardTokens list is owner-set (Low)**: a malicious/broken token in the
-   sweep list could revert claims. Owner-gated; keep the list short and vetted.
-6. **SimpleMultisig is TESTING ONLY** — no signature replay concerns (tx-store
-   model), but no timelock, no guard modules; mainnet admin = Safe + timelock.
-
-## Standing protections (verified by tests)
-
-ReentrancyGuard on all vault entrypoints; withdrawal exempt from pause;
-operator cannot move principal to arbitrary addresses; adapter callable only
-by vault; forceApprove (USDT-pattern safe) with resets; allowlisted adapters +
-tokens; per-token routing caps; principal never transits the RewardRouter.
-
-Suites: 41 unit/fuzz (local) + 3 fork tests against the live Base engine.
+Run the 8 fork tests against Base and record the engine's live end-of-list
+revert shape in `VERIFIED-BASE-FACTS.md` → probe and record the Aerodrome
+SwapRouter → close the grant seam (web asks for `closeMany`, or the keeper's
+plan changes) → make the hold path chain-enforce the entry floor or say it
+does not → either ship the cbZEC policy read or remove the sentence → static
+analysis in CI → an external audit of the 2,856 lines in scope → deploy with
+`REGISTRY_OWNER` = a Safe and `TREASURY` ≠ the deployer.
