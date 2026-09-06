@@ -24,12 +24,13 @@ const hash = createHash("sha256").update(raw).digest("hex");
 /** Contract → functions/events/errors the web needs. Everything else is left out on purpose. */
 const WANT = {
   OilskinAccountFactory: { functions: ["accountOf", "isDeployed", "createAccount", "createAccountAndExec"], events: ["AccountCreated"], errors: true },
-  OilskinAccount: { functions: ["owner", "exec", "execBatch", "grant", "revoke", "revokeAll", "grantOf", "grantTokens", "tokenBudgetOf", "PERMIT2", "FACTORY"], events: ["Executed", "Granted", "Revoked", "KeeperSpend"], errors: true },
-  StrategyRouter: { functions: ["openLeveragedLp", "unwind", "sweep", "REGISTRY", "LP_VENUE", "SWAP", "PERMIT2", "USDC"], events: ["LeveragedLpOpened", "LeveragedLpUnwound", "Swept"], errors: true },
-  SnuggleLpVenue: { functions: ["positionsOf", "claim", "close", "closeMany", "increase", "poolTokens", "poolOf", "poolSqrtPriceX96", "performanceBps", "MIN_WIDTH_BPS", "MAX_WIDTH_BPS", "MAX_REBALANCE_DELAY", "REWARD_TOKEN", "treasury", "ENGINE"], events: ["LpOpened", "LpClosed", "PerformanceFee"], errors: true },
+  OilskinAccount: { functions: ["owner", "exec", "execWithCallback", "execBatch", "grant", "revoke", "revokeAll", "grantOf", "grantEpoch", "grantTokens", "tokenBudgetOf", "MAX_PERIPHERAL_DEPTH", "PERMIT2", "FACTORY"], events: ["Executed", "Granted", "Revoked", "KeeperSpend"], errors: true },
+  StrategyRouter: { functions: ["openLeveragedLp", "openBorrowOnly", "unwind", "sweep", "REGISTRY", "LP_VENUE", "SWAP", "PERMIT2", "USDC"], events: ["LeveragedLpOpened", "BorrowOnlyOpened", "LeveragedLpUnwound", "Swept"], errors: true },
+  SnuggleLpVenue: { functions: ["positionsOf", "claim", "close", "closeMany", "increase", "poolTokens", "poolOf", "poolSqrtPriceX96", "performanceBps", "MIN_WIDTH_BPS", "MAX_WIDTH_BPS", "MAX_BAND_BPS", "MAX_REBALANCE_DELAY", "REWARD_TOKEN", "treasury", "ENGINE"], events: ["LpOpened", "LpClosed", "PerformanceFee"], errors: true },
   ISnuggleVault: { functions: ["positions", "userPositions", "approvedPools"], events: [], errors: false },
   AaveV3Venue: { functions: ["supply", "borrow", "repay", "withdraw", "healthFactor", "liquidationThresholdBps", "maxLtvBps", "debt", "collateral", "borrowRateRay", "enabled", "assetPrice"], events: [], errors: true },
-  CollateralRegistry: { functions: ["maxOfferedLtvBps", "entryHfForLtv", "entryHfFloorWad", "config", "isEnabled", "venueOf", "assets"], events: [], errors: true },
+  CollateralRegistry: { functions: ["maxOfferedLtvBps", "entryHfForLtv", "entryHfFloorWad", "config", "isEnabled", "venueOf", "assets", "pendingVenue", "TIMELOCK_DELAY"], events: ["VenueChangeProposed", "VenueChangeAccepted", "VenueChangeCancelled"], errors: true },
+  AerodromeSwapAdapter: { functions: ["minOutFor", "MAX_SLIPPAGE_BPS", "BPS", "ROUTER"], events: ["Swapped"], errors: true },
   IPermit2: { functions: ["permitTransferFrom", "DOMAIN_SEPARATOR"], events: [], errors: false },
   IAerodromeCLPool: { functions: ["slot0", "tickSpacing", "token0", "token1", "fee"], events: [], errors: false },
 };

@@ -1,7 +1,7 @@
 "use client";
 
 import { FEES, RANGE_WIDTH_BOUNDS, REBALANCE_DELAY_BOUNDS, type CollateralSymbol } from "@zyo/shared";
-import { offeredEntries, reasonText, rejectedEntries, type GateEntry, type GateView } from "@/lib/gate";
+import { offeredEntries, reasonPlain, reasonText, rejectedEntries, type GateEntry, type GateView } from "@/lib/gate";
 import { useMode } from "@/lib/mode";
 import { MAX_BAND_TOLERANCE_BPS } from "@/lib/plan";
 import { recommend } from "@/lib/recommend";
@@ -45,10 +45,13 @@ export default function StrategyStep({
   const choose = (c: StrategyChoice) => onChange({ strategy: c });
 
   const gateLine = (
-    <span className="text-oil-ink3">
-      Gate: {gate.source === "live" ? `yield service${gate.stale ? " (stale)" : ""}` : "yield model, demo"}
-      {gate.emissionsSampledAt ? ` · emissions sampled ${gate.emissionsSampledAt.slice(0, 10)}` : ""}
+    <span className="text-oil-ink3" data-testid="gate-line">
+      Gate: {gate.source === "live" ? "yield service" : "yield model, demo"}
+      {gate.stale ? " · SAMPLE STALE — nothing is offered while it is" : ""}
+      {gate.emissionsSampledAt ? ` · emissions sampled ${gate.emissionsSampledAt.slice(0, 16).replace("T", " ")}Z` : ""}
       {gate.volatilityAsOf ? ` · σ as of ${gate.volatilityAsOf}` : ""}
+      {gate.mcCalibrationGeneratedAt ? ` · risk model calibrated ${gate.mcCalibrationGeneratedAt.slice(0, 10)}` : ""}
+      {engineFeePct !== null ? ` · engine fee ${engineFeePct}%` : ""}
     </span>
   );
 
@@ -58,7 +61,7 @@ export default function StrategyStep({
         <div>
           <h2 className="text-[19px]">Our recommendation</h2>
           <p className="mt-1 text-[13.5px] text-oil-ink2">
-            One choice, worked out from live numbers: a pool is only recommended when its rewards — after every fee and after impermanent loss — beat the {fmtPct(borrowAprPct)} you pay to borrow. {gateLine}
+            One choice, worked out from live numbers: a pool is only recommended when its rewards — after every fee and after the loss from the price moving — beat the {fmtPct(borrowAprPct)} you pay to borrow, under BOTH of the two models we price it with. If they disagree, we do not offer it. {gateLine}
           </p>
         </div>
         {rec.kind === "lp" ? (
@@ -86,6 +89,11 @@ export default function StrategyStep({
               <Chip kind="brass">recommended today</Chip>
             </div>
             <p className="mt-1 text-[13px] text-oil-ink2">{rec.why}</p>
+            {rec.closest && (
+              <p className="mt-1 text-[13px] text-oil-ink2" data-testid="recommendation-why-not">
+                The closest one was {rec.closest.pool.token0}/{rec.closest.pool.token1} ({rec.closest.preset.toLowerCase()}): {rec.closestWhy}
+              </p>
+            )}
             <p className="mt-1 text-[12.5px] text-oil-ink3">You still get the USDC to use as you like, and you can close the loan any time. Nothing is put into a pool. Switch to Advanced to see every pool and why it was refused.</p>
           </button>
         )}
@@ -99,7 +107,7 @@ export default function StrategyStep({
       <div>
         <h2 className="text-[19px]">Choose a strategy</h2>
         <p className="mt-1 text-[13.5px] text-oil-ink2">
-          A pool is offered only when its emissions — after the engine&rsquo;s {engineFeePct !== null ? `${engineFeePct}%` : "cut"} and Oilskin&rsquo;s {FEES.performanceBps / 100}% fee, realised on the impermanent-loss-shrunk base, plus the IL drag — beat the live USDC borrow rate ({fmtPct(borrowAprPct)}). Emissions only; trading fees are not counted. {gateLine}
+          A pool is offered only when its emissions — after the engine&rsquo;s {engineFeePct !== null ? `${engineFeePct}%` : "cut"} and Oilskin&rsquo;s {FEES.performanceBps / 100}% fee, realised on the impermanent-loss-shrunk base, plus the IL drag — beat the live USDC borrow rate ({fmtPct(borrowAprPct)}) under <b className="text-oil-ink">both</b> the published closed form (LP net) and the Monte-Carlo-calibrated form (MC net), which also charges the time the position spends out of range. The closed form is the optimistic one — by up to 32 points at the boundary — so a cell where only it clears is refused as <span className="mono">within_model_uncertainty</span>. Emissions only; trading fees are not counted. {gateLine}
         </p>
       </div>
 
@@ -130,7 +138,7 @@ export default function StrategyStep({
                   {e.stale && <Chip kind="warn">stale sample</Chip>}
                 </div>
                 <div className="num mt-0.5 truncate text-[12.3px] text-oil-ink3">
-                  emissions {fmtPct(e.emissionsGrossPct ?? NaN, 1)} gross → {fmtPct(e.emissionsNetPct ?? NaN, 1)} after fees · IL drag {fmtSignedPct(e.dragPct ?? NaN, 1)} · LP net {fmtSignedPct(e.lpNetPct ?? NaN, 1)} · borrow −{fmtPct(e.borrowAprPct ?? NaN, 2)}
+                  emissions {fmtPct(e.emissionsGrossPct ?? NaN, 1)} gross → {fmtPct(e.emissionsNetPct ?? NaN, 1)} after fees · IL drag {fmtSignedPct(e.dragPct ?? NaN, 1)} · LP net {fmtSignedPct(e.lpNetPct ?? NaN, 1)} · MC net {e.mcLpNetPct === null ? "—" : fmtSignedPct(e.mcLpNetPct, 1)} · borrow −{fmtPct(e.borrowAprPct ?? NaN, 2)}
                 </div>
               </div>
               <div className="flex-none text-right">
@@ -185,7 +193,7 @@ export default function StrategyStep({
         </div>
         <label className="mt-3 flex cursor-pointer items-center gap-2 text-[13.5px]">
           <input type="checkbox" className="accent-brass" checked={state.keeperProtection} onChange={(e) => onChange({ keeperProtection: e.target.checked })} data-testid="keeper-protection" />
-          Grant the Oilskin keeper a revocable, budgeted permission to de-risk this position at the ladder rungs (one extra transaction after opening).
+          Grant the Oilskin keeper one revocable, budgeted permission — StrategyRouter.unwind and nothing else — so it can reduce or close this position at the ladder rungs. One extra transaction after opening; it expires after 30 days unless you renew it, and without it nobody acts for you.
         </label>
       </div>
 
@@ -198,13 +206,16 @@ export default function StrategyStep({
                 <b className="text-oil-ink">
                   {e.pool.token0}/{e.pool.token1}
                 </b>{" "}
-                {e.preset.toLowerCase()} ({fmtHalfWidth(e.rangeWidthBps)}): {reasonText(e.reason)}
+                {e.preset.toLowerCase()} ({fmtHalfWidth(e.rangeWidthBps)}): <span data-testid={`reason-${e.poolId}-${e.setting}`}>{reasonText(e.reason)}</span>
+                {e.stale && " · sample stale"}
                 {e.emissionsNetPct !== null && ` — emissions ${fmtPct(e.emissionsGrossPct ?? NaN, 2)} gross, ${fmtPct(e.emissionsNetPct, 2)} after fees`}
                 {e.dragPct !== null && `, IL drag ${fmtSignedPct(e.dragPct, 2)}`}
                 {e.lpNetPct !== null && `, LP net ${fmtSignedPct(e.lpNetPct, 2)} vs borrow ${fmtPct(e.borrowAprPct ?? NaN)}`}
-                {e.breakEvenEmissionsMultiple !== null && ` · would clear at ${e.breakEvenEmissionsMultiple.toFixed(2)}× today's net emissions`}
+                {e.mcLpNetPct !== null && `, MC net ${fmtSignedPct(e.mcLpNetPct, 2)}`}
+                {e.breakEvenEmissionsMultiple !== null && ` · would clear at ${e.breakEvenEmissionsMultiple.toFixed(2)}× today's net emissions on the closed form alone`}
                 {e.breakEvenSigma !== null && e.sigma !== null && ` or σ ≤ ${e.breakEvenSigma.toFixed(2)} (today ${e.sigma.toFixed(2)})`}
                 {e.pool.note ? ` — ${e.pool.note}` : ""}
+                <span className="block text-oil-ink3">{reasonPlain(e.reason)}</span>
               </li>
             ))}
           </ul>

@@ -1,88 +1,60 @@
 #!/usr/bin/env node
 /**
- * Regenerate lib/demo-gate.json — the demo-mode /v1/gate payload — from the
- * yield engineer's model output (services/yield/samples/lp-model-*.json, the
- * same generated source behind /tmp/build/MODEL-NUMBERS.md). Demo mode must
- * show exactly the numbers the model produced, never a placeholder.
+ * Refresh lib/demo-gate.json — the demo-mode /v1/gate payload.
  *
- *   node scripts/pin-model-numbers.mjs [path/to/lp-model.json]
+ *   node scripts/pin-model-numbers.mjs
  *
- * test/snapshot.test.ts asserts the committed JSON equals MODEL-NUMBERS.md.
+ * This script no longer BUILDS the payload. It copies the one the yield
+ * service generates by running the real gate:
+ *
+ *   cd services/yield && npm run model && npm run demo-gate
+ *
+ * which writes services/yield/samples/demo-gate.json and mirrors it here.
+ *
+ * WHY (audit wave 1, lens D MED-1 and MED-7). This file used to reshape
+ * services/yield/samples/lp-model-*.json cell by cell. That made demo mode a
+ * SECOND implementation of the gate's decision, and the two diverged in both
+ * directions: the simulator trusted the gauge sample's recorded `epochActive`
+ * boolean where the gate re-derives it from `periodFinish` (78 cells across 15
+ * of 27 rows disagreeing), and it published fields the gate returns before
+ * ever computing (24 numbers on refused cells, including a user-net ladder and
+ * an "LP net −18.18 %" line for a pool live mode will not price). Demo mode is
+ * the first thing a user sees; it has to be a recording of the gate, not a
+ * reconstruction of it. services/yield/test/demo-gate.test.ts re-runs
+ * evaluateGate over the committed payload and asserts they match field for
+ * field, so this can never silently drift again.
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const src = resolve(process.argv[2] ?? join(here, "../../services/yield/samples/lp-model-2026-09-05.json"));
-const model = JSON.parse(readFileSync(src, "utf8"));
+const src = resolve(process.argv[2] ?? join(here, "../../services/yield/samples/demo-gate.json"));
+const dest = join(here, "../lib/demo-gate.json");
 
-const SETTINGS = [
-  { id: "sheltered", preset: "CONSERVATIVE" },
-  { id: "steady", preset: "MODERATE" },
-  { id: "working", preset: "AGGRESSIVE" },
-];
-const COLLATERALS = ["cbBTC", "WETH", "cbZEC"];
-const borrowAprPct = model.inputs?.borrowAprPct ?? model.inputs?.borrow?.aprPct;
-if (typeof borrowAprPct !== "number") throw new Error("model.inputs.borrowAprPct missing");
-const collateralInputs = model.inputs?.collateral ?? {};
-const supply = Object.fromEntries(Object.entries(collateralInputs).map(([k, v]) => [k, v.supplyAprPct]));
-const lts = Object.fromEntries(Object.entries(collateralInputs).map(([k, v]) => [k, v.liquidationThresholdBps]));
-const engineFeeBps = model.inputs?.fees?.engineFeeBps ?? null;
-
-const round2 = (x) => (typeof x === "number" && Number.isFinite(x) ? Math.round(x * 100) / 100 : null);
-const verdicts = [];
-for (const [poolId, bySetting] of Object.entries(model.results)) {
-  for (const s of SETTINGS) {
-    const cell = bySetting[s.id];
-    if (!cell) continue;
-    for (const collateral of COLLATERALS) {
-      const enabled = collateral !== "cbZEC";
-      const userNetCell = cell.userNet?.[collateral];
-      const userNet = userNetCell
-        ? ["p30", "p40", "top"].map((k) => ({ ltvBps: userNetCell[k].ltvBps, offerable: userNetCell[k].offerable, userNetPct: round2(userNetCell[k].userNetPct) }))
-        : [];
-      verdicts.push({
-        poolId,
-        setting: s.id,
-        preset: s.preset,
-        collateral,
-        rangeWidthBps: cell.rangeWidthBps,
-        halfWidth: cell.halfWidth,
-        qualifies: enabled ? cell.qualifies === true : false,
-        reason: enabled ? (cell.qualifies ? null : cell.reason) : "collateral_disabled",
-        emissionsGrossPct: enabled ? round2(cell.emissionsGrossPct) : null,
-        emissionsNetPct: enabled ? round2(cell.emissionsNetPct) : null,
-        emissionsRealizedPct: enabled ? round2(cell.emissionsRealizedPct) : null,
-        dragPct: enabled ? round2(cell.dragPct) : null,
-        lpNetPct: enabled ? round2(cell.lpNetPct) : null,
-        borrowAprPct: enabled ? borrowAprPct : null,
-        collateralSupplyAprPct: enabled ? (supply[collateral] ?? null) : null,
-        sigma: enabled ? (cell.sigma ?? null) : null,
-        breakEvenSigma: enabled ? round2(cell.breakEvenSigma) : null,
-        breakEvenEmissionsMultiple: enabled ? round2(cell.breakEvenEmissionsMultiple) : null,
-        userNet: enabled ? userNet : [],
-      });
-    }
-  }
+if (!existsSync(src)) {
+  console.error(
+    `${src} not found.\n` +
+      "Generate it first:  cd services/yield && npm run model && npm run demo-gate"
+  );
+  process.exit(1);
 }
 
-const out = {
-  pinnedFrom: src.replace(/^.*\/(services\/yield\/samples\/[^/]+)$/, "$1"),
-  modelGeneratedAt: model.generatedAt,
-  borrowAprPct,
-  liquidationThresholdBps: lts,
-  /** External protocol parameter carried by the yield model (services/yield/src/model.ts), for the fee breakdown only. */
-  engineFeeBps,
-  borrowSource: model.inputs?.borrowSource ?? null,
-  ratesSampledAt: "2026-09-05T01:00:00Z",
-  emissionsSampledAt: model.inputs?.gaugeSample?.sampledAt ?? null,
-  volatilityAsOf: model.inputs?.volatility?.asOf ?? null,
-  settings: SETTINGS.map((s) => ({ ...s, rebalanceDelayHours: Object.values(model.results)[0]?.[s.id]?.rebalanceDelayHours ?? null })),
-  verdicts,
-  qualifying: verdicts.filter((v) => v.qualifies).map((v) => ({ poolId: v.poolId, setting: v.setting, collateral: v.collateral })),
-  generatedAt: model.generatedAt,
-};
-const dest = join(here, "../lib/demo-gate.json");
-writeFileSync(dest, JSON.stringify(out, null, 2) + "\n");
-console.log(`wrote ${dest}: ${verdicts.length} verdicts, ${out.qualifying.length} qualifying, borrow ${borrowAprPct}%`);
+const payload = JSON.parse(readFileSync(src, "utf8"));
+if (!Array.isArray(payload.verdicts) || !payload.verdicts.length) {
+  console.error(`${src} carries no verdicts — refusing to pin an empty demo payload`);
+  process.exit(1);
+}
+if (!String(payload.generatedBy ?? "").includes("evaluateGate")) {
+  console.error(
+    `${src} was not produced by the real gate (generatedBy: ${payload.generatedBy ?? "—"}).\n` +
+      "Demo mode must be a recording of evaluateGate, never a reformat of the simulator."
+  );
+  process.exit(1);
+}
+
+copyFileSync(src, dest);
+console.log(
+  `pinned ${dest}: ${payload.verdicts.length} verdicts, ${payload.qualifying.length} qualifying, ` +
+    `borrow ${payload.borrowAprPct}%, as of ${payload.asOf}`
+);

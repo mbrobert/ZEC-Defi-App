@@ -89,6 +89,7 @@ function Wizard() {
       deadline,
       bandToleranceBps: state.bandToleranceBps,
       keeperProtection: state.keeperProtection,
+      entryHf: review.loan.entryHf,
     };
   }, [review, s.address, s.mode, account, predictedAccount, state, deployment, deadline]);
 
@@ -174,7 +175,17 @@ function Wizard() {
               onAmount={(a) => setState((st) => ({ ...st, amount: a }))}
             />
           )}
-          {step === 1 && presets && <SettingStep market={market} collateral={state.collateral} amount={Number(state.amount) || 0} presets={presets} selected={state.ltvPreset} onSelect={(id) => setState((st) => ({ ...st, ltvPreset: id }))} />}
+          {step === 1 && presets && (
+            <SettingStep
+              market={market}
+              collateral={state.collateral}
+              amount={Number(state.amount) || 0}
+              presets={presets}
+              selected={state.ltvPreset}
+              onSelect={(id) => setState((st) => ({ ...st, ltvPreset: id }))}
+              keeperProtection={state.keeperProtection}
+            />
+          )}
           {step === 2 && <StrategyStep gate={gate} state={state} ltvBps={review?.preset.ltvBps ?? 0} borrowAprPct={market.usdcBorrowAprPct} onChange={patch} />}
           {step === 3 && review && <ReviewStep state={state} d={review} calls={calls} marketSource={source} />}
           {step === 4 && review && planInput && (

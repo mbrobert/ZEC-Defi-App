@@ -2,8 +2,9 @@
 
 import { ENTRY_HF_FLOOR, FEES } from "@zyo/shared";
 import { fmtHalfWidth } from "@/lib/math";
-import { reasonText } from "@/lib/gate";
-import type { PlannedCall } from "@/lib/plan";
+import { reasonPlain, reasonText } from "@/lib/gate";
+import { rungPlain } from "@/lib/keeper";
+import { KEEPER_GRANT_EXPIRY_DAYS, type PlannedCall } from "@/lib/plan";
 import type { ReviewDerivation, WizardState } from "@/lib/wizard";
 import { fmtAmount, fmtPct, fmtSignedPct, fmtUsd, fmtUsd0 } from "@/lib/format";
 import Disclosures from "@/components/Disclosures";
@@ -42,8 +43,25 @@ export default function ReviewStep({ state, d, calls, marketSource }: { state: W
         <Row k="Health factor at entry" v={`${d.loan.entryHf.toFixed(2)} (floor ${ENTRY_HF_FLOOR})`} />
         <Row k="Liquidation begins" v={`${d.asset.symbol} at ${fmtUsd0(d.loan.liquidationPriceUsd)} (−${d.loan.liquidationDropPct.toFixed(1)}%)`} tone="crit" />
         {d.loan.rungs.map(({ rung, priceUsd, dropPct }) => (
-          <Row key={rung.id} k={`Keeper ${rung.label.toLowerCase()} rung (HF < ${rung.hf.toFixed(2)})`} v={`${d.asset.symbol} at ${fmtUsd0(priceUsd)} (−${dropPct.toFixed(1)}%) → ${rung.action.replace("-", " ")}`} />
+          <Row
+            key={rung.id}
+            k={`${rung.label} rung (HF < ${rung.hf.toFixed(2)})`}
+            v={
+              `${d.asset.symbol} at ${fmtUsd0(priceUsd)} (−${dropPct.toFixed(1)}%) → ${rungPlain(rung, d.asset.symbol)}` +
+              (rung.action === "notify" ? " (a message, not a transaction)" : state.keeperProtection ? " (needs the keeper permission below, while it is live)" : " (nobody can do this for you — you have not included the keeper permission)")
+            }
+            tone={rung.action !== "notify" && !state.keeperProtection ? "crit" : undefined}
+          />
         ))}
+        <Row
+          k="Keeper permission"
+          v={
+            state.keeperProtection
+              ? `included below — StrategyRouter.unwind only, per-day token budgets, expires in ${KEEPER_GRANT_EXPIRY_DAYS} days unless renewed, revocable at any time`
+              : "not included — nobody will reduce or close this position for you; you would have to act yourself"
+          }
+          tone={state.keeperProtection ? "good" : "crit"}
+        />
 
         <Sec>Strategy</Sec>
         {state.strategy?.kind === "lp" && d.verdict && d.lpParams ? (
@@ -53,8 +71,12 @@ export default function ReviewStep({ state, d, calls, marketSource }: { state: W
             {d.customWidth && <Row k="Custom width" v={`the model priced ${fmtHalfWidth(d.verdict.rangeWidthBps)} — your ${fmtHalfWidth(d.lpParams.rangeWidthBps)} band has a different impermanent-loss drag that this page does not price`} tone="crit" />}
             <Row k="Price tolerance" v={`±${(state.bandToleranceBps / 100).toFixed(2)}% — the deposit refuses if the pool price has moved further since the quote`} />
             <Row
-              k="Gate"
-              v={d.gateOk ? `clears: LP net ${fmtSignedPct(d.verdict.lpNetPct ?? NaN, 2)} > borrow ${fmtPct(d.verdict.borrowAprPct ?? NaN)}` : `does NOT clear — ${reasonText(d.verdict.reason)}`}
+              k="Gate (both models must clear)"
+              v={
+                d.gateOk
+                  ? `clears: LP net ${fmtSignedPct(d.verdict.lpNetPct ?? NaN, 2)} and MC net ${d.verdict.mcLpNetPct === null ? "—" : fmtSignedPct(d.verdict.mcLpNetPct, 2)}, both above borrow ${fmtPct(d.verdict.borrowAprPct ?? NaN)}`
+                  : `does NOT clear — ${reasonText(d.verdict.reason)}. ${reasonPlain(d.verdict.reason)}`
+              }
               tone={d.gateOk ? "good" : "crit"}
             />
             {y && (
@@ -64,7 +86,12 @@ export default function ReviewStep({ state, d, calls, marketSource }: { state: W
                 <Row k={`Oilskin performance fee (${FEES.performanceBps / 100}% of realised)`} v={`−${fmtUsd(y.oilskinFeeUsd)}/yr`} />
                 <Row k="Realised after IL-shrunk base" v={`${fmtUsd(y.realizedEmissionsUsd)}/yr (${fmtPct(d.verdict.emissionsRealizedPct ?? NaN, 2)})`} />
                 <Row k={`IL + rebalance drag (σ ${d.verdict.sigma?.toFixed(2) ?? "—"})`} v={`${fmtUsd(y.dragUsd)}/yr (${fmtSignedPct(d.verdict.dragPct ?? NaN, 2)})`} />
-                <Row k="LP net" v={`${fmtUsd(y.lpNetUsd)}/yr (${fmtSignedPct(y.lpNetPct, 2)})`} tone={y.lpNetUsd >= 0 ? "good" : "crit"} />
+                <Row k="LP net (published closed form)" v={`${fmtUsd(y.lpNetUsd)}/yr (${fmtSignedPct(y.lpNetPct, 2)})`} tone={y.lpNetUsd >= 0 ? "good" : "crit"} />
+                <Row
+                  k="LP net (Monte-Carlo form, also charges time out of range)"
+                  v={d.verdict.mcLpNetPct === null ? "not calibrated for this pool at this width — the gate refuses a cell it can only price once" : fmtSignedPct(d.verdict.mcLpNetPct, 2)}
+                  tone={d.verdict.mcLpNetPct === null ? "crit" : d.verdict.mcLpNetPct >= 0 ? "good" : "crit"}
+                />
                 <Row k="Borrow cost" v={`−${fmtUsd(y.borrowCostUsd)}/yr`} />
                 <Row k={`Supply interest on your ${d.asset.symbol} (${fmtPct(d.supplyAprPct, 3)})`} v={`${fmtUsd(y.supplyInterestUsd)}/yr`} />
                 <Row k="Net per year (model)" v={`${fmtUsd(y.totalUsd)} · ${fmtSignedPct(y.userNetPct, 2)} on your ${d.asset.symbol}`} tone={y.totalUsd >= 0 ? "good" : "crit"} />

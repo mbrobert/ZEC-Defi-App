@@ -175,13 +175,20 @@ export function planYield(i: YieldPlanInput): YieldPlan {
 }
 
 /**
- * The gate rule as served: lpNet (emissions net of engine + performance fee,
- * realised on the drag-shrunk base, plus the drag) must beat the live borrow
- * rate. Recomputed here so the UI never trusts a `qualifies` flag it cannot
- * verify from the same numbers. Unreadable inputs never clear.
+ * The gate rule as served, re-derived so the UI never trusts a `qualifies`
+ * flag it cannot verify from the same numbers.
+ *
+ * BOTH prices of the same LP slice must beat the live borrow rate: the
+ * published closed form (`lpNetPct`) and the Monte-Carlo-calibrated form
+ * (`mcLpNetPct`), which also charges the time the position spends OUT of
+ * range. The closed form is 0.2 to 32 points optimistic at the boundary, so
+ * "one of them clears" is not a reason to offer anything. Unreadable inputs —
+ * including a MISSING calibration — never clear: a cell priced once is a cell
+ * we do not offer.
  */
-export function clearsGate(lpNetPct: number | null, borrowAprPct: number | null): boolean {
-  return lpNetPct !== null && borrowAprPct !== null && Number.isFinite(lpNetPct) && Number.isFinite(borrowAprPct) && lpNetPct > borrowAprPct;
+export function clearsGate(lpNetPct: number | null, borrowAprPct: number | null, mcLpNetPct: number | null = null): boolean {
+  const beats = (x: number | null) => x !== null && Number.isFinite(x) && borrowAprPct !== null && Number.isFinite(borrowAprPct) && x > borrowAprPct;
+  return beats(lpNetPct) && beats(mcLpNetPct);
 }
 
 /** Exact price half-width of a TOTAL tick span, percent: 1.0001^(bps/2) − 1 (4500 → 25.23, 1500 → 7.79). */

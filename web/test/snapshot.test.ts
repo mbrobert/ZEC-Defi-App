@@ -112,7 +112,11 @@ test("demo-gate.json is pinned to MODEL-NUMBERS.md (every served lpNet, drag, em
 
   // User-net table: | pool | setting | collateral | LTV | lpNet | borrow | supply | **userNet** |
   const un = [...doc.matchAll(/^\| (aero-[a-z0-9-]+) \| (sheltered|steady|working) \| (cbBTC|WETH) \| (\d+)% \((p30|p40|top)\) \| [-\d.]+% \| [\d.]+% \| [\d.]+% \| \*\*([-\d.]+)%\*\* \|/gm)];
-  assert.ok(un.length >= 50, `parsed ${un.length} user-net rows`);
+  // 48 = 8 priced cells × 2 collaterals × 3 LTV presets. It was 54: the sim
+  // used to publish a user-net ladder for cells the gate refuses BEFORE it
+  // computes one (audit wave 1 lens D MED-7), and demo mode is now generated
+  // by running the gate itself, so those six rows no longer exist anywhere.
+  assert.ok(un.length >= 48, `parsed ${un.length} user-net rows`);
   for (const m of un) {
     const v = DEMO_GATE_RAW.verdicts.find((x) => x.poolId === m[1] && x.setting === m[2] && x.collateral === m[3])!;
     const cell = v.userNet.find((u) => u.ltvBps === Number(m[4]) * 100)!;

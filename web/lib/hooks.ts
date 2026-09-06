@@ -10,11 +10,12 @@ import { useMemo } from "react";
 import type { Address } from "viem";
 import { useAccount, usePublicClient } from "wagmi";
 import { CHAIN_ID } from "@zyo/shared";
-import { DEMO_MARKET, DEMO_OWNER, demoGate } from "./demo";
+import { DEMO_KEEPER_GRANT, DEMO_MARKET, DEMO_OWNER, DEMO_PENDING_VENUES, demoGate } from "./demo";
 import { ENV, contractsConfigured } from "./env";
 import { fetchGate, type GateView } from "./gate";
 import { fetchIndexedAccount, type IndexedAccount } from "./indexer";
-import { readAccount, readDeployment, readMarket, type AccountRead, type MarketRead } from "./reads";
+import { readAccount, readDeployment, readKeeperGrant, readMarket, readPendingVenues, type AccountRead, type MarketRead, type PendingVenueRead } from "./reads";
+import type { KeeperGrantRead } from "./keeper";
 import { DEMO_DEPLOYMENT, type Deployment } from "./plan";
 
 export interface Session {
@@ -152,4 +153,56 @@ export function useAccountRead(market: MarketRead) {
     refetchInterval: 30_000,
   });
   return { account: q.data ?? null, loading: q.isFetching, error: q.data === null && q.isFetched && s.mode === "live", refetch: q.refetch };
+}
+
+/**
+ * The keeper permission as it exists on the connected account. `null` means
+ * "nothing granted / not readable", which the UI must render as "nobody is
+ * protecting this position" — never as silence.
+ */
+export function useKeeperGrant(account: Address | null, deployment: Deployment | null): { grant: KeeperGrantRead | null; loading: boolean; refetch: () => void } {
+  const s = useSession();
+  const client = usePublicClient({ chainId: CHAIN_ID });
+  const enabled = s.mode === "live" && !!client && !!account && !!deployment && !deployment.demo && !!deployment.keeper;
+  const q = useQuery<KeeperGrantRead | null>({
+    queryKey: ["keeper-grant", account ?? "none", deployment?.router ?? "none", deployment?.keeper ?? "none"],
+    enabled,
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      if (!client || !account || !deployment?.keeper) return null;
+      try {
+        return await readKeeperGrant(client as never, account, deployment.keeper, deployment.router);
+      } catch {
+        return null;
+      }
+    },
+  });
+  if (s.mode === "demo") return { grant: DEMO_KEEPER_GRANT, loading: false, refetch: () => {} };
+  return { grant: q.data ?? null, loading: q.isFetching, refetch: () => void q.refetch() };
+}
+
+/**
+ * Venue replacements the registry owner has PROPOSED but not yet applied. A
+ * non-empty list is a pending redirection of the contract your collateral sits
+ * in — the delay is the only warning users get, so the UI must show it.
+ */
+export function usePendingVenues(deployment: Deployment | null): PendingVenueRead[] {
+  const s = useSession();
+  const client = usePublicClient({ chainId: CHAIN_ID });
+  const enabled = s.mode === "live" && !!client && !!deployment && !deployment.demo;
+  const q = useQuery<PendingVenueRead[]>({
+    queryKey: ["pending-venues", deployment?.registry ?? "none"],
+    enabled,
+    refetchInterval: 5 * 60_000,
+    queryFn: async () => {
+      if (!client || !deployment) return [];
+      try {
+        return await readPendingVenues(client as never, deployment.registry);
+      } catch {
+        return [];
+      }
+    },
+  });
+  if (s.mode === "demo") return DEMO_PENDING_VENUES;
+  return q.data ?? [];
 }

@@ -8,12 +8,13 @@
  * chain definition) and fall back to one eth_call per item if the batch
  * itself fails, so a missing/reverting multicall never blanks the page.
  */
-import type { Address } from "viem";
+import type { Address, Hex } from "viem";
 import { AAVE_V3, BASE_TOKENS, COLLATERAL_ASSETS, COLLATERAL_SYMBOLS, isZeroAddress, type CollateralSymbol } from "@zyo/shared";
 import { AAVE_ORACLE_ABI, ERC20_ABI, POOL_ABI, POOL_DATA_PROVIDER_ABI } from "./abi/aave";
-import { AERODROME_CLPOOL_ABI, COLLATERAL_REGISTRY_ABI, FACTORY_ABI, LP_VENUE_ABI, ROUTER_ABI, SNUGGLE_VAULT_ABI } from "./abi/oilskin";
+import { ACCOUNT_ABI, AERODROME_CLPOOL_ABI, COLLATERAL_REGISTRY_ABI, FACTORY_ABI, LP_VENUE_ABI, ROUTER_ABI, SNUGGLE_VAULT_ABI } from "./abi/oilskin";
 import { baseUnitsToUsd, fromAtomic, rayToAprPct, wadHealthFactor } from "./math";
-import type { Deployment } from "./plan";
+import type { KeeperGrantRead } from "./keeper";
+import { UNWIND_SELECTOR, type Deployment } from "./plan";
 import { isInRange } from "./tickmath";
 import { CURATED_POOLS, PERMIT2, type CuratedPool } from "@zyo/shared";
 
@@ -191,20 +192,124 @@ export interface AccountReadOptions {
  * router's Permit2 must be the canonical one or we refuse to proceed.
  */
 export async function readDeployment(client: ReadClient, factory: Address, router: Address, keeper: Address | null): Promise<Deployment> {
-  const [registry, lpVenue, permit2] = await safeMulticall(client, [
+  const [registry, lpVenue, swapAdapter, permit2] = await safeMulticall(client, [
     { address: router, abi: ROUTER_ABI, functionName: "REGISTRY" },
     { address: router, abi: ROUTER_ABI, functionName: "LP_VENUE" },
+    { address: router, abi: ROUTER_ABI, functionName: "SWAP" },
     { address: router, abi: ROUTER_ABI, functionName: "PERMIT2" },
   ]);
   if (typeof registry !== "string" || typeof lpVenue !== "string" || typeof permit2 !== "string") throw new Error("router views unreadable");
   if (permit2.toLowerCase() !== PERMIT2.toLowerCase()) throw new Error(`router Permit2 ${permit2} is not the canonical Permit2 — refusing`);
+  // The swap adapter is what enforces the unwind's price floor; without it the
+  // UI cannot show the number the chain will apply, so refuse rather than guess.
+  if (typeof swapAdapter !== "string" || isZeroAddress(swapAdapter)) throw new Error("router has no swap adapter");
   const [aaveVenue, engine] = await safeMulticall(client, [
     { address: registry as Address, abi: COLLATERAL_REGISTRY_ABI, functionName: "venueOf", args: [BASE_TOKENS.cbBTC.address] },
     { address: lpVenue as Address, abi: LP_VENUE_ABI, functionName: "ENGINE" },
   ]);
   if (typeof aaveVenue !== "string" || isZeroAddress(aaveVenue)) throw new Error("registry has no venue for cbBTC");
   if (typeof engine !== "string" || isZeroAddress(engine)) throw new Error("LP venue has no engine");
-  return { factory, router, registry: registry as Address, lpVenue: lpVenue as Address, aaveVenue: aaveVenue as Address, engine: engine as Address, keeper, demo: false };
+  return {
+    factory,
+    router,
+    registry: registry as Address,
+    lpVenue: lpVenue as Address,
+    aaveVenue: aaveVenue as Address,
+    swapAdapter: swapAdapter as Address,
+    engine: engine as Address,
+    keeper,
+    demo: false,
+  };
+}
+
+/**
+ * A venue replacement the registry owner has PROPOSED for an asset. Registering
+ * a replacement is timelocked (propose → wait TIMELOCK_DELAY → accept) and the
+ * pending entry is public, so the UI can say "the lending contract behind this
+ * asset is scheduled to change on <date>" while there is still time to act.
+ * A timelocked owner is still an owner: the delay is a warning, not a
+ * prohibition, and the product says so where it says this.
+ */
+export interface PendingVenueRead {
+  asset: CollateralSymbol;
+  currentVenue: Address | null;
+  proposedVenue: Address;
+  priceFeed: Address;
+  /** Unix seconds at which the owner may apply it. */
+  eta: number;
+}
+
+export async function readPendingVenues(client: ReadClient, registry: Address, symbols: readonly CollateralSymbol[] = COLLATERAL_SYMBOLS): Promise<PendingVenueRead[]> {
+  const rows = await safeMulticall(
+    client,
+    symbols.flatMap((s) => [
+      { address: registry, abi: COLLATERAL_REGISTRY_ABI, functionName: "pendingVenue", args: [BASE_TOKENS[s].address] },
+      { address: registry, abi: COLLATERAL_REGISTRY_ABI, functionName: "venueOf", args: [BASE_TOKENS[s].address] },
+    ]),
+  );
+  const out: PendingVenueRead[] = [];
+  symbols.forEach((s, i) => {
+    const p = rows[i * 2] as { venue?: string; priceFeed?: string; eta?: bigint } | null;
+    const cur = rows[i * 2 + 1];
+    if (!p || typeof p !== "object" || typeof p.venue !== "string" || isZeroAddress(p.venue)) return;
+    out.push({
+      asset: s,
+      currentVenue: typeof cur === "string" && !isZeroAddress(cur) ? (cur as Address) : null,
+      proposedVenue: p.venue as Address,
+      priceFeed: (p.priceFeed ?? "0x") as Address,
+      eta: Number(p.eta ?? 0n),
+    });
+  });
+  return out;
+}
+
+/**
+ * The keeper permission as it exists on YOUR account: active, expiry,
+ * allowCallback, and the per-token budgets with what is already spent in the
+ * current window. Returns null when nothing is granted for that key.
+ */
+export async function readKeeperGrant(client: ReadClient, account: Address, keeper: Address, router: Address, tokenSymbolOf?: (a: Address) => string): Promise<KeeperGrantRead | null> {
+  const selector = UNWIND_SELECTOR;
+  const [g, toks] = await safeMulticall(client, [
+    { address: account, abi: ACCOUNT_ABI, functionName: "grantOf", args: [keeper, router, selector] },
+    { address: account, abi: ACCOUNT_ABI, functionName: "grantTokens", args: [keeper, router, selector] },
+  ]);
+  if (!Array.isArray(g)) return null;
+  const [active, maxValuePerPeriod, valueSpent, period, expiry, periodStart, allowCallback] = g as [boolean, bigint, bigint, number | bigint, number | bigint, number | bigint, boolean];
+  const tokenList = Array.isArray(toks) ? (toks as Address[]) : [];
+  const budgets = tokenList.length
+    ? await safeMulticall(
+        client,
+        tokenList.map((t) => ({ address: account, abi: ACCOUNT_ABI, functionName: "tokenBudgetOf", args: [keeper, router, selector, t] })),
+      )
+    : [];
+  const tokens = tokenList.map((t, i) => {
+    const b = budgets[i];
+    const [amountPerPeriod, spent] = Array.isArray(b) ? (b as [bigint, bigint]) : [0n, 0n];
+    return { token: t, symbol: tokenSymbolOf?.(t) ?? symbolForAddress(t), amountPerPeriod, spent };
+  });
+  return {
+    keeper,
+    target: router,
+    selector: selector as Hex,
+    active: active === true,
+    maxValuePerPeriod,
+    valueSpent,
+    period: Number(period),
+    expiry: Number(expiry),
+    periodStart: Number(periodStart),
+    allowCallback: allowCallback === true,
+    tokens,
+    readAt: new Date().toISOString(),
+  };
+}
+
+/** Label a token address from the shared registry; falls back to the short address. */
+export function symbolForAddress(a: Address): string {
+  for (const [sym, t] of Object.entries(BASE_TOKENS)) {
+    if (t.address.toLowerCase() === a.toLowerCase()) return sym;
+  }
+  return `${a.slice(0, 6)}…${a.slice(-4)}`;
 }
 
 /** Engine positions + range state for a list of ids. Unreadable rows are dropped (never invented). */

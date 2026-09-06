@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Address, Hex } from "viem";
 import { BASE_CHAIN, shortAddress } from "@zyo/shared";
 import type { Emit, StepEvent } from "@/lib/execute";
+import type { QuotedSwap } from "@/lib/plan";
 import type { GasAssessment } from "@/lib/gas";
 import { clearInflight, isInterrupted, loadInflight, saveInflight, type InflightFlow, type InflightStep } from "@/lib/inflight";
 import { planIsSignable, type PlannedCall } from "@/lib/plan";
@@ -51,6 +52,7 @@ export default function SignStep({
   const [txs, setTxs] = useState<Record<number, Hex>>({});
   const [gas, setGas] = useState<Record<number, GasAssessment>>({});
   const [blocked, setBlocked] = useState<{ step: number; reason: string } | null>(null);
+  const [quote, setQuote] = useState<QuotedSwap | null>(null);
   const [running, setRunning] = useState(false);
   const [account, setAccount] = useState<Address | null>(null);
   const [resumed, setResumed] = useState<InflightFlow | null>(null);
@@ -98,6 +100,7 @@ export default function SignStep({
 
   const emit: Emit = (e: StepEvent) => {
     if (e.type === "gas") setGas((g) => ({ ...g, [e.step]: e.gas }));
+    if (e.type === "quoted") setQuote(e.quote);
     if (e.type === "blocked") {
       setBlocked({ step: e.step, reason: e.reason });
       setStates((s) => ({ ...s, [e.step]: "todo" }));
@@ -220,6 +223,12 @@ export default function SignStep({
                   {g && (
                     <p className={`num mt-1 text-[12.5px] ${g.ok ? "text-oil-ink3" : "text-status-warn"}`} data-testid={`gas-${c.kind}`}>
                       {g.plain}
+                    </p>
+                  )}
+                  {quote && c.kind === "unwind" && (
+                    <p className="num mt-1 text-[12.5px] text-oil-ink3" data-testid="swap-floor">
+                      Priced at {Number(quote.quotedOut) / 1e6} USDC per {quote.tokenSymbol}; the swap is refused below{" "}
+                      <b className="text-oil-ink">{(Number(quote.minOutForQuotedIn) / 1e6).toFixed(2)} USDC per {quote.tokenSymbol}</b> — that floor is read from the swap contract, not computed here.
                     </p>
                   )}
                   {txs[c.step] && (

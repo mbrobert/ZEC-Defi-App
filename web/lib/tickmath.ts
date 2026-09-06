@@ -2,8 +2,10 @@
  * Concentrated-liquidity arithmetic the web needs for quoting (pure, tested):
  *   • the PriceBand every deposit/close carries (CONTRACT-ABI.md "Price band"),
  *     from the pool's live sqrtPriceX96 ± a tolerance;
- *   • the value split of an in-range position from its ticks alone, used to
- *     size `swapMinOut` on unwind (the USDC leg is not swapped, the other is).
+ *   • the value split of an in-range position from its ticks alone (the USDC
+ *     leg is not swapped on unwind, the other is), for display and sizing.
+ *     The unwind's swap FLOOR is no longer computed here: it comes from a
+ *     fetched quote and is read back from the adapter — see lib/quote.ts.
  * Q64.96 fixed point as Aerodrome Slipstream / Uniswap v3 use it.
  */
 

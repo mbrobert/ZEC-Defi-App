@@ -5,13 +5,13 @@ import { useMemo, useState } from "react";
 import type { Address } from "viem";
 import { usePublicClient, useSignTypedData, useWriteContract } from "wagmi";
 import { BASE_CHAIN, BASE_TOKENS, CHAIN_ID, COLLATERAL_ASSETS, feeBreakdown, shortAddress, type CollateralSymbol } from "@zyo/shared";
-import { useAccountRead, useDeployment, useIndexed, useMarket, useSession } from "@/lib/hooks";
+import { useAccountRead, useDeployment, useIndexed, useKeeperGrant, useMarket, usePendingVenues, useSession } from "@/lib/hooks";
 import { useMode } from "@/lib/mode";
-import { DEMO_ACCOUNT, DEMO_ACCOUNT_STATE } from "@/lib/demo";
+import { DEMO_ACCOUNT, DEMO_ACCOUNT_STATE, DEMO_SNAPSHOT_AT } from "@/lib/demo";
 import { currentLtvBps, hfBand, liveLiquidationPrice } from "@/lib/math";
 import { fromDemo, mergePositions, type PositionView } from "@/lib/positions";
-import { buildClaimPlan, buildUnwindPlan, deadlineFromNow, DEFAULT_BAND_TOLERANCE_BPS, encodeClaimWrite, type PlannedCall } from "@/lib/plan";
-import { runClaim, runUnwind, type Emit, type RunContext } from "@/lib/execute";
+import { buildClaimPlan, buildGrantPlan, buildRevokeAllPlan, buildUnwindPlan, deadlineFromNow, DEFAULT_BAND_TOLERANCE_BPS, type PlannedCall, type QuotedSwap } from "@/lib/plan";
+import { grantTokenLimits, runClaim, runGrant, runRevokeAll, runUnwind, type Emit, type RunContext } from "@/lib/execute";
 import { fmtAgo, fmtAmount, fmtHf, fmtPct, fmtUsd, fmtUsd0 } from "@/lib/format";
 import StatTile from "@/components/StatTile";
 import HealthBand from "@/components/HealthBand";
@@ -20,8 +20,21 @@ import ActivityRail from "@/components/ActivityRail";
 import Disclosures from "@/components/Disclosures";
 import Chip from "@/components/Chip";
 import SignStep from "@/components/wizard/SignStep";
+import KeeperPanel from "@/components/KeeperPanel";
 
-type Action = { kind: "claim" | "unwind"; position: PositionView } | null;
+const ACTION_TITLE = { claim: "Claim rewards", unwind: "Unwind position", grant: "Keeper protection", revoke: "Revoke every permission" } as const;
+const ACTION_DONE_TITLE = { claim: "Rewards sent to your wallet", unwind: "Position closed", grant: "Keeper protection granted", revoke: "Every permission revoked" } as const;
+const ACTION_DONE_BODY = {
+  claim: "The AERO rewards were collected into your Oilskin account, the performance fee came off, and the rest was moved to your wallet. If the engine had already re-numbered one of your positions, that id is reported and skipped rather than failing the whole thing — check the position list and claim again if a reward is still showing.",
+  unwind: "The LP position was closed, the loan repaid and your collateral returned to your wallet. Your Oilskin account stays yours for next time.",
+  grant: "The Oilskin keeper may now reduce or close this position for you, within the daily budgets shown, until the expiry date shown. You can revoke it at any time.",
+  revoke: "Every permission on your Oilskin account is cancelled. Nobody but your own wallet can make it do anything — which also means nobody will act for you if your health factor falls.",
+} as const;
+
+type Action =
+  | { kind: "claim" | "unwind"; position: PositionView }
+  | { kind: "grant" | "revoke"; position?: undefined }
+  | null;
 
 export default function DashboardPage() {
   const s = useSession();
@@ -31,6 +44,9 @@ export default function DashboardPage() {
   const { account, loading, refetch } = useAccountRead(market);
   const indexed = useIndexed(s.mode === "live" ? s.address : undefined, s.mode === "live");
   const [action, setAction] = useState<Action>(null);
+  const [lastQuote, setLastQuote] = useState<QuotedSwap | null>(null);
+  const { grant, refetch: refetchGrant } = useKeeperGrant(s.mode === "demo" ? DEMO_ACCOUNT : (account?.account ?? null), deployment);
+  const pendingVenues = usePendingVenues(deployment);
   const publicClient = usePublicClient({ chainId: CHAIN_ID });
   const { writeContractAsync } = useWriteContract();
   const { signTypedDataAsync } = useSignTypedData();
@@ -93,19 +109,42 @@ export default function DashboardPage() {
   const band = hfBand(view.hf);
   const ltvBps = currentLtvBps(view.collateralUsd, view.debtUsd);
   const empty = s.mode === "live" && !loading && (!account || !account.deployed);
+  // Demo mode pins "now" to the snapshot so the grant's remaining days never drift.
+  const nowSeconds = s.mode === "demo" ? Math.floor(Date.parse(DEMO_SNAPSHOT_AT) / 1000) : Math.floor(Date.now() / 1000);
 
   // ---- Action plans (claim / unwind) ----
   const actionPlan: PlannedCall[] = useMemo(() => {
     if (!action) return [];
-    const p = action.position;
+    if (action.kind === "grant") return buildGrantPlan({ deployment, account: view.accountAddr, collateral: primary?.symbol ?? "cbBTC", nowSeconds: Math.floor(Date.now() / 1000) });
+    if (action.kind === "revoke") return buildRevokeAllPlan({ account: view.accountAddr, deployment });
+    const p = action.position!;
     const ids = p.positionId !== undefined ? [p.positionId] : [];
     const label = p.pool ? `${p.pool.token0}/${p.pool.token1}` : "the position";
     if (action.kind === "claim") {
       const tokens = [BASE_TOKENS.AERO, ...(p.pool ? [BASE_TOKENS[p.pool.token0 as keyof typeof BASE_TOKENS], BASE_TOKENS[p.pool.token1 as keyof typeof BASE_TOKENS]] : [])].filter(Boolean);
-      return buildClaimPlan({ account: view.accountAddr, positionIds: ids, sweepTokens: tokens.map((t) => ({ symbol: t.symbol, address: t.address })), deployment, poolLabel: label });
+      return buildClaimPlan({
+        account: view.accountAddr,
+        positionIds: ids,
+        sweepTokens: tokens.map((t) => ({ symbol: t.symbol, address: t.address })),
+        deployment,
+        deadline: deadlineFromNow(),
+        bandToleranceBps: DEFAULT_BAND_TOLERANCE_BPS,
+        poolLabel: label,
+      });
     }
-    return buildUnwindPlan({ account: view.accountAddr, positionIds: ids, collateral: primary?.symbol ?? "cbBTC", deployment, deadline: deadlineFromNow(), bandToleranceBps: DEFAULT_BAND_TOLERANCE_BPS, swapMinOut: 0n, tickSpacing: null, poolLabel: label });
-  }, [action, view.accountAddr, deployment, primary]);
+    return buildUnwindPlan({
+      account: view.accountAddr,
+      positionIds: ids,
+      collateral: primary?.symbol ?? "cbBTC",
+      deployment,
+      deadline: deadlineFromNow(),
+      bandToleranceBps: DEFAULT_BAND_TOLERANCE_BPS,
+      // The swap is quoted live at sign time — until then the plan says so and
+      // is NOT signable. There is no fallback minimum.
+      quote: lastQuote,
+      poolLabel: label,
+    });
+  }, [action, view.accountAddr, deployment, primary, lastQuote]);
 
   const ctx = (): RunContext | null =>
     publicClient
@@ -126,23 +165,50 @@ export default function DashboardPage() {
 
   const runAction = async (emit: Emit) => {
     const c = ctx();
-    if (!action || !c || !view.accountAddr) return null;
-    const p = action.position;
+    if (!action || !c || !view.accountAddr || !deployment) return null;
+
+    if (action.kind === "revoke") {
+      const hash = await runRevokeAll(c, view.accountAddr, emit);
+      if (hash) refetchGrant();
+      return hash ? { account: view.accountAddr } : null;
+    }
+    if (action.kind === "grant") {
+      const sym = primary?.symbol ?? "cbBTC";
+      const r = market.reserves[sym];
+      const limits = grantTokenLimits(view.debtUsd, { address: BASE_TOKENS[sym].address, decimals: BASE_TOKENS[sym].decimals, priceUsd: r?.priceUsd ?? NaN }, []);
+      const hash = await runGrant(c, { account: view.accountAddr, deployment, tokenLimits: limits }, emit);
+      if (hash) refetchGrant();
+      return hash ? { account: view.accountAddr } : null;
+    }
+
+    const p = action.position!;
     const ids = p.positionId !== undefined ? [p.positionId] : [];
     if (action.kind === "claim") {
-      const plan = actionPlan[0];
-      const spec = plan.encodable ? encodeClaimWrite({ account: view.accountAddr, positionIds: ids, sweepTokens: [], deployment }) : null;
-      if (!spec) return null;
-      const hash = await runClaim(c, { account: view.accountAddr, positionIds: ids, sweepTokens: [BASE_TOKENS.AERO].map((t) => ({ symbol: t.symbol, address: t.address })), deployment }, emit);
+      const tokens = [BASE_TOKENS.AERO, ...(p.pool ? [BASE_TOKENS[p.pool.token0 as keyof typeof BASE_TOKENS], BASE_TOKENS[p.pool.token1 as keyof typeof BASE_TOKENS]] : [])].filter(Boolean);
+      const hash = await runClaim(
+        c,
+        {
+          account: view.accountAddr,
+          positionIds: ids,
+          sweepTokens: tokens.map((t) => ({ symbol: t.symbol, address: t.address })),
+          deployment,
+          deadline: deadlineFromNow(),
+          bandToleranceBps: DEFAULT_BAND_TOLERANCE_BPS,
+          poolLabel: p.pool ? `${p.pool.token0}/${p.pool.token1}` : undefined,
+        },
+        p.enginePoolId ?? null,
+        emit,
+      );
       if (hash) refetch();
       return hash ? { account: view.accountAddr } : null;
     }
-    if (!p.enginePoolId || p.tickLower === undefined || p.tickUpper === undefined || !p.pool?.poolAddress) return null;
+    if (!p.enginePoolId || !p.pool?.poolAddress) return null;
     const hash = await runUnwind(
       c,
       { account: view.accountAddr, positionIds: ids, collateral: primary?.symbol ?? "cbBTC", deployment, deadline: deadlineFromNow(), bandToleranceBps: DEFAULT_BAND_TOLERANCE_BPS, poolLabel: p.pool ? `${p.pool.token0}/${p.pool.token1}` : undefined },
-      { enginePoolId: p.enginePoolId, tickLower: p.tickLower, tickUpper: p.tickUpper, poolAddress: p.pool.poolAddress as Address, usdcIsToken0: p.pool.token0 === "USDC", valueUsd: p.valueUsd ?? null },
+      { enginePoolId: p.enginePoolId, poolAddress: p.pool.poolAddress as Address },
       emit,
+      setLastQuote,
     );
     if (hash) refetch();
     return hash ? { account: view.accountAddr } : null;
@@ -174,6 +240,14 @@ export default function DashboardPage() {
           New position
         </Link>
       </div>
+
+      {pendingVenues.length > 0 && (
+        <div className="note note-warn" role="alert" data-testid="pending-venue">
+          <b className="text-oil-ink">A lending contract change has been announced.</b> Oilskin&rsquo;s registry owner has proposed moving{" "}
+          {pendingVenues.map((p) => `${p.asset} to ${p.proposedVenue.slice(0, 6)}…${p.proposedVenue.slice(-4)} on ${new Date(p.eta * 1000).toISOString().slice(0, 10)}`).join("; ")}. The delay is fixed on chain and the change is
+          announced before it can take effect, but it is a warning, not a prohibition: if you do not want to be in the new contract, close the position or revoke your keeper permission before that date.
+        </div>
+      )}
 
       {empty ? (
         <div className="card p-10 text-center">
@@ -225,25 +299,35 @@ export default function DashboardPage() {
               {action && (
                 <div className="card border-brass/40 p-5" data-testid="action-panel">
                   <div className="flex items-start justify-between gap-3">
-                    <h2 className="text-[17px]">{action.kind === "claim" ? "Claim rewards" : "Unwind position"}</h2>
+                    <h2 className="text-[17px]">{ACTION_TITLE[action.kind]}</h2>
                     <button className="btn-quiet" onClick={() => setAction(null)} aria-label="Close">
                       ✕
                     </button>
                   </div>
                   <SignStep
-                    key={`${action.kind}-${action.position.id}`}
+                    key={`${action.kind}-${action.position?.id ?? "account"}`}
                     calls={actionPlan}
                     mode={s.mode}
                     flowKind={action.kind}
-                    summary={`${action.kind} ${action.position.pool ? `${action.position.pool.token0}/${action.position.pool.token1}` : action.position.poolId}`}
+                    summary={action.position ? `${action.kind} ${action.position.pool ? `${action.position.pool.token0}/${action.position.pool.token1}` : action.position.poolId}` : `${action.kind} keeper permission`}
                     owner={s.address}
                     demoAccount={DEMO_ACCOUNT}
                     run={runAction}
-                    doneTitle={action.kind === "claim" ? "Rewards sent to your wallet" : "Position closed"}
-                    doneBody={action.kind === "claim" ? "The AERO rewards were collected into your Oilskin account, the performance fee came off, and the rest was moved to your wallet." : "The LP position was closed, the loan repaid and your collateral returned to your wallet. Your Oilskin account stays yours for next time."}
+                    doneTitle={ACTION_DONE_TITLE[action.kind]}
+                    doneBody={ACTION_DONE_BODY[action.kind]}
                   />
                 </div>
               )}
+
+              <KeeperPanel
+                grant={grant}
+                deployment={deployment}
+                collateral={primary?.symbol ?? "your collateral"}
+                nowSeconds={nowSeconds}
+                onGrant={s.mode === "live" ? () => setAction({ kind: "grant" }) : undefined}
+                onRevoke={s.mode === "live" ? () => setAction({ kind: "revoke" }) : undefined}
+                busy={!!action}
+              />
 
               <div className="flex items-baseline justify-between">
                 <h2 className="text-[17px]">Positions</h2>

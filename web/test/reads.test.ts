@@ -1,8 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { AAVE_V3, BASE_TOKENS } from "@zyo/shared";
-import { decodeReserve, readAccount, readMarket, safeMulticall, type ReadClient } from "../lib/reads";
+import { AAVE_V3, BASE_TOKENS, PERMIT2 } from "@zyo/shared";
+import { decodeReserve, readAccount, readDeployment, readKeeperGrant, readMarket, readPendingVenues, safeMulticall, type ReadClient } from "../lib/reads";
 import { DEMO_MARKET } from "../lib/demo";
+import { UNWIND_SELECTOR } from "../lib/plan";
 
 /** Tuples exactly as Aave's PoolDataProvider returns them (VERIFIED-BASE-FACTS 2026-09-05). */
 const CFG = {
@@ -163,4 +164,117 @@ test("readAccount: no factory configured → wallet balances only; predicted-but
   assert.equal(pred.deployed, false);
   assert.equal(pred.aave, null);
   assert.deepEqual(pred.lpPositionIds, []);
+});
+
+// ---------------------------------------------------------------------------
+// Deployment discovery, the venue timelock, and the keeper grant
+// ---------------------------------------------------------------------------
+
+const ROUTER = "0x4444444444444444444444444444444444444444" as const;
+const REGISTRY = "0x5555555555555555555555555555555555555555" as const;
+const LP_VENUE = "0x6666666666666666666666666666666666666666" as const;
+const AAVE_VENUE = "0x7777777777777777777777777777777777777777" as const;
+const SWAP = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as const;
+const ENGINE = "0x8888888888888888888888888888888888888888" as const;
+const KEEPER = "0x9999999999999999999999999999999999999999" as const;
+const ACCOUNT = "0x2222222222222222222222222222222222222222" as const;
+const ZERO = "0x0000000000000000000000000000000000000000" as const;
+
+function chainClient(answer: (c: { address: string; functionName: string; args?: readonly unknown[] }) => unknown): ReadClient {
+  return {
+    async multicall() {
+      throw new Error("no multicall3 here — exercise the per-call fallback");
+    },
+    async readContract(c) {
+      return answer(c as never);
+    },
+    async getCode() {
+      return "0x60";
+    },
+  };
+}
+
+const deploymentAnswer =
+  (over: Record<string, unknown> = {}) =>
+  (c: { functionName: string }): unknown => {
+    const table: Record<string, unknown> = { REGISTRY, LP_VENUE, SWAP, PERMIT2, venueOf: AAVE_VENUE, ENGINE, ...over };
+    if (!(c.functionName in table)) throw new Error(`unexpected ${c.functionName}`);
+    const v = table[c.functionName];
+    if (v instanceof Error) throw v;
+    return v;
+  };
+
+test("readDeployment discovers the swap adapter, and refuses a router without one", async () => {
+  const d = await readDeployment(chainClient(deploymentAnswer()), "0x3333333333333333333333333333333333333333", ROUTER, KEEPER);
+  assert.equal(d.swapAdapter, SWAP);
+  assert.equal(d.registry, REGISTRY);
+  assert.equal(d.lpVenue, LP_VENUE);
+  assert.equal(d.aaveVenue, AAVE_VENUE);
+  assert.equal(d.engine, ENGINE);
+  assert.equal(d.demo, false);
+  // Without the adapter the UI cannot show the floor the chain will enforce on
+  // an unwind, so the deployment is refused rather than half-trusted.
+  await assert.rejects(() => readDeployment(chainClient(deploymentAnswer({ SWAP: ZERO })), "0x3333333333333333333333333333333333333333", ROUTER, KEEPER), /swap adapter/);
+  await assert.rejects(
+    () => readDeployment(chainClient(deploymentAnswer({ PERMIT2: "0x000000000000000000000000000000000000dEaD" })), "0x3333333333333333333333333333333333333333", ROUTER, KEEPER),
+    /canonical Permit2/,
+  );
+});
+
+test("readPendingVenues surfaces a proposed venue replacement and ignores the empty slots", async () => {
+  const eta = 1_800_000_000;
+  const proposed = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+  const client = chainClient((c) => {
+    if (c.functionName === "venueOf") return AAVE_VENUE;
+    if (c.functionName === "pendingVenue") {
+      const asset = String(c.args?.[0] ?? "").toLowerCase();
+      if (asset === BASE_TOKENS.cbBTC.address.toLowerCase()) return { venue: proposed, priceFeed: "0xcccccccccccccccccccccccccccccccccccccccc", eta: BigInt(eta) };
+      return { venue: ZERO, priceFeed: ZERO, eta: 0n };
+    }
+    throw new Error(`unexpected ${c.functionName}`);
+  });
+  const rows = await readPendingVenues(client, REGISTRY);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].asset, "cbBTC");
+  assert.equal(rows[0].proposedVenue, proposed);
+  assert.equal(rows[0].currentVenue, AAVE_VENUE);
+  assert.equal(rows[0].eta, eta);
+
+  const quiet = chainClient((c) => (c.functionName === "venueOf" ? AAVE_VENUE : { venue: ZERO, priceFeed: ZERO, eta: 0n }));
+  assert.deepEqual(await readPendingVenues(quiet, REGISTRY), []);
+});
+
+test("readKeeperGrant reads expiry, allowCallback and the period-rolled token budgets", async () => {
+  const client = chainClient((c) => {
+    switch (c.functionName) {
+      case "grantOf":
+        assert.equal(c.args?.[2], UNWIND_SELECTOR, "the grant is keyed on the unwind selector, read from the ABI");
+        return [true, 0n, 0n, 86_400n, 1_802_592_000n, 1_800_000_000n, true];
+      case "grantTokens":
+        return [BASE_TOKENS.USDC.address, BASE_TOKENS.AERO.address];
+      case "tokenBudgetOf":
+        return String(c.args?.[3]).toLowerCase() === BASE_TOKENS.USDC.address.toLowerCase() ? [1_000_000n, 250_000n] : [10n ** 23n, 0n];
+      default:
+        throw new Error(`unexpected ${c.functionName}`);
+    }
+  });
+  const g = await readKeeperGrant(client, ACCOUNT, KEEPER, ROUTER);
+  assert.ok(g);
+  assert.equal(g!.active, true);
+  assert.equal(g!.allowCallback, true);
+  assert.equal(g!.expiry, 1_802_592_000);
+  assert.equal(g!.period, 86_400);
+  assert.equal(g!.selector, UNWIND_SELECTOR);
+  assert.deepEqual(
+    g!.tokens.map((t) => [t.symbol, t.amountPerPeriod, t.spent]),
+    [
+      ["USDC", 1_000_000n, 250_000n],
+      ["AERO", 10n ** 23n, 0n],
+    ],
+  );
+  // Unreadable → null, which the UI renders as "nobody is protecting this".
+  const dead = chainClient(() => {
+    throw new Error("no such account");
+  });
+  assert.equal(await readKeeperGrant(dead, ACCOUNT, KEEPER, ROUTER), null);
 });

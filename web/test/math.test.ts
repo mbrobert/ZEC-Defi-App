@@ -113,13 +113,19 @@ test("planYield mirrors the yield model: fees split from served gross/net, lpNet
   close(y.userNetPct, 0.012 + 0.4 * (-5.29 - 4.828), 1e-9);
 });
 
-test("clearsGate: served lpNet must beat the served borrow; unreadable never clears", () => {
-  assert.equal(clearsGate(10, 4.828), true);
-  assert.equal(clearsGate(4.828, 4.828), false);
-  assert.equal(clearsGate(-5.29, 4.828), false);
-  assert.equal(clearsGate(null, 4.828), false);
-  assert.equal(clearsGate(50, null), false);
-  assert.equal(clearsGate(NaN, 4.828), false);
+test("clearsGate: BOTH served models must beat the served borrow; unreadable or uncalibrated never clears", () => {
+  assert.equal(clearsGate(10, 4.828, 9.4), true);
+  assert.equal(clearsGate(4.828, 4.828, 9.4), false);
+  assert.equal(clearsGate(-5.29, 4.828, -5.21), false);
+  assert.equal(clearsGate(null, 4.828, 9.4), false);
+  assert.equal(clearsGate(50, null, 40), false);
+  assert.equal(clearsGate(NaN, 4.828, 9.4), false);
+  // The model-uncertainty band: the closed form clears, the calibrated one does not.
+  assert.equal(clearsGate(4.83, 4.828, 4.6), false);
+  assert.equal(clearsGate(4.83, 4.828, -4.9), false);
+  // A cell priced only once is never offered.
+  assert.equal(clearsGate(10, 4.828, null), false);
+  assert.equal(clearsGate(10, 4.828), false);
 });
 
 test("exactHalfWidthPct: 1.0001^(bps/2) − 1, matching the model (4500 → 25.23%, 1500 → 7.79%, 300 → 1.51%)", () => {

@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { findVerdict, normalizeGate, offeredEntries, reasonText, rejectedEntries, unavailableGate, verdictsFor } from "../lib/gate";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { KNOWN_REASONS, findVerdict, normalizeGate, offeredEntries, reasonPlain, reasonText, rejectedEntries, unavailableGate, verdictsFor } from "../lib/gate";
 import { DEMO_GATE_RAW, demoGate } from "../lib/demo";
 
 const verdict = (over: Record<string, unknown>) => ({
@@ -17,6 +19,7 @@ const verdict = (over: Record<string, unknown>) => ({
   emissionsRealizedPct: 20,
   dragPct: -10,
   lpNetPct: 10,
+  mcLpNetPct: 9.4,
   borrowAprPct: 4.828,
   collateralSupplyAprPct: 0.012,
   sigma: 0.55,
@@ -32,7 +35,7 @@ const SETTINGS = [
   { id: "working", preset: "AGGRESSIVE", rebalanceDelayHours: 2 },
 ];
 
-test("normalizeGate re-derives `qualifies` from lpNet vs borrow, never trusting the flag alone", () => {
+test("normalizeGate re-derives `qualifies` from BOTH models vs borrow, never trusting the flag alone", () => {
   const v = normalizeGate(
     {
       generatedAt: "2026-09-05T01:00:00Z",
@@ -40,27 +43,52 @@ test("normalizeGate re-derives `qualifies` from lpNet vs borrow, never trusting 
       settings: SETTINGS,
       verdicts: [
         verdict({}),
-        // service says qualifies but the served numbers say no → NOT offered
-        verdict({ poolId: "aero-cbbtc-usdc", lpNetPct: 3, qualifies: true }),
+        // service says qualifies but the served closed form says no → NOT offered
+        verdict({ poolId: "aero-cbbtc-usdc", lpNetPct: 3, mcLpNetPct: 3, qualifies: true }),
         // numbers say yes but the service refused (e.g. stale emissions) → NOT offered, reason kept
-        verdict({ setting: "working", preset: "AGGRESSIVE", lpNetPct: 50, qualifies: false, reason: "emissions_stale" }),
+        verdict({ setting: "working", preset: "AGGRESSIVE", lpNetPct: 50, mcLpNetPct: 48, qualifies: false, reason: "emissions_stale" }),
+        // the closed form clears, the calibrated one does not → the model-uncertainty band
+        verdict({ poolId: "aero-weth-cbbtc", lpNetPct: 6, mcLpNetPct: 1.2, qualifies: true }),
+        // no calibration at all → fails CLOSED; a cell priced once is not offered
+        verdict({ poolId: "aero-weth-link", lpNetPct: 12, mcLpNetPct: null, qualifies: true }),
       ],
     },
     "live",
   );
   assert.equal(v.source, "live");
   assert.equal(v.borrowAprPct, 4.828);
-  assert.equal(v.verdicts.length, 3);
+  assert.equal(v.verdicts.length, 5);
   assert.deepEqual(
     v.verdicts.map((e) => e.qualifies),
-    [true, false, false],
+    [true, false, false, false, false],
   );
   assert.equal(v.verdicts[0].rebalanceDelayHours, 12);
+  assert.equal(v.verdicts[0].mcLpNetPct, 9.4);
   assert.equal(v.verdicts[1].reason, "net_below_borrow");
   assert.equal(v.verdicts[2].reason, "emissions_stale");
+  assert.equal(v.verdicts[3].reason, "within_model_uncertainty");
+  assert.equal(v.verdicts[4].reason, "mc_calibration_unavailable");
   assert.equal(offeredEntries(v, "cbBTC").length, 1);
-  assert.equal(rejectedEntries(v, "cbBTC").length, 2);
+  assert.equal(rejectedEntries(v, "cbBTC").length, 4);
   assert.equal(offeredEntries(v, "WETH").length, 0);
+});
+
+test("every refusal reason the yield service can send has both technical and plain UI copy", () => {
+  const src = readFileSync(join(__dirname, "../../services/yield/src/types.ts"), "utf8");
+  const block = src.slice(src.indexOf("export type GateReason ="));
+  const served = [...block.slice(0, block.indexOf(";")).matchAll(/"([a-z_]+)"/g)].map((m) => m[1]);
+  assert.ok(served.length >= 18, `parsed ${served.length} reasons from the service`);
+  for (const r of served) {
+    assert.ok(KNOWN_REASONS.includes(r), `no Advanced-mode text for reason "${r}"`);
+    const plain = reasonPlain(r);
+    assert.ok(plain.length > 30 && /[.]$/.test(plain), `no plain sentence for reason "${r}": ${plain}`);
+    assert.ok(!plain.includes("_"), `plain copy for "${r}" leaks the code`);
+  }
+  // The new ones this round exists for, by name.
+  for (const r of ["within_model_uncertainty", "emissions_implausible", "collateral_paused", "borrow_paused", "net_out_of_bounds"]) {
+    assert.ok(served.includes(r), `${r} missing from the service union`);
+    assert.notEqual(reasonText(r), r.replace(/_/g, " "), `${r} has no written text`);
+  }
 });
 
 test("normalizeGate drops verdicts it cannot read (unknown pool, bad setting/preset, missing width)", () => {
@@ -94,7 +122,7 @@ test("unavailableGate (503) offers nothing and carries the reason", () => {
 
 test("verdictsFor sorts best lpNet first; findVerdict matches pool × setting × collateral", () => {
   const v = normalizeGate(
-    { borrowAprPct: 4.8, settings: SETTINGS, verdicts: [verdict({ lpNetPct: -5, qualifies: false, reason: "net_below_borrow" }), verdict({ poolId: "aero-cbbtc-usdc", lpNetPct: 1, qualifies: false, reason: "net_below_borrow" }), verdict({ collateral: "WETH" })] },
+    { borrowAprPct: 4.8, settings: SETTINGS, verdicts: [verdict({ lpNetPct: -5, mcLpNetPct: -5.2, qualifies: false, reason: "net_below_borrow" }), verdict({ poolId: "aero-cbbtc-usdc", lpNetPct: 1, mcLpNetPct: 0.8, qualifies: false, reason: "net_below_borrow" }), verdict({ collateral: "WETH" })] },
     "live",
   );
   assert.deepEqual(
@@ -123,5 +151,9 @@ test("demo gate = the yield model's verdict: NOTHING clears at 4.828%; cbZEC poo
   const best = g.verdicts.find((v) => v.poolId === "aero-cbbtc-usdc" && v.setting === "sheltered" && v.collateral === "cbBTC")!;
   assert.equal(best.lpNetPct, -5.29);
   assert.equal(best.breakEvenEmissionsMultiple, 2.02);
-  assert.equal(best.userNet.find((u) => u.ltvBps === 4000)?.userNetPct, -4.03);
+  // Re-pinned to MODEL-NUMBERS-v2: the sim now rounds the gross APR to 2 dp
+  // exactly as sources/gauges.ts does, so the sim and the served gate agree to
+  // the last digit instead of the 0.01 pt double-rounding gap they used to
+  // carry (audit wave 1 lens D INFO-1).
+  assert.equal(best.userNet.find((u) => u.ltvBps === 4000)?.userNetPct, -4.04);
 });

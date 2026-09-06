@@ -2,12 +2,16 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { decodeFunctionData, toFunctionSelector, type Hex } from "viem";
 import { PERMIT2, BASE_TOKENS } from "@zyo/shared";
-import { ABI_STATUS, ACCOUNT_ABI, FACTORY_ABI, ROUTER_ABI, PERMIT2_ABI, AAVE_VENUE_ABI, LP_VENUE_ABI } from "../lib/abi/oilskin";
+import { ABI_STATUS, ACCOUNT_ABI, FACTORY_ABI, ROUTER_ABI, LP_VENUE_ABI } from "../lib/abi/oilskin";
 import {
   DEADLINE_MINUTES,
   DEMO_DEPLOYMENT,
+  KEEPER_GRANT_EXPIRY_DAYS,
+  MAX_SWAP_SLIPPAGE_BPS,
+  UNWIND_SELECTOR,
   buildClaimPlan,
   buildOpenPlan,
+  buildRevokeAllPlan,
   buildUnwindPlan,
   deadlineFromNow,
   encodeClaimWrite,
@@ -16,8 +20,10 @@ import {
   encodeUnwindWrite,
   permitTypedData,
   planIsSignable,
+  validateSwapQuote,
   type Deployment,
   type OpenPlanInput,
+  type QuotedSwap,
 } from "../lib/plan";
 
 const OWNER = "0x1111111111111111111111111111111111111111" as const;
@@ -26,6 +32,20 @@ const POOL = "0x0ea72f44ccaf524e3fda5e4a6682fda7a79e42dc2858ee27be311e9337aa72a8
 const LIVE: Deployment = { ...DEMO_DEPLOYMENT, demo: false, keeper: "0x9999999999999999999999999999999999999999" };
 const SIG = ("0x" + "ab".repeat(65)) as Hex;
 const BAND = { minSqrtPriceX96: 1_000_000n, maxSqrtPriceX96: 1_020_000n };
+const ROUTE_100 = ("0x" + "0".repeat(62) + "64") as Hex; // abi.encode(int24 100)
+const QUOTE: QuotedSwap = {
+  quotedIn: 10n ** 18n,
+  quotedOut: 2_453_450_000n,
+  maxSlippageBps: 100,
+  routeData: ROUTE_100,
+  tokenSymbol: "WETH",
+  tokenAddress: BASE_TOKENS.WETH.address,
+  tokenDecimals: 18,
+  tickSpacing: 100,
+  source: "pool-spot",
+  crossCheckDelta: 0.001,
+  minOutForQuotedIn: 2_428_915_500n,
+};
 
 const base: OpenPlanInput = {
   owner: OWNER,
@@ -60,20 +80,25 @@ test("open plan (first-time, lp): approve → permit signature → ONE createAcc
   );
   assert.ok(calls.every((c) => c.required));
   assert.equal(calls[2].functionName, "createAccountAndExec");
+  assert.ok(calls[3].plain.includes(`${KEEPER_GRANT_EXPIRY_DAYS} days`), "the grant step states its expiry up front");
   assert.equal(calls[2].toLabel, "Oilskin account factory");
   assert.ok(planIsSignable(calls));
 });
 
-test("open plan (existing account): exec on the account; hold = execBatch; no keeper step when off", () => {
+test("open plan (existing account): execWithCallback on the account; hold goes through openBorrowOnly; no keeper step when off", () => {
   const lp = buildOpenPlan({ ...base, accountDeployed: true, keeperProtection: false });
   assert.deepEqual(
     lp.map((c) => c.kind),
     ["approve", "permit-signature", "open"],
   );
-  assert.equal(lp[2].functionName, "exec");
+  assert.equal(lp[2].functionName, "execWithCallback");
   const hold = buildOpenPlan({ ...base, accountDeployed: true, strategy: "hold", enginePoolId: undefined, keeperProtection: false });
-  assert.equal(hold[2].functionName, "execBatch");
+  assert.equal(hold[2].functionName, "execWithCallback");
   assert.ok(hold[2].plain.includes("keeps the USDC in your account"));
+  // The hold path is the ROUTER's, not a hand-built batch: the batch skipped the
+  // entry health-factor floor and now reverts at the venue.
+  assert.ok(hold[2].note.includes("openBorrowOnly"), hold[2].note);
+  assert.ok(!hold[2].note.includes("execBatch"));
 });
 
 test("open plan: every step has a plain sentence, a labelled target, and no bare hex", () => {
@@ -116,12 +141,13 @@ test("encodeOpenWrite (first-time, lp): factory.createAccountAndExec([{router, 0
   const w = encodeOpenWrite(base, { nonce: 7n, deadline: 1_800_000_000n, signature: SIG }, BAND);
   assert.equal(w.address, LIVE.factory);
   assert.equal(w.functionName, "createAccountAndExec");
-  assert.ok(w.data.startsWith(toFunctionSelector("createAccountAndExec((address,uint256,bytes)[])")));
+  assert.ok(w.data.startsWith(toFunctionSelector("createAccountAndExec((address,uint256,bytes,bool)[])")));
   const outer = decodeFunctionData({ abi: FACTORY_ABI, data: w.data });
-  const calls = outer.args[0] as { target: string; value: bigint; data: Hex }[];
+  const calls = outer.args[0] as readonly { target: string; value: bigint; data: Hex; callback: boolean }[];
   assert.equal(calls.length, 1);
   assert.equal(calls[0].target, LIVE.router);
   assert.equal(calls[0].value, 0n);
+  assert.equal(calls[0].callback, true, "the router needs peripheral rights; nothing else in this batch would");
   const inner = decodeFunctionData({ abi: ROUTER_ABI, data: calls[0].data });
   assert.equal(inner.functionName, "openLeveragedLp");
   const p = inner.args[0] as Record<string, unknown>;
@@ -137,36 +163,42 @@ test("encodeOpenWrite (first-time, lp): factory.createAccountAndExec([{router, 0
   assert.equal(p.deadline, 1_800_000_000n);
 });
 
-test("encodeOpenWrite (existing account, lp): account.exec(router, 0, data)", () => {
+test("encodeOpenWrite (existing account, lp): account.execWithCallback(router, 0, data) — a plain exec would revert NotActivePeripheral", () => {
   const w = encodeOpenWrite({ ...base, accountDeployed: true }, { nonce: 7n, deadline: 1_800_000_000n, signature: SIG }, BAND);
   assert.equal(w.address, ACCOUNT);
-  assert.equal(w.functionName, "exec");
+  assert.equal(w.functionName, "execWithCallback");
   const d = decodeFunctionData({ abi: ACCOUNT_ABI, data: w.data });
   assert.equal(d.args[0], LIVE.router);
   assert.equal(d.args[1], 0n);
   assert.equal(decodeFunctionData({ abi: ROUTER_ABI, data: d.args[2] as Hex }).functionName, "openLeveragedLp");
 });
 
-test("encodeOpenWrite (hold): execBatch of Permit2 pull → venue.supply → venue.borrow, spender/to = account", () => {
+test("encodeOpenWrite (hold): StrategyRouter.openBorrowOnly — NOT execBatch([permit2, supply, borrow])", () => {
   const w = encodeOpenWrite({ ...base, accountDeployed: true, strategy: "hold", enginePoolId: undefined }, { nonce: 9n, deadline: 1_800_000_000n, signature: SIG }, BAND);
-  assert.equal(w.functionName, "execBatch");
-  const calls = decodeFunctionData({ abi: ACCOUNT_ABI, data: w.data }).args[0] as unknown as { target: string; data: Hex }[];
-  assert.equal(calls.length, 3);
-  assert.equal(calls[0].target, PERMIT2);
-  const pull = decodeFunctionData({ abi: PERMIT2_ABI, data: calls[0].data });
-  assert.equal(pull.functionName, "permitTransferFrom");
-  const [permit, details, owner, sig] = pull.args as unknown as [Record<string, unknown>, Record<string, unknown>, string, Hex];
-  assert.deepEqual(permit, { permitted: { token: BASE_TOKENS.cbBTC.address, amount: 50_000_000n }, nonce: 9n, deadline: 1_800_000_000n });
-  assert.deepEqual(details, { to: ACCOUNT, requestedAmount: 50_000_000n });
-  assert.equal(owner, OWNER);
-  assert.equal(sig, SIG);
-  assert.equal(calls[1].target, LIVE.aaveVenue);
-  const supply = decodeFunctionData({ abi: AAVE_VENUE_ABI, data: calls[1].data });
-  assert.equal(supply.functionName, "supply");
-  assert.deepEqual(supply.args, [BASE_TOKENS.cbBTC.address, 50_000_000n]);
-  const borrow = decodeFunctionData({ abi: AAVE_VENUE_ABI, data: calls[2].data });
-  assert.equal(borrow.functionName, "borrow");
-  assert.deepEqual(borrow.args, [BASE_TOKENS.USDC.address, 15_926_178_000n]);
+  assert.equal(w.functionName, "execWithCallback");
+  const d = decodeFunctionData({ abi: ACCOUNT_ABI, data: w.data });
+  assert.equal(d.args[0], LIVE.router);
+  const inner = decodeFunctionData({ abi: ROUTER_ABI, data: d.args[2] as Hex });
+  assert.equal(inner.functionName, "openBorrowOnly");
+  const p = inner.args[0] as Record<string, unknown>;
+  assert.equal(p.collateralAsset, BASE_TOKENS.cbBTC.address);
+  assert.equal(p.collateralAmount, 50_000_000n);
+  assert.deepEqual(p.permit, { nonce: 9n, deadline: 1_800_000_000n, signature: SIG });
+  assert.equal(p.borrowAmount, 15_926_178_000n);
+  assert.equal(p.deadline, 1_800_000_000n);
+});
+
+test("the hold flow never builds the old three-call batch that skipped the entry floor", () => {
+  for (const deployed of [true, false]) {
+    const w = encodeOpenWrite({ ...base, accountDeployed: deployed, strategy: "hold", enginePoolId: undefined }, { nonce: 9n, deadline: 1_800_000_000n, signature: SIG }, BAND);
+    const calls = deployed
+      ? [{ target: (decodeFunctionData({ abi: ACCOUNT_ABI, data: w.data }).args[0] as string), data: decodeFunctionData({ abi: ACCOUNT_ABI, data: w.data }).args[2] as Hex, callback: true }]
+      : (decodeFunctionData({ abi: FACTORY_ABI, data: w.data }).args[0] as readonly { target: string; data: Hex; callback: boolean }[]);
+    assert.equal(calls.length, 1, "one router call, not three hand-built ones");
+    assert.equal(calls[0].target, LIVE.router);
+    assert.equal(calls[0].callback, true);
+    assert.equal(decodeFunctionData({ abi: ROUTER_ABI, data: calls[0].data }).functionName, "openBorrowOnly");
+  }
 });
 
 test("encodeOpenWrite refuses without a live deployment or account", () => {
@@ -174,14 +206,20 @@ test("encodeOpenWrite refuses without a live deployment or account", () => {
   assert.throws(() => encodeOpenWrite({ ...base, predictedAccount: null }, { nonce: 1n, deadline: 1n, signature: SIG }, BAND));
 });
 
-test("unwind: plan is only signable once minOut and tick spacing are quoted; encode = exec(router, unwind(u)) with max repay/withdraw", () => {
-  const unquoted = buildUnwindPlan({ account: ACCOUNT, positionIds: [42n], collateral: "WETH", deployment: LIVE, deadline: 1_800_000_000, bandToleranceBps: 100, swapMinOut: 0n, tickSpacing: null, poolLabel: "WETH/USDC" });
+test("unwind: not signable without a REAL quote; encode = execWithCallback(router, unwind(u)) carrying the SwapQuote", () => {
+  const unquoted = buildUnwindPlan({ account: ACCOUNT, positionIds: [42n], collateral: "WETH", deployment: LIVE, deadline: 1_800_000_000, bandToleranceBps: 100, quote: null, poolLabel: "WETH/USDC" });
   assert.equal(unquoted[0].encodable, false);
   assert.ok(unquoted[0].plain.includes("repays your Aave loan"));
-  const quoted = { account: ACCOUNT, positionIds: [42n], collateral: "WETH" as const, deployment: LIVE, deadline: 1_800_000_000, bandToleranceBps: 100, swapMinOut: 1_000_000n, tickSpacing: 100 };
-  assert.equal(buildUnwindPlan(quoted)[0].encodable, true);
+  const quoted = { account: ACCOUNT, positionIds: [42n], collateral: "WETH" as const, deployment: LIVE, deadline: 1_800_000_000, bandToleranceBps: 100, quote: QUOTE };
+  const plan = buildUnwindPlan(quoted);
+  assert.equal(plan[0].encodable, true);
+  assert.equal(plan[0].functionName, "execWithCallback → StrategyRouter.unwind");
+  // The floor is shown as a number, in USDC, before anything is signed.
+  assert.ok(plan[0].args.some((a) => a.name === "swap quote" && /2428\.9/.test(a.value)), JSON.stringify(plan[0].args));
+
   const w = encodeUnwindWrite(quoted, BAND);
   assert.equal(w.address, ACCOUNT);
+  assert.equal(w.functionName, "execWithCallback");
   const d = decodeFunctionData({ abi: ACCOUNT_ABI, data: w.data });
   assert.equal(d.args[0], LIVE.router);
   const u = decodeFunctionData({ abi: ROUTER_ABI, data: d.args[2] as Hex });
@@ -189,30 +227,47 @@ test("unwind: plan is only signable once minOut and tick spacing are quoted; enc
   const p = u.args[0] as Record<string, unknown>;
   assert.equal(p.collateralAsset, BASE_TOKENS.WETH.address);
   assert.deepEqual(p.positionIds, [42n]);
-  assert.equal(p.swapMinOut, 1_000_000n);
-  assert.equal(p.swapRouteData, "0x" + "0".repeat(62) + "64"); // abi.encode(int24 100)
+  assert.deepEqual(p.swap, { quotedIn: 10n ** 18n, quotedOut: 2_453_450_000n, maxSlippageBps: 100, routeData: ROUTE_100 });
   assert.equal(p.repayAmount, 2n ** 256n - 1n);
   assert.equal(p.withdrawAmount, 2n ** 256n - 1n);
 });
 
-test("claim: execBatch([lpVenue.claim(ids), router.sweep(tokens)])", () => {
-  const input = { account: ACCOUNT, positionIds: [7n, 9n], sweepTokens: [{ symbol: "AERO", address: BASE_TOKENS.AERO.address }], deployment: LIVE, poolLabel: "WETH/USDC" };
+test("a swap quote that means 'accept anything' cannot be built or encoded", () => {
+  const bad = { account: ACCOUNT, positionIds: [42n], collateral: "WETH" as const, deployment: LIVE, deadline: 1_800_000_000, bandToleranceBps: 100 };
+  // quotedOut 0 / quotedIn 0 — the shapes the old `: 1n` fallback degraded into.
+  for (const q of [
+    { ...QUOTE, quotedOut: 0n },
+    { ...QUOTE, quotedIn: 0n },
+    { ...QUOTE, maxSlippageBps: MAX_SWAP_SLIPPAGE_BPS + 1 },
+    { ...QUOTE, routeData: "0x" as Hex },
+  ]) {
+    assert.ok(validateSwapQuote(q).length > 0, `${q.quotedIn}/${q.quotedOut}/${q.maxSlippageBps}/${q.routeData}`);
+    assert.equal(buildUnwindPlan({ ...bad, quote: q })[0].encodable, false);
+    assert.throws(() => encodeUnwindWrite({ ...bad, quote: q }, BAND));
+  }
+  assert.throws(() => encodeUnwindWrite({ ...bad, quote: null }, BAND), /quoted/);
+});
+
+test("claim: execBatch([lpVenue.claim(ids, band, deadline), router.sweep(tokens)]) — both with peripheral rights", () => {
+  const input = { account: ACCOUNT, positionIds: [7n, 9n], sweepTokens: [{ symbol: "AERO", address: BASE_TOKENS.AERO.address }], deployment: LIVE, deadline: 1_800_000_000, bandToleranceBps: 100, poolLabel: "WETH/USDC" };
   const plan = buildClaimPlan(input);
   assert.equal(plan[0].encodable, true);
   assert.ok(plan[0].plain.includes("performance fee"));
-  const w = encodeClaimWrite(input);
-  const calls = decodeFunctionData({ abi: ACCOUNT_ABI, data: w.data }).args[0] as unknown as { target: string; data: Hex }[];
+  const w = encodeClaimWrite(input, BAND);
+  const calls = decodeFunctionData({ abi: ACCOUNT_ABI, data: w.data }).args[0] as unknown as { target: string; data: Hex; callback: boolean }[];
   assert.equal(calls[0].target, LIVE.lpVenue);
+  assert.equal(calls[0].callback, true);
   const claim = decodeFunctionData({ abi: LP_VENUE_ABI, data: calls[0].data });
   assert.equal(claim.functionName, "claim");
-  assert.deepEqual(claim.args, [[7n, 9n]]);
+  assert.deepEqual(claim.args, [[7n, 9n], BAND, 1_800_000_000n]);
   assert.equal(calls[1].target, LIVE.router);
+  assert.equal(calls[1].callback, true);
   const sweep = decodeFunctionData({ abi: ROUTER_ABI, data: calls[1].data });
   assert.equal(sweep.functionName, "sweep");
   assert.deepEqual(sweep.args, [[BASE_TOKENS.AERO.address]]);
 });
 
-test("grant: account.grant(keeper, Permission{router, unwind selector, 0 ETH, token limits, 1-day period, 30-day expiry})", () => {
+test("grant: account.grant(keeper, Permission{router, unwind selector, 0 ETH, token limits, 1-day period, 30-day expiry, allowCallback TRUE})", () => {
   const w = encodeGrantWrite({ account: ACCOUNT, deployment: LIVE, tokenLimits: [{ token: BASE_TOKENS.USDC.address, amountPerPeriod: 1_000n }], nowSeconds: 1_700_000_000 });
   assert.equal(w.address, ACCOUNT);
   const d = decodeFunctionData({ abi: ACCOUNT_ABI, data: w.data });
@@ -220,11 +275,43 @@ test("grant: account.grant(keeper, Permission{router, unwind selector, 0 ETH, to
   assert.equal(d.args[0], LIVE.keeper);
   const perm = d.args[1] as Record<string, unknown>;
   assert.equal(perm.target, LIVE.router);
-  assert.equal(perm.selector, "0xebf64f1c");
+  assert.equal(perm.selector, UNWIND_SELECTOR);
   assert.equal(perm.maxValuePerPeriod, 0n);
   assert.equal(perm.period, 86_400);
-  assert.equal(perm.expiry, 1_700_000_000 + 30 * 86_400);
+  assert.equal(perm.expiry, 1_700_000_000 + KEEPER_GRANT_EXPIRY_DAYS * 86_400);
+  // Without this the keeper's dispatch reverts NotActivePeripheral inside the
+  // router and NOTHING is broadcast while the position rides to liquidation.
+  assert.equal(perm.allowCallback, true);
   assert.throws(() => encodeGrantWrite({ account: ACCOUNT, deployment: { ...LIVE, keeper: null }, tokenLimits: [], nowSeconds: 0 }));
+});
+
+test("grant refuses the token-limit shapes the chain refuses (zero line, duplicate)", () => {
+  assert.throws(
+    () => encodeGrantWrite({ account: ACCOUNT, deployment: LIVE, tokenLimits: [{ token: BASE_TOKENS.USDC.address, amountPerPeriod: 0n }], nowSeconds: 0 }),
+    /zero/,
+  );
+  assert.throws(
+    () =>
+      encodeGrantWrite({
+        account: ACCOUNT,
+        deployment: LIVE,
+        tokenLimits: [
+          { token: BASE_TOKENS.USDC.address, amountPerPeriod: 1n },
+          { token: BASE_TOKENS.USDC.address, amountPerPeriod: 2n },
+        ],
+        nowSeconds: 0,
+      }),
+    /duplicate/,
+  );
+});
+
+test("revokeAll is a planned call with its own plain sentence and says what stops", () => {
+  const [c] = buildRevokeAllPlan({ account: ACCOUNT, deployment: LIVE });
+  assert.equal(c.kind, "revoke");
+  assert.equal(c.functionName, "revokeAll");
+  assert.ok(c.plain.length > 40);
+  assert.ok(c.args.some((a) => /nobody acts but you/.test(a.value)));
+  assert.equal(buildRevokeAllPlan({ account: ACCOUNT, deployment: DEMO_DEPLOYMENT })[0].encodable, false);
 });
 
 test("deadlineFromNow is DEADLINE_MINUTES ahead, in seconds", () => {

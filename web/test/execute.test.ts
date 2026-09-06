@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Address, Hex } from "viem";
 import { BASE_TOKENS, CHAIN_ID, PERMIT2 } from "@zyo/shared";
-import { grantTokenLimits, runClaim, runOpen, runUnwind, type RunContext, type StepEvent } from "../lib/execute";
+import { grantTokenLimits, runClaim, runGrant, runOpen, runRevokeAll, runUnwind, type RunContext, type StepEvent } from "../lib/execute";
+import { MAX_QUOTE_DIVERGENCE } from "../lib/quote";
 import { buildOpenPlan, DEMO_DEPLOYMENT, type Deployment, type OpenPlanInput } from "../lib/plan";
 import { assessGas, estimateForWrite } from "../lib/gas";
 import { bandFromSqrtPrice, isInRange, isqrt, token1ShareOfValue, usdcShareOfValue } from "../lib/tickmath";
@@ -34,9 +35,70 @@ const openInput: OpenPlanInput = {
   keeperProtection: true,
 };
 
-function fakeCtx(over: Partial<{ chainId: number; balance: bigint; estimateThrows: string; sqrtP: bigint; receipt: "success" | "reverted" }> = {}) {
+/**
+ * A fake chain. `multicall` throws so every read goes through the documented
+ * per-call fallback — which is also what a chain with a missing Multicall3
+ * does, so the tests exercise the path a real user could hit.
+ */
+function fakeCtx(
+  over: Partial<{
+    chainId: number;
+    balance: bigint;
+    estimateThrows: string;
+    sqrtP: bigint;
+    receipt: "success" | "reverted";
+    /** Aave oracle answers, 8-dp USD. Set null to make the oracle unreadable. */
+    oracle: Record<string, bigint | null>;
+    poolSqrtP: bigint;
+    minOut: bigint | null;
+  }> = {},
+) {
   const writes: WriteSpec[] = [];
   const signed: unknown[] = [];
+  const WETH = BASE_TOKENS.WETH.address.toLowerCase();
+  const USDC = BASE_TOKENS.USDC.address.toLowerCase();
+  // A WETH/USDC Slipstream pool priced at ~2453.45 USDC per WETH.
+  // token0 = WETH (18 dp), token1 = USDC (6 dp) → sqrtP = sqrt(price · 10^(d0−d1)) · 2^96.
+  const POOL_SQRT_P = 3_924_354_119_174_829_377_585_152n;
+  const read = {
+    multicall: async () => {
+      throw new Error("no multicall in this fake");
+    },
+    readContract: async (a: { address: string; functionName: string; args?: readonly unknown[] }) => {
+      switch (a.functionName) {
+        case "poolSqrtPriceX96":
+          return over.sqrtP ?? 3_897_149_340_279_738_881_397_267n;
+        case "slot0":
+          return [over.poolSqrtP ?? POOL_SQRT_P, -198_407, 0, 0, 0, 0, true];
+        case "tickSpacing":
+          return 100;
+        case "token0":
+          return BASE_TOKENS.WETH.address;
+        case "token1":
+          return BASE_TOKENS.USDC.address;
+        case "decimals":
+          return String(a.args?.[0] ?? "").toLowerCase() === USDC ? 6 : 18;
+        case "symbol":
+          return "WETH";
+        case "getAssetPrice": {
+          const t = String(a.args?.[0] ?? "").toLowerCase();
+          const table = over.oracle ?? { [WETH]: 245_345_000_000n, [USDC]: 100_000_000n };
+          const v = table[t];
+          if (v === null || v === undefined) throw new Error("oracle unreadable");
+          return v;
+        }
+        case "minOutFor": {
+          if (over.minOut === null) throw new Error("adapter unreadable");
+          if (over.minOut !== undefined) return over.minOut;
+          const [amountIn, quotedIn, quotedOut, bps] = a.args as [bigint, bigint, bigint, number];
+          return (((amountIn * quotedOut) / quotedIn) * BigInt(10_000 - bps)) / 10_000n;
+        }
+        default:
+          throw new Error(`unexpected read ${a.functionName}`);
+      }
+    },
+    getCode: async () => "0x6080" as const,
+  };
   const ctx: RunContext = {
     wallet: {
       chainId: over.chainId ?? CHAIN_ID,
@@ -50,16 +112,7 @@ function fakeCtx(over: Partial<{ chainId: number; balance: bigint; estimateThrow
       },
       waitForReceipt: async () => ({ status: over.receipt ?? "success" }),
     },
-    read: {
-      multicall: async () => [],
-      readContract: async (a) => {
-        if (a.functionName === "poolSqrtPriceX96") return over.sqrtP ?? 3_897_149_340_279_738_881_397_267n;
-        if (a.functionName === "slot0") return [0n, -198_407, 0, 0, 0, 0, true];
-        if (a.functionName === "tickSpacing") return 100;
-        throw new Error(`unexpected read ${a.functionName}`);
-      },
-      getCode: async () => "0x6080",
-    },
+    read: read as never,
     gas: {
       estimateGas: async () => {
         if (over.estimateThrows) throw new Error(over.estimateThrows);
@@ -144,36 +197,95 @@ test("runOpen: a reverted receipt is reported as failed; approve skipped when al
   assert.equal(c3.writes.length, 1, "only the approve went out");
 });
 
-test("runOpen (hold): no band read, execBatch through the account", async () => {
+test("runOpen (hold): no band read — the router's openBorrowOnly enforces the entry floor instead", async () => {
   const { ctx, writes } = fakeCtx();
   const input: OpenPlanInput = { ...openInput, strategy: "hold", enginePoolId: undefined, accountDeployed: true, keeperProtection: false };
   const res = await runOpen(ctx, input, buildOpenPlan(input), collect().emit);
   assert.ok(res);
-  assert.equal(writes[1].functionName, "execBatch");
+  assert.equal(writes[1].functionName, "execWithCallback");
 });
 
-test("runUnwind: sizes swapMinOut from the ticks' value split and the tolerance; blocks without a USD value", async () => {
-  const { ctx, writes } = fakeCtx();
-  const pos = { enginePoolId: openInput.enginePoolId!, tickLower: -199_200, tickUpper: -197_700, poolAddress: "0xb2cc224c1c9fee385f8ad6a55b4d94e92359dc59" as Address, usdcIsToken0: false, valueUsd: 16_000 };
-  const hash = await runUnwind(ctx, { account: ACCOUNT, positionIds: [7n], collateral: "cbBTC", deployment: LIVE, deadline: 1_800_000_000, bandToleranceBps: 100 }, pos, collect().emit);
-  assert.equal(hash, HASH);
-  assert.equal(writes[0].functionName, "exec");
-  // the non-USDC (WETH, token0) share at tick −198407 inside [−199200, −197700)
-  const share = 1 - usdcShareOfValue(-198_407, -199_200, -197_700, false);
-  assert.ok(share > 0.3 && share < 0.7, `share ${share}`);
+const POS = { enginePoolId: openInput.enginePoolId!, poolAddress: "0xb2cc224c1c9fee385f8ad6a55b4d94e92359dc59" as Address };
+const UNWIND_IN = { account: ACCOUNT, positionIds: [7n], collateral: "cbBTC" as const, deployment: LIVE, deadline: 1_800_000_000, bandToleranceBps: 100 };
 
+test("runUnwind: fetches a REAL quote, reads the enforced floor from the adapter, then signs execWithCallback", async () => {
+  const { ctx, writes } = fakeCtx();
   const ev = collect();
-  const blocked = await runUnwind(ctx, { account: ACCOUNT, positionIds: [7n], collateral: "cbBTC", deployment: LIVE, deadline: 1, bandToleranceBps: 100 }, { ...pos, valueUsd: null }, ev.emit);
-  assert.equal(blocked, null);
-  assert.match((ev.events[0] as { reason: string }).reason, /not known yet/);
+  const hash = await runUnwind(ctx, UNWIND_IN, POS, ev.emit);
+  assert.equal(hash, HASH);
+  assert.equal(writes[0].functionName, "execWithCallback");
+  const q = (ev.events.find((e) => e.type === "quoted") as { quote: { quotedIn: bigint; quotedOut: bigint; maxSlippageBps: number; minOutForQuotedIn: bigint; tickSpacing: number } }).quote;
+  assert.equal(q.quotedIn, 10n ** 18n, "one whole WETH");
+  // ~2453.45 USDC per WETH from the pool's own sqrtPrice, 6 dp.
+  assert.ok(q.quotedOut > 2_400_000_000n && q.quotedOut < 2_500_000_000n, String(q.quotedOut));
+  assert.equal(q.maxSlippageBps, 100);
+  assert.equal(q.tickSpacing, 100);
+  // The floor is the adapter's own arithmetic, not ours.
+  assert.equal(q.minOutForQuotedIn, (q.quotedOut * 9_900n) / 10_000n);
+  assert.ok(q.minOutForQuotedIn > 0n);
 });
 
-test("runClaim goes through the account as execBatch", async () => {
+test("runUnwind refuses — it never degrades to a 1-base-unit minimum — when the pool price is unreadable", async () => {
+  const { ctx, writes } = fakeCtx({ poolSqrtP: 0n });
+  const ev = collect();
+  assert.equal(await runUnwind(ctx, UNWIND_IN, POS, ev.emit), null);
+  assert.equal(writes.length, 0);
+  assert.match((ev.events[0] as { reason: string }).reason, /no honest minimum/);
+});
+
+test("runUnwind refuses when the pool is far from the Chainlink price Aave uses (a manipulated pool is not a quote)", async () => {
+  const WETH = BASE_TOKENS.WETH.address.toLowerCase();
+  const USDC = BASE_TOKENS.USDC.address.toLowerCase();
+  // Oracle says WETH is worth 20% more than the pool does.
+  const { ctx, writes } = fakeCtx({ oracle: { [WETH]: 294_414_000_000n, [USDC]: 100_000_000n } });
+  const ev = collect();
+  assert.equal(await runUnwind(ctx, UNWIND_IN, POS, ev.emit), null);
+  assert.equal(writes.length, 0);
+  const reason = (ev.events[0] as { reason: string }).reason;
+  assert.match(reason, /Chainlink/);
+  assert.match(reason, /nothing was signed/i);
+  assert.ok(MAX_QUOTE_DIVERGENCE > 0 && MAX_QUOTE_DIVERGENCE < 0.1);
+});
+
+test("runUnwind refuses when the swap adapter will not confirm the floor it will enforce", async () => {
+  const { ctx, writes } = fakeCtx({ minOut: null });
+  const ev = collect();
+  assert.equal(await runUnwind(ctx, UNWIND_IN, POS, ev.emit), null);
+  assert.equal(writes.length, 0);
+  assert.match((ev.events[0] as { reason: string }).reason, /would not confirm the minimum/);
+});
+
+test("runUnwind still quotes when the oracle is unreadable — the pool price is the quote, the oracle only cross-checks", async () => {
+  const { ctx, writes } = fakeCtx({ oracle: {} });
+  const ev = collect();
+  assert.equal(await runUnwind(ctx, UNWIND_IN, POS, ev.emit), HASH);
+  assert.equal(writes.length, 1);
+  const q = (ev.events.find((e) => e.type === "quoted") as { quote: { crossCheckDelta: number | null } }).quote;
+  assert.equal(q.crossCheckDelta, null);
+});
+
+test("runClaim goes through the account as execBatch, with a band quoted from the pool", async () => {
   const { ctx, writes } = fakeCtx();
-  const hash = await runClaim(ctx, { account: ACCOUNT, positionIds: [7n], sweepTokens: [{ symbol: "AERO", address: BASE_TOKENS.AERO.address }], deployment: LIVE }, collect().emit);
+  const input = { account: ACCOUNT, positionIds: [7n], sweepTokens: [{ symbol: "AERO", address: BASE_TOKENS.AERO.address }], deployment: LIVE, deadline: 1_800_000_000, bandToleranceBps: 100 };
+  const hash = await runClaim(ctx, input, openInput.enginePoolId!, collect().emit);
   assert.equal(hash, HASH);
   assert.equal(writes[0].functionName, "execBatch");
   assert.equal(writes[0].address, ACCOUNT);
+  // A claim without a pool cannot be band-bounded, and the engine may compound
+  // (and therefore swap) inside it — so it is refused, not sent unbounded.
+  const ev = collect();
+  assert.equal(await runClaim(ctx, input, null, ev.emit), null);
+  assert.match((ev.events[0] as { reason: string }).reason, /price limit/);
+});
+
+test("the keeper grant can be renewed and every permission revoked, each as its own guarded write", async () => {
+  const { ctx, writes } = fakeCtx();
+  const limits = grantTokenLimits(1_000, { address: BASE_TOKENS.cbBTC.address, decimals: 8, priceUsd: 80_000 }, []);
+  assert.equal(await runGrant(ctx, { account: ACCOUNT, deployment: LIVE, tokenLimits: limits }, collect().emit), HASH);
+  assert.equal(writes[0].functionName, "grant");
+  assert.equal(await runRevokeAll(ctx, ACCOUNT, collect().emit), HASH);
+  assert.equal(writes[1].functionName, "revokeAll");
+  assert.equal(writes[1].address, ACCOUNT);
 });
 
 test("grantTokenLimits lists USDC, the collateral, AERO and every pool token exactly once", () => {
@@ -184,6 +296,9 @@ test("grantTokenLimits lists USDC, the collateral, AERO and every pool token exa
   );
   assert.equal(l[0].amountPerPeriod, 20_000_000_000n); // 2 × 10,000 USDC
   assert.equal(l[1].amountPerPeriod, 25_000_000n); // 2 × 10,000 / 80,000 BTC = 0.25 cbBTC
+  // The chain refuses a zero budget line (InvalidPermission), so no line may be zero.
+  const degenerate = grantTokenLimits(0, { address: BASE_TOKENS.cbBTC.address, decimals: 8, priceUsd: NaN }, []);
+  assert.ok(degenerate.every((x) => x.amountPerPeriod > 0n), JSON.stringify(degenerate.map((x) => String(x.amountPerPeriod))));
 });
 
 test("gas: assessGas headroom, plain sentences, estimateForWrite surfaces reverts", async () => {

@@ -54,11 +54,22 @@ export function amountNumber(s: string): number {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
-/** Presets for the chosen asset from the LIVE liquidation threshold; null when the reserve is unreadable. */
+/**
+ * Presets for the chosen asset from the LIVE liquidation threshold; null when
+ * the reserve is unreadable or unusable.
+ *
+ * The registry's own `maxOfferedLtvBps` is `min(LT / floor, venue.maxLtvBps,
+ * 5000)` — it respects the venue's MAX LTV as well as its liquidation
+ * threshold, so an Aave LTV→0 deprecation takes the offer to zero instead of
+ * advertising a setting under which every open reverts. This mirrors that: a
+ * preset above the venue's own LTV is marked NOT offerable, and the UI says
+ * "not offered right now" rather than rendering "0 %".
+ */
 export function presetsFor(market: MarketRead, collateral: CollateralSymbol): LtvPreset[] | null {
   const r = market.reserves[collateral];
   if (!r || !r.usageAsCollateralEnabled || !r.isActive || r.isFrozen) return null;
-  return ltvPresets(r.liquidationThresholdBps);
+  const venueLtv = Number.isFinite(r.ltvBps) ? r.ltvBps : 0;
+  return ltvPresets(r.liquidationThresholdBps).map((p) => (p.ltvBps > venueLtv ? { ...p, offerable: false } : p));
 }
 
 export interface ReviewDerivation {

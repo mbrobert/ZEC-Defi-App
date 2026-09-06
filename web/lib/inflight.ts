@@ -21,7 +21,7 @@ export interface InflightStep {
 
 export interface InflightFlow {
   id: string;
-  kind: "open" | "unwind" | "claim" | "grant" | "spot";
+  kind: "open" | "unwind" | "claim" | "grant" | "revoke" | "spot";
   wallet: string;
   createdAt: string;
   updatedAt: string;

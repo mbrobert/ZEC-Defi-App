@@ -8,7 +8,7 @@
  * enforces it across app/, components/ and lib/): the four in BANNED_WORDS.
  */
 
-export const BANNED_WORDS: readonly string[] = ["private", "shielded", "non-custodial", "locked payout address"];
+export const BANNED_WORDS: readonly string[] = ["private", "shielded", "non-custodial", "locked payout address", "no operator custody", "no owner powers"];
 
 export interface RiskItem {
   id: string;
@@ -70,8 +70,14 @@ export const RISKS: readonly RiskItem[] = [
   {
     id: "keeper",
     title: "Keeper dependence",
-    body: "Warnings, repayment from rewards, de-risking and emergency unwinds are performed by the Oilskin keeper through a permission you grant on your own account and can revoke at any time. If the keeper is down, nobody acts for you; you can always act yourself from your account.",
+    body: "Repayment from rewards, de-risking and emergency unwinds are performed by the Oilskin keeper through one permission you grant on your own account: it may call StrategyRouter.unwind and nothing else, within per-day token budgets, until the permission expires (30 days), and you can revoke it at any time. A warning at the first rung is a message, not an on-chain action — no permission produces it. If the keeper is down, or the permission has lapsed, nobody acts for you; you can always act yourself from your account.",
     scope: ["review", "dashboard"],
+  },
+  {
+    id: "operator-powers",
+    title: "What Oilskin's operator can still do",
+    body: "Oilskin holds nothing between transactions and never takes your position: it is owned by your wallet through your own OilskinAccount. But the Oilskin registry has an owner, and that owner can disable an asset immediately (no new positions in it; exits are unaffected), change the entry health-factor floor immediately within its on-chain bounds, and replace the lending contract an asset points at after a fixed on-chain delay that is announced on chain before it can take effect. That delay is a warning, not a prohibition — it protects you only if somebody is watching and you act inside the window. Until that owner is a multisig with a published delay, treat these as real powers.",
+    scope: ["review", "dashboard", "footer"],
   },
   {
     id: "engine",
@@ -105,6 +111,6 @@ export function risksFor(scope: RiskItem["scope"][number]): RiskItem[] {
 
 /** Short lines under the footer. */
 export const FOOTER_LINES = [
-  "Positions are owned by your wallet through your own OilskinAccount. Oilskin has no owner powers over user funds and holds nothing between transactions.",
+  "Positions are owned by your wallet through your own OilskinAccount, and Oilskin holds nothing between transactions. Oilskin does choose which lending contract each asset uses; changing that choice takes a fixed on-chain delay and is announced before it can take effect.",
   "Performance fee only, on realised yield, capped on-chain. No deposit, withdrawal or management fee.",
 ] as const;

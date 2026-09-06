@@ -115,7 +115,7 @@ export default function Home() {
       <section className="card p-6">
         <h3 className="mb-2 text-[15px]">Honest by design</h3>
         <p className="text-[13.5px] leading-relaxed text-oil-ink2">
-          Every liquidation threshold, LTV cap and health factor on this site is computed from a live chain read — the top LTV per asset is floor(threshold ÷ entry-HF floor) and never a typed number. A pool is offered only when its emissions, net of the performance fee and an impermanent-loss drag, beat the live USDC borrow rate. The keeper acts only through a permission you grant on your own account and can revoke. Everything it does, you can do yourself.
+          Every liquidation threshold, LTV cap and health factor on this site is computed from a live chain read — the top LTV per asset is floor(threshold ÷ entry-HF floor) and never a typed number, and the lending venue itself refuses a borrow under that floor. A pool is offered only when its emissions, net of every fee and net of the loss from the price moving, beat the live USDC borrow rate under <b className="text-oil-ink">both</b> of the models we price it with; when they disagree we do not offer it. The keeper acts only through one permission you grant on your own account, that expires, and that you can revoke. Everything it does, you can do yourself.
         </p>
       </section>
     </div>

@@ -6,12 +6,17 @@
  *   • gas: estimate + balance check, revert reason surfaced in plain words;
  *   • the open step is only built after the permit is signed and the price
  *     band is quoted from the pool's live sqrtPrice at that moment;
+ *   • an unwind is only built after a REAL swap quote is fetched and the
+ *     enforced floor is read back from the swap adapter. There is no
+ *     degradation path: a missing quote is a refusal with a sentence, never a
+ *     smaller number (the old `swapMinOut: … : 1n` fallback is gone, and the
+ *     chain cannot express it any more either);
  *   • every submitted hash is reported immediately so the page can persist it
  *     (closing the tab does not stop a submitted transaction).
  * Demo mode never reaches this file: SignStep simulates instead.
  */
 import type { Address, Hex } from "viem";
-import { AERODROME_CLPOOL_ABI, LP_VENUE_ABI } from "./abi/oilskin";
+import { LP_VENUE_ABI } from "./abi/oilskin";
 import { ERC20_ABI } from "./abi/aave";
 import { BASE_TOKENS, CHAIN_ID, PERMIT2 } from "@zyo/shared";
 import { assessGas, shortenRevert, type GasAssessment, type GasClient } from "./gas";
@@ -19,17 +24,21 @@ import {
   encodeClaimWrite,
   encodeGrantWrite,
   encodeOpenWrite,
+  encodeRevokeAllWrite,
   encodeUnwindWrite,
   permitTypedData,
   type ClaimPlanInput,
+  type Deployment,
   type OpenPlanInput,
   type PermitSig,
   type PlannedCall,
+  type QuotedSwap,
   type UnwindPlanInput,
   type WriteSpec,
 } from "./plan";
+import { QuoteRefused, quoteUnwindSwap } from "./quote";
 import type { ReadClient } from "./reads";
-import { bandFromSqrtPrice, usdcShareOfValue, type PriceBand } from "./tickmath";
+import { bandFromSqrtPrice, type PriceBand } from "./tickmath";
 import { toAtomic } from "./math";
 
 export interface WalletLike {
@@ -44,6 +53,7 @@ export type StepEvent =
   | { type: "blocked"; step: number; reason: string }
   | { type: "signing"; step: number }
   | { type: "submitted"; step: number; hash: Hex }
+  | { type: "quoted"; step: number; quote: QuotedSwap }
   | { type: "done"; step: number; hash?: Hex }
   | { type: "failed"; step: number; error: string };
 
@@ -99,7 +109,7 @@ async function guardedWrite(ctx: RunContext, step: number, spec: WriteSpec, emit
   return hash;
 }
 
-/** Quote the deposit/close band from the engine pool's live sqrtPrice. */
+/** Quote the deposit/close/claim band from the engine pool's live sqrtPrice. */
 export async function quoteBand(read: ReadClient, lpVenue: Address, enginePoolId: `0x${string}`, toleranceBps: number): Promise<PriceBand> {
   const sqrtP = (await read.readContract({ address: lpVenue, abi: LP_VENUE_ABI, functionName: "poolSqrtPriceX96", args: [enginePoolId] })) as bigint;
   if (typeof sqrtP !== "bigint" || sqrtP <= 0n) throw new Error("pool price unreadable — refusing to quote a band");
@@ -108,7 +118,7 @@ export async function quoteBand(read: ReadClient, lpVenue: Address, enginePoolId
 
 /**
  * Open flow: approve (if needed) → permit signature → [band quote] → the one
- * transaction (createAccountAndExec / exec / execBatch) → optional grant.
+ * transaction (createAccountAndExec / execWithCallback) → optional grant.
  */
 export async function runOpen(ctx: RunContext, input: OpenPlanInput, calls: PlannedCall[], emit: Emit, grantLimits?: { token: Address; amountPerPeriod: bigint }[]): Promise<{ account: Address } | null> {
   const d = input.deployment;
@@ -143,6 +153,8 @@ export async function runOpen(ctx: RunContext, input: OpenPlanInput, calls: Plan
         emit({ type: "blocked", step: c.step, reason: "The permit signature is missing." });
         return null;
       }
+      // "hold" runs through StrategyRouter.openBorrowOnly, which takes no band:
+      // nothing is deposited into a pool, so there is no pool price to bound.
       let band: PriceBand = { minSqrtPriceX96: 1n, maxSqrtPriceX96: 1n };
       if (input.strategy === "lp") {
         try {
@@ -157,7 +169,13 @@ export async function runOpen(ctx: RunContext, input: OpenPlanInput, calls: Plan
       if (!hash) return null;
     } else if (c.kind === "grant") {
       if (!d.keeper) continue;
-      const spec = encodeGrantWrite({ account: input.predictedAccount, deployment: d, tokenLimits: grantLimits ?? [], nowSeconds: ctx.nowSeconds() });
+      let spec: WriteSpec;
+      try {
+        spec = encodeGrantWrite({ account: input.predictedAccount, deployment: d, tokenLimits: grantLimits ?? [], nowSeconds: ctx.nowSeconds() });
+      } catch (e) {
+        emit({ type: "blocked", step: c.step, reason: `The keeper permission could not be built: ${(e as Error).message} Your position is open; you can grant it later from the dashboard.` });
+        return null;
+      }
       const hash = await guardedWrite(ctx, c.step, spec, emit);
       if (!hash) return null;
     }
@@ -166,42 +184,32 @@ export async function runOpen(ctx: RunContext, input: OpenPlanInput, calls: Plan
 }
 
 /**
- * Unwind: read the position's ticks + the pool's tick and tick spacing, size
- * swapMinOut from the non-USDC value share × (1 − tolerance) on the USDC
- * value estimate, quote the band, then one exec.
+ * Unwind: fetch a REAL swap quote from the pool (cross-checked against the
+ * Aave oracle) and read the floor the adapter will enforce, quote the price
+ * band, then one execWithCallback. No quote → no transaction.
  */
 export async function runUnwind(
   ctx: RunContext,
-  input: Omit<UnwindPlanInput, "swapMinOut" | "tickSpacing">,
-  position: { enginePoolId: `0x${string}`; tickLower: number; tickUpper: number; poolAddress: Address; usdcIsToken0: boolean; valueUsd: number | null },
+  input: Omit<UnwindPlanInput, "quote">,
+  position: { enginePoolId: `0x${string}`; poolAddress: Address },
   emit: Emit,
+  onQuote?: (q: QuotedSwap) => void,
 ): Promise<Hex | null> {
   const d = input.deployment;
   if (!d || d.demo || !input.account) {
     emit({ type: "blocked", step: 1, reason: "No live deployment configured." });
     return null;
   }
-  let tickSpacing: number;
-  let tick: number;
+  let quote: QuotedSwap;
   try {
-    const [slot0, ts] = await Promise.all([
-      ctx.read.readContract({ address: position.poolAddress, abi: AERODROME_CLPOOL_ABI, functionName: "slot0" }) as Promise<readonly unknown[]>,
-      ctx.read.readContract({ address: position.poolAddress, abi: AERODROME_CLPOOL_ABI, functionName: "tickSpacing" }) as Promise<number>,
-    ]);
-    tick = Number(slot0[1]);
-    tickSpacing = Number(ts);
+    quote = await quoteUnwindSwap({ read: ctx.read, deployment: d, poolAddress: position.poolAddress, maxSlippageBps: input.bandToleranceBps });
   } catch (e) {
-    emit({ type: "blocked", step: 1, reason: `Could not read the pool: ${shortenRevert((e as Error).message)}` });
+    emit({ type: "blocked", step: 1, reason: e instanceof QuoteRefused ? e.plain : `The swap could not be quoted, so nothing was signed: ${shortenRevert((e as Error).message)}` });
     return null;
   }
-  if (position.valueUsd === null) {
-    emit({ type: "blocked", step: 1, reason: "The position's value is not known yet (indexer cache empty), so the minimum swap output cannot be sized safely. Try again in a minute, or use Advanced mode to enter it yourself." });
-    return null;
-  }
-  const nonUsdcShare = 1 - usdcShareOfValue(tick, position.tickLower, position.tickUpper, position.usdcIsToken0);
-  const legUsd = position.valueUsd * nonUsdcShare;
-  const minOutUsdc = BigInt(Math.floor(legUsd * (1 - input.bandToleranceBps / 10_000) * 10 ** BASE_TOKENS.USDC.decimals));
-  const full: UnwindPlanInput = { ...input, swapMinOut: minOutUsdc > 0n ? minOutUsdc : 1n, tickSpacing };
+  emit({ type: "quoted", step: 1, quote });
+  onQuote?.(quote);
+
   let band: PriceBand;
   try {
     band = await quoteBand(ctx.read, d.lpVenue, position.enginePoolId, input.bandToleranceBps);
@@ -209,28 +217,80 @@ export async function runUnwind(
     emit({ type: "blocked", step: 1, reason: shortenRevert((e as Error).message) });
     return null;
   }
-  const spec = encodeUnwindWrite(full, band);
+  const spec = encodeUnwindWrite({ ...input, quote }, band);
   return guardedWrite(ctx, 1, spec, emit);
 }
 
-export async function runClaim(ctx: RunContext, input: ClaimPlanInput, emit: Emit): Promise<Hex | null> {
+/** Claim: the engine may compound (and therefore swap), so the claim carries a band and a deadline. */
+export async function runClaim(ctx: RunContext, input: ClaimPlanInput, enginePoolId: `0x${string}` | null, emit: Emit): Promise<Hex | null> {
   const d = input.deployment;
   if (!d || d.demo || !input.account) {
     emit({ type: "blocked", step: 1, reason: "No live deployment configured." });
     return null;
   }
-  return guardedWrite(ctx, 1, encodeClaimWrite(input), emit);
+  if (!enginePoolId) {
+    emit({ type: "blocked", step: 1, reason: "This position's pool could not be identified, so the price limit that protects the reward harvest cannot be set. Nothing was signed." });
+    return null;
+  }
+  let band: PriceBand;
+  try {
+    band = await quoteBand(ctx.read, d.lpVenue, enginePoolId, input.bandToleranceBps);
+  } catch (e) {
+    emit({ type: "blocked", step: 1, reason: shortenRevert((e as Error).message) });
+    return null;
+  }
+  return guardedWrite(ctx, 1, encodeClaimWrite(input, band), emit);
 }
 
-/** Keeper budget lines for the protection grant — product policy caps, sized from the position. */
-export function grantTokenLimits(borrowUsdc: number, collateral: { address: Address; decimals: number; priceUsd: number }, poolTokens: Address[]): { token: Address; amountPerPeriod: bigint }[] {
-  const usdc = BigInt(Math.ceil(borrowUsdc * 2 * 10 ** BASE_TOKENS.USDC.decimals)); // repay: debt + accrued interest headroom
-  const coll = BigInt(Math.ceil(((borrowUsdc * 2) / collateral.priceUsd) * 10 ** collateral.decimals)); // swap approval of the non-USDC leg
+/** The kill switch: account.revokeAll() — every grant on the account, gone. */
+export async function runRevokeAll(ctx: RunContext, account: Address, emit: Emit): Promise<Hex | null> {
+  return guardedWrite(ctx, 1, encodeRevokeAllWrite(account), emit);
+}
+
+/** Grant (or renew) the keeper protection on its own, from the dashboard. */
+export async function runGrant(
+  ctx: RunContext,
+  i: { account: Address; deployment: Deployment; tokenLimits: { token: Address; amountPerPeriod: bigint }[] },
+  emit: Emit,
+): Promise<Hex | null> {
+  if (!i.deployment.keeper || i.deployment.demo) {
+    emit({ type: "blocked", step: 1, reason: "No Oilskin keeper is configured for this site, so there is nothing to grant." });
+    return null;
+  }
+  let spec: WriteSpec;
+  try {
+    spec = encodeGrantWrite({ account: i.account, deployment: i.deployment, tokenLimits: i.tokenLimits, nowSeconds: ctx.nowSeconds() });
+  } catch (e) {
+    emit({ type: "blocked", step: 1, reason: `The keeper permission could not be built: ${(e as Error).message}` });
+    return null;
+  }
+  return guardedWrite(ctx, 1, spec, emit);
+}
+
+/**
+ * Keeper budget lines for the protection grant — product policy caps, sized
+ * from the WHOLE debt, not from the position at sign time: a compounding LP
+ * grows, and the keeper sizes its repay against the debt it finds
+ * (done-KEEPER §4). The 2× is that headroom plus accrued interest.
+ *
+ * Every line must be > 0 and unique: the chain refuses an
+ * `amountPerPeriod == 0` line (it read to a user as "listed" and behaved as
+ * "not budgeted") and refuses duplicates.
+ *
+ * These cap DIRECT transfers and approvals the keeper's call tree makes. Value
+ * a protocol moves inside that tree (an Aave withdraw, an engine withdrawal)
+ * is not bounded by them — the UI says so where it asks for the grant.
+ */
+export function grantTokenLimits(debtUsdc: number, collateral: { address: Address; decimals: number; priceUsd: number }, poolTokens: Address[]): { token: Address; amountPerPeriod: bigint }[] {
+  const atLeastOne = (x: bigint) => (x > 0n ? x : 1n);
+  const usdc = atLeastOne(BigInt(Math.ceil(Math.max(debtUsdc, 0) * 2 * 10 ** BASE_TOKENS.USDC.decimals))); // repay: whole debt + accrued interest headroom
+  const collUnits = Number.isFinite(collateral.priceUsd) && collateral.priceUsd > 0 ? (Math.max(debtUsdc, 0) * 2) / collateral.priceUsd : 0;
+  const coll = atLeastOne(BigInt(Math.ceil(collUnits * 10 ** collateral.decimals))); // swap of the non-USDC leg
   const aero = 10n ** 23n; // 100k AERO per day covers any realistic fee transfer
   const lines = [
-    { token: BASE_TOKENS.USDC.address, amountPerPeriod: usdc },
+    { token: BASE_TOKENS.USDC.address as Address, amountPerPeriod: usdc },
     { token: collateral.address, amountPerPeriod: coll },
-    { token: BASE_TOKENS.AERO.address, amountPerPeriod: aero },
+    { token: BASE_TOKENS.AERO.address as Address, amountPerPeriod: aero },
   ];
   for (const t of poolTokens) {
     if (!lines.some((l) => l.token.toLowerCase() === t.toLowerCase())) lines.push({ token: t, amountPerPeriod: coll });
@@ -238,3 +298,5 @@ export function grantTokenLimits(borrowUsdc: number, collateral: { address: Addr
   return lines;
 }
 
+/** Re-export so callers do not need to know where the deployment type lives. */
+export type { Deployment };

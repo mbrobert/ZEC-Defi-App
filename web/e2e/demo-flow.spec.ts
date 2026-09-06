@@ -87,6 +87,12 @@ test.describe("Oilskin demo mode", () => {
     await page.getByTestId("preset-p40").click();
     await expect(page.getByTestId("entry-hf")).toHaveText("1.95");
     await expect(page.getByTestId("borrow-usdc")).toContainText("15,926.18");
+    // The ladder says what actually happens, and that the first rung is a message.
+    const ladder = page.getByTestId("rung-ladder");
+    await expect(ladder).toContainText("a message, not a transaction");
+    await expect(ladder).toContainText("the position is closed, the loan repaid and your cbBTC returned to you");
+    await expect(ladder).toContainText("only if you grant the keeper permission");
+    await expect(page.getByTestId("rung-caveat")).toContainText("expires after 30 days");
     await page.getByTestId("wizard-next").click();
 
     // One recommendation only; at 4.828% the model says hold, and says why
@@ -96,13 +102,20 @@ test.describe("Oilskin demo mode", () => {
     const rec = page.getByTestId("recommendation-hold");
     await expect(rec).toContainText("recommended today");
     await expect(rec).toContainText("4.83% USDC borrow rate");
+    // Simple mode explains the refusal in one plain sentence — no codes, no jargon.
+    const whyNot = page.getByTestId("recommendation-why-not");
+    await expect(whyNot).toContainText("The closest one was USDC/cbBTC (conservative)");
+    await expect(whyNot).toContainText("it earns less than the loan costs");
+    await expect(whyNot).not.toContainText("_");
     await rec.click();
     await page.getByTestId("wizard-next").click();
 
     const review = page.getByTestId("review");
     await expect(review).toContainText("Liquidation threshold (Aave, read)");
     await expect(review).toContainText("1.95 (floor 1.55)");
-    await expect(review).toContainText("Keeper emergency rung (HF < 1.05)");
+    await expect(review).toContainText("Emergency rung (HF < 1.05)");
+    await expect(review).toContainText("the position is closed, the loan repaid and your cbBTC returned to you");
+    await expect(review).toContainText("expires in 30 days unless renewed");
     await expect(review).toContainText("Net carry per year");
     await expect(page.getByTestId("review-problems")).toHaveCount(0);
     const disc = page.getByTestId("disclosures-review");
@@ -115,7 +128,8 @@ test.describe("Oilskin demo mode", () => {
     await expect(page.getByTestId("call-approve")).toContainText("nothing moves in this step");
     await expect(page.getByTestId("call-permit-signature")).toContainText("costs nothing");
     await expect(page.getByTestId("call-open")).toContainText("keeps the USDC in your account");
-    await expect(page.getByTestId("call-grant")).toContainText("you can revoke it any time");
+    await expect(page.getByTestId("call-grant")).toContainText("for 30 days");
+    await expect(page.getByTestId("call-grant")).toContainText("revoke it at any time");
     await expect(calls).not.toContainText("createAccountAndExec");
     await page.getByTestId("wizard-next").click();
 
@@ -141,12 +155,17 @@ test.describe("Oilskin demo mode", () => {
     await page.getByTestId("wizard-next").click();
 
     await expect(page.getByTestId("gate-empty")).toContainText("No pool clears the gate for cbBTC at today’s 4.83% borrow rate");
+    await expect(page.getByTestId("gate-line")).toContainText("emissions sampled 2026-08-31 01:34Z");
+    await expect(page.getByTestId("gate-line")).toContainText("engine fee 15%");
+    await expect(page.getByTestId("gate-line")).not.toContainText("STALE");
     await expect(page.locator('[data-testid^="strategy-aero-"]')).toHaveCount(0);
     const rejected = page.getByTestId("gate-rejected");
     await rejected.locator("summary").click();
     await expect(rejected).toContainText("USDC/cbBTC conservative");
     await expect(rejected).toContainText("LP net -5.29% vs borrow 4.83%");
-    await expect(rejected).toContainText("would clear at 2.02× today's net emissions");
+    await expect(rejected).toContainText("would clear at 2.02× today's net emissions on the closed form alone");
+    await expect(rejected).toContainText("MC net -5.21%");
+    await expect(rejected).toContainText("Once the loss from the price moving is priced in, it earns less than the loan costs.");
     await expect(rejected).toContainText("gauge pays no AERO");
     await expect(page.getByTestId("advanced-controls")).toBeVisible();
     await page.getByTestId("band-tolerance").fill("2");
@@ -159,7 +178,11 @@ test.describe("Oilskin demo mode", () => {
     const calls = page.getByTestId("planned-calls");
     await expect(calls).toContainText("2 transactions · 1 signature"); // no grant
     await expect(calls).toContainText("createAccountAndExec");
-    await expect(calls).toContainText("Permit2 → Aave venue supply → Aave venue borrow");
+    // The hold path is the router's openBorrowOnly, not the old three-call batch
+    // that skipped the entry health-factor floor.
+    await expect(calls).toContainText("StrategyRouter.openBorrowOnly");
+    await expect(calls).toContainText("refuses a borrow under the registry's entry health-factor floor");
+    await expect(calls).not.toContainText("execBatch([permit2");
     await expect(calls).toContainText("your Oilskin account (0x2222…2222)");
     await page.getByTestId("wizard-next").click();
     await expect(page.getByTestId("sign-step-grant")).toHaveCount(0);
@@ -195,7 +218,17 @@ test.describe("Oilskin demo mode", () => {
     await card.getByTestId("unwind-btn").click();
     await expect(page.getByTestId("plain-unwind")).toContainText("repays your Aave loan in full");
 
+    // Keeper protection: status, expiry, what it can and cannot do — read from the grant.
+    const keeper = page.getByTestId("keeper-panel");
+    await expect(keeper).toHaveAttribute("data-status", "active");
+    await expect(page.getByTestId("keeper-status-label")).toContainText("day");
+    await expect(page.getByTestId("keeper-expiry")).toContainText("2026-09-29");
+    await expect(page.getByTestId("keeper-rungs")).toContainText("a message, not a transaction");
+    await expect(page.getByTestId("keeper-budgets")).toContainText("USDC");
+    await expect(keeper).toContainText("is not bounded by them");
+
     await setMode(page, "advanced");
+    await expect(page.getByTestId("keeper-raw")).toContainText("StrategyRouter.unwind");
     await expect(page.getByTestId("raw-account")).toContainText("Oilskin account");
     await expect(page.getByTestId("raw-account")).toContainText(DEMO_ACCOUNT);
     await expect(page.getByTestId("raw-position")).toContainText("engine pool id");
@@ -226,6 +259,9 @@ test.describe("Oilskin demo mode", () => {
   });
 
   test("no horizontal overflow at this viewport on every page and every wizard step, both modes", async ({ page }) => {
+    // ~20 full navigations against `next dev` in both product modes. The work is
+    // the harness's, not the page's; give it room rather than trimming coverage.
+    test.setTimeout(300_000);
     const noOverflow = async (label: string) => {
       await page.waitForTimeout(300);
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
