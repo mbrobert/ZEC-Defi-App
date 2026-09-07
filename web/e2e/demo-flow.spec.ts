@@ -292,4 +292,33 @@ test.describe("Oilskin demo mode", () => {
       await noOverflow(`/new sign (${mode})`);
     }
   });
+
+  test("wallet connect control: one primary button disconnected; connected pill (avatar, address, chain, USDC) with copy/Basescan/disconnect menu", async ({ page }) => {
+    const { errors } = watchConsole(page);
+    // Plain load, no mock-wallet param: deterministically disconnected — never races the auto-connect effect.
+    await page.goto("/dashboard");
+    await expect(page.getByTestId("wallet-connect-button")).toBeVisible();
+
+    // Fresh load WITH the param: the mock wallet auto-connects on mount, so wait for the pill directly
+    // rather than asserting the button's continued presence, which would race the connect.
+    await page.goto("/dashboard?e2eMockWallet=1");
+    const pill = page.getByTestId("wallet-pill");
+    await expect(pill).toBeVisible();
+    await expect(pill.getByTestId("wallet-avatar")).toBeVisible();
+    await expect(pill.getByTestId("wallet-address")).toHaveText(DEMO_ACCOUNT.slice(0, 6) + "…" + DEMO_ACCOUNT.slice(-4));
+    await expect(pill.getByTestId("wallet-chain-badge")).toContainText("Base");
+    await expect(pill.getByTestId("wallet-usdc-balance")).toBeVisible();
+
+    await pill.click();
+    const menu = page.getByTestId("wallet-menu");
+    await expect(menu).toBeVisible();
+    await expect(menu.getByTestId("wallet-menu-copy")).toContainText("Copy address");
+    await expect(menu.getByTestId("wallet-menu-basescan")).toHaveAttribute("href", `https://basescan.org/address/${DEMO_ACCOUNT}`);
+    await expect(menu.getByTestId("wallet-menu-disconnect")).toContainText("Disconnect");
+
+    await menu.getByTestId("wallet-menu-disconnect").click();
+    await expect(page.getByTestId("wallet-connect-button")).toBeVisible();
+    await expect(page.getByTestId("wallet-pill")).toHaveCount(0);
+    expect(errors).toEqual([]);
+  });
 });

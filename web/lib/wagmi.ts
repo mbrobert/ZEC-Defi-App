@@ -19,6 +19,7 @@
 import { connectorsForWallets } from "@rainbow-me/rainbowkit";
 import { coinbaseWallet, injectedWallet, metaMaskWallet, rainbowWallet, walletConnectWallet } from "@rainbow-me/rainbowkit/wallets";
 import { createConfig, http } from "wagmi";
+import { mock } from "wagmi/connectors";
 import { base } from "wagmi/chains";
 import { CHAIN_ID } from "@zyo/shared";
 import { ENV } from "./env";
@@ -46,9 +47,23 @@ export const connectors = connectorsForWallets(walletGroups, {
   projectId: hasWalletConnect ? ENV.walletConnectProjectId : "oilskin-no-walletconnect",
 });
 
+/**
+ * Test-only wallet (wagmi's own `mock` connector — no real chain interaction,
+ * no signing capability tied to real assets). Address matches web/lib/demo.ts's
+ * DEMO_ACCOUNT ("obviously synthetic; not anyone's address"), kept as its own
+ * constant here rather than importing demo.ts into this foundational config
+ * module. Deliberately NOT passed through connectorsForWallets, so it never
+ * appears in RainbowKit's real connect modal — only reachable by calling
+ * wagmi's connect() with this instance directly (see
+ * components/E2EMockWalletConnector.tsx). Only added to the connector list at
+ * all when ENV.mockWallet is on; never present in a normal/production build.
+ */
+export const E2E_MOCK_ACCOUNT = "0x2222222222222222222222222222222222222222" as const;
+export const e2eMockConnector = mock({ accounts: [E2E_MOCK_ACCOUNT], features: { defaultConnected: false } });
+
 export const wagmiConfig = createConfig({
   chains: [base],
-  connectors,
+  connectors: ENV.mockWallet ? [...connectors, e2eMockConnector] : connectors,
   transports: {
     [base.id]: http(ENV.baseRpcUrl, { batch: true, timeout: 8_000, retryCount: 1 }),
   },

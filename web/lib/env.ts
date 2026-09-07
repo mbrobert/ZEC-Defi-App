@@ -26,6 +26,8 @@ export const ENV = {
   oilskinKeeper: process.env.NEXT_PUBLIC_OILSKIN_KEEPER ?? "",
   /** Force demo mode regardless of wallet state (used by e2e). */
   forceDemo: process.env.NEXT_PUBLIC_FORCE_DEMO === "1",
+  /** Registers wagmi's test-only mock connector (used by e2e to exercise the connected wallet pill). Never on in production. */
+  mockWallet: process.env.NEXT_PUBLIC_E2E_MOCK_WALLET === "1",
 } as const;
 
 export function contractsConfigured(): boolean {

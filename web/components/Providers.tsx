@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { Suspense, useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RainbowKitProvider, darkTheme } from "@rainbow-me/rainbowkit";
 import { WagmiProvider } from "wagmi";
 import { BASE_CHAIN, wagmiConfig } from "@/lib/wagmi";
 import { ModeProvider } from "@/lib/mode";
 import { NotifyPrefsProvider } from "@/lib/notifyPrefs";
+import { ENV } from "@/lib/env";
+import E2EMockWalletConnector from "./E2EMockWalletConnector";
 
 /** RainbowKit modal in the Oilcloth palette: brass accent on waxed green. */
 const theme = darkTheme({
@@ -42,7 +44,14 @@ export default function Providers({ children }: { children: ReactNode }) {
       <QueryClientProvider client={queryClient}>
         <RainbowKitProvider theme={theme} initialChain={BASE_CHAIN} appInfo={{ appName: "Oilskin" }} modalSize="compact">
           <ModeProvider>
-            <NotifyPrefsProvider>{children}</NotifyPrefsProvider>
+            <NotifyPrefsProvider>
+              {ENV.mockWallet && (
+                <Suspense fallback={null}>
+                  <E2EMockWalletConnector />
+                </Suspense>
+              )}
+              {children}
+            </NotifyPrefsProvider>
           </ModeProvider>
         </RainbowKitProvider>
       </QueryClientProvider>

@@ -28,7 +28,7 @@ export default defineConfig({
   webServer: process.env.E2E_BASE_URL
     ? undefined
     : {
-        command: "NEXT_PUBLIC_FORCE_DEMO=1 npx next dev -p 3111 -H 127.0.0.1",
+        command: "NEXT_PUBLIC_FORCE_DEMO=1 NEXT_PUBLIC_E2E_MOCK_WALLET=1 npx next dev -p 3111 -H 127.0.0.1",
         url: "http://127.0.0.1:3111",
         reuseExistingServer: true,
         timeout: 180_000,

@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useSwitchChain } from "wagmi";
 import { CHAIN_ID } from "@zyo/shared";
 import { useMarket, useSession } from "@/lib/hooks";
 import { fmtUsd0 } from "@/lib/format";
 import Chip from "./Chip";
 import ModeToggle from "./ModeToggle";
+import WalletConnect from "./WalletConnect";
 import { useMode } from "@/lib/mode";
 
 const TABS = [
@@ -75,7 +75,7 @@ export default function Nav() {
           ) : (
             <Chip kind="good">Base</Chip>
           )}
-          <ConnectButton chainStatus="none" showBalance={false} accountStatus={{ smallScreen: "avatar", largeScreen: "address" }} label="Connect wallet" />
+          <WalletConnect />
         </div>
       </div>
     </nav>
