@@ -8,6 +8,7 @@ import { recommend } from "@/lib/recommend";
 import type { StrategyChoice, WizardState } from "@/lib/wizard";
 import { fmtHalfWidth } from "@/lib/math";
 import { fmtPct, fmtSignedPct } from "@/lib/format";
+import { useNotifyPrefs, type NotifyChannel } from "@/lib/notifyPrefs";
 import { TokenPair } from "@/components/TokenMark";
 import Chip from "@/components/Chip";
 
@@ -34,6 +35,7 @@ export default function StrategyStep({
   onChange: (patch: Partial<WizardState>) => void;
 }) {
   const { mode } = useMode();
+  const { prefs: notifyPrefs, setPrefs: setNotifyPrefs } = useNotifyPrefs();
   const collateral: CollateralSymbol = state.collateral;
   const choice = state.strategy;
   const offered = offeredEntries(gate, collateral);
@@ -97,6 +99,16 @@ export default function StrategyStep({
             <p className="mt-1 text-[12.5px] text-oil-ink3">You still get the USDC to use as you like, and you can close the loan any time. Nothing is put into a pool. Switch to Advanced to see every pool and why it was refused.</p>
           </button>
         )}
+        <label className="flex cursor-pointer items-center gap-2 text-[13.5px]">
+          <input
+            type="checkbox"
+            className="accent-brass"
+            checked={notifyPrefs.optIn}
+            onChange={(e) => setNotifyPrefs({ ...notifyPrefs, optIn: e.target.checked })}
+            data-testid="notify-optin"
+          />
+          Tell me in the app if this position needs attention — a banner on your dashboard, nothing signed or sent anywhere.
+        </label>
         <p className="text-[12.5px] text-oil-ink3">Simple mode shows one recommendation. Advanced mode (top right) shows every pool with its numbers, custom band widths, and spot swaps.</p>
       </div>
     );
@@ -195,6 +207,33 @@ export default function StrategyStep({
           <input type="checkbox" className="accent-brass" checked={state.keeperProtection} onChange={(e) => onChange({ keeperProtection: e.target.checked })} data-testid="keeper-protection" />
           Grant the Oilskin keeper one revocable, budgeted permission — StrategyRouter.unwind and nothing else — so it can reduce or close this position at the ladder rungs. One extra transaction after opening; it expires after 30 days unless you renew it, and without it nobody acts for you.
         </label>
+        <label className="mt-3 flex cursor-pointer items-center gap-2 text-[13.5px]">
+          <input
+            type="checkbox"
+            className="accent-brass"
+            checked={notifyPrefs.optIn}
+            onChange={(e) => setNotifyPrefs({ ...notifyPrefs, optIn: e.target.checked })}
+            data-testid="notify-optin"
+          />
+          Tell me in the app if this position needs attention — nothing signed or sent anywhere; there is no email or push service yet.
+        </label>
+        {notifyPrefs.optIn && (
+          <label className="mt-2 block max-w-xs">
+            <span className="label">Alert channel</span>
+            <select
+              className="input"
+              value={notifyPrefs.channel}
+              onChange={(e) => setNotifyPrefs({ ...notifyPrefs, channel: e.target.value as NotifyChannel })}
+              data-testid="notify-channel"
+            >
+              <option value="banner">Dashboard banner only</option>
+              <option value="browser">Dashboard banner + a browser notification</option>
+            </select>
+            <span className="mt-1 block text-[11.5px] text-oil-ink3">
+              Both read your health factor from chain whenever this app is open — nothing is sent to a server. A browser notification needs this tab&rsquo;s permission and only fires while your browser is running.
+            </span>
+          </label>
+        )}
       </div>
 
       {rejected.length > 0 && (

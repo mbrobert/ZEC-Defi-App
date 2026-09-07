@@ -6,6 +6,7 @@ import { RainbowKitProvider, darkTheme } from "@rainbow-me/rainbowkit";
 import { WagmiProvider } from "wagmi";
 import { BASE_CHAIN, wagmiConfig } from "@/lib/wagmi";
 import { ModeProvider } from "@/lib/mode";
+import { NotifyPrefsProvider } from "@/lib/notifyPrefs";
 
 /** RainbowKit modal in the Oilcloth palette: brass accent on waxed green. */
 const theme = darkTheme({
@@ -40,7 +41,9 @@ export default function Providers({ children }: { children: ReactNode }) {
     <WagmiProvider config={wagmiConfig}>
       <QueryClientProvider client={queryClient}>
         <RainbowKitProvider theme={theme} initialChain={BASE_CHAIN} appInfo={{ appName: "Oilskin" }} modalSize="compact">
-          <ModeProvider>{children}</ModeProvider>
+          <ModeProvider>
+            <NotifyPrefsProvider>{children}</NotifyPrefsProvider>
+          </ModeProvider>
         </RainbowKitProvider>
       </QueryClientProvider>
     </WagmiProvider>

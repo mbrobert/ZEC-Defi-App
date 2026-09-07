@@ -10,6 +10,7 @@ import type { Dispatcher } from "./dispatch/types.js";
 import { buildFeedPolicies, FeedSelfCheckError, logFeedPolicies, policyMap, selfCheckFeeds, type FeedPolicy } from "./engine/feeds.js";
 import { Logger, stdoutSink, type LogSink } from "./log.js";
 import { logChannel, MultiNotifier, webhookChannel, type KeeperEvent, type Notifier } from "./notify/notifier.js";
+import { ownerHistoryChannel } from "./notify/ownerNotifier.js";
 import { HealthMonitor, type TickReport } from "./monitors/healthMonitor.js";
 import { AaveReader, aaveAddressesFromShared, reserveSpecsFromShared } from "./services/chain.js";
 import { sleep } from "./services/deadline.js";
@@ -146,7 +147,7 @@ export async function runKeeper(env: NodeJS.ProcessEnv, opts: RunOptions = {}): 
   });
 
   // ---- notifications: every rung and every escalation leaves this process --
-  const channels = [logChannel(log), ...(opts.notifyChannel ? [opts.notifyChannel] : [])];
+  const channels = [logChannel(log), ownerHistoryChannel(store), ...(opts.notifyChannel ? [opts.notifyChannel] : [])];
   if (config.notifyWebhookUrl) {
     channels.push(webhookChannel({ url: config.notifyWebhookUrl, token: config.notifyWebhookToken, fetchImpl: opts.fetchImpl }));
   } else if (!opts.notifyChannel) {

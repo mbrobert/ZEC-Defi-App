@@ -89,6 +89,23 @@ export interface AccountRecord {
   };
   /** Times a rung was re-armed because the action it fired did not clear it. */
   rungRefires?: Record<string, number>;
+  /** Durable per-account notification history (see notify/ownerNotifier.ts). Capped, oldest dropped first. */
+  notifyHistory?: OwnerNotifyEntry[];
+}
+
+/**
+ * One entry in an account's owner-notification history. Deliberately generic
+ * (`kind`/`severity` as `string`, not `KeeperEventKind`/`Severity`) so the
+ * store has no dependency on notify/notifier.ts — ownerNotifier.ts maps a
+ * KeeperEvent into this shape. No PII: only what is already public on chain
+ * (the account address, held as the record's key) plus the rung/hf/severity.
+ */
+export interface OwnerNotifyEntry {
+  kind: string;
+  severity: string;
+  rung?: string;
+  hf: number | null;
+  at: string;
 }
 
 /**
@@ -331,6 +348,8 @@ export interface KeeperStoreOptions {
   now?: () => Date;
   /** Terminal dispatch records kept per account (older ones are pruned). */
   keepTerminalPerAccount?: number;
+  /** Owner-notification history entries kept per account (oldest dropped first). */
+  ownerNotifyHistoryCap?: number;
   /**
    * Test hook for the raw write. Defaults to `writeSync`. A short return is
    * exactly what `write(2)` does on ENOSPC, and discarding it is what silently
@@ -342,6 +361,7 @@ export interface KeeperStoreOptions {
 export const STORE_DEFAULTS = {
   lockStaleMs: 5 * 60_000,
   keepTerminalPerAccount: 50,
+  ownerNotifyHistoryCap: 20,
 } as const;
 
 const TERMINAL_STATUSES: readonly DispatchStatus[] = ["CONFIRMED", "NOTIFIED", "SUPERSEDED", "ABANDONED"];
@@ -356,6 +376,7 @@ export class KeeperStore {
   private readonly pid: number;
   private readonly lockStaleMs: number;
   private readonly keepTerminalPerAccount: number;
+  private readonly ownerNotifyHistoryCap: number;
   private readonly writeChunk: (fd: number, buf: Buffer, offset: number, length: number) => number;
   private readonly now: () => Date;
   /** Random per-process id written into the lock and re-verified before every write. */
@@ -375,6 +396,7 @@ export class KeeperStore {
     this.pid = opts.pid ?? process.pid;
     this.lockStaleMs = opts.lockStaleMs ?? STORE_DEFAULTS.lockStaleMs;
     this.keepTerminalPerAccount = opts.keepTerminalPerAccount ?? STORE_DEFAULTS.keepTerminalPerAccount;
+    this.ownerNotifyHistoryCap = opts.ownerNotifyHistoryCap ?? STORE_DEFAULTS.ownerNotifyHistoryCap;
     this.writeChunk = opts.writeChunk ?? ((fd, buf, offset, length) => writeSync(fd, buf, offset, length));
     this.now = opts.now ?? (() => new Date());
   }
@@ -626,6 +648,12 @@ export class KeeperStore {
     return a ? structuredClone(a) : undefined;
   }
 
+  /** An account's owner-notification history, oldest first, capped. */
+  getOwnerNotifyHistory(account: Address): OwnerNotifyEntry[] {
+    const a = this.snapshot().accounts.find((x) => x.account === lowerAddress(account));
+    return structuredClone(a?.notifyHistory ?? []);
+  }
+
   getDispatch(key: string): DispatchRecord | undefined {
     const d = this.snapshot().dispatches.find((x) => x.key === key);
     return d ? structuredClone(d) : undefined;
@@ -712,6 +740,24 @@ export class KeeperStore {
       if (!a) throw new StoreError(`account ${id} not registered`);
       Object.assign(a, patch);
       return structuredClone(a);
+    });
+  }
+
+  /**
+   * Append one entry to `account`'s owner-notification history, capped at
+   * `ownerNotifyHistoryCap` (oldest dropped first). Throws StoreError if the
+   * account is not registered — callers that must not fail a whole delivery
+   * over that (notify/ownerNotifier.ts) catch it explicitly.
+   */
+  recordOwnerNotification(account: Address, entry: OwnerNotifyEntry): Promise<OwnerNotifyEntry[]> {
+    return this.mutate((s) => {
+      const id = lowerAddress(account);
+      const a = s.accounts.find((x) => x.account === id);
+      if (!a) throw new StoreError(`account ${id} not registered`);
+      const list = a.notifyHistory ?? (a.notifyHistory = []);
+      list.push(entry);
+      if (list.length > this.ownerNotifyHistoryCap) list.splice(0, list.length - this.ownerNotifyHistoryCap);
+      return structuredClone(list);
     });
   }
 

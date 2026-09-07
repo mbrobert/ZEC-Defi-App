@@ -445,12 +445,99 @@ own proofs of concept, re-run with the expectations flipped.
    supervisor restarts cleanly.
 8. **Notify** (`notify/notifier.ts`). Every rung and every escalation (UNKNOWN
    streak, ABANDONED, refused grant, mis-issued grant, untracked collateral,
-   store failure, feed policy) goes to a `MultiNotifier` with a log channel and,
-   when `NOTIFY_WEBHOOK_URL` is set, an HTTP channel with its own deadline and
-   failure counter. The `notify` rung is only `NOTIFIED` when a channel
-   accepted it, otherwise `FAILED` and retried. There is still **no mailer and
-   no per-user routing**: something downstream must fan the webhook out to the
-   account owner.
+   store failure, feed policy) goes to a `MultiNotifier` with a log channel, an
+   **owner-history channel** (below), and, when `NOTIFY_WEBHOOK_URL` is set, an
+   HTTP channel with its own deadline and failure counter. The `notify` rung is
+   only `NOTIFIED` when a channel accepted it, otherwise `FAILED` and retried.
+   `NOTIFY_WEBHOOK_URL` is fleet-wide — the founder's own ops pager, one URL
+   for every account — not a per-owner route. There is still **no mailer and
+   no per-user routing**: see "Owner notifications (v1)" below for why, and
+   what v1 does instead.
+
+## Owner notifications (v1) — Base-first, 2026-09-07
+
+The ask: when a health rung fires, tell the account **owner**, not just the
+founder's ops webhook. Three designs were compared for v1 and are recorded
+here with the facts each was checked against, per the "never invent a number"
+/ "verify every external dependency" rule.
+
+**A number correction first.** The brief that started this work said "warn at
+1.55" — that is `ENTRY_HF_FLOOR` (`packages/shared/src/health.ts:14`), the
+minimum HF a **freshly opened** position must have. It is a different
+constant from the ladder. The `warn` rung that actually fires notifications is
+**1.50** (`HF_LADDER[0].hf`, `health.ts:47`); `repay` 1.35, `derisk` 1.20,
+`emergency` 1.05 — unchanged from what `TESTING.md` and `ARCHITECTURE.md`
+already documented. v1 uses 1.50, not 1.55, because that is what is in code.
+
+**The fact that decided this, checked before comparing anything:** the keeper
+(`agent/src/index.ts`) is a headless daemon with **no inbound port** — it only
+ever calls `fetch()` outbound (`notify/notifier.ts` `webhookChannel`). `web/`
+is 100% client-side plus two read-only GETs to `services/yield`; it has **no
+write endpoint anywhere** (confirmed by grep — no `POST`, no API route). So
+there is currently **no data plane** from a preference captured in the web
+deposit flow to the keeper process, in either direction, at all.
+
+| | Optional email at deposit | WalletConnect Notify | In-app only |
+|---|---|---|---|
+| Needs a secret the founder has not provided | **Yes** — an email-sending API key (SMTP / SendGrid / Postmark / …), for the transport step alone | **Yes** — a WalletConnect Cloud project + Notify-API identity key, plus a signing/relay component to run | **No** |
+| Needs a new data plane (web → keeper) | **Yes** — the hashed email/preference has nowhere to go; building one is a backend + datastore, or new on-chain storage | **Yes** — same gap, plus a server component WalletConnect's Notify protocol requires | **No** — the ladder is a pure function of on-chain data both the keeper and the web dashboard already read independently (`web/lib/math.ts` `hfBand`/`rungFor`, same `HF_LADDER` from `@zyo/shared`) |
+| In scope for "Step 3 only, do not start Steps 4–6" | No — the data plane alone is Step-4-scale | No — heavier still (a relay component) | **Yes** |
+| Collects owner PII | Yes (an email address, even hashed) | No, but needs a WalletConnect identity linkage | **No** |
+
+**Decision: in-app only.** Not because email or WalletConnect are bad ideas —
+they are the obvious v2 once a real backend exists — but because both need
+infrastructure this step is not authorized to build, and in-app is the only
+one of the three that needs **none**: the health ladder is public, verified
+on-chain data, and the web dashboard already computes it
+(`web/lib/math.ts:207-213` `hfBand`). v1's honest promise is narrower than a
+push notification: **the app tells you your status prominently whenever you
+have it open — not while the tab is closed.** That is a promise the code
+can actually keep, which is the standard the founder's copy rules hold every
+other claim to.
+
+**What was built:**
+
+- **`agent/src/notify/ownerNotifier.ts`** — `ownerHistoryChannel(store)`, wired
+  into the same `channels` array as the log and webhook channels
+  (`agent/src/keeper.ts`). It is **not** a delivery channel to the owner —
+  there is nowhere for it to deliver to yet. It appends a redacted
+  (account address, kind, severity, rung, hf, timestamp — no PII beyond what
+  is already public on chain) entry to a new capped per-account
+  `notifyHistory` ring buffer on `KeeperStore`'s existing `AccountRecord`
+  (`agent/src/store/keeperStore.ts`, additive field, no store-version bump).
+  This is the seam a real write-capable backend (Step 4+) would read from to
+  finally fan a webhook out per owner — built now so that step is a consumer,
+  not a redesign. A bookkeeping gap (event for an account not yet registered)
+  is swallowed rather than counted as a failed delivery; a genuinely broken
+  store (tamper / lock-lost / write-failed) still propagates like any other
+  channel failure.
+- **`web/lib/notify.ts` + `web/components/NotifyBanner.tsx`** — pure
+  `alertRungFor(hf)` (a defensive wrapper over `@zyo/shared`'s `rungFor`, never
+  throws on an unready value) and `shouldNotify(rung, lastId)` (fires once per
+  distinct rung, not every poll), consumed by a banner rendered on the
+  dashboard next to `HealthBand`. It reuses the already-reviewed
+  `rungPlain()` copy from `web/lib/keeper.ts` verbatim rather than writing new
+  microcopy for the same concept.
+- **`web/lib/notifyPrefs.tsx`** — `NotifyPrefsProvider` / `useNotifyPrefs()`,
+  the same Context + `localStorage` pattern as `lib/mode.tsx`. The opt-in and
+  channel choice are a per-browser convenience: never sent anywhere, never
+  read by the keeper, so there is nothing to redact from a log and nothing
+  that can dox an owner.
+- **Deposit flow** (`web/components/wizard/StrategyStep.tsx`): Simple mode
+  gets one checkbox ("Tell me in the app if this position needs attention").
+  Advanced mode gets the same checkbox plus a channel select between the two
+  in-app channels v1 has — **Dashboard banner** (passive; visible while
+  looking at the page) and **Dashboard banner + a browser notification**
+  (the native `Notification` API, client-side only, no secret, fires while
+  the browser is open even if the tab is not focused, and needs that tab's
+  own permission grant).
+
+**What v1 does not claim.** No push while the browser itself is closed; no
+email; no WalletConnect Notify. `KeeperPanel.tsx`'s existing text for the
+`notify` rung — "a message, not a transaction: no permission produces it" —
+stays accurate and unchanged; this feature answers a different question
+(does the message reach the owner at all), not that one (does a permission
+produce it).
 
 ## Web (`web/`, 7,319 lines under `app/ components/ lib/`, excluding the
 3,524-line generated ABI)

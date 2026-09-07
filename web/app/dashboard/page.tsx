@@ -15,6 +15,7 @@ import { grantTokenLimits, runClaim, runGrant, runRevokeAll, runUnwind, type Emi
 import { fmtAgo, fmtAmount, fmtHf, fmtPct, fmtUsd, fmtUsd0 } from "@/lib/format";
 import StatTile from "@/components/StatTile";
 import HealthBand from "@/components/HealthBand";
+import NotifyBanner from "@/components/NotifyBanner";
 import PositionCard from "@/components/PositionCard";
 import ActivityRail from "@/components/ActivityRail";
 import Disclosures from "@/components/Disclosures";
@@ -258,6 +259,8 @@ export default function DashboardPage() {
         </div>
       ) : (
         <>
+          <NotifyBanner hf={view.hf} collateral={primary?.symbol ?? "your collateral"} />
+
           <div className="grid grid-cols-2 gap-2.5 sm:gap-3.5 lg:grid-cols-4">
             <StatTile label="Net value" value={fmtUsd0(netValue)} sub={`collateral ${fmtUsd0(view.collateralUsd)} + LP ${fmtUsd0(lpValue)}${view.accountUsdc > 0 ? ` + USDC ${fmtUsd0(view.accountUsdc)}` : ""} − debt ${fmtUsd0(view.debtUsd)}`} hint="Collateral + LP value + USDC held − debt. What a full unwind returns before exit costs." testId="tile-net" />
             <StatTile label="Health factor" value={fmtHf(view.hf)} sub={band.label} tone={band.kind} hint="Aave account health, read from the pool. Liquidation at 1.0." testId="tile-hf" />
