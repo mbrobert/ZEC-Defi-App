@@ -6,8 +6,10 @@ cache/
 broadcast/
 contracts/out/
 contracts/cache/
+contracts/lib/
 .env
-.env.local
+.env.*
+!.env.example
 *.log
 .DS_Store
 agent/data/*.json
