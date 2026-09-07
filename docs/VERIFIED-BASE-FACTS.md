@@ -89,12 +89,12 @@ USDC → `0xf52d010c7d4ecbfda92c2509900593ce34535d86` (these are Aave's adapters
 
 ## Not verified by this read (probe before use — `AUDIT-SCOPE.md` "Not verified")
 
-> **Two of these were probed on 2026-09-06 — see the Addendum below.** The Aerodrome Slipstream
-> SwapRouter and Multicall3 are now code-verified; the rest of this list still stands.
+> **Two of these were probed on 2026-09-06 and the Morpho ids on 2026-09-07 — see the Addenda below.** The
+> Aerodrome Slipstream SwapRouter, Multicall3 and both Morpho market ids are now verified; the rest stands.
 
 - **Aerodrome Slipstream SwapRouter** — address not read; `contracts/script/Deploy.s.sol` requires it from `AERODROME_SWAP_ROUTER` and refuses mainnet without it; `exactInputSingle` shape unprobed.
 - **Multicall3** `0xcA11bde05977b3631167028862bE2a173976CA11` — not read; the web uses viem's `base` chain definition with a per-call fallback; the keeper does one `eth_call` per read.
-- **Morpho Blue market ids** for cbBTC/USDC and WETH/USDC — not discovered; `MorphoBlueVenue` ships disabled.
+- **Morpho Blue market ids** for cbBTC/USDC and WETH/USDC — ~~not discovered~~ **discovered and chain-verified 2026-09-07 (see the Morpho addendum below)**; `MorphoBlueVenue` still ships disabled until it is built against them.
 - **CoW GPv2VaultRelayer** — not read; the web reads `settlement.vaultRelayer()` at runtime.
 - **The engine's live end-of-list revert shape** for `userPositions(address,uint256)` — logged by `test_fork_engineIndexGetterShape` when the fork suite runs with `FORK_URL`; never recorded here.
 - **cbZEC B20 policy state** (blocklist, pause) — `owner()` / `paused()` revert on the precompile; only `multiplier()` was read (1e18).
@@ -113,7 +113,107 @@ USDC → `0xf52d010c7d4ecbfda92c2509900593ce34535d86` (these are Aave's adapters
 **Negative result worth recording:** `0x6Cb442acF35158D5eDa88fe602Ef9Cf89694fFEa`, which circulates as an
 Aerodrome "UniversalRouter", returns **`0x` — no code on Base**. Do not use it.
 
-Still unverified and still gated: Morpho Blue market ids (no cbZEC market exists; cbBTC/WETH ids must be
-discovered from `CreateMarket` events before `MorphoBlueVenue` is enabled), the CoW vault relayer, the live
+Still unverified and still gated: the CoW vault relayer, the live
 engine's out-of-range revert *shape* (the enumeration canary measures it at runtime precisely because it is
 unknown), and cbZEC's B20 policy state (`owner()`/`paused()` revert; only `multiplier()` reads, currently 1e18).
+
+## Addendum — Morpho Blue markets on Base, read 2026-09-07 (block 50,977,561)
+
+Discovered through the Morpho GraphQL API (`api.morpho.org/graphql`, filter `chainId_in:[8453]`,
+`collateralAssetAddress_in:[cbBTC, WETH]`, `loanAssetAddress_in:[USDC]` — 50 markets returned, only two
+`listed: true`), then **every field re-read from the chain**: `Morpho.idToMarketParams(id)`,
+`Morpho.market(id)`, `oracle.price()`, and the oracle's feed getters. Each id was recomputed as
+`keccak256(abi.encode(loanToken, collateralToken, oracle, irm, lltv))` and matched.
+
+| | cbBTC / USDC | WETH / USDC |
+|---|---|---|
+| **Market id** | `0x9103c3b4e834476c9a62ea009ba2c884ee42e94e6e314a26f04d312434191836` | `0x8793cf302b8ffd655ab97bd1c695dbd967807e8367a65cb2f4edaf1380ba1bda` |
+| id recomputed from params | matches | matches |
+| loanToken | USDC `0x8335…2913` | USDC `0x8335…2913` |
+| collateralToken | cbBTC `0xcbB7…33Bf` | WETH `0x4200…0006` |
+| LLTV (liquidation loan-to-value) | **86.0 %** (`860000000000000000`) | **86.0 %** |
+| IRM (interest-rate model) | `0x46415998764C29aB2a25CbeA6254146D50D22687` | same |
+| IRM `MORPHO()` | `0xBBBB…FFCb` (points back at Morpho Blue — it is the AdaptiveCurve IRM wired to this deployment) | same |
+| Oracle | `0x663BECd10daE6C4A3Dcd89F1d76c1174199639B9` | `0xFEa2D58cEfCb9fcb597723c6bAE66fFE4193aFE4` |
+| Oracle base feed 1 | Chainlink **BTC / USD** `0x64c911996D3c6aC71f9b455B1E8E7266BcbD848F` (`description()` read = "BTC / USD" — NOT the cbBTC/USD feed) | Chainlink ETH / USD `0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70` |
+| Oracle quote feed 1 | none (USDC taken as exactly $1) | Chainlink USDC / USD `0x7e860098F58bBFC8648a4311b374B1D669a2bc6B` |
+| Oracle `price()` (collateral in loan units) | 79,891.55 USDC per cbBTC | 2,502.04 USDC per WETH |
+| totalSupplyAssets | 1,545,004,599.67 USDC | 89,379,967.23 USDC |
+| totalBorrowAssets | 1,387,104,508.01 USDC | 80,086,694.94 USDC |
+| Utilisation | 89.78 % | 89.60 % |
+| Available liquidity (supply − borrow) | ≈ 157.9 M USDC | ≈ 9.29 M USDC |
+| Borrow APY (API, same read) | 4.783 % | 4.787 % |
+| Market fee | 0 | (not read) |
+| Supplying MetaMorpho vaults (API) | 13 | 13 |
+| Morpho Blue `owner()` | `0xcBa28b38103307Ec8dA98377ffF9816C164f9AFa` | same |
+
+**What this settles.** (1) Both v1 collaterals have a deep, listed Morpho market at the same 86 % LLTV, so
+`MorphoBlueVenue` can be enabled against real ids — no market creation, no seeding. (2) Morpho's borrow rate
+(4.78 %) is within 5 bps of Aave's (4.828 % on 2026-09-05); the gate's "nothing clears" conclusion is
+unchanged by switching venue. (3) The cbBTC market prices cbBTC with the **BTC/USD** feed, i.e. it assumes
+cbBTC = BTC exactly; a cbBTC depeg is invisible to that oracle until liquidations already happened. Aave
+uses the cbBTC/USD feed. Record this in `docs/RISKS.md` when the venue is enabled. (4) Both markets sit at
+the IRM's 90 % utilisation target; the WETH market has only ≈ 9.3 M USDC free, so a large Oilskin borrow
+there moves the rate — the venue must read `market()` before quoting.
+
+Not read here: the two oracles' `SCALE_FACTOR()` were read (`0x52b7d2dcc80cd2e4000000` and
+`0xd3c21bcecceda1000000`) but not re-derived; `Morpho.feeRecipient()`; per-vault caps.
+
+## Addendum — Base Sepolia (chain id 84532), read 2026-09-07 (block 46,488,145)
+
+Purpose: what exists on the testnet for `contracts/script/Deploy.s.sol`. Addresses were taken from primary
+sources (BGD Labs' `aave-address-book` `AaveV3BaseSepolia.sol`, Chainlink's reference-data directory for
+`ethereum-testnet-sepolia-base-1`, Pyth's EVM contract-address page) and then **confirmed on chain**; the
+Aave data provider and oracle were derived from the pool's own `ADDRESSES_PROVIDER()` rather than typed.
+
+### Aave v3 (exists; parameters differ from mainnet)
+
+| Contract | Address | Evidence |
+|---|---|---|
+| Pool | `0x8bAB6d1b75f19e9eD9fCe8b9BD338844fF79aE27` | code 3,708 B; `provider.getPool()` returns it |
+| PoolAddressesProvider | `0xE4C23309117Aa30342BFaae6c95c6478e0A4Ad00` | `pool.ADDRESSES_PROVIDER()` |
+| PoolDataProvider | `0xBc9f5b7E248451CdD7cA54e717a2BFe1F32b566b` | `provider.getPoolDataProvider()` |
+| AaveOracle | `0x943b0dE18d4abf4eF02A85912F8fc07684C141dF` | `provider.getPriceOracle()`; matches the address book |
+
+| Reserve | Token | dec | LTV | LT | bonus | collateral | borrowable | variable borrow rate | oracle price |
+|---|---|---|---|---|---|---|---|---|---|
+| WETH | `0x4200000000000000000000000000000000000006` | 18 | **8350** | **8500** | 10300 | yes | yes | 23.08 % | $2,504.68 |
+| USDC (Aave test token, NOT Circle) | `0xba50Cd2A20f6DA35D788639E581bca8d0B5d4D5f` | 6 | 8250 | 8600 | 10500 | yes | yes | 2.96 % | $0.99989 |
+| WBTC (test token) | `0x54114591963CF60EF3aA63bEfD6eC263D98145a4` | 8 | 8150 | 8300 | 10500 | yes | **no** | 0 | $79,927.26 |
+
+Mainnet comparison: WETH is 8000/8300 on mainnet, 8350/8500 here; there is no cbBTC reserve on Sepolia
+(WBTC is the nearest stand-in and cannot be borrowed, which is fine — we only supply it). Because
+`AaveV3Venue` and `CollateralRegistry` read LT/LTV live, the Sepolia registry will offer
+`min(5000, floor(8500/1.55)) = 5000` bps for WETH and `min(5000, floor(8300/1.55)) = 5000` for WBTC —
+same top rung as mainnet. The Sepolia USDC borrow rate (2.96 %) is a test-pool artefact; never quote it.
+
+### Price feeds
+
+| Feed | Address | Latest | Age at read | Heartbeat (RDD) |
+|---|---|---|---|---|
+| Chainlink BTC / USD | `0x0FB99723Aee6f420beAD13e6bBB79b7E6F034298` | 79,927.26 | 897 s | 1,200 s |
+| Chainlink ETH / USD | `0x4aDC67696bA383F43DD60A9e78F2C97Fbbfc7cb1` | 2,504.68 | 613 s | 1,200 s |
+| Chainlink USDC / USD | `0xd30e2101a97dcbAeBCBC04F14C3f624E67A35165` | 0.99989 | 43,191 s | 86,400 s |
+| Pyth (proxy) | `0xA2aa501b19aff244D90cc15a4Cf739D2725B5729` | ZEC/USD `getPriceUnsafe` = 770.62 | **984,543 s (11.4 days)** | pull-based |
+
+The Sepolia Chainlink heartbeats (1,200 s for BTC and ETH) are NOT the mainnet cadences; the keeper's
+per-feed staleness must come from each aggregator, never from a constant. Pyth on Sepolia has nobody
+pushing ZEC/USD; the in-tx refresh path in `PythOracleAdapter` is the only way it will ever be fresh there.
+
+### Present at the same address as mainnet
+
+| Contract | Address | Code |
+|---|---|---|
+| Morpho Blue | `0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb` | 15,623 B; `owner()` = `0x937Ce2d6c488b361825D2DB5e8A70e26d48afEd5` (a different owner from mainnet). The Morpho API does **not** index chain 84532, so any Sepolia market must be created by us (permissionless) and discovered from `CreateMarket` logs. |
+| Permit2 | `0x000000000022D473030F116dDEE9F6B43aC78BA3` | 9,152 B |
+| Multicall3 | `0xcA11bde05977b3631167028862bE2a173976CA11` | 3,808 B |
+
+### Absent on Base Sepolia (code = `0x` at the mainnet address)
+
+Aerodrome Slipstream CLFactory, SwapRouter, NonfungiblePositionManager, Voter; the MaxFi/Snuggle engine
+`0x7D27…Fd55`; cbZEC, cbBTC, and Circle USDC at their mainnet addresses. Aerodrome publishes no Base Sepolia
+deployment. **Consequence for the testnet plan:** `SnuggleLpVenue` and `AerodromeSwapAdapter` cannot be
+exercised on Sepolia against the real engine; the deploy script needs a mock `ILpVenue` and a mock
+`ISwapAdapter` behind the same interfaces so the account → factory → registry → `AaveV3Venue` → router
+path can be run end to end. The LP venue's real-engine behaviour stays covered by the 8 mainnet fork tests.
+
