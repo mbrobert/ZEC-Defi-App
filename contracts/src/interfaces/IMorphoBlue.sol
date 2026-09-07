@@ -10,8 +10,19 @@ struct MarketParams {
     uint256 lltv;
 }
 
+/// @notice Morpho Blue market state, the six words `market(id)` returns, in order.
+struct Market {
+    uint128 totalSupplyAssets;
+    uint128 totalSupplyShares;
+    uint128 totalBorrowAssets;
+    uint128 totalBorrowShares;
+    uint128 lastUpdate;
+    uint128 fee;
+}
+
 /// @notice Minimal Morpho Blue surface (Base: 0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb, code
-///         presence verified 2026-09-05; market ids NOT yet discovered — see MorphoBlueVenue).
+///         presence verified 2026-09-05; the cbBTC/USDC and WETH/USDC market ids were read from
+///         `idToMarketParams` on 2026-09-07 — VERIFIED-BASE-FACTS, Morpho addendum).
 interface IMorphoBlue {
     function supplyCollateral(
         MarketParams memory marketParams,
@@ -75,4 +86,13 @@ interface IMorphoBlue {
 /// @notice Morpho's oracle interface: price of 1 collateral unit in loan units, scaled by 1e36.
 interface IMorphoOracle {
     function price() external view returns (uint256);
+}
+
+/// @notice Morpho's interest-rate model. `borrowRateView` is the per-second borrow rate (WAD) the
+///         market would accrue at right now; Morpho itself calls the mutating `borrowRate`.
+interface IIrm {
+    function borrowRateView(MarketParams memory marketParams, Market memory market)
+        external
+        view
+        returns (uint256);
 }

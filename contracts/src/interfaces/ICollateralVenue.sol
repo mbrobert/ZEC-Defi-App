@@ -41,6 +41,7 @@ interface ICollateralVenue {
     /// @notice Variable borrow rate of `asset` as a ray (1e27 = 100 % APR).
     function borrowRateRay(address asset) external view returns (uint256);
 
-    /// @notice False for venues that ship as skeletons (Morpho Blue in v1).
+    /// @notice False for a venue with nothing to serve (a MorphoBlueVenue built over no markets, as on
+    ///         Base Sepolia). The registry refuses to point an asset at a venue that reports false.
     function enabled() external view returns (bool);
 }

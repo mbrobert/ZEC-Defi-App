@@ -10,7 +10,7 @@ import {ILpVenue, LpOpenParams, PriceBand} from "../src/interfaces/ILpVenue.sol"
 import {IPermit2} from "../src/interfaces/IPermit2.sol";
 import {ISnuggleVault} from "../src/interfaces/ISnuggleVault.sol";
 import {IPoolAddressesProvider} from "../src/interfaces/IAaveV3.sol";
-import {IMorphoBlue} from "../src/interfaces/IMorphoBlue.sol";
+import {IMorphoBlue, MarketParams} from "../src/interfaces/IMorphoBlue.sol";
 import {IAerodromeSwapRouter} from "../src/interfaces/IAerodromeSwapRouter.sol";
 import {ICollateralRegistry} from "../src/interfaces/ICollateralRegistry.sol";
 import {AaveV3Venue} from "../src/venues/AaveV3Venue.sol";
@@ -23,6 +23,7 @@ import {TickMath} from "../src/libraries/TickMath.sol";
 import {MockERC20} from "./mocks/MockERC20.sol";
 import {MockB20} from "./mocks/MockB20.sol";
 import {MockAave} from "./mocks/MockAave.sol";
+import {MockIrm, MockMorpho, MockMorphoOracle} from "./mocks/MockMorpho.sol";
 import {MockPermit2} from "./mocks/MockPermit2.sol";
 import {MockCLPool} from "./mocks/MockCLPool.sol";
 import {MockSnuggleVault} from "./mocks/MockSnuggleVault.sol";
@@ -44,6 +45,12 @@ abstract contract Fixture is Test {
     // infra
     MockPermit2 permit2;
     MockAave aave;
+    MockMorpho morpho;
+    MockIrm morphoIrm;
+    MockMorphoOracle morphoOracleCbbtc;
+    MockMorphoOracle morphoOracleWeth;
+    bytes32 morphoIdCbbtc;
+    bytes32 morphoIdWeth;
     MockSnuggleVault engine;
     MockCLPool poolWethUsdc;
     MockCLPool poolCbzecUsdc;
@@ -79,6 +86,11 @@ abstract contract Fixture is Test {
     uint256 constant RATE_CBBTC_RAY = 0.00673e27;
     uint256 constant RATE_WETH_RAY = 0.02454e27;
     uint256 constant RATE_USDC_RAY = 0.04828e27;
+    // verified Morpho Blue facts (2026-09-07): both Base markets at 86 % LLTV, AdaptiveCurve IRM
+    uint256 constant MORPHO_LLTV_WAD = 0.86e18;
+    /// @dev Morpho quotes per second in WAD; this is Aave's USDC APR expressed that way.
+    uint256 constant MORPHO_RATE_PER_SECOND_WAD = RATE_USDC_RAY / 1e9 / 365 days;
+    address morphoLender = makeAddr("morphoLender");
     int24 constant TICK_WETH_USDC = -198319;
     int24 constant TICK_CBZEC_USDC = -23228;
 
@@ -105,6 +117,34 @@ abstract contract Fixture is Test {
         aave.setReserve(address(usdc), USDC_LTV, USDC_LT, 500, true, true, PRICE_USDC_E8, RATE_USDC_RAY);
         usdc.mint(address(aave), 50_000_000e6); // pool liquidity to lend
 
+        // Morpho Blue: one isolated USDC market per collateral, seeded by a lender.
+        morpho = new MockMorpho();
+        morphoIrm = new MockIrm(MORPHO_RATE_PER_SECOND_WAD);
+        morphoOracleCbbtc = new MockMorphoOracle(_morphoPrice36(PRICE_CBBTC_E8, 8));
+        morphoOracleWeth = new MockMorphoOracle(_morphoPrice36(PRICE_WETH_E8, 18));
+        MarketParams memory mpCbbtc = MarketParams({
+            loanToken: address(usdc),
+            collateralToken: address(cbbtc),
+            oracle: address(morphoOracleCbbtc),
+            irm: address(morphoIrm),
+            lltv: MORPHO_LLTV_WAD
+        });
+        MarketParams memory mpWeth = MarketParams({
+            loanToken: address(usdc),
+            collateralToken: address(weth),
+            oracle: address(morphoOracleWeth),
+            irm: address(morphoIrm),
+            lltv: MORPHO_LLTV_WAD
+        });
+        morphoIdCbbtc = morpho.createMarket(mpCbbtc);
+        morphoIdWeth = morpho.createMarket(mpWeth);
+        usdc.mint(morphoLender, 100_000_000e6);
+        vm.startPrank(morphoLender);
+        usdc.approve(address(morpho), type(uint256).max);
+        morpho.supply(mpCbbtc, 50_000_000e6, 0, morphoLender, "");
+        morpho.supply(mpWeth, 50_000_000e6, 0, morphoLender, "");
+        vm.stopPrank();
+
         poolWethUsdc = new MockCLPool(address(weth), address(usdc), 100, 871, TickMath.getSqrtRatioAtTick(TICK_WETH_USDC));
         poolCbzecUsdc = new MockCLPool(address(usdc), address(cbzec), 200, 2000, TickMath.getSqrtRatioAtTick(TICK_CBZEC_USDC));
         poolWethUsdc.setTick(TICK_WETH_USDC);
@@ -130,7 +170,9 @@ abstract contract Fixture is Test {
         // itself, so it takes the registry address at construction.
         registry = new CollateralRegistry(registryOwner, ENTRY_HF_FLOOR_WAD, REGISTRY_TIMELOCK);
         aaveVenue = new AaveV3Venue(IPoolAddressesProvider(address(aave)), ICollateralRegistry(address(registry)));
-        morphoVenue = new MorphoBlueVenue(IMorphoBlue(makeAddr("morpho")));
+        morphoVenue = new MorphoBlueVenue(
+            IMorphoBlue(address(morpho)), ICollateralRegistry(address(registry)), address(usdc), _morphoIds()
+        );
         lpVenue = new SnuggleLpVenue(ISnuggleVault(address(engine)), address(aero), treasury, PERF_BPS);
         vm.startPrank(registryOwner);
         registry.register(address(cbbtc), address(aaveVenue), makeAddr("feed-cbbtc"), true, "");
@@ -144,6 +186,29 @@ abstract contract Fixture is Test {
     }
 
     // ------------------------------------------------------------ helpers
+
+    function _morphoIds() internal view returns (bytes32[] memory ids) {
+        ids = new bytes32[](2);
+        ids[0] = morphoIdCbbtc;
+        ids[1] = morphoIdWeth;
+    }
+
+    /// @dev A Chainlink-style 8-decimal USD price as a Morpho oracle answer: 1 unit of a
+    ///      `collateralDecimals` token in USDC (6 decimals), scaled by 1e36.
+    function _morphoPrice36(uint256 priceE8, uint8 collateralDecimals) internal pure returns (uint256) {
+        return (priceE8 * 1e6 * 1e36) / 1e8 / (10 ** collateralDecimals);
+    }
+
+    /// @dev The registry owner moves `asset` from its current venue to the Morpho venue the only
+    ///      way the registry allows: propose → wait out the timelock → accept.
+    function _switchToMorpho(address asset) internal {
+        address feed = registry.config(asset).priceFeed;
+        vm.prank(registryOwner);
+        registry.proposeVenue(asset, address(morphoVenue), feed);
+        vm.warp(block.timestamp + REGISTRY_TIMELOCK);
+        vm.prank(registryOwner);
+        registry.acceptVenue(asset);
+    }
 
     /// @dev A PLAIN call: the target gets no rights over the account. Tokens, pools, Permit2.
     function _call(address target, bytes memory data) internal pure returns (Call memory) {

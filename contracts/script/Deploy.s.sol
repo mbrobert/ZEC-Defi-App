@@ -49,6 +49,13 @@ library BaseAddresses {
     address internal constant AERODROME_CBZEC_USDC_POOL = 0x0Fc47C17AF86078d809358db1b4db2DeBC988566;
 
     address internal constant MORPHO_BLUE = 0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb;
+    /// @dev Morpho Blue markets, read from `idToMarketParams` 2026-09-07 at block 51,003,524
+    ///      (VERIFIED-BASE-FACTS, Morpho addendum): USDC loan, 86 % LLTV, AdaptiveCurve IRM,
+    ///      Chainlink-fed oracles. The venue re-derives each id from its params at construction.
+    bytes32 internal constant MORPHO_MARKET_CBBTC_USDC =
+        0x9103c3b4e834476c9a62ea009ba2c884ee42e94e6e314a26f04d312434191836;
+    bytes32 internal constant MORPHO_MARKET_WETH_USDC =
+        0x8793cf302b8ffd655ab97bd1c695dbd967807e8367a65cb2f4edaf1380ba1bda;
     address internal constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
     /// @dev MaxFi / Snuggle engine proxy (AUDIT-FINDINGS-2026-09-03 Part 1, re-verified 2026-09-03).
     address internal constant SNUGGLE_ENGINE = 0x7D27CDfBFcC878F7E7349e216d44204BFd2AFd55;
@@ -65,6 +72,10 @@ library BaseAddresses {
 ///   ENTRY_HF_FLOOR_WAD       default 1.55e18 (packages/shared ENTRY_HF_FLOOR)
 ///   REGISTRY_TIMELOCK_DELAY  default 172800 (2 days) — the IMMUTABLE delay on replacing an
 ///                            asset's venue. Bounded [1 hours, 30 days] by the registry.
+///   MORPHO_MARKET_IDS        comma-separated bytes32 market ids for MorphoBlueVenue (default: the
+///                            two verified Base markets). Empty on a chain with no market → the
+///                            venue deploys DISABLED. The registry keeps pointing at Aave either
+///                            way; moving an asset to Morpho is proposeVenue → timelock → acceptVenue.
 ///   DEPLOY_PYTH_ADAPTER      "true" to also deploy the v1.1 PythOracleAdapter (unused in v1)
 ///   PYTH_MAX_AGE / PYTH_MAX_DEVIATION_BPS / PYTH_TWAP_WINDOW  adapter params (defaults 60 / 300 / 1800)
 ///   ALLOW_ANY_CHAIN          "true" to run on a non-Base chain with ALL addresses given by env
@@ -88,6 +99,7 @@ contract Deploy is Script {
         bytes32 pythZecUsd;
         address cbzecUsdcPool;
         address morpho;
+        bytes32[] morphoMarketIds;
         address permit2;
         address engine;
         address aerodromeSwapRouter;
@@ -135,6 +147,12 @@ contract Deploy is Script {
 
     // ---------------------------------------------------------------- config
 
+    function defaultMorphoMarketIds() public pure returns (bytes32[] memory ids) {
+        ids = new bytes32[](2);
+        ids[0] = BaseAddresses.MORPHO_MARKET_CBBTC_USDC;
+        ids[1] = BaseAddresses.MORPHO_MARKET_WETH_USDC;
+    }
+
     function configFromEnv() public view returns (Config memory c) {
         c.usdc = vm.envOr("USDC", BaseAddresses.USDC);
         c.weth = vm.envOr("WETH", BaseAddresses.WETH);
@@ -148,6 +166,7 @@ contract Deploy is Script {
         c.pythZecUsd = vm.envOr("PYTH_ZEC_USD", BaseAddresses.PYTH_ZEC_USD);
         c.cbzecUsdcPool = vm.envOr("AERODROME_CBZEC_USDC_POOL", BaseAddresses.AERODROME_CBZEC_USDC_POOL);
         c.morpho = vm.envOr("MORPHO_BLUE", BaseAddresses.MORPHO_BLUE);
+        c.morphoMarketIds = vm.envOr("MORPHO_MARKET_IDS", ",", defaultMorphoMarketIds());
         c.permit2 = vm.envOr("PERMIT2", BaseAddresses.PERMIT2);
         c.engine = vm.envOr("SNUGGLE_ENGINE", BaseAddresses.SNUGGLE_ENGINE);
         c.aerodromeSwapRouter = vm.envOr("AERODROME_SWAP_ROUTER", address(0));
@@ -216,7 +235,6 @@ contract Deploy is Script {
 
     function deploy(Config memory c) public returns (Deployed memory d) {
         d.factory = new OilskinAccountFactory(c.permit2);
-        d.morphoVenue = new MorphoBlueVenue(IMorphoBlue(c.morpho));
         d.lpVenue = new SnuggleLpVenue(ISnuggleVault(c.engine), c.aero, c.treasury, c.performanceBps);
         // Registry FIRST: the collateral venue enforces the registry's entry floor and offer flags
         // itself, so it needs the registry address at construction (and the registry only needs the
@@ -224,6 +242,12 @@ contract Deploy is Script {
         // Owned by the deployer during setup, then handed to REGISTRY_OWNER (2-step).
         d.registry = new CollateralRegistry(c.deployer, c.entryHfFloorWad, c.registryTimelockDelay);
         d.aaveVenue = new AaveV3Venue(IPoolAddressesProvider(c.aaveProvider), ICollateralRegistry(address(d.registry)));
+        // Built over the verified markets and enforcing the same registry, but NOT the registry's
+        // venue for anything at deploy time: the owner moves an asset here with proposeVenue →
+        // TIMELOCK_DELAY → acceptVenue, never in one transaction.
+        d.morphoVenue = new MorphoBlueVenue(
+            IMorphoBlue(c.morpho), ICollateralRegistry(address(d.registry)), c.usdc, c.morphoMarketIds
+        );
         d.registry.register(c.cbbtc, address(d.aaveVenue), c.chainlinkCbbtcUsd, true, "");
         d.registry.register(c.weth, address(d.aaveVenue), c.chainlinkEthUsd, true, "");
         d.registry.register(c.cbzec, address(d.aaveVenue), c.pyth, false, CBZEC_NOTE);
@@ -254,7 +278,9 @@ contract Deploy is Script {
         console2.log("OilskinAccountFactory ", address(d.factory));
         console2.log("  implementation      ", d.factory.IMPLEMENTATION());
         console2.log("AaveV3Venue           ", address(d.aaveVenue));
-        console2.log("MorphoBlueVenue (off) ", address(d.morphoVenue));
+        console2.log("MorphoBlueVenue       ", address(d.morphoVenue));
+        console2.log("  enabled (has markets)", d.morphoVenue.enabled());
+        console2.log("  registry venue for cbBTC/WETH stays AaveV3Venue; move = proposeVenue -> timelock -> acceptVenue");
         console2.log("SnuggleLpVenue        ", address(d.lpVenue));
         console2.log("CollateralRegistry    ", address(d.registry));
         console2.log("AerodromeSwapAdapter  ", address(d.swapAdapter));

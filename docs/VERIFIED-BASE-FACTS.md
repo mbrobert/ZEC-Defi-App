@@ -70,9 +70,9 @@ USDC → `0xf52d010c7d4ecbfda92c2509900593ce34535d86` (these are Aave's adapters
 ## Other infrastructure (code presence verified)
 
 - Morpho Blue `0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb` — present (31,248 bytes). Market listing via the
-  public GraphQL API failed on schema field names three times; **market ids for cbBTC/USDC and WETH/USDC must be
-  discovered by the venue-adapter engineer (API introspection or on-chain `CreateMarket` events) before use.**
-  No cbZEC market exists (consistent with the research).
+  public GraphQL API failed on schema field names three times on 2026-09-05; the working query (`marketId`, not
+  `uniqueKey`/`id`; `OracleFeed` has `address` only) and both chain-verified ids are in the Morpho addendum
+  below. No cbZEC market exists (consistent with the research).
 - Compound v3 USDC Comet `0xb125E6687d4313864e53df431d5425969c15Eb2F` — present; `baseToken()` = USDC;
   utilization **90.05%** (above the kink → borrow rate elevated; read the live rate before quoting it).
 - Permit2 `0x000000000022D473030F116dDEE9F6B43aC78BA3` — present.
@@ -94,7 +94,7 @@ USDC → `0xf52d010c7d4ecbfda92c2509900593ce34535d86` (these are Aave's adapters
 
 - **Aerodrome Slipstream SwapRouter** — address not read; `contracts/script/Deploy.s.sol` requires it from `AERODROME_SWAP_ROUTER` and refuses mainnet without it; `exactInputSingle` shape unprobed.
 - **Multicall3** `0xcA11bde05977b3631167028862bE2a173976CA11` — not read; the web uses viem's `base` chain definition with a per-call fallback; the keeper does one `eth_call` per read.
-- **Morpho Blue market ids** for cbBTC/USDC and WETH/USDC — ~~not discovered~~ **discovered and chain-verified 2026-09-07 (see the Morpho addendum below)**; `MorphoBlueVenue` still ships disabled until it is built against them.
+- **Morpho Blue market ids** for cbBTC/USDC and WETH/USDC — ~~not discovered~~ **discovered and chain-verified 2026-09-07, re-read the same day at block 51,003,524 (see the Morpho addendum below)**; `MorphoBlueVenue` is built over them and re-derives each id from `idToMarketParams` at construction.
 - **CoW GPv2VaultRelayer** — not read; the web reads `settlement.vaultRelayer()` at runtime.
 - **The engine's live end-of-list revert shape** for `userPositions(address,uint256)` — logged by `test_fork_engineIndexGetterShape` when the fork suite runs with `FORK_URL`; never recorded here.
 - **cbZEC B20 policy state** (blocklist, pause) — `owner()` / `paused()` revert on the precompile; only `multiplier()` was read (1e18).
@@ -157,7 +157,51 @@ the IRM's 90 % utilisation target; the WETH market has only ≈ 9.3 M USDC free,
 there moves the rate — the venue must read `market()` before quoting.
 
 Not read here: the two oracles' `SCALE_FACTOR()` were read (`0x52b7d2dcc80cd2e4000000` and
-`0xd3c21bcecceda1000000`) but not re-derived; `Morpho.feeRecipient()`; per-vault caps.
+`0xd3c21bcecceda1000000`) but not re-derived; per-vault caps.
+
+### Second read, 2026-09-07 15:53 UTC (block 51,003,524 → 51,003,550), before `MorphoBlueVenue` was built
+
+Same discovery path: `api.morpho.org/graphql` `markets(where: {chainId_in:[8453], loanAssetAddress_in:[USDC],
+collateralAssetAddress_in:[cbBTC, WETH]})` → 50 markets, the same two `listed: true`, the other 48 unlisted
+with ≤ $900 supplied. Then every field re-read with `cast call` against `https://mainnet.base.org`, and each
+id recomputed with `cast keccak (cast abi-encode ...)`. Nothing that governs the venue has changed since the
+first read; the balances moved as expected for two hours of a live market.
+
+| | cbBTC / USDC | WETH / USDC |
+|---|---|---|
+| `idToMarketParams(id)` | loan USDC, collateral cbBTC, oracle `0x663B…39B9`, IRM `0x4641…2687`, LLTV `860000000000000000` — **unchanged** | loan USDC, collateral WETH, oracle `0xFEa2…aFE4`, IRM `0x4641…2687`, LLTV `860000000000000000` — **unchanged** |
+| id recomputed (`cast keccak`) | `0x9103…1836` matches | `0x8793…1bda` matches |
+| `market()` totalSupplyAssets | 1,548,362,695.17 USDC | 89,293,293.39 USDC |
+| `market()` totalBorrowAssets | 1,388,245,988.86 USDC | 80,286,890.23 USDC |
+| `market()` totalSupplyShares / totalBorrowShares | 1.4019e21 / 1.2413e21 | 8.0131e19 / 7.0987e19 |
+| `market()` lastUpdate / fee | 1788796387 (15:53:07 UTC) / 0 | 1788796255 (15:50:55 UTC) / 0 |
+| Utilisation | 89.66 % | 89.91 % |
+| Available liquidity | ≈ 160.1 M USDC | ≈ 9.0 M USDC |
+| Oracle `price()` (1e36-scaled, loan per collateral) | `788119156674200000000000000000000000000` → **78,811.92 USDC per cbBTC** | `2473641698316604294897102882` → **2,473.64 USDC per WETH** |
+| IRM `borrowRateView(params, market)` (per-second, WAD) | `1479443146` → 4.666 % APR simple, ≈ 4.776 % APY | `1486379142` → 4.687 % APR simple, ≈ 4.799 % APY |
+| API `borrowApy` / `supplyApy` (same minute) | 4.776 % / 4.272 % | 4.799 % / 4.305 % |
+| API `creationBlockNumber` | 19,326,981 | 15,504,029 |
+| Morpho `isLltvEnabled(0.86e18)` / `isIrmEnabled(IRM)` | true / true | same |
+| Morpho `owner()` / `feeRecipient()` | `0xcBa28b38103307Ec8dA98377ffF9816C164f9AFa` / `0x0000…0000` | same |
+| IRM `MORPHO()` | `0xBBBB…FFCb` | same |
+
+**What the venue was built on, and how it uses these numbers.** `MorphoBlueVenue` takes the two ids at
+construction and reads `idToMarketParams` for each, refusing an id Morpho has no market for, an id whose
+params do not hash back to it, an id that lends anything but USDC, or two ids for one collateral. The LLTV
+is read from `idToMarketParams` on every call (`liquidationThresholdBps` = `maxLtvBps` = lltv / 1e14 =
+**8600**; Morpho has one threshold). Debt is computed the way Morpho's `_accrueInterest` computes it
+(`MorphoMath.expectedBorrowTotals`, third-order Taylor on `borrowRateView`), so a full repay approves
+exactly what Morpho pulls. The registry's derived offer is min(8600 / 1.55 = 5548, 8600, cap 5000) =
+**50 %**, the same as on Aave. The oracle for the cbBTC market is Chainlink **BTC/USD** with no quote feed
+(USDC taken as $1); the WETH market's is Chainlink ETH/USD over USDC/USD. Both are the oracles already on the
+markets; the venue does not choose an oracle and uses no Pyth feed. `docs/RISKS.md` §8 carries the
+cbBTC = BTC assumption.
+
+**Deploy shape.** `Deploy.s.sol` builds the venue over these two ids (`MORPHO_MARKET_IDS`, defaulting to the
+constants) and leaves the registry pointing cbBTC and WETH at `AaveV3Venue`. Moving an asset to Morpho is
+`proposeVenue` → 2-day `TIMELOCK_DELAY` → `acceptVenue` by the registry owner; the venue refuses a supply for
+an asset the registry has not moved to it. On Base Sepolia no cbBTC/WETH–USDC market is known (the Morpho
+API does not index chain 84532), so the venue deploys with no markets and reports `enabled() == false`.
 
 ## Addendum — Base Sepolia (chain id 84532), read 2026-09-07 (block 46,488,145)
 

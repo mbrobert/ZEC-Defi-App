@@ -1953,44 +1953,59 @@
     "MorphoBlueVenue": {
       "name": "MorphoBlueVenue",
       "functions": {
+        "LOAN_TOKEN()": {
+          "selector": "0x6ebcd5e2",
+          "stateMutability": "view",
+          "outputs": "address"
+        },
         "MORPHO()": {
           "selector": "0x3acb5624",
           "stateMutability": "view",
           "outputs": "address"
         },
+        "REGISTRY()": {
+          "selector": "0x06433b1b",
+          "stateMutability": "view",
+          "outputs": "address"
+        },
         "borrow(address,uint256)": {
           "selector": "0x4b8a3529",
-          "stateMutability": "pure",
+          "stateMutability": "nonpayable",
           "outputs": ""
         },
         "borrowRateRay(address)": {
           "selector": "0x99431ce5",
-          "stateMutability": "pure",
+          "stateMutability": "view",
           "outputs": "uint256"
         },
         "collateral(address,address)": {
           "selector": "0xcc218ece",
-          "stateMutability": "pure",
+          "stateMutability": "view",
           "outputs": "uint256"
+        },
+        "collaterals()": {
+          "selector": "0x4113e5ca",
+          "stateMutability": "view",
+          "outputs": "address[]"
         },
         "debt(address,address)": {
           "selector": "0xd449300d",
-          "stateMutability": "pure",
+          "stateMutability": "view",
           "outputs": "uint256"
         },
         "enabled()": {
           "selector": "0x238dafe0",
-          "stateMutability": "pure",
+          "stateMutability": "view",
           "outputs": "bool"
         },
         "healthFactor(address)": {
           "selector": "0x6ad9f9df",
-          "stateMutability": "pure",
+          "stateMutability": "view",
           "outputs": "uint256"
         },
         "liquidationThresholdBps(address)": {
           "selector": "0x5d462920",
-          "stateMutability": "pure",
+          "stateMutability": "view",
           "outputs": "uint256"
         },
         "marketId((address,address,address,address,uint256))": {
@@ -1998,31 +2013,82 @@
           "stateMutability": "pure",
           "outputs": "bytes32"
         },
+        "marketIdOf(address)": {
+          "selector": "0xc95f4ac4",
+          "stateMutability": "view",
+          "outputs": "bytes32"
+        },
+        "marketParamsOf(address)": {
+          "selector": "0x9af6a82b",
+          "stateMutability": "view",
+          "outputs": "(address,address,address,address,uint256)"
+        },
         "maxLtvBps(address)": {
           "selector": "0xc2f2d31c",
-          "stateMutability": "pure",
+          "stateMutability": "view",
+          "outputs": "uint256"
+        },
+        "oraclePrice(address)": {
+          "selector": "0x4393876e",
+          "stateMutability": "view",
           "outputs": "uint256"
         },
         "repay(address,uint256)": {
           "selector": "0x22867d78",
-          "stateMutability": "pure",
+          "stateMutability": "nonpayable",
           "outputs": "uint256"
         },
         "supply(address,uint256)": {
           "selector": "0xf2b9fdb8",
-          "stateMutability": "pure",
+          "stateMutability": "nonpayable",
           "outputs": ""
         },
         "withdraw(address,uint256)": {
           "selector": "0xf3fef3a3",
-          "stateMutability": "pure",
+          "stateMutability": "nonpayable",
           "outputs": "uint256"
         }
       },
       "events": {},
       "errors": {
-        "VenueDisabled()": {
-          "selector": "0xc8071240"
+        "AssetNotOffered(address,address)": {
+          "selector": "0xbff4059e"
+        },
+        "DuplicateCollateral(address)": {
+          "selector": "0x0501af73"
+        },
+        "EntryHfTooLow(uint256,uint256)": {
+          "selector": "0xd40fd174"
+        },
+        "MarketIdMismatch(bytes32,bytes32)": {
+          "selector": "0xe7c68339"
+        },
+        "MarketNotCreated(bytes32)": {
+          "selector": "0x0cdc1dc1"
+        },
+        "NoCollateralPosition(address)": {
+          "selector": "0x52559bd7"
+        },
+        "NoMarket(address)": {
+          "selector": "0x2df59b68"
+        },
+        "NotLoanToken(address)": {
+          "selector": "0x0ef74747"
+        },
+        "NothingToRepay()": {
+          "selector": "0xd32e7fc6"
+        },
+        "NothingToWithdraw()": {
+          "selector": "0xd0d04f60"
+        },
+        "WrongLoanToken(bytes32,address)": {
+          "selector": "0x43a0f3f0"
+        },
+        "ZeroAddress()": {
+          "selector": "0xd92e233d"
+        },
+        "ZeroAmount()": {
+          "selector": "0x1f2a2005"
         }
       },
       "abi": [
@@ -2033,9 +2099,37 @@
               "name": "morpho",
               "type": "address",
               "internalType": "contract IMorphoBlue"
+            },
+            {
+              "name": "registry",
+              "type": "address",
+              "internalType": "contract ICollateralRegistry"
+            },
+            {
+              "name": "loanToken",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "marketIds",
+              "type": "bytes32[]",
+              "internalType": "bytes32[]"
             }
           ],
           "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "LOAN_TOKEN",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "stateMutability": "view"
         },
         {
           "type": "function",
@@ -2052,52 +2146,65 @@
         },
         {
           "type": "function",
+          "name": "REGISTRY",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "address",
+              "internalType": "contract ICollateralRegistry"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
           "name": "borrow",
           "inputs": [
             {
-              "name": "",
+              "name": "asset",
               "type": "address",
               "internalType": "address"
             },
             {
-              "name": "",
+              "name": "amount",
               "type": "uint256",
               "internalType": "uint256"
             }
           ],
           "outputs": [],
-          "stateMutability": "pure"
+          "stateMutability": "nonpayable"
         },
         {
           "type": "function",
           "name": "borrowRateRay",
           "inputs": [
             {
-              "name": "",
+              "name": "asset",
               "type": "address",
               "internalType": "address"
             }
           ],
           "outputs": [
             {
-              "name": "",
+              "name": "rate",
               "type": "uint256",
               "internalType": "uint256"
             }
           ],
-          "stateMutability": "pure"
+          "stateMutability": "view"
         },
         {
           "type": "function",
           "name": "collateral",
           "inputs": [
             {
-              "name": "",
+              "name": "account",
               "type": "address",
               "internalType": "address"
             },
             {
-              "name": "",
+              "name": "asset",
               "type": "address",
               "internalType": "address"
             }
@@ -2109,31 +2216,44 @@
               "internalType": "uint256"
             }
           ],
-          "stateMutability": "pure"
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "collaterals",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "address[]",
+              "internalType": "address[]"
+            }
+          ],
+          "stateMutability": "view"
         },
         {
           "type": "function",
           "name": "debt",
           "inputs": [
             {
-              "name": "",
+              "name": "account",
               "type": "address",
               "internalType": "address"
             },
             {
-              "name": "",
+              "name": "asset",
               "type": "address",
               "internalType": "address"
             }
           ],
           "outputs": [
             {
-              "name": "",
+              "name": "total",
               "type": "uint256",
               "internalType": "uint256"
             }
           ],
-          "stateMutability": "pure"
+          "stateMutability": "view"
         },
         {
           "type": "function",
@@ -2146,14 +2266,14 @@
               "internalType": "bool"
             }
           ],
-          "stateMutability": "pure"
+          "stateMutability": "view"
         },
         {
           "type": "function",
           "name": "healthFactor",
           "inputs": [
             {
-              "name": "",
+              "name": "account",
               "type": "address",
               "internalType": "address"
             }
@@ -2165,14 +2285,14 @@
               "internalType": "uint256"
             }
           ],
-          "stateMutability": "pure"
+          "stateMutability": "view"
         },
         {
           "type": "function",
           "name": "liquidationThresholdBps",
           "inputs": [
             {
-              "name": "",
+              "name": "asset",
               "type": "address",
               "internalType": "address"
             }
@@ -2184,7 +2304,7 @@
               "internalType": "uint256"
             }
           ],
-          "stateMutability": "pure"
+          "stateMutability": "view"
         },
         {
           "type": "function",
@@ -2234,10 +2354,75 @@
         },
         {
           "type": "function",
+          "name": "marketIdOf",
+          "inputs": [
+            {
+              "name": "asset",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "",
+              "type": "bytes32",
+              "internalType": "bytes32"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "marketParamsOf",
+          "inputs": [
+            {
+              "name": "asset",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "",
+              "type": "tuple",
+              "internalType": "struct MarketParams",
+              "components": [
+                {
+                  "name": "loanToken",
+                  "type": "address",
+                  "internalType": "address"
+                },
+                {
+                  "name": "collateralToken",
+                  "type": "address",
+                  "internalType": "address"
+                },
+                {
+                  "name": "oracle",
+                  "type": "address",
+                  "internalType": "address"
+                },
+                {
+                  "name": "irm",
+                  "type": "address",
+                  "internalType": "address"
+                },
+                {
+                  "name": "lltv",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                }
+              ]
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
           "name": "maxLtvBps",
           "inputs": [
             {
-              "name": "",
+              "name": "asset",
               "type": "address",
               "internalType": "address"
             }
@@ -2249,77 +2434,230 @@
               "internalType": "uint256"
             }
           ],
-          "stateMutability": "pure"
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "oraclePrice",
+          "inputs": [
+            {
+              "name": "asset",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "view"
         },
         {
           "type": "function",
           "name": "repay",
           "inputs": [
             {
-              "name": "",
+              "name": "asset",
               "type": "address",
               "internalType": "address"
             },
             {
-              "name": "",
+              "name": "amount",
               "type": "uint256",
               "internalType": "uint256"
             }
           ],
           "outputs": [
             {
-              "name": "",
+              "name": "repaid",
               "type": "uint256",
               "internalType": "uint256"
             }
           ],
-          "stateMutability": "pure"
+          "stateMutability": "nonpayable"
         },
         {
           "type": "function",
           "name": "supply",
           "inputs": [
             {
-              "name": "",
+              "name": "asset",
               "type": "address",
               "internalType": "address"
             },
             {
-              "name": "",
+              "name": "amount",
               "type": "uint256",
               "internalType": "uint256"
             }
           ],
           "outputs": [],
-          "stateMutability": "pure"
+          "stateMutability": "nonpayable"
         },
         {
           "type": "function",
           "name": "withdraw",
           "inputs": [
             {
-              "name": "",
+              "name": "asset",
               "type": "address",
               "internalType": "address"
             },
             {
-              "name": "",
+              "name": "amount",
               "type": "uint256",
               "internalType": "uint256"
             }
           ],
           "outputs": [
             {
-              "name": "",
+              "name": "withdrawn",
               "type": "uint256",
               "internalType": "uint256"
             }
           ],
-          "stateMutability": "pure"
+          "stateMutability": "nonpayable"
         },
         {
           "type": "error",
-          "name": "VenueDisabled",
+          "name": "AssetNotOffered",
+          "inputs": [
+            {
+              "name": "asset",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "venue",
+              "type": "address",
+              "internalType": "address"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "DuplicateCollateral",
+          "inputs": [
+            {
+              "name": "collateralToken",
+              "type": "address",
+              "internalType": "address"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "EntryHfTooLow",
+          "inputs": [
+            {
+              "name": "healthFactor",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "floor",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "MarketIdMismatch",
+          "inputs": [
+            {
+              "name": "id",
+              "type": "bytes32",
+              "internalType": "bytes32"
+            },
+            {
+              "name": "recomputed",
+              "type": "bytes32",
+              "internalType": "bytes32"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "MarketNotCreated",
+          "inputs": [
+            {
+              "name": "id",
+              "type": "bytes32",
+              "internalType": "bytes32"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "NoCollateralPosition",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "internalType": "address"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "NoMarket",
+          "inputs": [
+            {
+              "name": "asset",
+              "type": "address",
+              "internalType": "address"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "NotLoanToken",
+          "inputs": [
+            {
+              "name": "asset",
+              "type": "address",
+              "internalType": "address"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "NothingToRepay",
+          "inputs": []
+        },
+        {
+          "type": "error",
+          "name": "NothingToWithdraw",
+          "inputs": []
+        },
+        {
+          "type": "error",
+          "name": "WrongLoanToken",
+          "inputs": [
+            {
+              "name": "id",
+              "type": "bytes32",
+              "internalType": "bytes32"
+            },
+            {
+              "name": "loanToken",
+              "type": "address",
+              "internalType": "address"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "ZeroAddress",
+          "inputs": []
+        },
+        {
+          "type": "error",
+          "name": "ZeroAmount",
           "inputs": []
         }
       ]

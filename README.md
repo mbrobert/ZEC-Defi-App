@@ -81,7 +81,7 @@ until the gate flips. The gate is computed, never curated
 
 | Path | What | Verified state (2026-09-06, this tree) |
 |---|---|---|
-| `contracts/` | Foundry — `OilskinAccount` + factory, `StrategyRouter`, `AaveV3Venue`, `SnuggleLpVenue`, `CollateralRegistry`, `AerodromeSwapAdapter`, `MorphoBlueVenue` (disabled skeleton), `PythOracleAdapter` (v1.1, unused) | 244 passed / 0 failed / 8 skipped (fork tests need `FORK_URL`), 18 suites |
+| `contracts/` | Foundry — `OilskinAccount` + factory, `StrategyRouter`, `AaveV3Venue`, `SnuggleLpVenue`, `CollateralRegistry`, `AerodromeSwapAdapter`, `MorphoBlueVenue` (built over the two verified Base markets; not the registry's venue until propose → timelock → accept), `PythOracleAdapter` (v1.1, unused) | 244 passed / 0 failed / 8 skipped (fork tests need `FORK_URL`), 18 suites |
 | `agent/` | Keeper daemon (viem) — discovers accounts, values Aave health fail-closed with per-feed staleness, runs the shared ladder, acts only via one root `StrategyRouter.unwind` inside the user's grant, and notifies | 171 tests / 36 suites; `verify-abi` 54/54 |
 | `services/yield/` | Live Aave rates, Aerodrome gauge emissions, the two-model yield gate, the LP model, empirical bands — HTTP API + backfill CLI | 131 tests |
 | `web/` | Next.js 14 — wallet connect, cbZEC onboarding, wizard, chain-read dashboard with a keeper panel and a pending-venue banner, CoW spot; demo mode without a wallet | 125 unit tests; Playwright 12/12 |
@@ -148,7 +148,7 @@ Plans, not shipped: a deployment on Base mainnet; an external audit; a multisig
 registry owner and a watcher on `VenueChangeProposed`; a keeper notification
 channel that actually reaches a person; the cbZEC
 collateral market and the Pyth oracle adapter in use (v1.1, `docs/BASE-PIVOT-2026-09.md`
-§3); a Morpho Blue venue (skeleton reverts `VenueDisabled`); the perps and
+§3); moving cbBTC/WETH from Aave to the Morpho Blue venue (built and tested; the registry owner's propose → timelock → accept, not run); the perps and
 tokenized-stock lines (v1.2). `docs/RISKS.md` states every risk with what
 mitigates it and what does not; `docs/PRIVACY.md` states plainly that the cbZEC
 entry runs through a Coinbase account and that everything on Base is public.

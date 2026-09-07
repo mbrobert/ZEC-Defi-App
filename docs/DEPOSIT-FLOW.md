@@ -213,8 +213,10 @@ powers (`docs/RISKS.md` §16), and rewards accrue there until claimed.
 
 - cbZEC as collateral (no lending market exists; `CollateralRegistry` has it
   registered `enabled: false`).
-- `MorphoBlueVenue` (skeleton; market ids verified 2026-09-07 in
-  `docs/VERIFIED-BASE-FACTS.md`, venue not yet built).
+- Depositing INTO `MorphoBlueVenue`: the venue is built and tested against the
+  two verified Base markets (`docs/VERIFIED-BASE-FACTS.md`), but the registry
+  points cbBTC and WETH at Aave until the owner runs `proposeVenue` → timelock
+  → `acceptVenue`; the venue refuses a supply before that.
 - Spot buy/sell via CoW (a separate page, no account involvement).
 - Any path that constructs, signs or broadcasts on the user's behalf — there is
   none.

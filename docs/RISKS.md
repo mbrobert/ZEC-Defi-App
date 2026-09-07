@@ -134,10 +134,14 @@ LLTV and oracle choice, needs lenders (its own capital at risk if it seeds),
 and its vault's lenders — possibly Oilskin — bear bad debt if cbZEC's exit
 liquidity fails. Reputation risk is Oilskin's.
 
-**Mitigates.** Nothing is deployed. `MorphoBlueVenue` reverts `VenueDisabled`
-on every call, the registry refuses to enable an asset on a venue that reports
-itself off, and `MORPHO_BLUE.marketIds` is `{}` in shared. The web disclosure
-`own-market` states the risk on every review.
+**Mitigates.** Nothing is deployed, and no Oilskin market exists. The
+`MorphoBlueVenue` that is built serves only the two EXISTING Base markets
+(cbBTC/USDC and WETH/USDC, 86 % LLTV, curated by others, ids in
+`VERIFIED-BASE-FACTS.md`); it has no function to add a market, so an Oilskin
+cbZEC market would be a new venue and a registry `proposeVenue` → timelock →
+`acceptVenue`. A venue built over no markets reports `enabled() == false` and
+the registry refuses to enable an asset on it. The web disclosure `own-market`
+states the risk on every review.
 
 ## 8 · Liquidation (cbBTC / WETH on Aave v3)
 
@@ -161,6 +165,22 @@ repays (`agent/src/dispatch/policy.ts`). Every HF, rung price and liquidation
 drop the UI shows is computed from the live LT
 (`web/components/wizard/SettingStep.tsx`, shared `ltvPresets`,
 `liquidationDropPct`); tests forbid typed literals.
+
+**On Morpho Blue (when the registry is moved there).** The same floor holds in
+`MorphoBlueVenue.borrow`, read from the registry and checked against the
+account's WORST market (Morpho positions are isolated per market, so the venue's
+health factor is the minimum over its markets). Morpho has ONE threshold: a
+borrow is allowed up to the 86 % LLTV and liquidated below it, with no gap
+between "max LTV" and "liquidation threshold" as on Aave, so the registry's
+derived offer is min(86 / 1.55 = 55.5 %, 86 %, 50 % cap) = 50 %, and a position
+opened at 50 % has HF 1.72. Two things the Aave path does not have: (1) the
+cbBTC market's oracle is Chainlink **BTC/USD** with no cbBTC leg — it assumes
+cbBTC = BTC, so a cbBTC depeg does not move that market's price and the venue's
+health factor, which reads the market's oracle, would not see it until
+liquidations already happened elsewhere; the keeper's Chainlink cbBTC/USD feed
+is the independent view. (2) Interest accrues per market on every touch; the
+venue computes debt the way Morpho will (`MorphoMath`), and the keeper must
+read `debt()` from the venue, not from `position()` shares.
 
 **Does not.** The floor binds only sequences that go through the Oilskin venue.
 A user who hand-writes `account.exec(aavePool, borrow(...))` can still open at

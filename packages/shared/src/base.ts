@@ -196,11 +196,18 @@ export const AERODROME = {
 export const MORPHO_BLUE = {
   address: "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
   /**
-   * Market ids for cbBTC/USDC and WETH/USDC are NOT verified — they must be
-   * discovered (CreateMarket events or API introspection) before use. No cbZEC
-   * market exists. Ships disabled.
+   * The two listed USDC markets, read from `idToMarketParams` on 2026-09-07
+   * (block 51,003,524; docs/VERIFIED-BASE-FACTS.md, Morpho addendum). Both 86 %
+   * LLTV (liquidation loan-to-value), AdaptiveCurve IRM, Chainlink-fed oracles
+   * (cbBTC market: BTC/USD, no cbBTC leg). No cbZEC market exists. The
+   * MorphoBlueVenue is built over these; the registry still points at Aave.
    */
-  marketIds: {} as Readonly<Record<string, never>>,
+  marketIds: {
+    cbBTC_USDC: "0x9103c3b4e834476c9a62ea009ba2c884ee42e94e6e314a26f04d312434191836",
+    WETH_USDC: "0x8793cf302b8ffd655ab97bd1c695dbd967807e8367a65cb2f4edaf1380ba1bda",
+  },
+  /** LLTV of both markets at the read, WAD. Read live from the venue in code; here for display. */
+  lltvWad: 860000000000000000n,
 } as const;
 
 export const COMPOUND_V3 = {

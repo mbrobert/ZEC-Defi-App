@@ -27,7 +27,8 @@ contract DeployTest is Fixture {
         c.pyth = makeAddrView("pyth");
         c.pythZecUsd = BaseAddresses.PYTH_ZEC_USD;
         c.cbzecUsdcPool = address(poolCbzecUsdc);
-        c.morpho = address(aave); // any contract with code
+        c.morpho = address(morpho);
+        c.morphoMarketIds = _morphoIds();
         c.permit2 = address(permit2);
         c.engine = address(engine);
         c.aerodromeSwapRouter = address(aeroRouter);
@@ -102,7 +103,12 @@ contract DeployTest is Fixture {
         Deploy.Deployed memory d = script.deploy(c);
         assertEq(d.factory.accountOf(alice) != address(0), true);
         assertEq(address(d.aaveVenue.PROVIDER()), address(aave));
-        assertFalse(d.morphoVenue.enabled());
+        assertTrue(d.morphoVenue.enabled(), "built over the two verified markets");
+        assertEq(d.morphoVenue.marketIdOf(address(cbbtc)), morphoIdCbbtc);
+        assertEq(d.morphoVenue.marketIdOf(address(weth)), morphoIdWeth);
+        assertEq(address(d.morphoVenue.REGISTRY()), address(d.registry));
+        assertEq(d.registry.venueOf(address(cbbtc)), address(d.aaveVenue), "Aave stays the registry's venue");
+        assertEq(d.registry.venueOf(address(weth)), address(d.aaveVenue));
         assertEq(d.lpVenue.performanceBps(), 1000);
         assertEq(d.lpVenue.treasury(), treasury);
         assertEq(d.lpVenue.REWARD_TOKEN(), address(aero));

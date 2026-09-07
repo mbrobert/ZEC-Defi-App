@@ -196,7 +196,7 @@ cast call $AAVE_VENUE 'maxLtvBps(address)(uint256)' $WETH --rpc-url $SEPOLIA_RPC
 cast call $AAVE_VENUE 'liquidationThresholdBps(address)(uint256)' $WBTC --rpc-url $SEPOLIA_RPC_URL  # 8300
 cast call $AAVE_VENUE 'maxLtvBps(address)(uint256)' $WBTC --rpc-url $SEPOLIA_RPC_URL                # 8150
 cast call $AAVE_VENUE 'enabled()(bool)' --rpc-url $SEPOLIA_RPC_URL      # true
-cast call $MORPHO_VENUE 'enabled()(bool)' --rpc-url $SEPOLIA_RPC_URL    # false — off until Step 2
+cast call $MORPHO_VENUE 'enabled()(bool)' --rpc-url $SEPOLIA_RPC_URL    # false — built over NO markets on Sepolia (none exists there)
 ```
 
 ### 5.4 Account address determinism and the LP venue's fee
@@ -263,6 +263,9 @@ backlog, not yet written) will be the reference for the call sequence.
    address that is not written down with its date.
 2. Point the agent and the web app at the testnet addresses (`SETUP.md` lists the variables). Run
    the keeper in **observe-only mode**: no `KEEPER_PRIVATE_KEY`.
-3. Leave `MorphoBlueVenue` disabled. Enabling it is Step 2 of the backlog and goes through
-   `proposeVenue` → 2-day timelock → `acceptVenue`, even on a testnet, because that is the
-   procedure being tested.
+3. `MorphoBlueVenue` on Sepolia has no markets (the Morpho API does not index chain 84532 and no
+   cbBTC/WETH–USDC market is known there), so it reports `enabled() == false` and the registry will
+   refuse to point an asset at it. On Base mainnet the venue is built over the two verified markets
+   and moving an asset to it is `proposeVenue` → 2-day timelock → `acceptVenue`; to rehearse that
+   on Sepolia you would first create a market there (permissionless `Morpho.createMarket`) and pass
+   its id in `MORPHO_MARKET_IDS`.

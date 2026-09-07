@@ -3,6 +3,53 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-07 — Step 2: `MorphoBlueVenue` built over the two verified Base Morpho Blue markets
+
+**Facts first.** The cbBTC/USDC and WETH/USDC Morpho Blue markets on Base were
+re-discovered through the Morpho GraphQL API (`marketId`, `lltv`, `oracleAddress`,
+`irmAddress`, `state`, filtered by `chainId_in` / `collateralAssetAddress_in` /
+`loanAssetAddress_in`; 50 markets, two `listed`) and every governing field
+re-read from Morpho Blue `0xBBBB…FFCb` with `cast call` at block 51,003,524:
+`idToMarketParams` (USDC loan, 86 % LLTV, AdaptiveCurve IRM, Chainlink-fed
+oracles), `market()` totals, oracle `price()`, IRM `borrowRateView`, both ids
+recomputed with `cast keccak`. Recorded with dates in
+`docs/VERIFIED-BASE-FACTS.md` (Morpho addendum, second read). The oracle split is
+unchanged: cbBTC and WETH price through the Chainlink feeds already on the
+markets; cbZEC would be Pyth-only and has no market, so `PythOracleAdapter`
+stays unused.
+
+**Contracts.** `MorphoBlueVenue` is no longer a skeleton. It implements
+`ICollateralVenue` over a fixed list of market ids given at construction (each
+re-read from `idToMarketParams`, re-hashed, checked to lend the one loan token,
+one market per collateral; no admin, no add-market function). Same entry-side
+policy as `AaveV3Venue`: `supply` checks the registry's offer at THIS venue,
+`borrow` reverts `EntryHfTooLow` against the account's WORST market health
+factor (Morpho positions are isolated per market). `liquidationThresholdBps` =
+`maxLtvBps` = the live LLTV (one threshold on Morpho). Debt is computed as
+Morpho will accrue it (`libraries/MorphoMath.sol`, virtual shares + Taylor
+compounding), so `repay(max)` closes every market by shares with no dust. A
+venue over no markets reports `enabled() == false`. Constructor signature
+changed: `(morpho, registry, loanToken, bytes32[] marketIds)`; ABI bundle and
+web ABI regenerated.
+
+**Deploy.** `Deploy.s.sol` builds the venue over the two ids
+(`MORPHO_MARKET_IDS`, default = the verified constants) AFTER the registry and
+leaves the registry pointing cbBTC and WETH at Aave: moving an asset is
+`proposeVenue` → 2-day timelock → `acceptVenue`, never at deploy. Base Sepolia
+passes an empty id list (no market exists there).
+
+**Tests.** `CollateralVenues.t.sol` `MorphoBlueVenueTest` (22) mirrors the Aave
+suite: construction guards, live LLTV, supply/borrow/repay/withdraw under the
+account, exact-to-the-wei repay after a year of interest, two isolated markets
+(headroom borrow, worst-first repay, worst-market HF), keeper budgets.
+`audit-regressions/MorphoEntryFloor.t.sol` (11) replays `EntryFloor.t.sol`
+against Morpho: the hold batch cannot open at Morpho's 86 % LLTV, first-time user
+atomic, oracle drift caught, a fuzz that every accepted borrow is at or above
+the floor, the venue takes nothing until the timelocked switch has landed, the
+router's `openBorrowOnly` and the shipped keeper grant work through the Morpho
+venue, thresholds are the market's not a constant, and the owner exits straight
+at Morpho in every broken state. Nothing was broadcast.
+
 ## 2026-09-06 — wave-1 audit, the fix round, and this docs pass (commits `9b23864`, `52f4a70`)
 
 **Audit.** An internal adversarial audit ran as four independent lenses, with

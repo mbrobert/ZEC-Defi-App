@@ -43,7 +43,8 @@ money path, and no Oilskin contract ever holds a user's funds.
   maxLtvBps(asset), debt(account,asset), collateral(account,asset), borrowRateRay(asset) }`.
 - `AaveV3Venue` (library-style; addresses from VERIFIED-BASE-FACTS; e-mode NOT used in v1; reads LT/LTV from
   `PoolDataProvider` at call time — no constants). `MorphoBlueVenue`: interface + skeleton + a documented TODO
-  to discover live market params (id = keccak of MarketParams); ships disabled.
+  to discover live market params (id = keccak of MarketParams); ships disabled. *(Done 2026-09-07: built over the
+  two chain-verified Base markets — `CHANGELOG.md`, `VERIFIED-BASE-FACTS.md` Morpho addendum.)*
 - `ILpVenue { open(params) → positionId, increase, close(positionId, band) → (out0,out1,rewards), claim,
   positionsOf(account) }`. `SnuggleLpVenue` implements it over ISnuggleVault with the C-2 index enumeration
   (`userPositions(address,uint256)` until revert, canary-measured end-of-list), refund folding after every

@@ -8,6 +8,9 @@ import {StrategyRouter} from "../../src/router/StrategyRouter.sol";
 import {CollateralRegistry} from "../../src/registry/CollateralRegistry.sol";
 import {Call, IOilskinAccount, Permission, TokenLimit} from "../../src/interfaces/IOilskinAccount.sol";
 import {ICollateralVenue} from "../../src/interfaces/ICollateralVenue.sol";
+import {ICollateralRegistry} from "../../src/interfaces/ICollateralRegistry.sol";
+import {IMorphoBlue} from "../../src/interfaces/IMorphoBlue.sol";
+import {MorphoBlueVenue} from "../../src/venues/MorphoBlueVenue.sol";
 import {CrossAccountProbe, DepthProbe, HostileToken, LateCaller, RogueVenue} from "./AuditMocks.sol";
 import {RelayPeripheral} from "../mocks/TestPeripherals.sol";
 
@@ -161,16 +164,18 @@ contract PeripheralCallbackRegressionTest is Fixture {
         _ownerExec(address(router), abi.encodeCall(StrategyRouter.unwind, (u)));
         assertEq(cbbtc.balanceOf(address(acct)), 10e8 + 1e8, "a disabled ASSET still exits");
 
-        // A disabled VENUE is a different thing: that is code we will not delegate to.
+        // A disabled VENUE is a different thing: that is code we will not delegate to. A Morpho
+        // venue built over no markets (the Sepolia shape) is one.
+        MorphoBlueVenue off = new MorphoBlueVenue(
+            IMorphoBlue(address(morpho)), ICollateralRegistry(address(registry)), address(usdc), new bytes32[](0)
+        );
         vm.prank(registryOwner);
-        registry.register(address(aero), address(morphoVenue), address(0), false, "morpho ships disabled");
+        registry.register(address(aero), address(off), address(0), false, "no morpho market for this asset");
         u.collateralAsset = address(aero);
         u.withdrawAmount = 0;
         bytes memory data = abi.encodeCall(StrategyRouter.unwind, (u));
         vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(StrategyRouter.VenueDisabled.selector, address(morphoVenue))
-        );
+        vm.expectRevert(abi.encodeWithSelector(StrategyRouter.VenueDisabled.selector, address(off)));
         acct.execWithCallback(address(router), 0, data);
     }
 

@@ -80,7 +80,13 @@ test("Chainlink feeds, Pyth, Aerodrome, Morpho, Compound, Permit2, CoW", () => {
   assert.equal(AERODROME.pools.cbZEC_USDC.feePips, 2000);
   assert.equal(AERODROME.pools.cbZEC_USDC.tickSpacing, 200);
   assert.equal(MORPHO_BLUE.address, "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb");
-  assert.deepEqual(MORPHO_BLUE.marketIds, {}, "market ids are unverified and must stay empty until discovered");
+  assert.equal(
+    MORPHO_BLUE.marketIds.cbBTC_USDC,
+    "0x9103c3b4e834476c9a62ea009ba2c884ee42e94e6e314a26f04d312434191836",
+    "chain-verified 2026-09-07 (VERIFIED-BASE-FACTS, Morpho addendum)",
+  );
+  assert.equal(MORPHO_BLUE.marketIds.WETH_USDC, "0x8793cf302b8ffd655ab97bd1c695dbd967807e8367a65cb2f4edaf1380ba1bda");
+  assert.equal(MORPHO_BLUE.lltvWad, 860000000000000000n);
   assert.equal(COMPOUND_V3.usdcComet, "0xb125E6687d4313864e53df431d5425969c15Eb2F");
   assert.equal(PERMIT2, "0x000000000022D473030F116dDEE9F6B43aC78BA3");
   assert.equal(COW_PROTOCOL.settlement, "0x9008D19f58AAbD9eD0D60971565AA8510560ab41");

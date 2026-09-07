@@ -6,7 +6,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ICollateralVenue} from "../src/interfaces/ICollateralVenue.sol";
 import {AaveV3Venue} from "../src/venues/AaveV3Venue.sol";
 import {MorphoBlueVenue} from "../src/venues/MorphoBlueVenue.sol";
-import {MarketParams} from "../src/interfaces/IMorphoBlue.sol";
+import {IMorphoBlue, MarketParams} from "../src/interfaces/IMorphoBlue.sol";
 import {CollateralRegistry} from "../src/registry/CollateralRegistry.sol";
 import {ICollateralRegistry} from "../src/interfaces/ICollateralRegistry.sol";
 import {IPoolAddressesProvider} from "../src/interfaces/IAaveV3.sol";
@@ -182,57 +182,402 @@ contract AaveV3VenueTest is Fixture {
 }
 
 contract MorphoBlueVenueTest is Fixture {
-    function test_shipsDisabledAndFailsClosed() public {
-        assertFalse(morphoVenue.enabled());
-        vm.startPrank(alice);
-        bytes memory d = abi.encodeCall(ICollateralVenue.supply, (address(cbbtc), 1));
-        vm.expectRevert(MorphoBlueVenue.VenueDisabled.selector);
-        acct.execWithCallback(address(morphoVenue), 0, d);
-        d = abi.encodeCall(ICollateralVenue.borrow, (address(usdc), 1));
-        vm.expectRevert(MorphoBlueVenue.VenueDisabled.selector);
-        acct.execWithCallback(address(morphoVenue), 0, d);
-        d = abi.encodeCall(ICollateralVenue.repay, (address(usdc), 1));
-        vm.expectRevert(MorphoBlueVenue.VenueDisabled.selector);
-        acct.execWithCallback(address(morphoVenue), 0, d);
-        d = abi.encodeCall(ICollateralVenue.withdraw, (address(cbbtc), 1));
-        vm.expectRevert(MorphoBlueVenue.VenueDisabled.selector);
-        acct.execWithCallback(address(morphoVenue), 0, d);
-        vm.stopPrank();
-        vm.expectRevert(MorphoBlueVenue.VenueDisabled.selector);
-        morphoVenue.healthFactor(address(acct));
-        vm.expectRevert(MorphoBlueVenue.VenueDisabled.selector);
-        morphoVenue.liquidationThresholdBps(address(cbbtc));
-        vm.expectRevert(MorphoBlueVenue.VenueDisabled.selector);
-        morphoVenue.maxLtvBps(address(cbbtc));
-        vm.expectRevert(MorphoBlueVenue.VenueDisabled.selector);
-        morphoVenue.debt(address(acct), address(usdc));
-        vm.expectRevert(MorphoBlueVenue.VenueDisabled.selector);
-        morphoVenue.collateral(address(acct), address(cbbtc));
-        vm.expectRevert(MorphoBlueVenue.VenueDisabled.selector);
-        morphoVenue.borrowRateRay(address(usdc));
+    uint256 constant ONE_CBBTC = 1e8;
+
+    function setUp() public override {
+        super.setUp();
+        cbbtc.mint(address(acct), 10e8);
+        weth.mint(address(acct), 100e18);
+        // The registry points cbBTC and WETH at Aave at deploy time; the ONLY way to Morpho is the
+        // timelocked replacement, so every supply test starts with it.
+        _switchToMorpho(address(cbbtc));
+        _switchToMorpho(address(weth));
     }
 
-    function test_marketIdIsKeccakOfParams() public {
+    function _supply(address asset, uint256 amount) internal {
+        _ownerExec(address(morphoVenue), abi.encodeCall(ICollateralVenue.supply, (asset, amount)));
+    }
+
+    function _borrow(uint256 amount) internal {
+        _ownerExec(address(morphoVenue), abi.encodeCall(ICollateralVenue.borrow, (address(usdc), amount)));
+    }
+
+    function _usd6(uint256 priceE8, uint256 pct) internal pure returns (uint256) {
+        return (priceE8 * pct) / 100 / 100; // 8-decimal USD → 6-decimal USDC
+    }
+
+    // ------------------------------------------------------------ construction
+
+    function test_constructorBindsTheVerifiedMarketsAndNothingElse() public view {
+        assertTrue(morphoVenue.enabled());
+        assertEq(morphoVenue.marketIdOf(address(cbbtc)), morphoIdCbbtc);
+        assertEq(morphoVenue.marketIdOf(address(weth)), morphoIdWeth);
+        assertEq(morphoVenue.marketIdOf(address(cbzec)), bytes32(0));
+        assertEq(morphoVenue.LOAN_TOKEN(), address(usdc));
+        assertEq(address(morphoVenue.REGISTRY()), address(registry));
+        address[] memory c = morphoVenue.collaterals();
+        assertEq(c.length, 2);
+        MarketParams memory p = morphoVenue.marketParamsOf(address(cbbtc));
+        assertEq(p.lltv, MORPHO_LLTV_WAD);
+        assertEq(p.oracle, address(morphoOracleCbbtc));
+        assertEq(morphoVenue.marketId(p), morphoIdCbbtc, "id recomputes from the live params");
+    }
+
+    function test_constructorRefusesAnUnknownWrongOrDuplicateMarket() public {
+        bytes32[] memory ids = new bytes32[](1);
+        ids[0] = keccak256("not a market");
+        vm.expectRevert(abi.encodeWithSelector(MorphoBlueVenue.MarketNotCreated.selector, ids[0]));
+        new MorphoBlueVenue(IMorphoBlue(address(morpho)), ICollateralRegistry(address(registry)), address(usdc), ids);
+
+        // A market that lends WETH against cbBTC is not a USDC market.
+        MarketParams memory wrong = MarketParams({
+            loanToken: address(weth),
+            collateralToken: address(cbbtc),
+            oracle: address(morphoOracleCbbtc),
+            irm: address(morphoIrm),
+            lltv: MORPHO_LLTV_WAD
+        });
+        ids[0] = morpho.createMarket(wrong);
+        vm.expectRevert(abi.encodeWithSelector(MorphoBlueVenue.WrongLoanToken.selector, ids[0], address(weth)));
+        new MorphoBlueVenue(IMorphoBlue(address(morpho)), ICollateralRegistry(address(registry)), address(usdc), ids);
+
+        ids = new bytes32[](2);
+        ids[0] = morphoIdCbbtc;
+        ids[1] = morphoIdCbbtc;
+        vm.expectRevert(abi.encodeWithSelector(MorphoBlueVenue.DuplicateCollateral.selector, address(cbbtc)));
+        new MorphoBlueVenue(IMorphoBlue(address(morpho)), ICollateralRegistry(address(registry)), address(usdc), ids);
+    }
+
+    function test_aVenueWithNoMarketsIsDisabledAndTheRegistryRefusesIt() public {
+        MorphoBlueVenue off = new MorphoBlueVenue(
+            IMorphoBlue(address(morpho)), ICollateralRegistry(address(registry)), address(usdc), new bytes32[](0)
+        );
+        assertFalse(off.enabled());
+        assertEq(off.liquidationThresholdBps(address(cbbtc)), 0);
+        assertEq(off.healthFactor(address(acct)), type(uint256).max);
+        vm.prank(registryOwner);
+        vm.expectRevert(abi.encodeWithSelector(CollateralRegistry.VenueDisabled.selector, address(off)));
+        registry.register(address(aero), address(off), address(0), true, "");
+        // An enabled venue with no market for the asset is refused the same way Aave's cbZEC is.
+        vm.prank(registryOwner);
+        vm.expectRevert(abi.encodeWithSelector(CollateralRegistry.VenueDoesNotKnowAsset.selector, address(aero)));
+        registry.register(address(aero), address(morphoVenue), address(0), true, "");
+    }
+
+    // ------------------------------------------------------------ risk reads
+
+    function test_riskParamsReadLiveFromMorpho() public view {
+        (,,,, uint256 lltv) = morpho.idToMarketParams(morphoIdCbbtc);
+        assertEq(morphoVenue.liquidationThresholdBps(address(cbbtc)), lltv / 1e14);
+        assertEq(morphoVenue.liquidationThresholdBps(address(cbbtc)), 8600);
+        assertEq(morphoVenue.maxLtvBps(address(cbbtc)), 8600, "Morpho has one threshold");
+        assertEq(morphoVenue.liquidationThresholdBps(address(weth)), 8600);
+        assertEq(morphoVenue.liquidationThresholdBps(address(cbzec)), 0, "no cbZEC market");
+        assertEq(morphoVenue.maxLtvBps(address(cbzec)), 0);
+        assertApproxEqRel(morphoVenue.borrowRateRay(address(usdc)), RATE_USDC_RAY, 1e12);
+        assertApproxEqRel(morphoVenue.borrowRateRay(address(cbbtc)), RATE_USDC_RAY, 1e12);
+        assertEq(morphoVenue.borrowRateRay(address(cbzec)), 0);
+        assertEq(morphoVenue.oraclePrice(address(cbbtc)), _morphoPrice36(PRICE_CBBTC_E8, 8));
+        // 86 % / 1.55 = 55.5 % → capped at the registry's 50 %.
+        assertEq(registry.maxOfferedLtvBps(address(cbbtc)), 5000);
+    }
+
+    function test_riskParamsFollowTheMarketNotAConstant() public {
         MarketParams memory p = MarketParams({
             loanToken: address(usdc),
-            collateralToken: address(cbbtc),
-            oracle: makeAddr("oracle"),
-            irm: makeAddr("irm"),
-            lltv: 0.86e18
+            collateralToken: address(aero),
+            oracle: address(morphoOracleWeth),
+            irm: address(morphoIrm),
+            lltv: 0.77e18
         });
-        assertEq(morphoVenue.marketId(p), keccak256(abi.encode(p)));
+        bytes32[] memory ids = new bytes32[](1);
+        ids[0] = morpho.createMarket(p);
+        MorphoBlueVenue other = new MorphoBlueVenue(
+            IMorphoBlue(address(morpho)), ICollateralRegistry(address(registry)), address(usdc), ids
+        );
+        assertEq(other.liquidationThresholdBps(address(aero)), 7700);
+        assertEq(other.maxLtvBps(address(aero)), 7700);
+        morphoIrm.setRate(MORPHO_RATE_PER_SECOND_WAD * 2);
+        assertApproxEqRel(other.borrowRateRay(address(usdc)), 2 * RATE_USDC_RAY, 1e12);
     }
 
-    function test_registryRefusesToEnableAnAssetOnADisabledVenue() public {
-        vm.prank(registryOwner);
+    // ------------------------------------------------------------ mutators
+
+    function test_supplyLandsUnderTheAccount() public {
+        _supply(address(cbbtc), ONE_CBBTC);
+        assertEq(morphoVenue.collateral(address(acct), address(cbbtc)), ONE_CBBTC);
+        (,, uint128 held) = morpho.position(morphoIdCbbtc, address(acct));
+        assertEq(held, ONE_CBBTC, "Morpho's position is the ACCOUNT's");
+        assertEq(cbbtc.balanceOf(address(acct)), 9e8);
+        assertEq(cbbtc.allowance(address(acct), address(morpho)), 0, "allowance must be reset");
+        assertEq(morphoVenue.healthFactor(address(acct)), type(uint256).max);
+    }
+
+    function test_supplyRefusesAnAssetTheRegistryDoesNotOfferHere() public {
+        // cbZEC: registered disabled, at Aave, and has no Morpho market anyway.
+        cbzec.mint(address(acct), 1e8);
+        vm.prank(alice);
         vm.expectRevert(
-            abi.encodeWithSelector(CollateralRegistry.VenueDisabled.selector, address(morphoVenue))
+            abi.encodeWithSelector(MorphoBlueVenue.AssetNotOffered.selector, address(cbzec), address(morphoVenue))
         );
-        registry.register(address(aero), address(morphoVenue), address(0), true, "");
-        // Registering it disabled is fine (ships as a placeholder).
+        acct.execWithCallback(address(morphoVenue), 0, abi.encodeCall(ICollateralVenue.supply, (address(cbzec), 1e8)));
+        // An offered asset switched OFF by the operator is refused on this path too.
         vm.prank(registryOwner);
-        registry.register(address(aero), address(morphoVenue), address(0), false, "morpho market not discovered");
-        assertEq(registry.maxOfferedLtvBps(address(aero)), 0);
+        registry.setEnabled(address(weth), false, "paused");
+        vm.prank(alice);
+        vm.expectRevert(
+            abi.encodeWithSelector(MorphoBlueVenue.AssetNotOffered.selector, address(weth), address(morphoVenue))
+        );
+        acct.execWithCallback(address(morphoVenue), 0, abi.encodeCall(ICollateralVenue.supply, (address(weth), 1e18)));
+    }
+
+    function test_borrowPaysTheAccountAndHfIsLltvOverLtv() public {
+        _supply(address(cbbtc), ONE_CBBTC);
+        uint256 borrow = _usd6(PRICE_CBBTC_E8, 50);
+        _borrow(borrow);
+        assertEq(usdc.balanceOf(address(acct)), borrow);
+        assertEq(morphoVenue.debt(address(acct), address(usdc)), borrow);
+        assertEq(morphoVenue.debt(address(acct), address(cbbtc)), 0, "debt is in the loan token only");
+        // 0.86 / 0.50 = 1.72
+        assertApproxEqRel(morphoVenue.healthFactor(address(acct)), 1.72e18, 1e14);
+    }
+
+    function test_borrowBelowTheEntryFloorReverts() public {
+        _supply(address(cbbtc), ONE_CBBTC);
+        // 60 % LTV is inside Morpho's 86 % LLTV but HF 1.43 < the 1.55 floor.
+        uint256 amount = _usd6(PRICE_CBBTC_E8, 60);
+        vm.prank(alice);
+        vm.expectPartialRevert(MorphoBlueVenue.EntryHfTooLow.selector);
+        acct.execWithCallback(address(morphoVenue), 0, abi.encodeCall(ICollateralVenue.borrow, (address(usdc), amount)));
+        assertEq(morphoVenue.debt(address(acct), address(usdc)), 0);
+    }
+
+    function test_borrowBeyondLltvRevertsInsideMorpho() public {
+        _supply(address(weth), 1e18);
+        uint256 tooMuch = _usd6(PRICE_WETH_E8, 87);
+        vm.prank(alice);
+        vm.expectRevert(bytes("insufficient collateral"));
+        acct.execWithCallback(address(morphoVenue), 0, abi.encodeCall(ICollateralVenue.borrow, (address(usdc), tooMuch)));
+    }
+
+    function test_borrowNeedsCollateralAndOnlyLendsTheLoanToken() public {
+        vm.startPrank(alice);
+        vm.expectRevert(abi.encodeWithSelector(MorphoBlueVenue.NoCollateralPosition.selector, address(acct)));
+        acct.execWithCallback(address(morphoVenue), 0, abi.encodeCall(ICollateralVenue.borrow, (address(usdc), 1e6)));
+        vm.expectRevert(abi.encodeWithSelector(MorphoBlueVenue.NotLoanToken.selector, address(weth)));
+        acct.execWithCallback(address(morphoVenue), 0, abi.encodeCall(ICollateralVenue.borrow, (address(weth), 1e18)));
+        vm.expectRevert(abi.encodeWithSelector(MorphoBlueVenue.NotLoanToken.selector, address(weth)));
+        acct.execWithCallback(address(morphoVenue), 0, abi.encodeCall(ICollateralVenue.repay, (address(weth), 1e18)));
+        vm.stopPrank();
+    }
+
+    function test_repayPartialThenAllAfterInterestApprovesExactlyWhatMorphoPulls() public {
+        _supply(address(cbbtc), ONE_CBBTC);
+        _borrow(10_000e6);
+        bytes memory ret =
+            _ownerExec(address(morphoVenue), abi.encodeCall(ICollateralVenue.repay, (address(usdc), 4_000e6)));
+        assertEq(abi.decode(ret, (uint256)), 4_000e6);
+        assertEq(morphoVenue.debt(address(acct), address(usdc)), 6_000e6);
+
+        vm.warp(block.timestamp + 365 days);
+        uint256 owed = morphoVenue.debt(address(acct), address(usdc));
+        assertGt(owed, 6_000e6, "a year of interest, computed before Morpho has accrued it");
+        assertLt(owed, 6_400e6);
+
+        usdc.mint(address(acct), owed - 6_000e6);
+        uint256 before = usdc.balanceOf(address(acct));
+        ret = _ownerExec(
+            address(morphoVenue), abi.encodeCall(ICollateralVenue.repay, (address(usdc), type(uint256).max))
+        );
+        assertEq(abi.decode(ret, (uint256)), owed, "what the view said is what Morpho took");
+        assertEq(before - usdc.balanceOf(address(acct)), owed);
+        assertEq(morphoVenue.debt(address(acct), address(usdc)), 0, "closed by shares: no dust");
+        (, uint128 borrowShares,) = morpho.position(morphoIdCbbtc, address(acct));
+        assertEq(borrowShares, 0);
+        assertEq(usdc.allowance(address(acct), address(morpho)), 0);
+    }
+
+    function test_repayMoreThanOwedClearsTheDebtAndTakesOnlyWhatIsOwed() public {
+        _supply(address(cbbtc), ONE_CBBTC);
+        _borrow(10_000e6);
+        usdc.mint(address(acct), 5_000e6);
+        bytes memory ret =
+            _ownerExec(address(morphoVenue), abi.encodeCall(ICollateralVenue.repay, (address(usdc), 12_000e6)));
+        assertEq(abi.decode(ret, (uint256)), 10_000e6);
+        assertEq(usdc.balanceOf(address(acct)), 5_000e6);
+        assertEq(morphoVenue.debt(address(acct), address(usdc)), 0);
+    }
+
+    function test_repayNothingOwedReverts() public {
+        vm.prank(alice);
+        vm.expectRevert(MorphoBlueVenue.NothingToRepay.selector);
+        acct.execWithCallback(address(morphoVenue), 0, abi.encodeCall(ICollateralVenue.repay, (address(usdc), 1)));
+    }
+
+    function test_withdrawPartialAndAllToTheAccount() public {
+        _supply(address(weth), 10e18);
+        bytes memory ret =
+            _ownerExec(address(morphoVenue), abi.encodeCall(ICollateralVenue.withdraw, (address(weth), 3e18)));
+        assertEq(abi.decode(ret, (uint256)), 3e18);
+        assertEq(weth.balanceOf(address(acct)), 93e18);
+        ret = _ownerExec(
+            address(morphoVenue), abi.encodeCall(ICollateralVenue.withdraw, (address(weth), type(uint256).max))
+        );
+        assertEq(abi.decode(ret, (uint256)), 7e18);
+        assertEq(morphoVenue.collateral(address(acct), address(weth)), 0);
+        assertEq(weth.balanceOf(address(acct)), 100e18);
+        vm.prank(alice);
+        vm.expectRevert(MorphoBlueVenue.NothingToWithdraw.selector);
+        acct.execWithCallback(
+            address(morphoVenue), 0, abi.encodeCall(ICollateralVenue.withdraw, (address(weth), type(uint256).max))
+        );
+    }
+
+    function test_withdrawBelowHfOneRevertsInsideMorpho() public {
+        _supply(address(cbbtc), ONE_CBBTC);
+        _borrow(30_000e6);
+        vm.prank(alice);
+        vm.expectRevert(bytes("insufficient collateral"));
+        acct.execWithCallback(
+            address(morphoVenue), 0, abi.encodeCall(ICollateralVenue.withdraw, (address(cbbtc), 0.6e8))
+        );
+    }
+
+    function test_zeroAmountsRevert() public {
+        vm.startPrank(alice);
+        vm.expectRevert(MorphoBlueVenue.ZeroAmount.selector);
+        acct.execWithCallback(address(morphoVenue), 0, abi.encodeCall(ICollateralVenue.supply, (address(cbbtc), 0)));
+        vm.expectRevert(MorphoBlueVenue.ZeroAmount.selector);
+        acct.execWithCallback(address(morphoVenue), 0, abi.encodeCall(ICollateralVenue.borrow, (address(usdc), 0)));
+        vm.expectRevert(MorphoBlueVenue.ZeroAmount.selector);
+        acct.execWithCallback(address(morphoVenue), 0, abi.encodeCall(ICollateralVenue.withdraw, (address(cbbtc), 0)));
+        vm.expectRevert(MorphoBlueVenue.ZeroAmount.selector);
+        acct.execWithCallback(address(morphoVenue), 0, abi.encodeCall(ICollateralVenue.repay, (address(usdc), 0)));
+        vm.stopPrank();
+    }
+
+    function test_venueCannotBeUsedOutsideAnAccountAndHoldsNothing() public {
+        cbbtc.mint(bob, 1e8);
+        vm.prank(bob);
+        vm.expectRevert();
+        morphoVenue.supply(address(cbbtc), 1e8);
+        assertEq(cbbtc.balanceOf(bob), 1e8);
+
+        _supply(address(cbbtc), ONE_CBBTC);
+        _borrow(10_000e6);
+        _ownerExec(address(morphoVenue), abi.encodeCall(ICollateralVenue.repay, (address(usdc), 1_000e6)));
+        _ownerExec(address(morphoVenue), abi.encodeCall(ICollateralVenue.withdraw, (address(cbbtc), 1e7)));
+        assertEq(cbbtc.balanceOf(address(morphoVenue)), 0);
+        assertEq(usdc.balanceOf(address(morphoVenue)), 0);
+    }
+
+    // ------------------------------------------------------------ two markets
+
+    function test_twoCollateralsAreTwoIsolatedPositions() public {
+        _supply(address(cbbtc), ONE_CBBTC);
+        _supply(address(weth), 10e18);
+        // Headroom: cbBTC ≈ 79.6k × 0.86 = 68.4k; WETH ≈ 24.5k × 0.86 = 21.1k → cbBTC first.
+        _borrow(20_000e6);
+        assertEq(_debtIn(morphoIdCbbtc), 20_000e6);
+        assertEq(_debtIn(morphoIdWeth), 0);
+        // Now cbBTC headroom ≈ 48.4k vs WETH 21.1k → still cbBTC.
+        _borrow(10_000e6);
+        assertEq(_debtIn(morphoIdCbbtc), 30_000e6);
+        assertEq(morphoVenue.debt(address(acct), address(usdc)), 30_000e6);
+
+        // Push the WETH market into use by borrowing more than cbBTC's remaining room allows at
+        // the floor — the venue picks by headroom, the FLOOR still applies to the worst market.
+        uint256 hfBefore = morphoVenue.healthFactor(address(acct));
+        assertApproxEqRel(hfBefore, (PRICE_CBBTC_E8 * 86) / 100 / 100 * 1e18 / 30_000e6, 1e14);
+
+        // Repay(max) clears BOTH markets by shares even if both carry debt.
+        vm.warp(block.timestamp + 30 days);
+        usdc.mint(address(acct), 1_000e6);
+        uint256 owed = morphoVenue.debt(address(acct), address(usdc));
+        bytes memory ret = _ownerExec(
+            address(morphoVenue), abi.encodeCall(ICollateralVenue.repay, (address(usdc), type(uint256).max))
+        );
+        assertEq(abi.decode(ret, (uint256)), owed);
+        assertEq(morphoVenue.debt(address(acct), address(usdc)), 0);
+        assertEq(morphoVenue.healthFactor(address(acct)), type(uint256).max);
+    }
+
+    function test_healthFactorIsTheWorstMarketAndRepayPaysItFirst() public {
+        _supply(address(cbbtc), ONE_CBBTC);
+        _supply(address(weth), 10e18);
+        // Borrow into cbBTC (the headroom pick), then drop cbBTC's price so it becomes the worst.
+        _borrow(30_000e6);
+        // Force a WETH position too, straight at Morpho (the owner's right), 5k against 24.5k.
+        vm.startPrank(alice);
+        acct.exec(
+            address(morpho),
+            0,
+            abi.encodeCall(
+                IMorphoBlue.borrow, (morphoVenue.marketParamsOf(address(weth)), 5_000e6, 0, address(acct), address(acct))
+            )
+        );
+        vm.stopPrank();
+        assertEq(_debtIn(morphoIdWeth), 5_000e6);
+        morphoOracleCbbtc.setPrice(_morphoPrice36(PRICE_CBBTC_E8 / 2, 8)); // cbBTC halves
+        uint256 hfCbbtc = (PRICE_CBBTC_E8 / 2 * 86) / 100 / 100 * 1e18 / 30_000e6; // ≈ 1.14
+        uint256 hfWeth = (PRICE_WETH_E8 * 10 * 86) / 100 / 100 * 1e18 / 5_000e6; // ≈ 4.22
+        assertLt(hfCbbtc, hfWeth);
+        assertApproxEqRel(morphoVenue.healthFactor(address(acct)), hfCbbtc, 1e14);
+
+        // A partial repay goes to the cbBTC market (the worst) and nothing to WETH.
+        _ownerExec(address(morphoVenue), abi.encodeCall(ICollateralVenue.repay, (address(usdc), 10_000e6)));
+        assertEq(_debtIn(morphoIdCbbtc), 20_000e6);
+        assertEq(_debtIn(morphoIdWeth), 5_000e6);
+        // A repay larger than the worst market's debt spills into the next.
+        _ownerExec(address(morphoVenue), abi.encodeCall(ICollateralVenue.repay, (address(usdc), 22_000e6)));
+        assertEq(_debtIn(morphoIdCbbtc), 0);
+        assertEq(_debtIn(morphoIdWeth), 3_000e6);
+    }
+
+    // ------------------------------------------------------------ keeper
+
+    function test_keeperCanRepayWithinBudgetOnly() public {
+        _supply(address(cbbtc), ONE_CBBTC);
+        _borrow(10_000e6);
+        vm.prank(alice);
+        acct.grant(
+            keeper,
+            _perm(address(morphoVenue), ICollateralVenue.repay.selector, _limits1(address(usdc), 5_000e6), 0)
+        );
+        vm.prank(keeper);
+        acct.execAsKeeper(
+            _one(_call(address(morphoVenue), abi.encodeCall(ICollateralVenue.repay, (address(usdc), 5_000e6))))
+        );
+        assertEq(morphoVenue.debt(address(acct), address(usdc)), 5_000e6);
+        vm.prank(keeper);
+        vm.expectRevert();
+        acct.execAsKeeper(
+            _one(_call(address(morphoVenue), abi.encodeCall(ICollateralVenue.repay, (address(usdc), 1))))
+        );
+    }
+
+    function test_keeperWithdrawAlwaysPaysTheAccount() public {
+        _supply(address(cbbtc), ONE_CBBTC);
+        vm.prank(alice);
+        acct.grant(
+            keeper, _perm(address(morphoVenue), ICollateralVenue.withdraw.selector, _limits1(address(cbbtc), 1), 0)
+        );
+        vm.prank(keeper);
+        acct.execAsKeeper(
+            _one(_call(address(morphoVenue), abi.encodeCall(ICollateralVenue.withdraw, (address(cbbtc), ONE_CBBTC))))
+        );
+        assertEq(cbbtc.balanceOf(address(acct)), 10e8);
+        assertEq(cbbtc.balanceOf(keeper), 0);
+    }
+
+    // ------------------------------------------------------------ helpers
+
+    function _debtIn(bytes32 id) internal view returns (uint256) {
+        (, uint128 shares,) = morpho.position(id, address(acct));
+        (,, uint128 totalBorrowAssets, uint128 totalBorrowShares,,) = morpho.market(id);
+        if (shares == 0) return 0;
+        return (uint256(shares) * (uint256(totalBorrowAssets) + 1) + (uint256(totalBorrowShares) + 1e6 - 1))
+            / (uint256(totalBorrowShares) + 1e6);
     }
 }
 

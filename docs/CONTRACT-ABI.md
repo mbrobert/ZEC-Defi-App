@@ -229,7 +229,7 @@ Event `AccountCreated(address indexed owner,address indexed account)` (`0xac631f
 `0xb06ebf3d`, `InsufficientBalance(uint256,uint256)` `0xcf479181`. **`AccountExists` is deleted** —
 remove any handling of it.
 
-## 3. ICollateralVenue → AaveV3Venue (`src/venues/AaveV3Venue.sol`), MorphoBlueVenue (disabled)
+## 3. ICollateralVenue → AaveV3Venue (`src/venues/AaveV3Venue.sol`), MorphoBlueVenue (`src/venues/MorphoBlueVenue.sol`)
 
 Mutators are called BY the account; views take the account. `ICollateralVenue`'s signatures are
 unchanged. `AaveV3Venue`'s **constructor changed** to `(IPoolAddressesProvider provider,
@@ -244,15 +244,29 @@ ICollateralRegistry registry)` — deploy order is registry → venue → regist
 | `0x6ad9f9df` | `healthFactor(address account) → uint256` | WAD; max when no debt |
 | `0x5d462920` | `liquidationThresholdBps(address asset) → uint256` · `0xc2f2d31c` `maxLtvBps(address) → uint256` | live from the PoolDataProvider (0 = not listed, e.g. cbZEC) |
 | `0xd449300d` | `debt(address,address)` · `0xcc218ece` `collateral(address,address)` · `0x99431ce5` `borrowRateRay(address)` | live |
-| `0x238dafe0` | `enabled() → bool` | Aave true; Morpho **false** |
+| `0x238dafe0` | `enabled() → bool` | Aave true; Morpho true when built over ≥ 1 market, false over none (Sepolia) |
 | `0xb883b058` | `assetPrice(address) → uint256` · `0x00d34411` `PROVIDER()` · `0x06433b1b` `REGISTRY()` | |
 
 Errors: `ZeroAmount()` `0x1f2a2005`, `NothingToRepay()` `0xd32e7fc6`, `ZeroAddress()` `0xd92e233d`,
 **new:** `AssetNotOffered(address asset,address venue)` `0xbff4059e`, `EntryHfTooLow(uint256,uint256)`
 `0xd40fd174` (same selector as the router's — identical signature).
-Morpho: every function reverts `VenueDisabled()` `0xc8071240`;
-`marketId((address,address,address,address,uint256)) → bytes32` `0xdf3fb657` and `MORPHO()`
-`0x3acb5624` are the only live helpers.
+**MorphoBlueVenue** — same `ICollateralVenue` selectors, constructor
+`(IMorphoBlue morpho, ICollateralRegistry registry, address loanToken, bytes32[] marketIds)`. Differences
+from Aave, per function: `supply` → `Morpho.supplyCollateral(params, amount, account, "")` after the same
+registry gate (`AssetNotOffered`) and `NoMarket(asset)` if no market here takes it; `withdraw` →
+`withdrawCollateral(params, amount, account, account)`, max = the position's collateral,
+`NothingToWithdraw` if 0; `borrow` → only `LOAN_TOKEN` (`NotLoanToken`), from the market with the most
+headroom (`NoCollateralPosition` if none), then **`EntryHfTooLow`** against the WORST market's HF; `repay` →
+worst market first, whole-market repays by shares, max = every market (`NothingToRepay` if 0);
+`healthFactor` = min over markets; `liquidationThresholdBps` = `maxLtvBps` = live LLTV / 1e14 (0 = no
+market); `debt(account, LOAN_TOKEN)` = Σ markets incl. interest Morpho will accrue this block;
+`borrowRateRay(LOAN_TOKEN)` = the highest market rate, per-second WAD × 365 days × 1e9. Extras:
+`marketId((address,address,address,address,uint256)) → bytes32` `0xdf3fb657`, `MORPHO()` `0x3acb5624`,
+`REGISTRY()`, `LOAN_TOKEN()`, `marketIdOf(address) → bytes32`, `marketParamsOf(address) → MarketParams`,
+`collaterals() → address[]`, `oraclePrice(address) → uint256` (1e36-scaled loan per collateral).
+Construction errors: `MarketNotCreated(bytes32)`, `MarketIdMismatch(bytes32,bytes32)`,
+`WrongLoanToken(bytes32,address)`, `DuplicateCollateral(address)`. Selectors for all of these are in
+`contracts/abi/oilskin-abi.json` (regenerated).
 
 ## 4. ILpVenue → SnuggleLpVenue  (`src/venues/SnuggleLpVenue.sol`)
 

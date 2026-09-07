@@ -179,6 +179,9 @@ contract DeploySepolia is Deploy {
         c.pythZecUsd = vm.envOr("PYTH_ZEC_USD", BaseAddresses.PYTH_ZEC_USD);
         c.cbzecUsdcPool = address(s.cbzecUsdcPool);
         c.morpho = BaseSepoliaAddresses.MORPHO_BLUE;
+        // The Morpho API does not index Base Sepolia and no cbBTC/WETH–USDC market is known there:
+        // the venue deploys with no markets and reports enabled() == false.
+        c.morphoMarketIds = new bytes32[](0);
         c.permit2 = BaseSepoliaAddresses.PERMIT2;
         c.engine = address(s.engine);
         c.aerodromeSwapRouter = address(s.swapRouter);

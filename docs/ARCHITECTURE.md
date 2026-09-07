@@ -49,7 +49,7 @@ flowchart LR
         AV[AaveV3Venue<br/>entry floor · registry gate]
         LV[SnuggleLpVenue<br/>fee chokepoint · width bounds · price band]
         SW[AerodromeSwapAdapter<br/>quote + capped tolerance]
-        MV[MorphoBlueVenue<br/>enabled = false]
+        MV[MorphoBlueVenue<br/>entry floor · registry gate<br/>2 Base markets · not the registry's venue yet]
         PY[PythOracleAdapter<br/>v1.1 · unused]
     end
 
@@ -185,10 +185,19 @@ liquidationThresholdBps, maxLtvBps, debt, collateral, borrowRateRay, enabled }`
   approve(0)` (`Peripheral._approveCallReset`), `borrow` is variable-rate with
   `onBehalfOf` = the account, `repay` approves `min(amount, owed)`, `withdraw`
   pays the account. E-mode is not used.
-- **MorphoBlueVenue** (99 lines) — a skeleton that reverts `VenueDisabled` on
-  every call and reports `enabled() == false`. The live market ids for
-  cbBTC/USDC and WETH/USDC were never discovered
-  (`VERIFIED-BASE-FACTS.md`). **Plan**, not a venue.
+- **MorphoBlueVenue** — the same interface over Morpho Blue's two Base USDC
+  markets (cbBTC/USDC and WETH/USDC, 86 % LLTV, ids read from the chain
+  2026-09-07 — `VERIFIED-BASE-FACTS.md`). Built over a fixed id list at
+  construction (each id re-read from `idToMarketParams` and re-hashed); no
+  admin, no add-market function. Same entry-side policy as Aave: `supply`
+  checks the registry's offer, `borrow` checks the floor against the WORST
+  market (positions are isolated per market). `liquidationThresholdBps` and
+  `maxLtvBps` both return the live LLTV — Morpho has one threshold. Debt is
+  computed as Morpho will accrue it (`libraries/MorphoMath.sol`), so
+  `repay(max)` closes every market by shares. Deployed alongside Aave but
+  **not** the registry's venue for anything: moving cbBTC or WETH to it is
+  `proposeVenue` → timelock → `acceptVenue`. With no market ids (Base Sepolia)
+  it reports `enabled() == false`.
 
 `ILpVenue { open, increase, close, closeMany, claim, positionsOf, poolTokens,
 poolOf }` → **SnuggleLpVenue** (651 lines) over the live MaxFi/Snuggle engine
@@ -510,8 +519,8 @@ published break-even are now refused by the guard.
 ## Shared (`packages/shared/`, 1,515 lines, zero deps)
 
 `base.ts` (every address, checksummed, asserted unique; `CHAINLINK_ZEC_USD =
-null`; `MORPHO_BLUE.marketIds = {}` and `COW_PROTOCOL.vaultRelayer = null` on
-purpose — unverified), `health.ts` (`ENTRY_HF_FLOOR`, `HF_LADDER`, `rungFor`
+null`; `MORPHO_BLUE.marketIds` = the two chain-verified Base market ids (2026-09-07);
+`COW_PROTOCOL.vaultRelayer = null` on purpose — unverified), `health.ts` (`ENTRY_HF_FLOOR`, `HF_LADDER`, `rungFor`
 throws on NaN — fail closed), `collateral.ts` (`COLLATERAL_ASSETS`, cbZEC
 `enabled: false` + reason; `maxOfferedLtvBps`, `ltvPresets` 30 / 40 / top),
 `fees.ts` (`FEES.performanceBps = 1000`, `maxPerformanceBps = 2000`,
