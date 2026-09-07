@@ -1,0 +1,19 @@
+{
+  "model": "claude-fable-5-1",
+  "permissions": {
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./**/.env)",
+      "Read(./**/.env.*)",
+      "Read(~/.foundry/keystores/**)",
+      "Read(**/sensitive/**)",
+      "Bash(cast wallet export:*)",
+      "Bash(cat ~/.foundry/keystores/*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(forge script:*--broadcast*)",
+      "Bash(cast send:*)"
+    ]
+  }
+}

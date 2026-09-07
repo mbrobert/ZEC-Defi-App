@@ -14,3 +14,4 @@ agent/data/*.json
 coverage/
 *.tar.gz
 .demo/
+.claude/settings.local.json
