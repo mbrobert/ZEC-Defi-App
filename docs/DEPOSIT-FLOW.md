@@ -22,9 +22,10 @@ strategy.
    nothing; the router asserts its own balance of every token is unchanged
    at the end of every call.
 2. **The account address is known before it exists.** `factory.accountOf(owner)`
-   is a CREATE2 prediction, so the very first deposit signs a Permit2
-   allowance to an address that is deployed inside the same transaction
-   (`createAccountAndExec`).
+   is a CREATE2 prediction, so the very first deposit's Permit2 signature
+   authorizes a one-time transfer to an address that is deployed inside the
+   same transaction (`createAccountAndExec`) — not a standing allowance; that's
+   the separate one-time ERC-20 `approve` in item 3 below.
 3. **Nothing moves without the wallet's signature.** One ERC-20 `approve` to
    Permit2 (once), one Permit2 typed-data signature per deposit (exact amount,
    nonce, deadline), one transaction per deposit.
@@ -111,7 +112,7 @@ flowchart TD
     W[Connect wallet] --> A["factory.accountOf(owner) · isDeployed"]
 
     A --> C1["Collateral: cbBTC · WETH<br/>+ 'already supplied' (collateralAmount = 0,<br/>borrow against existing collateral)"]
-    C1 --> C2["LTV: any value ≤ registry.maxOfferedLtvBps(asset)<br/>= min(50%, floor(LT / 1.55))<br/>entry HF shown live from registry.entryHfForLtv"]
+    C1 --> C2["LTV: any value ≤ registry.maxOfferedLtvBps(asset)<br/>= min(floor(LT / 1.55), venue.maxLtvBps(asset), 50% cap)<br/>entry HF shown live from registry.entryHfForLtv"]
     C2 --> C3{strategy}
     C3 -- hold --> H["router.openBorrowOnly"]
     C3 -- LP --> C4["Pool: any curated USDC pool<br/>gate result shown per pool, not hidden"]
@@ -147,7 +148,7 @@ signs and what the grant permits.
 flowchart TD
     subgraph user ["User-initiated (any time, no grant needed)"]
         U0[Dashboard: Close / Repay / Withdraw] --> U1["quote the non-USDC leg<br/>(pool sqrtPriceX96 → SwapQuote, ≤ 300 bps)"]
-        U1 --> U2["account.execWithCallback(router, 0,<br/>unwind({asset, positionIds, band, swap,<br/>repayAmount, withdrawAmount, deadline}))"]
+        U1 --> U2["account.execWithCallback(router, 0,<br/>unwind({collateralAsset, positionIds, band, swap,<br/>repayAmount, withdrawAmount, deadline}))"]
     end
 
     subgraph keeper ["Keeper-initiated (only inside the grant)"]
@@ -160,13 +161,15 @@ flowchart TD
         KD --> K2
         KE --> K2
         K2["account.execAsKeeper([{router, 0, unwind(…), callback: true}])<br/>account checks: grant target + selector,<br/>expiry, epoch, per-token budget parsed from calldata"]
+        KW --> N
+        K2 --> N["agent-side notifier: log + webhook<br/>(HealthMonitor / KeeperDispatcher emit this from the<br/>keeper's own loop — not a listener on the router's event;<br/>the user-initiated path below never reaches it)"]
     end
 
     U2 --> X
     K2 --> X
 
     subgraph router ["Inside StrategyRouter.unwind"]
-        X["registry.venueOf(asset)"] --> X1{"positionIds?"}
+        X["registry.venueOf(collateralAsset)"] --> X1{"positionIds?"}
         X1 -- some --> X2["SnuggleLpVenue.closeMany(ids, band)<br/>per-id try/catch — one bad id does not block the rest<br/>engine.withdraw(id) → tokens to the account"]
         X2 --> X3{"non-USDC leg paid out?"}
         X3 -- yes --> X4["AerodromeSwapAdapter.swap(…, quotedIn, quotedOut, maxSlippageBps)<br/>floor = quote − tolerance, hard cap 500 bps"]
@@ -176,18 +179,28 @@ flowchart TD
         X5{"repayAmount?"} -- "&gt; 0" --> X6["AaveV3Venue.repay(USDC, min(owed, held))"]
         X5 -- 0 --> X7
         X6 --> X7{"withdrawAmount?"}
-        X7 -- "&gt; 0" --> X8["AaveV3Venue.withdraw(asset, amount)<br/>then HF must be ≥ 1.55 or revert ExitHfTooLow"]
+        X7 -- "&gt; 0" --> X8["AaveV3Venue.withdraw(collateralAsset, amount)<br/>then HF must be ≥ 1.55 or revert ExitHfTooLow"]
         X7 -- 0 --> X9
         X8 --> X9["assert router balances unchanged<br/>emit LeveragedLpUnwound(closed, failed, usdcFromLp, repaid, withdrawn, HF)"]
     end
-
-    X9 --> N["notifier: log + webhook<br/>(owner channel = open item, see the handoff prompt step 3)"]
 ```
 
 Hysteresis: a rung clears only when HF recovers by +0.05 above it, so the
 keeper does not oscillate. The warn rung produces a message and nothing else —
 no permission produces it. If the keeper is down or the grant has lapsed,
 nobody acts; the user can always unwind from the dashboard.
+
+The agent-side notifier above talks to the founder's ops channel only —
+nothing in this diagram relays it to the account owner. The owner's own
+visibility shipped separately (`NotifyBanner`, `web/components/NotifyBanner.tsx`,
+Step 3): whenever the dashboard is open it independently recomputes the same
+`HF_LADDER` (`@zyo/shared`) against the live on-chain HF the dashboard already
+reads, and shows/alerts locally — no ABI call of its own, no relay from the
+keeper, so it is UI only and not a node in this diagram (see
+`docs/ARCHITECTURE.md` "Owner notifications (v1)" for the full comparison and
+why in-app is v1's only owner channel). Separately, `agent/src/notify/ownerNotifier.ts`
+records the same rung history per account durably on the keeper side — a seam
+for a future delivery channel, not a delivery channel itself yet.
 
 ## 4. Where the money sits
 
