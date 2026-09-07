@@ -140,7 +140,11 @@ npm run web
 Real, in this tree: the contracts above with their tests; the keeper; the
 yield service and model; the web app in demo mode; the prototypes.
 
-Plans, not shipped: a deployment on Base; an external audit; a multisig
+Prepared, not run: a **Base Sepolia** deployment — script, offline tests, a
+dry run that cleared the live guard, and a runbook in `docs/DEPLOY-SEPOLIA.md`;
+the founder holds the keys and nothing has been broadcast.
+
+Plans, not shipped: a deployment on Base mainnet; an external audit; a multisig
 registry owner and a watcher on `VenueChangeProposed`; a keeper notification
 channel that actually reaches a person; the cbZEC
 collateral market and the Pyth oracle adapter in use (v1.1, `docs/BASE-PIVOT-2026-09.md`

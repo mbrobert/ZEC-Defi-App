@@ -213,7 +213,117 @@ pushing ZEC/USD; the in-tx refresh path in `PythOracleAdapter` is the only way i
 Aerodrome Slipstream CLFactory, SwapRouter, NonfungiblePositionManager, Voter; the MaxFi/Snuggle engine
 `0x7D27…Fd55`; cbZEC, cbBTC, and Circle USDC at their mainnet addresses. Aerodrome publishes no Base Sepolia
 deployment. **Consequence for the testnet plan:** `SnuggleLpVenue` and `AerodromeSwapAdapter` cannot be
-exercised on Sepolia against the real engine; the deploy script needs a mock `ILpVenue` and a mock
-`ISwapAdapter` behind the same interfaces so the account → factory → registry → `AaveV3Venue` → router
-path can be run end to end. The LP venue's real-engine behaviour stays covered by the 8 mainnet fork tests.
+exercised on Sepolia against the real engine. **Done in `contracts/script/DeploySepolia.s.sol`**
+(2026-09-07): stand-ins behind the same interfaces so the account → factory → registry → `AaveV3Venue`
+→ router path runs end to end; see Addendum 2 below for the substitute table and `docs/DEPLOY-SEPOLIA.md`
+for the runbook. The LP venue's real-engine behaviour stays covered by the 8 mainnet fork tests.
 
+
+## Addendum 2 — Base Sepolia deploy dependencies, re-read 2026-09-07 15:11–15:15 UTC (block 46,512,825)
+
+Purpose: close out every address `contracts/script/Deploy.s.sol` needs before a Base Sepolia
+deployment, and record the two things the first Sepolia read did not cover — **how test collateral
+is obtained** and **what the substitutes must be priced at**. Method as before: `cast code` /
+`cast call` against `https://sepolia.base.org`, nothing typed from a website without a matching
+on-chain read.
+
+### Aave v3 wiring re-confirmed (unchanged from the 2026-09-07 09:xx read)
+
+`provider.getPool()` → `0x8bAB6d1b75f19e9eD9fCe8b9BD338844fF79aE27`,
+`provider.getPoolDataProvider()` → `0xBc9f5b7E248451CdD7cA54e717a2BFe1F32b566b`,
+`provider.getPriceOracle()` → `0x943b0dE18d4abf4eF02A85912F8fc07684C141dF`, and the round trip
+`pool.ADDRESSES_PROVIDER()` → `0xE4C23309117Aa30342BFaae6c95c6478e0A4Ad00`. Code sizes: provider
+6,697 B, pool 1,853 B, data provider 7,435 B, oracle 2,662 B.
+
+`getAllReservesTokens()` lists **six** reserves: USDC, USDT, WBTC, WETH, cbETH, LINK. The three the
+deploy touches, read live at this block:
+
+| Reserve | LTV | LT | Bonus | Reserve factor | Collateral | Borrowable | Active / frozen | Oracle price | Variable borrow rate |
+|---|---|---|---|---|---|---|---|---|---|
+| WETH `0x4200…0006` | 8350 | 8500 | 10300 | 1000 | yes | yes | active / not frozen | $2,483.389 | 23.09 % |
+| USDC `0xba50…4D5f` | 8250 | 8600 | 10500 | 1000 | yes | yes | active / not frozen | $0.99988 | 2.954 % |
+| WBTC `0x5411…45a4` | 8150 | 8300 | 10500 | 1000 | yes | **no** | active / not frozen | $79,092.017 | 0 |
+
+Oracle sources are the Chainlink feeds directly (`getSourceOfAsset`): WETH → ETH/USD
+`0x4aDC…7cb1`, USDC → USDC/USD `0xd30e…5165`, WBTC → BTC/USD `0x0FB9…4298`. All three feeds answer
+`description()` ("ETH / USD", "USDC / USD", "BTC / USD") with `decimals()` = 8. Ages at read: ETH
+456 s, BTC 480 s, USDC 6,180 s.
+
+### How test collateral is obtained (new — this is what makes a Sepolia run possible)
+
+The Aave test USDC and WBTC both answer `owner()` = **`0xD9145b5F45Ad4519c7ACcD6E0A4A82e83bB8A6Dc`**,
+which is Aave's faucet (code 9,129 B, `owner()` = `0x956DE559DFc27678FD69d4f49f485196b50BDD0F`).
+
+- **`isPermissioned()` = `false`** — anyone may mint. No allow-list, no key from Aave.
+- `mint(address token, address to, uint256 amount)` returns `amount`; confirmed by `eth_call` for
+  both tokens.
+- **Per-call mint cap, measured by bisection with `eth_call`:** USDC `1_000_000e6` succeeds and
+  `10_000_000e6` reverts `"Mint limit transaction exceeded"`; WBTC `1e8` (1 WBTC) succeeds and
+  `10e8` reverts. `maxMintAmount()` is not exposed (reverts), so the cap is recorded as measured,
+  not as a constant read.
+
+WETH is the OP-stack predeploy: obtained by `deposit()`ing Sepolia ETH, not from the faucet.
+
+### Pyth
+
+`getValidTimePeriod()` = **60 s**. `getPriceUnsafe(Crypto.ZEC/USD)` = **770.62190497 ± 0.83912218**,
+expo −8, publishTime 2026-08-26 16:01:32 UTC — **1,033,934 s (12.0 days) stale at read**. Nobody
+pushes ZEC/USD on Sepolia. Unchanged conclusion: only `PythOracleAdapter`'s in-transaction refresh
+can ever make that price usable, and the adapter is not deployed by default.
+
+### Circle's own Base Sepolia USDC exists but is NOT usable here
+
+`0x036CbD53842c5426634e7929541eC2318f3dCF7e` holds code (1,798 B), `symbol()` = "USDC",
+`decimals()` = 6. It is **not an Aave reserve on this chain**, so it cannot be borrowed. The deploy
+therefore uses Aave's own test USDC `0xba50Cd2A20f6DA35D788639E581bca8d0B5d4D5f` as the borrow
+asset, and that address — not Circle's — is what `StrategyRouter.USDC()` will return on Sepolia.
+
+### Absent, re-confirmed at this block (`eth_getCode` = `0x`)
+
+Aerodrome Slipstream SwapRouter `0xBE6D…18a5`, NonfungiblePositionManager `0x8279…5b72`, CLFactory
+`0x5e7B…809A`, Voter `0x1661…80A5`; the MaxFi/Snuggle engine `0x7D27…Fd55`; cbZEC `0xB200…b2EC`,
+cbBTC `0xcbB7…33Bf`, Circle mainnet USDC `0x8335…2913`, AERO `0x9401…8631`. Present at their
+mainnet addresses: Permit2 (9,152 B, `DOMAIN_SEPARATOR()` =
+`0x010f27a92fb9a32622f44f001dc4d15706a85b33499cfc2ce9033113ab26592c`), Multicall3 (3,808 B), Morpho
+Blue (15,623 B).
+
+### The one mainnet number the Sepolia substitutes are priced from
+
+Read on **Base mainnet** at block 51,002,395 (2026-09-07 15:15 UTC), cbZEC/USDC Slipstream pool
+`0x0Fc47C17AF86078d809358db1b4db2DeBC988566`:
+
+| Field | Value |
+|---|---|
+| `slot0().sqrtPriceX96` | 23,265,100,781,736,967,362,825,324,275 |
+| `slot0().tick` | **−24,509** |
+| `tickSpacing()` / `fee()` | 200 / 2000 |
+
+Derived at that tick (token0 = USDC 6 dp, token1 = cbZEC 8 dp): **≈ 1,159.71 USDC per cbZEC**, up
+from ≈ 1,020.30 at tick −23,228 on 2026-09-05. **The tick moved 1,281 ticks (≈ +13.7 %) in two
+days** — which is exactly why `script/DeploySepolia.s.sol` bakes the tick as one overridable
+constant (`CBZEC_USDC_TICK`, env `CBZEC_USDC_TICK`) and derives the mock pool price, its TWAP tick
+and both mock swap rates from that single number, rather than typing a price anywhere.
+
+### Substitutes used on Base Sepolia, and why each is honest
+
+`SnuggleLpVenue` and `AerodromeSwapAdapter` have no real counterparty on this chain, so
+`contracts/script/DeploySepolia.s.sol` deploys stand-ins **behind the same interfaces the mainnet
+contracts are already compiled against** — the Oilskin contracts themselves are deployed by the
+unchanged `Deploy.deploy()`, in the order the audit reviewed.
+
+| Missing | Substitute | Fidelity |
+|---|---|---|
+| cbZEC | `MockB20` | 8 dp, live `multiplier()`, blocklist, pause — the B20 semantics from the mainnet read |
+| cbBTC | Aave's **real** test WBTC reserve | a genuine Aave reserve; supply-only (not borrowable), which is how cbBTC is used anyway |
+| AERO | `MockERC20` (18 dp) | reward token only; nothing emits it on Sepolia, matching the mainnet gauge's `rewardRate() = 0` |
+| Slipstream cbZEC/USDC pool | `MockCLPool` at tick −24,509 | verified token order (USDC = token0), spacing 200, fee 2000, `slot0()` + `observe()` |
+| MaxFi/Snuggle engine | `MockSnuggleVault` | the chain-verified semantics (index getter that reverts past the end, replace-on-rekey, single-sided mint, 60 s hold) |
+| Slipstream SwapRouter | `MockAerodromeSwapRouter` | priced from the same tick, zero fee (the real router charges 0.2 %, so the mock is only ever generous), funded with mock cbZEC and faucet USDC |
+
+**What this does and does not prove.** It exercises wallet → factory → account → registry →
+`AaveV3Venue` → borrow → `StrategyRouter` end to end against **real** Aave, real Permit2 and real
+Chainlink. It proves nothing about the live engine or the live Slipstream router; that stays the
+job of the 8 mainnet fork tests. The mocks keep their public test switches (`setPaused`,
+`setGlitch`, `setMultiplier`, …), which **anyone on the testnet can call** — acceptable for a
+testnet the founder alone exercises, and one more reason none of these addresses may ever be
+referenced by a mainnet artefact.

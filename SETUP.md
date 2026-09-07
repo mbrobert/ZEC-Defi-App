@@ -176,6 +176,22 @@ transaction). **Make `REGISTRY_OWNER` a multisig**: nothing on chain requires
 it, and the powers that owner keeps are set out in `docs/RISKS.md` §16.
 Optional: `DEPLOY_PYTH_ADAPTER=true` deploys the v1.1 oracle adapter, unused.
 
+### Base Sepolia (chain id 84532) — prepared, not deployed
+
+`contracts/script/DeploySepolia.s.sol` is the testnet path, and
+**`docs/DEPLOY-SEPOLIA.md` is the runbook**: the exact dry-run and `--broadcast`
+commands, and a post-deploy `cast` checklist. It exists because Aerodrome
+Slipstream and the MaxFi/Snuggle engine have **no code on Base Sepolia**, so
+the LP venue and the swap adapter are pointed at stand-ins behind the same
+interfaces (`MockSnuggleVault`, `MockCLPool`, `MockAerodromeSwapRouter`,
+`MockB20` for cbZEC, Aave's real test WBTC in place of cbBTC). Aave v3,
+Permit2, Chainlink, Pyth and Morpho Blue are the real thing there. The Oilskin
+contracts are still deployed by the unchanged `Deploy.deploy()`, so the audited
+order is what runs. Every address and the mint caps on Aave's open faucet are
+in `docs/VERIFIED-BASE-FACTS.md`, "Addendum 2" (read 2026-09-07). A dry run
+against the live chain cleared the guard on 2026-09-07 and estimated
+19,505,395 gas (≈ 0.000215 ETH); nothing has been broadcast.
+
 ## CI
 
 `.github/workflows/ci.yml` runs the contracts suite and the agent + yield

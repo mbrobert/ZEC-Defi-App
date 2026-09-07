@@ -124,7 +124,7 @@ contract Deploy is Script {
 
     string internal constant CBZEC_NOTE = "no collateral market on Base yet";
 
-    function run() external returns (Deployed memory d) {
+    function run() external virtual returns (Deployed memory d) {
         Config memory c = configFromEnv();
         guard(c);
         vm.startBroadcast();
