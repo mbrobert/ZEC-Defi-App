@@ -21,7 +21,7 @@ externally owned account; MC = Monte Carlo.
 | Suite | Result | Command |
 |---|---|---|
 | Contracts | **244 passed, 0 failed, 8 skipped** (fork, no `FORK_URL`), 18 suites; 6 invariants + 2 liveness tests | `cd contracts && FOUNDRY_PROFILE=local forge test` |
-| Root ABI seam | **303** selectors / topics / errors across 17 contracts match `contracts/abi/oilskin-abi.json` | `node scripts/verify-abi.mjs` |
+| Root ABI seam | **321** selectors / topics / errors across 17 contracts match `contracts/abi/oilskin-abi.json` | `node scripts/verify-abi.mjs` |
 | Keeper | **171 tests / 36 suites**; its own `verify-abi` **54/54** against `contracts/out` | `npm test -w @zyo/agent` |
 | Yield | **131 tests** | `npm test -w @zyo/yield` |
 | Web | **125 unit**; Playwright **12/12** | `npm test -w @zyo/web`; `npx playwright test` |

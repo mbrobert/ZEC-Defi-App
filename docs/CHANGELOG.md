@@ -30,7 +30,8 @@ Morpho will accrue it (`libraries/MorphoMath.sol`, virtual shares + Taylor
 compounding), so `repay(max)` closes every market by shares with no dust. A
 venue over no markets reports `enabled() == false`. Constructor signature
 changed: `(morpho, registry, loanToken, bytes32[] marketIds)`; ABI bundle and
-web ABI regenerated.
+web ABI regenerated — **303 → 321 entries** (200 functions, 30 events, 91
+errors; the venue went from 3 live entries to 19 functions + 13 errors).
 
 **Deploy.** `Deploy.s.sol` builds the venue over the two ids
 (`MORPHO_MARKET_IDS`, default = the verified constants) AFTER the registry and

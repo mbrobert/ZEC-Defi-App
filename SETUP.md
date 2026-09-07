@@ -35,7 +35,7 @@ forge build
 
 The compiled artifacts feed two ABI (application binary interface) seams:
 `node scripts/verify-abi.mjs --write` regenerates `contracts/abi/oilskin-abi.json`
-(**303** selectors / topics / errors across 17 contracts); `web/scripts/sync-abi.mjs`
+(**321** selectors / topics / errors across 17 contracts); `web/scripts/sync-abi.mjs`
 generates `web/lib/abi/oilskin.generated.ts` from that bundle; the agent's
 `scripts/verify-abi.mjs` checks its hand-written encoders against
 `contracts/out` (**54** checks, including two structural ones — the keeper must
@@ -56,7 +56,7 @@ for what each suite proves. Summary for this tree, all counted by running them
 on 2026-09-06: contracts **244** pass / 8 fork tests skipped without `FORK_URL`;
 agent **171**; yield **131**; web **125** unit + **12** Playwright; shared
 **53**; prototypes **118 + 109 + 56** checks + **6** fuzz; root ABI seam
-**303**; agent ABI seam **54/54**.
+**321**; agent ABI seam **54/54**.
 
 ## Run
 

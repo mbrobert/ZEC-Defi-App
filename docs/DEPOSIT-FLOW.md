@@ -1,7 +1,7 @@
 # How a deposit flows — Oilskin v1 (Base-first)
 
 Written 2026-09-07 against the ABI (application binary interface) bundle at
-`contracts/abi/oilskin-abi.json` (303 selectors). **Every box below that names a
+`contracts/abi/oilskin-abi.json` (321 selectors / topics / errors as of 2026-09-07). **Every box below that names a
 function is a function in that bundle**; the web encodes exactly these calls
 (`web/lib/plan.ts`) and the keeper plans exactly one of them
 (`agent/src/dispatch/policy.ts`). Three diagrams: Simple mode, Advanced mode,

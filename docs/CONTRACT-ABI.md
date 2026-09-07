@@ -2,7 +2,7 @@
 
 **Source of truth is the compiled artifact, not this page.** `contracts/abi/oilskin-abi.json` is
 generated from `contracts/out` by `node scripts/verify-abi.mjs --write` and carries the full ABI plus
-every selector / topic / error for 17 contracts and interfaces — **303 entries** as of 2026-09-06.
+every selector / topic / error for 17 contracts and interfaces — **321 entries** as of 2026-09-07 (200 functions, 30 events, 91 errors; 303 before `MorphoBlueVenue` was built — it added 19 functions and 13 errors and dropped `VenueDisabled`).
 Import that JSON; run `node scripts/verify-abi.mjs` in your area's test script — it exits 1 on any
 drift. The previous project lost this seam twice by encoding from a written document
 (AUDIT-FINDINGS Part 4); this document is a *reading aid* and every selector below was read out of
