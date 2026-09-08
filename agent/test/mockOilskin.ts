@@ -1,6 +1,8 @@
 import {
   decodeFunctionData,
+  encodeAbiParameters,
   encodeErrorResult,
+  encodeEventTopics,
   encodeFunctionResult,
   getAddress,
   keccak256,
@@ -8,10 +10,11 @@ import {
   recoverTransactionAddress,
   type Hex,
 } from "viem";
-import { clPoolAbi, erc20BalanceAbi, lpVenueAbi, oilskinAccountAbi, strategyRouterAbi, swapAdapterAbi } from "../src/abi/oilskin.js";
+import { AAVE_V3, COLLATERAL_ASSETS, COLLATERAL_SYMBOLS } from "@zyo/shared";
+import { aaveVenueAbi, clPoolAbi, collateralRegistryAbi, erc20BalanceAbi, lpVenueAbi, oilskinAccountAbi, strategyRouterAbi, swapAdapterAbi } from "../src/abi/oilskin.js";
 import type { Address } from "../src/types/evm.js";
 import { MAX_UINT256 } from "../src/types/evm.js";
-import type { MockChain } from "./mockChain.js";
+import type { MockChain, MockLog } from "./mockChain.js";
 import { USDC } from "./fixtures.js";
 
 /**
@@ -37,6 +40,10 @@ export interface MockOilskinOptions {
   router: Address;
   lpVenue: Address;
   usdc?: Address;
+  /** `router.REGISTRY()`. Defaults to REGISTRY_ADDR. */
+  registry?: Address;
+  /** The AaveV3Venue every enabled asset resolves to by default. Defaults to AAVE_VENUE_ADDR. */
+  aaveVenue?: Address;
 }
 
 export interface MockGrant {
@@ -54,6 +61,10 @@ export interface CloseYield {
 /** The non-USDC leg of the default mock pool (8 decimals, like cbBTC/cbZEC). */
 export const OTHER_TOKEN = getAddress("0x0000000000000000000000000000000000000e11") as Address;
 export const POOL_ADDR = getAddress("0x00000000000000000000000000000000000000b0") as Address;
+export const REGISTRY_ADDR = getAddress("0x0000000000000000000000000000000000000e12") as Address;
+export const AAVE_VENUE_ADDR = getAddress("0x0000000000000000000000000000000000000e13") as Address;
+/** A venue that is NOT an AaveV3Venue (a MorphoBlueVenue, say): `PROVIDER()` reverts on it. */
+export const OTHER_VENUE_ADDR = getAddress("0x0000000000000000000000000000000000000e14") as Address;
 
 export class MockOilskin {
   readonly usdc: Address;
@@ -75,6 +86,21 @@ export class MockOilskin {
   txFrom: Address[] = [];
   /** Force the next executed tx to revert on-chain (receipt status 0). */
   failNextTx = false;
+  /**
+   * Audit wave 2, M-HIGH-1: the router resolved a venue that held nothing, found no debt, repaid
+   * nothing and SUCCEEDED. This makes the mock's unwind do exactly that — closes go through, the
+   * repay leg finds no debt — so the receipt is a success whose `LeveragedLpUnwound.repaid` is 0.
+   */
+  strandRepay = false;
+  /** `LeveragedLpUnwound` logs emitted by the transaction being executed right now. */
+  private pendingLogs: MockLog[] = [];
+  /**
+   * The registry as the venue guard reads it (audit wave 2, M-HIGH-2): which assets are enabled,
+   * which venue each resolves to, and what each venue answers to `PROVIDER()`.
+   */
+  enabledAssets = new Map<string, boolean>(COLLATERAL_SYMBOLS.map((s) => [COLLATERAL_ASSETS[s].address.toLowerCase(), COLLATERAL_ASSETS[s].enabled]));
+  venueOf = new Map<string, Address>();
+  venueProviders = new Map<string, Address | null>();
 
   constructor(
     private readonly chain: MockChain,
@@ -114,6 +140,23 @@ export class MockOilskin {
   tokensOf(poolId: Hex): { token0: Address; token1: Address; pool: Address } {
     return this.poolTokens.get(poolId) ?? { token0: this.usdc, token1: OTHER_TOKEN, pool: POOL_ADDR };
   }
+  get registry(): Address {
+    return this.opts.registry ?? REGISTRY_ADDR;
+  }
+  get aaveVenue(): Address {
+    return this.opts.aaveVenue ?? AAVE_VENUE_ADDR;
+  }
+  /** Point `asset` at `venue` in the mock registry (what `acceptVenue` does on chain). */
+  setVenue(asset: Address, venue: Address): void {
+    this.venueOf.set(asset.toLowerCase(), venue);
+  }
+  setEnabled(asset: Address, enabled: boolean): void {
+    this.enabledAssets.set(asset.toLowerCase(), enabled);
+  }
+  /** What `venue.PROVIDER()` answers; `null` makes the call revert (a venue with no such view). */
+  setVenueProvider(venue: Address, provider: Address | null): void {
+    this.venueProviders.set(venue.toLowerCase(), provider);
+  }
 
   install(accounts: Address[]): void {
     const c = this.chain.contracts;
@@ -121,8 +164,24 @@ export class MockOilskin {
       const { functionName } = decodeFunctionData({ abi: strategyRouterAbi, data });
       if (functionName === "USDC") return encodeFunctionResult({ abi: strategyRouterAbi, functionName, result: this.usdc });
       if (functionName === "LP_VENUE") return encodeFunctionResult({ abi: strategyRouterAbi, functionName, result: this.opts.lpVenue });
+      if (functionName === "REGISTRY") return encodeFunctionResult({ abi: strategyRouterAbi, functionName, result: this.registry });
       throw revert("mock router: not callable directly");
     });
+    c.set(this.registry.toLowerCase(), (data) => {
+      const { functionName, args } = decodeFunctionData({ abi: collateralRegistryAbi, data });
+      const [asset] = args as [Address];
+      if (functionName === "isEnabled") {
+        return encodeFunctionResult({ abi: collateralRegistryAbi, functionName, result: this.enabledAssets.get(asset.toLowerCase()) ?? false });
+      }
+      if (functionName === "venueOf") {
+        return encodeFunctionResult({ abi: collateralRegistryAbi, functionName, result: this.venueOf.get(asset.toLowerCase()) ?? this.aaveVenue });
+      }
+      if (functionName === "previousVenues") return encodeFunctionResult({ abi: collateralRegistryAbi, functionName, result: [] });
+      throw revert("mock registry: unsupported");
+    });
+    this.installVenue(this.aaveVenue);
+    this.venueProviders.set(OTHER_VENUE_ADDR.toLowerCase(), null);
+    this.installVenue(OTHER_VENUE_ADDR);
     c.set(this.opts.lpVenue.toLowerCase(), (data) => {
       const { functionName, args } = decodeFunctionData({ abi: lpVenueAbi, data });
       if (functionName === "positionsOf") {
@@ -172,6 +231,7 @@ export class MockOilskin {
         return hash;
       }
       let status: "0x1" | "0x0" = "0x1";
+      this.pendingLogs = [];
       if (this.failNextTx) {
         this.failNextTx = false;
         status = "0x0";
@@ -182,10 +242,26 @@ export class MockOilskin {
           status = "0x0";
         }
       }
-      this.chain.receipts.set(hash.toLowerCase(), { status, blockNumber: this.chain.blockNumber });
+      this.chain.receipts.set(hash.toLowerCase(), {
+        status,
+        blockNumber: this.chain.blockNumber,
+        logs: status === "0x1" ? [...this.pendingLogs] : [],
+      });
+      this.pendingLogs = [];
       this.chain.txCount.set(from.toLowerCase(), (this.chain.txCount.get(from.toLowerCase()) ?? 0) + 1);
       return hash;
     };
+  }
+
+  /** Put a venue contract at `venue` whose `PROVIDER()` answers per `setVenueProvider` (Aave's by default). */
+  installVenue(venue: Address): void {
+    this.chain.contracts.set(venue.toLowerCase(), (data: Hex) => {
+      const { functionName } = decodeFunctionData({ abi: aaveVenueAbi, data });
+      if (functionName !== "PROVIDER") throw revert("mock venue: unsupported");
+      const provider = this.venueProviders.has(venue.toLowerCase()) ? this.venueProviders.get(venue.toLowerCase()) : (AAVE_V3.poolAddressesProvider as Address);
+      if (provider === null || provider === undefined) throw revert("mock venue: no PROVIDER() here");
+      return encodeFunctionResult({ abi: aaveVenueAbi, functionName, result: provider });
+    });
   }
 
   private erc20Call(token: Address, data: Hex): Hex {
@@ -256,6 +332,7 @@ export class MockOilskin {
     if (functionName !== "unwind") throw revert("mock router: only unwind");
     const [p] = args as unknown as [
       {
+        collateralAsset: Address;
         positionIds: readonly bigint[];
         band: { minSqrtPriceX96: bigint; maxSqrtPriceX96: bigint };
         swap: { quotedIn: bigint; quotedOut: bigint; maxSlippageBps: number; routeData: Hex };
@@ -268,10 +345,17 @@ export class MockOilskin {
     if (p.withdrawAmount !== 0n) throw revert("mock router: keeper must not withdraw");
 
     let usdcFromLp = 0n;
-    if (p.positionIds.length !== 0) usdcFromLp = this.closeAndSettle(acct, p);
+    let closedCount = 0;
+    let failedCount = 0;
+    if (p.positionIds.length !== 0) {
+      const settled = this.closeAndSettle(acct, p);
+      usdcFromLp = settled.proceeds;
+      closedCount = settled.closed;
+      failedCount = settled.failed;
+    }
 
     let repaid = 0n;
-    if (p.repayAmount !== 0n) {
+    if (p.repayAmount !== 0n && !this.strandRepay) {
       const user = this.chain.users.get(acct)?.get(this.usdc.toLowerCase());
       const owed = user ? user.variableDebt + user.stableDebt : 0n;
       const held = this.usdcBalances.get(acct) ?? 0n;
@@ -285,6 +369,17 @@ export class MockOilskin {
       }
     }
     const [, , , , , hf] = this.chain.accountData(account as Address);
+    // The router's event, exactly as the keeper's `confirm` reads it from the receipt.
+    const topics = encodeEventTopics({
+      abi: strategyRouterAbi,
+      eventName: "LeveragedLpUnwound",
+      args: { account: account as Address, collateralAsset: p.collateralAsset },
+    }) as Hex[];
+    const eventData = encodeAbiParameters(
+      [{ type: "uint256" }, { type: "uint256" }, { type: "uint256" }, { type: "uint256" }, { type: "uint256" }, { type: "uint256" }],
+      [BigInt(closedCount), BigInt(failedCount), usdcFromLp, repaid, 0n, hf]
+    );
+    this.pendingLogs.push({ address: this.opts.router, topics, data: eventData, blockNumber: this.chain.blockNumber, logIndex: this.pendingLogs.length });
     return encodeFunctionResult({ abi: strategyRouterAbi, functionName, result: [usdcFromLp, repaid, 0n, hf] });
   }
 
@@ -296,14 +391,14 @@ export class MockOilskin {
       band: { minSqrtPriceX96: bigint; maxSqrtPriceX96: bigint };
       swap: { quotedIn: bigint; quotedOut: bigint; maxSlippageBps: number; routeData: Hex };
     }
-  ): bigint {
+  ): { proceeds: bigint; closed: number; failed: number } {
     if (p.band.minSqrtPriceX96 === 0n || p.band.maxSqrtPriceX96 === 0n || p.band.minSqrtPriceX96 > p.band.maxSqrtPriceX96) {
       throw revertWith(encodeErrorResult({ abi: lpVenueAbi, errorName: "BandRequired" }));
     }
     const list = this.positions.get(acct) ?? [];
     // Pool comes from the first id the account ACTUALLY OWNS (index 0 is not special).
     const first = p.positionIds.map((id) => list.find((x) => x.id === id)).find((x) => x !== undefined);
-    if (!first) return 0n; // every id stale: reported as failed, never a revert
+    if (!first) return { proceeds: 0n, closed: 0, failed: p.positionIds.length }; // every id stale: reported as failed, never a revert
     const poolId = first.poolId;
     const price = this.poolPrices.get(poolId) ?? 0n;
     if (price < p.band.minSqrtPriceX96 || price > p.band.maxSqrtPriceX96) {
@@ -325,7 +420,7 @@ export class MockOilskin {
     let proceeds = outUsdc;
     if (outOther > 0n) proceeds += this.swapToUsdc(outOther, p.swap);
     this.usdcBalances.set(acct, (this.usdcBalances.get(acct) ?? 0n) + proceeds);
-    return proceeds;
+    return { proceeds, closed: closed.length, failed: p.positionIds.length - closed.length };
   }
 
   /** AerodromeSwapAdapter: a RATE-derived floor on the amount actually swapped. */

@@ -8,7 +8,10 @@
  * enforces it across app/, components/ and lib/): the four in BANNED_WORDS.
  */
 
-export const BANNED_WORDS: readonly string[] = ["private", "shielded", "non-custodial", "locked payout address", "no operator custody", "no owner powers"];
+// The last two entries came from audit wave 2 (G-MED-1): the keeper grant permits a collateral
+// withdraw into the account and a keeper-chosen swap quote, so neither absolute claim about what
+// the keeper "cannot" do was true of the permission as signed.
+export const BANNED_WORDS: readonly string[] = ["private", "shielded", "non-custodial", "locked payout address", "no operator custody", "no owner powers", "can never withdraw", "move a token on its own"];
 
 export interface RiskItem {
   id: string;

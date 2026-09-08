@@ -22,7 +22,8 @@ export function fmtAmount(v: number, dp = 4): string {
   return v.toLocaleString("en-US", { maximumFractionDigits: dp });
 }
 
-export function fmtHf(hf: number): string {
+export function fmtHf(hf: number | null): string {
+  if (hf === null) return "unreadable";
   if (!Number.isFinite(hf)) return "∞";
   return hf.toFixed(2);
 }

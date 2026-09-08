@@ -95,6 +95,10 @@ contract AaveV3Venue is ICollateralVenue, Peripheral {
     ///      floor. This IS the floor, not a copy of it: every path that borrows through this venue
     ///      passes through here, so there is no entry point left that can open debt below it.
     function borrow(address asset, uint256 amount) external override {
+        _borrow(asset, amount);
+    }
+
+    function _borrow(address asset, uint256 amount) internal {
         if (amount == 0) revert ZeroAmount();
         address pool = PROVIDER.getPool();
         _exec(
@@ -106,6 +110,13 @@ contract AaveV3Venue is ICollateralVenue, Peripheral {
         uint256 floor = REGISTRY.entryHfFloorWad();
         (,,,,, uint256 hf) = IAavePool(pool).getUserAccountData(msg.sender);
         if (hf < floor) revert EntryHfTooLow(hf, floor);
+    }
+
+    /// @inheritdoc ICollateralVenue
+    /// @dev Aave is ONE cross-collateral position: the collateral named is informational and the
+    ///      path is exactly `borrow`, floor included.
+    function borrowAgainst(address, address loanToken, uint256 amount) external override {
+        _borrow(loanToken, amount);
     }
 
     /// @inheritdoc ICollateralVenue

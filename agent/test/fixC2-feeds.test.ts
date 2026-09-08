@@ -70,6 +70,7 @@ function env(storePath: string, extra: Record<string, string> = {}): NodeJS.Proc
     RPC_DEADLINE_MS: "2000",
     WATCHDOG_STALL_MS: "5000",
     LOG_LEVEL: "info",
+    NOTIFY_ALLOW_LOG_ONLY: "1",
     ...extra,
   };
 }

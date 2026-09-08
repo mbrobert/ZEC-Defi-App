@@ -8,6 +8,7 @@ import {
   exactHalfWidthPct,
   fmtHalfWidth,
   fromAtomic,
+  accountHf,
   hfBand,
   liveLiquidationPrice,
   planLoan,
@@ -136,6 +137,18 @@ test("exactHalfWidthPct: 1.0001^(bps/2) − 1, matching the model (4500 → 25.2
   assert.equal(fmtHalfWidth(4500), "±25.2%");
   assert.equal(fmtHalfWidth(1500), "±7.79%");
   assert.throws(() => exactHalfWidthPct(0), RangeError);
+});
+
+test("N-MED-2: an unreadable health factor is a warning, never 'No debt'", () => {
+  assert.equal(hfBand(null).label, "Unreadable");
+  assert.equal(hfBand(null).kind, "warn");
+  assert.equal(hfBand(null).rung, null);
+  // The dashboard's rule: no account, or no Aave leg → null; a real number passes through; +∞ stays +∞ (no debt).
+  assert.equal(accountHf(null), null);
+  assert.equal(accountHf({ aave: null }), null);
+  assert.equal(accountHf({ aave: { healthFactor: 1.1 } }), 1.1);
+  assert.equal(accountHf({ aave: { healthFactor: Number.POSITIVE_INFINITY } }), Number.POSITIVE_INFINITY);
+  assert.equal(accountHf({ aave: { healthFactor: Number.NaN } }), null);
 });
 
 test("hfBand follows the shared ladder", () => {

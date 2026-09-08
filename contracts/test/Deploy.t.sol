@@ -38,6 +38,9 @@ contract DeployTest is Fixture {
         c.performanceBps = 1000;
         c.entryHfFloorWad = 1.55e18;
         c.registryTimelockDelay = REGISTRY_TIMELOCK;
+        // The fixture chain is 31337: opt in by default; the mainnet tests set what they need.
+        c.allowAnyChain = true;
+        c.confirmBaseMainnet = false;
     }
 
     function makeAddrView(string memory n) internal pure returns (address) {
@@ -56,6 +59,7 @@ contract DeployTest is Fixture {
 
     function test_guardRefusesUnknownChainWithoutOptIn() public {
         Deploy.Config memory c = _config();
+        c.allowAnyChain = false;
         vm.expectRevert(abi.encodeWithSelector(Deploy.UnsupportedChain.selector, block.chainid));
         script.guard(c);
     }
@@ -70,17 +74,66 @@ contract DeployTest is Fixture {
     function test_guardCatchesAaveProviderDrift() public {
         Deploy.Config memory c = _config();
         vm.chainId(8453);
-        vm.setEnv("CONFIRM_BASE_MAINNET", "true");
+        c.confirmBaseMainnet = true;
+        c.registryOwner = address(aave); // a contract owner: past the S-LOW-1 check, on to the drift check
         // The mock provider resolves to itself, not to the verified pool: the guard must refuse.
         vm.expectRevert(
             abi.encodeWithSelector(Deploy.AaveProviderDrift.selector, "pool", BaseAddresses.AAVE_POOL, address(aave))
         );
         script.guard(c);
+    }
+
+    /// Audit wave 2, S-LOW-1. The header of Deploy.s.sol said "TREASURY must not be the broadcaster"
+    /// and "REGISTRY_OWNER — a Safe on mainnet"; the guard enforced neither, and the Sepolia runbook
+    /// exports `TREASURY=$DEPLOYER` and a personal `REGISTRY_OWNER` into the same shell a mainnet
+    /// run would inherit. Both are named reverts on chain 8453 now; a contract owner is enough.
+    function test_FIX_S1_mainnetGuardRefusesTheBroadcasterAsTreasury() public {
+        Deploy.Config memory c = _config();
+        vm.chainId(8453);
+        c.confirmBaseMainnet = true;
+        c.treasury = c.deployer;
+        vm.expectRevert(abi.encodeWithSelector(Deploy.TreasuryIsBroadcaster.selector, c.deployer));
+        script.guard(c);
+    }
+
+    function test_FIX_S1b_mainnetGuardRefusesAnEoaRegistryOwner() public {
+        Deploy.Config memory c = _config();
+        vm.chainId(8453);
+        c.confirmBaseMainnet = true;
+        c.registryOwner = makeAddr("an-eoa-safe-is-not");
+        vm.expectRevert(abi.encodeWithSelector(Deploy.RegistryOwnerNotAContract.selector, c.registryOwner));
+        script.guard(c);
+        // A contract owner (any code — a Safe on mainnet) passes this check and reaches the next one.
+        c.registryOwner = address(aave);
+        vm.expectRevert(
+            abi.encodeWithSelector(Deploy.AaveProviderDrift.selector, "pool", BaseAddresses.AAVE_POOL, address(aave))
+        );
+        script.guard(c);
+    }
+
+    /// Off mainnet (a local chain, Sepolia's own script) the deployer may be its own treasury and
+    /// an EOA may own the registry: the checks are mainnet-only by design.
+    function test_FIX_S1c_theChecksAreMainnetOnly() public {
+        Deploy.Config memory c = _config();
+        c.treasury = c.deployer;
+        c.registryOwner = makeAddr("eoa-owner-on-a-test-chain");
+        script.guard(c); // passes
+    }
+
+    function test_configFromEnvReadsTheTwoOptIns() public {
+        vm.setEnv("CONFIRM_BASE_MAINNET", "true");
+        vm.setEnv("ALLOW_ANY_CHAIN", "true");
+        Deploy.Config memory c = script.configFromEnv();
+        assertTrue(c.confirmBaseMainnet);
+        assertTrue(c.allowAnyChain);
         vm.setEnv("CONFIRM_BASE_MAINNET", "false");
+        vm.setEnv("ALLOW_ANY_CHAIN", "false");
+        c = script.configFromEnv();
+        assertFalse(c.confirmBaseMainnet);
+        assertFalse(c.allowAnyChain);
     }
 
     function test_guardRequiresEnvAndCode() public {
-        vm.setEnv("ALLOW_ANY_CHAIN", "true");
         Deploy.Config memory c = _config();
         c.aerodromeSwapRouter = address(0);
         vm.expectRevert(abi.encodeWithSelector(Deploy.MissingEnv.selector, "AERODROME_SWAP_ROUTER"));
@@ -95,7 +148,6 @@ contract DeployTest is Fixture {
         script.guard(c);
         c = _config();
         script.guard(c); // everything present → passes
-        vm.setEnv("ALLOW_ANY_CHAIN", "false");
     }
 
     function test_deployWiresEverything() public {

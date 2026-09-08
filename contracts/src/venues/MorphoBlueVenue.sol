@@ -20,10 +20,16 @@ import {MorphoMath} from "../libraries/MorphoMath.sol";
 ///         Where Aave has one cross-collateral position, Morpho has one position per market, so:
 ///         - `healthFactor(account)` is the WORST market's health factor (the one a liquidator reaches
 ///           first); `type(uint256).max` when the account owes nothing anywhere.
-///         - `borrow(loanToken, amount)` draws from the market where the account has the most
-///           headroom (collateral × price × LLTV − debt); `repay(loanToken, amount)` pays the worst
+///         - `borrowAgainst(collateral, loanToken, amount)` draws from THAT collateral's market —
+///           what the router uses when it has just supplied the collateral, so the debt is against
+///           the asset the user chose; `borrow(loanToken, amount)` (borrow against what is already
+///           here) draws from the market with the most headroom (collateral × price × LLTV − debt)
+///           among those with enough idle liquidity; `repay(loanToken, amount)` pays the worst
 ///           market first and spills into the next; `repay(loanToken, max)` clears every market by
 ///           SHARES so no dust of debt is left behind.
+///         - `debt` reads no oracle; a market with no debt never reads its oracle; a market with
+///           debt whose oracle cannot be read has health factor 0 (fail closed), so an exit is
+///           never gated by another market's feed.
 ///         - `liquidationThresholdBps` and `maxLtvBps` both return the market's LLTV: Morpho has one
 ///           threshold, not two. It is read from `idToMarketParams` at call time, never stored here.
 ///
@@ -68,8 +74,11 @@ contract MorphoBlueVenue is ICollateralVenue, Peripheral {
     error NoMarket(address asset);
     /// @notice Only `LOAN_TOKEN` can be borrowed or repaid through this venue.
     error NotLoanToken(address asset);
-    /// @notice A borrow needs collateral in at least one of this venue's markets.
+    /// @notice A borrow needs collateral in at least one of this venue's markets (or in the market
+    ///         named by `borrowAgainst`).
     error NoCollateralPosition(address account);
+    /// @notice No market where the account holds collateral has `amount` of idle loan token.
+    error NoMarketCanFill(uint256 amount);
     /// @notice A constructor id that Morpho has no market for.
     error MarketNotCreated(bytes32 id);
     /// @notice A constructor id whose params do not hash to it (a Morpho that is not Morpho).
@@ -149,13 +158,31 @@ contract MorphoBlueVenue is ICollateralVenue, Peripheral {
 
     /// @inheritdoc ICollateralVenue
     /// @dev Invariant: `onBehalf` = `receiver` = the calling account; the market is the one where the
-    ///      account has the most headroom; and the account's WORST market health factor after the
-    ///      borrow is at or above the registry's entry floor. Every path that borrows through this
-    ///      venue passes through here, so there is no entry point that opens debt below the floor.
+    ///      account has the most headroom AMONG those that can fill `amount` from idle liquidity
+    ///      (audit wave 2, M-LOW-1); and the account's WORST market health factor after the borrow
+    ///      is at or above the registry's entry floor. This is the fallback for "borrow against
+    ///      whatever is already here" (`collateralAmount == 0`); the router's opens that supply a
+    ///      collateral use `borrowAgainst` so the debt lands in THAT market (M-MED-1).
     function borrow(address asset, uint256 amount) external override {
         if (amount == 0) revert ZeroAmount();
         if (asset != LOAN_TOKEN) revert NotLoanToken(asset);
-        bytes32 id = _marketForBorrow(msg.sender);
+        _borrowIn(_marketForBorrow(msg.sender, amount), amount);
+    }
+
+    /// @inheritdoc ICollateralVenue
+    /// @dev Invariant: the debt lands in `collateralAsset`'s market, where the account must already
+    ///      hold collateral; the floor check is the same worst-market check as `borrow`.
+    function borrowAgainst(address collateralAsset, address loanToken, uint256 amount) external override {
+        if (amount == 0) revert ZeroAmount();
+        if (loanToken != LOAN_TOKEN) revert NotLoanToken(loanToken);
+        bytes32 id = _marketOf[collateralAsset];
+        if (id == bytes32(0)) revert NoCollateralPosition(msg.sender);
+        (,, uint128 held) = MORPHO.position(id, msg.sender);
+        if (held == 0) revert NoCollateralPosition(msg.sender);
+        _borrowIn(id, amount);
+    }
+
+    function _borrowIn(bytes32 id, uint256 amount) internal {
         _exec(
             address(MORPHO), abi.encodeCall(IMorphoBlue.borrow, (_params(id), amount, 0, msg.sender, msg.sender))
         );
@@ -222,11 +249,12 @@ contract MorphoBlueVenue is ICollateralVenue, Peripheral {
 
     /// @inheritdoc ICollateralVenue
     /// @dev Sum over every market, in assets, including interest accrued since each market's
-    ///      `lastUpdate` (what Morpho would charge in this block). 0 for any other asset.
+    ///      `lastUpdate` (what Morpho would charge in this block). 0 for any other asset. Reads
+    ///      NO oracle: debt is shares against the market's totals (audit wave 2, M-MED-2).
     function debt(address account, address asset) external view override returns (uint256 total) {
         if (asset != LOAN_TOKEN) return 0;
         for (uint256 i = 0; i < _collaterals.length; i++) {
-            (,, uint256 owed,) = _marketHealth(_marketOf[_collaterals[i]], account);
+            (uint256 owed,) = _marketDebt(_marketOf[_collaterals[i]], account);
             total += owed;
         }
     }
@@ -312,43 +340,71 @@ contract MorphoBlueVenue is ICollateralVenue, Peripheral {
         return lltv / WAD_PER_BPS;
     }
 
-    /// @dev Health of ONE market position: max borrow (collateral × price × LLTV) over debt, WAD.
+    /// @dev Debt of ONE market position in assets (what Morpho would pull this block) and the
+    ///      shares behind it. No oracle involved.
+    function _marketDebt(bytes32 id, address account) internal view returns (uint256 owed, uint256 shares) {
+        (, uint128 borrowShares,) = MORPHO.position(id, account);
+        if (borrowShares == 0) return (0, 0);
+        MarketParams memory p = _params(id);
+        (uint256 totalBorrowAssets, uint256 totalBorrowShares) = MorphoMath.expectedBorrowTotals(p, _market(id));
+        shares = borrowShares;
+        owed = shares.toAssetsUp(totalBorrowAssets, totalBorrowShares);
+    }
+
+    /// @dev Max borrow of ONE market position (collateral × price × LLTV, loan units). `ok` is
+    ///      false when the market's oracle cannot be read; the caller decides what that means.
+    function _tryMaxBorrow(bytes32 id, address account) internal view returns (bool ok, uint256 maxBorrow) {
+        (,, uint128 held) = MORPHO.position(id, account);
+        if (held == 0) return (true, 0);
+        MarketParams memory p = _params(id);
+        try IMorphoOracle(p.oracle).price() returns (uint256 price) {
+            return (true, uint256(held).mulDivDown(price, ORACLE_PRICE_SCALE).wMulDown(p.lltv));
+        } catch {
+            return (false, 0);
+        }
+    }
+
+    /// @dev Health of ONE market position: max borrow over debt, WAD. A market with no debt is
+    ///      `type(uint256).max` WITHOUT reading its oracle; a market with debt whose oracle cannot
+    ///      be read is 0 — the worst answer, never a revert — so `repay` is never gated by an
+    ///      oracle and a borrow or withdraw fails closed at the floor (audit wave 2, M-MED-2).
     function _marketHealth(bytes32 id, address account)
         internal
         view
-        returns (uint256 hf, uint256 maxBorrow, uint256 owed, uint256 shares)
+        returns (uint256 hf, uint256 owed, uint256 shares)
     {
-        (, uint128 borrowShares, uint128 held) = MORPHO.position(id, account);
-        MarketParams memory p = _params(id);
-        if (held != 0) {
-            uint256 price = IMorphoOracle(p.oracle).price();
-            maxBorrow = uint256(held).mulDivDown(price, ORACLE_PRICE_SCALE).wMulDown(p.lltv);
-        }
-        if (borrowShares == 0) return (type(uint256).max, maxBorrow, 0, 0);
-        (uint256 totalBorrowAssets, uint256 totalBorrowShares) =
-            MorphoMath.expectedBorrowTotals(p, _market(id));
-        shares = borrowShares;
-        owed = shares.toAssetsUp(totalBorrowAssets, totalBorrowShares);
+        (owed, shares) = _marketDebt(id, account);
+        if (owed == 0) return (type(uint256).max, 0, 0);
+        (bool ok, uint256 maxBorrow) = _tryMaxBorrow(id, account);
+        if (!ok) return (0, owed, shares);
         hf = (maxBorrow * WAD) / owed;
     }
 
     function _healthFactor(address account) internal view returns (uint256 worst) {
         worst = type(uint256).max;
         for (uint256 i = 0; i < _collaterals.length; i++) {
-            (uint256 hf,,,) = _marketHealth(_marketOf[_collaterals[i]], account);
+            (uint256 hf,,) = _marketHealth(_marketOf[_collaterals[i]], account);
             if (hf < worst) worst = hf;
         }
     }
 
-    /// @dev The market with the most room to borrow: collateral × price × LLTV − debt, in loan units.
-    ///      Only markets where the account holds collateral count.
-    function _marketForBorrow(address account) internal view returns (bytes32 best) {
+    /// @dev The market with the most room to borrow — collateral × price × LLTV − debt, in loan
+    ///      units — among markets where the account holds collateral, whose oracle answers, and
+    ///      which hold at least `amount` of idle loan token (Morpho would otherwise revert with its
+    ///      own string while another market could have filled it — audit wave 2, M-LOW-1).
+    function _marketForBorrow(address account, uint256 amount) internal view returns (bytes32 best) {
         uint256 bestHeadroom;
         bool found;
+        bool anyCollateral;
         for (uint256 i = 0; i < _collaterals.length; i++) {
             bytes32 id = _marketOf[_collaterals[i]];
-            (, uint256 maxBorrow, uint256 owed,) = _marketHealth(id, account);
-            if (maxBorrow == 0) continue;
+            (bool ok, uint256 maxBorrow) = _tryMaxBorrow(id, account);
+            if (!ok || maxBorrow == 0) continue;
+            anyCollateral = true;
+            Market memory m = _market(id);
+            uint256 idle = m.totalSupplyAssets > m.totalBorrowAssets ? m.totalSupplyAssets - m.totalBorrowAssets : 0;
+            if (idle < amount) continue;
+            (uint256 owed,) = _marketDebt(id, account);
             uint256 headroom = maxBorrow > owed ? maxBorrow - owed : 0;
             if (!found || headroom > bestHeadroom) {
                 best = id;
@@ -356,7 +412,10 @@ contract MorphoBlueVenue is ICollateralVenue, Peripheral {
                 found = true;
             }
         }
-        if (!found) revert NoCollateralPosition(account);
+        if (!found) {
+            if (!anyCollateral) revert NoCollateralPosition(account);
+            revert NoMarketCanFill(amount);
+        }
     }
 
     /// @dev Every market's debt for `account`, ordered worst health factor first (insertion sort;
@@ -373,7 +432,7 @@ contract MorphoBlueVenue is ICollateralVenue, Peripheral {
         uint256[] memory hfs = new uint256[](n);
         for (uint256 i = 0; i < n; i++) {
             bytes32 id = _marketOf[_collaterals[i]];
-            (uint256 hf,, uint256 o, uint256 s) = _marketHealth(id, account);
+            (uint256 hf, uint256 o, uint256 s) = _marketHealth(id, account);
             uint256 j = i;
             while (j > 0 && hfs[j - 1] > hf) {
                 ids[j] = ids[j - 1];

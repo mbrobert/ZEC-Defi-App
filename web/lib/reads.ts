@@ -11,7 +11,7 @@
 import type { Address, Hex } from "viem";
 import { AAVE_V3, BASE_TOKENS, COLLATERAL_ASSETS, COLLATERAL_SYMBOLS, isZeroAddress, type CollateralSymbol } from "@zyo/shared";
 import { AAVE_ORACLE_ABI, ERC20_ABI, POOL_ABI, POOL_DATA_PROVIDER_ABI } from "./abi/aave";
-import { ACCOUNT_ABI, AERODROME_CLPOOL_ABI, COLLATERAL_REGISTRY_ABI, FACTORY_ABI, LP_VENUE_ABI, ROUTER_ABI, SNUGGLE_VAULT_ABI } from "./abi/oilskin";
+import { AAVE_VENUE_ABI, ACCOUNT_ABI, AERODROME_CLPOOL_ABI, COLLATERAL_REGISTRY_ABI, FACTORY_ABI, LP_VENUE_ABI, ROUTER_ABI, SNUGGLE_VAULT_ABI } from "./abi/oilskin";
 import { baseUnitsToUsd, fromAtomic, rayToAprPct, wadHealthFactor } from "./math";
 import type { KeeperGrantRead } from "./keeper";
 import { UNWIND_SELECTOR, type Deployment } from "./plan";
@@ -209,6 +209,7 @@ export async function readDeployment(client: ReadClient, factory: Address, route
   ]);
   if (typeof aaveVenue !== "string" || isZeroAddress(aaveVenue)) throw new Error("registry has no venue for cbBTC");
   if (typeof engine !== "string" || isZeroAddress(engine)) throw new Error("LP venue has no engine");
+  const unsupportedVenues = await readUnsupportedVenues(client, registry as Address);
   return {
     factory,
     router,
@@ -218,8 +219,53 @@ export async function readDeployment(client: ReadClient, factory: Address, route
     swapAdapter: swapAdapter as Address,
     engine: engine as Address,
     keeper,
+    unsupportedVenues,
     demo: false,
   };
+}
+
+/**
+ * Which ENABLED collateral assets the registry points at a venue this app cannot read.
+ * Every account read in this file goes to the Aave pool and data provider directly; a
+ * position on any other venue (the Morpho venue after `acceptVenue`, a future venue) is
+ * invisible here and to the keeper. A venue counts as readable only when it answers
+ * `PROVIDER()` with the Aave PoolAddressesProvider in `@zyo/shared` — that is what makes it the
+ * AaveV3Venue over the pool these reads describe (audit wave 2, M-HIGH-2). An unreadable answer
+ * counts as unsupported: fail closed.
+ */
+export async function readUnsupportedVenues(client: ReadClient, registry: Address): Promise<CollateralSymbol[]> {
+  const enabledRows = await safeMulticall(
+    client,
+    COLLATERAL_SYMBOLS.map((s) => ({ address: registry, abi: COLLATERAL_REGISTRY_ABI, functionName: "isEnabled", args: [BASE_TOKENS[s].address] })),
+  );
+  const venueRows = await safeMulticall(
+    client,
+    COLLATERAL_SYMBOLS.map((s) => ({ address: registry, abi: COLLATERAL_REGISTRY_ABI, functionName: "venueOf", args: [BASE_TOKENS[s].address] })),
+  );
+  const venues = new Set<string>();
+  COLLATERAL_SYMBOLS.forEach((s, i) => {
+    if (enabledRows[i] !== true) return;
+    const v = venueRows[i];
+    if (typeof v === "string" && !isZeroAddress(v)) venues.add(v.toLowerCase());
+  });
+  const venueList = [...venues];
+  const providers = await safeMulticall(
+    client,
+    venueList.map((v) => ({ address: v as Address, abi: AAVE_VENUE_ABI, functionName: "PROVIDER" })),
+  );
+  const supported = new Map<string, boolean>();
+  venueList.forEach((v, i) => {
+    const p = providers[i];
+    supported.set(v, typeof p === "string" && p.toLowerCase() === AAVE_V3.poolAddressesProvider.toLowerCase());
+  });
+  const out: CollateralSymbol[] = [];
+  COLLATERAL_SYMBOLS.forEach((s, i) => {
+    if (enabledRows[i] !== true) return;
+    const v = venueRows[i];
+    const ok = typeof v === "string" && !isZeroAddress(v) && supported.get(v.toLowerCase()) === true;
+    if (!ok) out.push(s);
+  });
+  return out;
 }
 
 /**

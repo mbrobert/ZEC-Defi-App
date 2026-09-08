@@ -8,10 +8,10 @@ import { BASE_CHAIN, BASE_TOKENS, CHAIN_ID, COLLATERAL_ASSETS, feeBreakdown, sho
 import { useAccountRead, useDeployment, useIndexed, useKeeperGrant, useMarket, usePendingVenues, useSession } from "@/lib/hooks";
 import { useMode } from "@/lib/mode";
 import { DEMO_ACCOUNT, DEMO_ACCOUNT_STATE, DEMO_SNAPSHOT_AT } from "@/lib/demo";
-import { currentLtvBps, hfBand, liveLiquidationPrice } from "@/lib/math";
+import { accountHf, currentLtvBps, hfBand, liveLiquidationPrice } from "@/lib/math";
 import { fromDemo, mergePositions, type PositionView } from "@/lib/positions";
 import { buildClaimPlan, buildGrantPlan, buildRevokeAllPlan, buildUnwindPlan, deadlineFromNow, DEFAULT_BAND_TOLERANCE_BPS, type PlannedCall, type QuotedSwap } from "@/lib/plan";
-import { grantTokenLimits, runClaim, runGrant, runRevokeAll, runUnwind, type Emit, type RunContext } from "@/lib/execute";
+import { grantPoolTokenPricing, grantTokenLimits, runClaim, runGrant, runRevokeAll, runUnwind, type Emit, type RunContext } from "@/lib/execute";
 import { fmtAgo, fmtAmount, fmtHf, fmtPct, fmtUsd, fmtUsd0 } from "@/lib/format";
 import StatTile from "@/components/StatTile";
 import HealthBand from "@/components/HealthBand";
@@ -70,7 +70,7 @@ export default function DashboardPage() {
         collateralUsd,
         debtUsd,
         ltBps,
-        hf,
+        hf: hf as number | null,
         accountUsdc: 0,
         positions: DEMO_ACCOUNT_STATE.positions.map(fromDemo),
         activity: DEMO_ACCOUNT_STATE.activity,
@@ -92,7 +92,8 @@ export default function DashboardPage() {
       collateralUsd: account?.aave?.totalCollateralUsd ?? 0,
       debtUsd: account?.aave?.totalDebtUsd ?? 0,
       ltBps: account?.aave?.currentLiquidationThresholdBps ?? 0,
-      hf: account?.aave?.healthFactor ?? Number.POSITIVE_INFINITY,
+      // null = unreadable (no account read, or the Aave leg failed); never +∞ (audit wave 2, N-MED-2).
+      hf: accountHf(account),
       accountUsdc: account ? Number(account.accountUsdc) / 10 ** BASE_TOKENS.USDC.decimals : 0,
       positions: mergePositions(account ? account.lpPositions : null, indexed),
       activity: indexed?.activity ?? [],
@@ -109,6 +110,16 @@ export default function DashboardPage() {
   const netValue = view.collateralUsd + lpValue + view.accountUsdc - view.debtUsd;
   const band = hfBand(view.hf);
   const ltvBps = currentLtvBps(view.collateralUsd, view.debtUsd);
+  // Audit wave 2, M-HIGH-2: this page and the keeper read the Aave pool directly. An asset the
+  // registry points anywhere else is invisible to both, so say so and offer no keeper grant.
+  const unsupportedVenues = deployment?.unsupportedVenues ?? [];
+  const venueSupported = !primary || !unsupportedVenues.includes(primary.symbol);
+  // Every token the account's LP positions can pay out on close — what the keeper's grant must budget.
+  const livePoolSymbols = [...new Set(view.positions.flatMap((p) => (p.pool ? [p.pool.token0, p.pool.token1] : [])))];
+  const livePoolTokens = livePoolSymbols.flatMap((sym) => {
+    const t = (BASE_TOKENS as Record<string, { address: Address } | undefined>)[sym];
+    return t ? [{ address: t.address, symbol: sym }] : [];
+  });
   const empty = s.mode === "live" && !loading && (!account || !account.deployed);
   // Demo mode pins "now" to the snapshot so the grant's remaining days never drift.
   const nowSeconds = s.mode === "demo" ? Math.floor(Date.parse(DEMO_SNAPSHOT_AT) / 1000) : Math.floor(Date.now() / 1000);
@@ -176,7 +187,16 @@ export default function DashboardPage() {
     if (action.kind === "grant") {
       const sym = primary?.symbol ?? "cbBTC";
       const r = market.reserves[sym];
-      const limits = grantTokenLimits(view.debtUsd, { address: BASE_TOKENS[sym].address, decimals: BASE_TOKENS[sym].decimals, priceUsd: r?.priceUsd ?? NaN }, []);
+      // The re-grant used to carry NO pool-token line, so an LP whose other leg is not the
+      // collateral could never be closed by the keeper (audit wave 2, G-HIGH-1). Size every token
+      // the account's live positions can pay out, each in its own units.
+      let limits: ReturnType<typeof grantTokenLimits>;
+      try {
+        limits = grantTokenLimits(view.debtUsd, { address: BASE_TOKENS[sym].address, symbol: sym, decimals: BASE_TOKENS[sym].decimals, priceUsd: r?.priceUsd ?? NaN }, grantPoolTokenPricing(livePoolSymbols, market));
+      } catch (e) {
+        emit({ type: "blocked", step: 1, reason: `The keeper permission was not built: ${(e as Error).message}` });
+        return null;
+      }
       const hash = await runGrant(c, { account: view.accountAddr, deployment, tokenLimits: limits }, emit);
       if (hash) refetchGrant();
       return hash ? { account: view.accountAddr } : null;
@@ -241,6 +261,15 @@ export default function DashboardPage() {
           New position
         </Link>
       </div>
+
+      {unsupportedVenues.length > 0 && (
+        <div className="note note-crit" role="alert" data-testid="unsupported-venue">
+          <b className="text-oil-ink">This app cannot see positions on the current lending contract for {unsupportedVenues.join(", ")}.</b> Oilskin&rsquo;s registry points{" "}
+          {unsupportedVenues.length === 1 ? "that asset" : "those assets"} at a venue this dashboard and the Oilskin keeper do not read yet: numbers here come from Aave only, so a position
+          opened there shows as no debt, no rung fires for it, and no keeper permission protects it. Do not open a new position against {unsupportedVenues.join(" or ")} from this app until
+          it is updated; anything you already hold you can still repay or close from your own account.
+        </div>
+      )}
 
       {pendingVenues.length > 0 && (
         <div className="note note-warn" role="alert" data-testid="pending-venue">
@@ -327,9 +356,11 @@ export default function DashboardPage() {
                 deployment={deployment}
                 collateral={primary?.symbol ?? "your collateral"}
                 nowSeconds={nowSeconds}
-                onGrant={s.mode === "live" ? () => setAction({ kind: "grant" }) : undefined}
+                onGrant={s.mode === "live" && venueSupported ? () => setAction({ kind: "grant" }) : undefined}
                 onRevoke={s.mode === "live" ? () => setAction({ kind: "revoke" }) : undefined}
                 busy={!!action}
+                venueSupported={venueSupported}
+                livePoolTokens={livePoolTokens}
               />
 
               <div className="flex items-baseline justify-between">

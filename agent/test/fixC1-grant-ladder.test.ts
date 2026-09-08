@@ -60,6 +60,7 @@ function env(storePath: string): NodeJS.ProcessEnv {
     RPC_DEADLINE_MS: "2000",
     WATCHDOG_STALL_MS: "5000",
     LOG_LEVEL: "info",
+    NOTIFY_ALLOW_LOG_ONLY: "1",
   };
 }
 

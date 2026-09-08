@@ -43,6 +43,18 @@ contract TickMathTest is Test {
     }
 }
 
+/// @dev The production shape: one top-level call that posts the update and reads the price — a
+///      borrower's or liquidator's bundle. Green under Foundry's default isolation (each top-level
+///      test call is its own transaction) because nothing in the adapter depends on sharing one.
+contract PythBundle {
+    function refreshAndPrice(PythOracleAdapter adapter, bytes[] calldata data) external payable returns (uint256) {
+        adapter.refresh{value: msg.value}(data);
+        return adapter.price();
+    }
+
+    receive() external payable {}
+}
+
 contract PythOracleAdapterTest is Test {
     MockPyth pyth;
     MockCLPool pool;
@@ -108,11 +120,20 @@ contract PythOracleAdapterTest is Test {
         );
     }
 
-    // ---------------------------------------------------------- same-tx gate
+    // ---------------------------------------------------------- freshness (audit wave 2, P-MED-1)
 
-    function test_priceWithoutRefreshInTxReverts() public {
+    /// A fresh on-chain price answers without any refresh in this transaction: a third-party
+    /// liquidator, a venue view, an `eth_call` — none of them needs to bundle anything.
+    function test_priceAnswersWhenTheOnChainPriceIsFreshWithoutARefresh() public {
         pyth.setPrice(ZEC_USD, PYTH_1035_20, 16_000_000, -8, block.timestamp);
-        vm.expectRevert(PythOracleAdapter.NoUpdateInTx.selector);
+        assertEq(oracle.price(), 1035_20 * 1e32);
+    }
+
+    /// …and a stale on-chain price is refused by Pyth's own `StalePrice` — the max-age rule carries
+    /// the safety the old same-transaction flag only duplicated.
+    function test_priceRevertsWhenTheOnChainPriceIsStale() public {
+        pyth.setPrice(ZEC_USD, PYTH_1035_20, 16_000_000, -8, block.timestamp - MAX_AGE - 1);
+        vm.expectRevert(MockPyth.StalePrice.selector);
         oracle.price();
     }
 
@@ -125,9 +146,22 @@ contract PythOracleAdapterTest is Test {
         oracle.refresh{value: fee + 1000}(data);
         assertEq(address(this).balance, balBefore - fee, "excess refunded");
         uint256 p = oracle.price();
-        // 1 cbZEC (1e8 raw) in USDC raw (1e6) scaled 1e36: 1035.20 × 1e6 / 1e8 × 1e36
+        // 1 cbZEC (1e8 raw) in USDC raw (1e6) scaled 1e36: 1035.20 x 1e6 / 1e8 x 1e36
         assertEq(p, uint256(uint64(PYTH_1035_20)) * 1e36 * 1e6 / (1e8 * 1e8));
         assertEq(p, 1035_20 * 1e32);
+    }
+
+    /// The production bundle: refresh + read inside ONE top-level call, from a contract that is
+    /// not the test itself. Green whether or not Foundry isolates top-level calls.
+    function test_refreshAndPriceInOneTopLevelCall() public {
+        pyth.setPrice(ZEC_USD, PYTH_1035_20, 16_000_000, -8, block.timestamp - 19_779);
+        PythBundle bundle = new PythBundle();
+        bytes[] memory data = _update(PYTH_1035_20, block.timestamp - 5);
+        uint256 fee = pyth.getUpdateFee(data);
+        uint256 p = bundle.refreshAndPrice{value: fee}(oracle, data);
+        assertEq(p, 1035_20 * 1e32);
+        // A separate top-level read afterwards still answers: the update stayed on chain.
+        assertEq(oracle.price(), 1035_20 * 1e32);
     }
 
     function test_refreshRejectsStaleUpdateAndInsufficientFee() public {
@@ -144,11 +178,11 @@ contract PythOracleAdapterTest is Test {
         oracle.price();
     }
 
-    function test_priceRevertsWhenItGoesStaleLaterInTheSameTx() public {
+    function test_priceRevertsOnceTheRefreshedPriceAgesPastMaxAge() public {
         bytes[] memory data = _update(PYTH_1035_20, block.timestamp);
         oracle.refresh{value: pyth.getUpdateFee(data)}(data);
         oracle.price();
-        vm.warp(block.timestamp + MAX_AGE + 1); // (a very long tx) — max age is re-checked on read
+        vm.warp(block.timestamp + MAX_AGE + 1); // max age is re-checked on every read
         vm.expectRevert(MockPyth.StalePrice.selector);
         oracle.price();
     }
@@ -212,7 +246,8 @@ contract PythOracleAdapterTest is Test {
         assertEq(t, block.timestamp - 19_779);
         assertApproxEqRel(twap, 1_020e8, 0.005e18);
         assertLt(dev, 200);
-        vm.expectRevert(PythOracleAdapter.NoUpdateInTx.selector);
+        // peek() shows the stale price; price() refuses it by max age.
+        vm.expectRevert(MockPyth.StalePrice.selector);
         oracle.price();
     }
 

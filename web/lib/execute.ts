@@ -18,7 +18,7 @@
 import type { Address, Hex } from "viem";
 import { LP_VENUE_ABI } from "./abi/oilskin";
 import { ERC20_ABI } from "./abi/aave";
-import { BASE_TOKENS, CHAIN_ID, PERMIT2 } from "@zyo/shared";
+import { BASE_TOKENS, CHAIN_ID, PERMIT2, type TokenSymbol } from "@zyo/shared";
 import { assessGas, shortenRevert, type GasAssessment, type GasClient } from "./gas";
 import {
   encodeClaimWrite,
@@ -37,7 +37,7 @@ import {
   type WriteSpec,
 } from "./plan";
 import { QuoteRefused, quoteUnwindSwap } from "./quote";
-import type { ReadClient } from "./reads";
+import type { MarketRead, ReadClient } from "./reads";
 import { bandFromSqrtPrice, type PriceBand } from "./tickmath";
 import { toAtomic } from "./math";
 
@@ -120,7 +120,14 @@ export async function quoteBand(read: ReadClient, lpVenue: Address, enginePoolId
  * Open flow: approve (if needed) → permit signature → [band quote] → the one
  * transaction (createAccountAndExec / execWithCallback) → optional grant.
  */
-export async function runOpen(ctx: RunContext, input: OpenPlanInput, calls: PlannedCall[], emit: Emit, grantLimits?: { token: Address; amountPerPeriod: bigint }[]): Promise<{ account: Address } | null> {
+export async function runOpen(
+  ctx: RunContext,
+  input: OpenPlanInput,
+  calls: PlannedCall[],
+  emit: Emit,
+  /** The sized budget lines, or the Error that stopped them being sized (the grant step is then blocked with that reason). */
+  grantLimits?: { token: Address; amountPerPeriod: bigint }[] | Error,
+): Promise<{ account: Address } | null> {
   const d = input.deployment;
   if (!d || d.demo || !input.predictedAccount) {
     emit({ type: "blocked", step: 1, reason: "No live deployment configured." });
@@ -169,6 +176,10 @@ export async function runOpen(ctx: RunContext, input: OpenPlanInput, calls: Plan
       if (!hash) return null;
     } else if (c.kind === "grant") {
       if (!d.keeper) continue;
+      if (grantLimits instanceof Error) {
+        emit({ type: "blocked", step: c.step, reason: `The keeper permission was not built: ${grantLimits.message}. Your position is open; you can grant it later from the dashboard.` });
+        return null;
+      }
       let spec: WriteSpec;
       try {
         spec = encodeGrantWrite({ account: input.predictedAccount, deployment: d, tokenLimits: grantLimits ?? [], nowSeconds: ctx.nowSeconds() });
@@ -267,35 +278,72 @@ export async function runGrant(
   return guardedWrite(ctx, 1, spec, emit);
 }
 
+/** A token the grant must budget, with what is needed to size its line in ITS OWN units. */
+export interface GrantTokenPricing {
+  address: Address;
+  symbol: string;
+  decimals: number;
+  /** USD per whole token. Non-finite or ≤ 0 = unknown → refused, never a wrong line. */
+  priceUsd: number;
+}
+
 /**
  * Keeper budget lines for the protection grant — product policy caps, sized
  * from the WHOLE debt, not from the position at sign time: a compounding LP
  * grows, and the keeper sizes its repay against the debt it finds
  * (done-KEEPER §4). The 2× is that headroom plus accrued interest.
  *
+ * Every token is sized in ITS OWN decimals at ITS OWN price (audit wave 2,
+ * G-HIGH-1): the collateral's number used to be reused for the pool's other
+ * token, so a cbBTC user in the WETH/USDC pool signed a WETH budget of
+ * ≈ 7.5e-11 WETH and every keeper rung was refused on the swap approve while
+ * the panel said "active". A token without a USD price is REFUSED (throws)
+ * rather than given a 1-base-unit line that reads as "listed".
+ *
  * Every line must be > 0 and unique: the chain refuses an
- * `amountPerPeriod == 0` line (it read to a user as "listed" and behaved as
- * "not budgeted") and refuses duplicates.
+ * `amountPerPeriod == 0` line and refuses duplicates.
  *
  * These cap DIRECT transfers and approvals the keeper's call tree makes. Value
  * a protocol moves inside that tree (an Aave withdraw, an engine withdrawal)
  * is not bounded by them — the UI says so where it asks for the grant.
  */
-export function grantTokenLimits(debtUsdc: number, collateral: { address: Address; decimals: number; priceUsd: number }, poolTokens: Address[]): { token: Address; amountPerPeriod: bigint }[] {
+export function grantTokenLimits(debtUsdc: number, collateral: GrantTokenPricing, poolTokens: readonly GrantTokenPricing[]): { token: Address; amountPerPeriod: bigint }[] {
+  const debt = Math.max(debtUsdc, 0);
   const atLeastOne = (x: bigint) => (x > 0n ? x : 1n);
-  const usdc = atLeastOne(BigInt(Math.ceil(Math.max(debtUsdc, 0) * 2 * 10 ** BASE_TOKENS.USDC.decimals))); // repay: whole debt + accrued interest headroom
-  const collUnits = Number.isFinite(collateral.priceUsd) && collateral.priceUsd > 0 ? (Math.max(debtUsdc, 0) * 2) / collateral.priceUsd : 0;
-  const coll = atLeastOne(BigInt(Math.ceil(collUnits * 10 ** collateral.decimals))); // swap of the non-USDC leg
+  const line = (t: GrantTokenPricing): bigint => {
+    if (!Number.isFinite(t.priceUsd) || !(t.priceUsd > 0)) {
+      throw new Error(`no USD price for ${t.symbol} — its keeper budget cannot be sized; grant the permission later from the dashboard once a price is available`);
+    }
+    return atLeastOne(BigInt(Math.ceil(((debt * 2) / t.priceUsd) * 10 ** t.decimals)));
+  };
+  const usdc = atLeastOne(BigInt(Math.ceil(debt * 2 * 10 ** BASE_TOKENS.USDC.decimals))); // repay: whole debt + accrued interest headroom
   const aero = 10n ** 23n; // 100k AERO per day covers any realistic fee transfer
   const lines = [
     { token: BASE_TOKENS.USDC.address as Address, amountPerPeriod: usdc },
-    { token: collateral.address, amountPerPeriod: coll },
+    { token: collateral.address, amountPerPeriod: line(collateral) }, // swap of the non-USDC leg when it IS the collateral
     { token: BASE_TOKENS.AERO.address as Address, amountPerPeriod: aero },
   ];
   for (const t of poolTokens) {
-    if (!lines.some((l) => l.token.toLowerCase() === t.toLowerCase())) lines.push({ token: t, amountPerPeriod: coll });
+    if (lines.some((l) => l.token.toLowerCase() === t.address.toLowerCase())) continue; // USDC, AERO, the collateral: already listed
+    lines.push({ token: t.address, amountPerPeriod: line(t) }); // the pool's other leg, in ITS units
   }
   return lines;
+}
+
+/**
+ * Pricing for a pool's tokens from the market read: USDC is $1 by definition,
+ * cbBTC / WETH come from their Aave reserve price, AERO carries no price (its
+ * line is fixed and never sized), and any symbol this app does not know is
+ * refused by name — the keeper budget for it cannot be sized, so no grant is
+ * built rather than a wrong one.
+ */
+export function grantPoolTokenPricing(symbols: readonly string[], market: MarketRead): GrantTokenPricing[] {
+  return symbols.map((sym) => {
+    const t = (BASE_TOKENS as Record<string, { address: Address; decimals: number } | undefined>)[sym];
+    if (!t) throw new Error(`pool token ${sym} is not a token this app knows (BASE_TOKENS) — refusing to size a keeper budget for it`);
+    const priceUsd = sym === "USDC" ? 1 : ((market.reserves as Record<string, { priceUsd: number } | null | undefined>)[sym]?.priceUsd ?? NaN);
+    return { address: t.address, symbol: sym as TokenSymbol, decimals: t.decimals, priceUsd };
+  });
 }
 
 /** Re-export so callers do not need to know where the deployment type lives. */

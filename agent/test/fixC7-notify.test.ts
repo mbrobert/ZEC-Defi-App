@@ -55,6 +55,7 @@ function env(storePath: string, extra: Record<string, string> = {}): NodeJS.Proc
     RPC_DEADLINE_MS: "2000",
     WATCHDOG_STALL_MS: "5000",
     LOG_LEVEL: "info",
+    NOTIFY_ALLOW_LOG_ONLY: "1",
     ...extra,
   };
 }
@@ -164,15 +165,42 @@ describe("FIX C-7: every rung and every escalation leaves the keeper host", () =
     assert.ok(!lines.includes("SECRET"), "webhook path leaked into the logs");
     assert.ok(!lines.includes("t0ken"), "webhook token leaked into the logs");
 
-    // With nothing configured the keeper says, at startup, that the promise
-    // made to the user before signing cannot be kept from here.
+    // With nothing person-facing configured the keeper REFUSES TO START (audit wave 2, N-MED-1):
+    // its own log and store accept every event and reach nobody, so "NOTIFIED" would be a lie.
     const sink2 = memorySink();
-    await runKeeper(env(join(dir, "nochannel.json")), {
-      sink: sink2.sink,
-      maxTicks: 1,
-      makeClient: () => chain.publicClient(),
-      makeWallet: (_c, account) => createWalletClient({ account, chain: base, transport: chain.transport() }),
+    await assert.rejects(
+      () =>
+        runKeeper(env(join(dir, "nochannel.json"), { NOTIFY_ALLOW_LOG_ONLY: "0" }), {
+          sink: sink2.sink,
+          maxTicks: 1,
+          makeClient: () => chain.publicClient(),
+          makeWallet: (_c, account) => createWalletClient({ account, chain: base, transport: chain.transport() }),
+        }),
+      /NOTIFY_WEBHOOK_URL.*no person-facing notification channel/
+    );
+    assert.ok(sink2.lines.some((l) => l.includes("NO PERSON-FACING NOTIFICATION CHANNEL")));
+
+    // An operator can opt into log-only by name; the keeper then says so at startup and every
+    // warning is LOGGED_ONLY, never NOTIFIED.
+    const sink3 = memorySink();
+    const logOnlyChain = newMockChain();
+    cbBtcPosition(logOnlyChain, ACCOUNT_A, debtForHf(1.45)); // warn rung
+    logOnlyChain.emitAccountCreated(OWNER_A, ACCOUNT_A, 5n);
+    const logOnlyOil = new MockOilskin(logOnlyChain, { router: ROUTER, lpVenue: LP_VENUE });
+    logOnlyOil.install([ACCOUNT_A]);
+    logOnlyOil.grant(KEEPER, ROUTER, GRANT_SELECTORS["StrategyRouter.unwind"]);
+    const statuses: string[] = [];
+    await runKeeper(env(join(dir, "logonly.json"), { NOTIFY_ALLOW_LOG_ONLY: "1" }), {
+      sink: sink3.sink,
+      maxTicks: 2,
+      makeClient: () => logOnlyChain.publicClient(),
+      makeWallet: (_c, account) => createWalletClient({ account, chain: base, transport: logOnlyChain.transport() }),
+      onTick: (r) => {
+        for (const o of r.outcomes) if (o.dispatch) statuses.push(o.dispatch.status);
+      },
     });
-    assert.ok(sink2.lines.some((l) => l.includes("NO NOTIFICATION CHANNEL")));
+    assert.ok(sink3.lines.some((l) => l.includes("running log-only")));
+    assert.ok(statuses.includes("LOGGED_ONLY"), `warn rung recorded LOGGED_ONLY, got ${statuses.join(",")}`);
+    assert.ok(!statuses.includes("NOTIFIED"), "nothing may be NOTIFIED without a person-facing channel");
   });
 });

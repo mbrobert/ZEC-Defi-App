@@ -8,6 +8,11 @@ optimizer = true
 optimizer_runs = 200
 via_ir = true
 evm_version = "cancun"
+# Every top-level call in a test is its own transaction (Foundry's default since 1.8). Pinned so
+# local and CI agree without a flag. Nothing in the tree depends on two top-level calls sharing a
+# transaction any more: the Pyth adapter's same-transaction gate was removed (audit wave 2,
+# P-MED-1 / P-LOW-1) and the suite is green in both modes — `--no-isolate` is also green.
+isolate = true
 
 remappings = [
   "@openzeppelin/=lib/openzeppelin-contracts/",
@@ -36,6 +41,7 @@ optimizer = true
 optimizer_runs = 200
 via_ir = true
 evm_version = "cancun"
+isolate = true
 remappings = ["@openzeppelin/=lib/openzeppelin-contracts/"]
 
 [lint]

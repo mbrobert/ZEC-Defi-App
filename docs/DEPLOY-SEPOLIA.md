@@ -261,11 +261,30 @@ backlog, not yet written) will be the reference for the call sequence.
 1. Record the deployed addresses, the chain id, the block and the date in a new
    `docs/DEPLOYMENTS.md` — a testnet deployment is a fact like any other, and nothing may quote an
    address that is not written down with its date.
-2. Point the agent and the web app at the testnet addresses (`SETUP.md` lists the variables). Run
-   the keeper in **observe-only mode**: no `KEEPER_PRIVATE_KEY`.
+2. **The keeper and the web app cannot be pointed at Sepolia yet.** Every Aave, token and
+   Chainlink address they read comes from `packages/shared` and is Base mainnet only; there is
+   no per-chain address table. The keeper refuses `CHAIN_ID=84532` by name
+   (`ConfigError: CHAIN_ID: unsupported chain 84532`, wave-2 S-MED-1) rather than running mainnet
+   addresses against the wrong chain, and the web reads the mainnet Aave pool wherever its RPC
+   points. A Sepolia deployment therefore proves the contracts through `cast` and `forge script`
+   (§5) — not an end-to-end keeper or dashboard rehearsal. That needs a `CHAINS[84532]` table in
+   `packages/shared` first.
 3. `MorphoBlueVenue` on Sepolia has no markets (the Morpho API does not index chain 84532 and no
    cbBTC/WETH–USDC market is known there), so it reports `enabled() == false` and the registry will
    refuse to point an asset at it. On Base mainnet the venue is built over the two verified markets
    and moving an asset to it is `proposeVenue` → 2-day timelock → `acceptVenue`; to rehearse that
    on Sepolia you would first create a market there (permissionless `Morpho.createMarket`) and pass
    its id in `MORPHO_MARKET_IDS`.
+
+---
+
+## 7. Before you touch mainnet from this shell
+
+Every `export` above lives on in the terminal you typed it in. `contracts/script/Deploy.s.sol`
+reads `USDC`, `WETH`, `TREASURY` and `REGISTRY_OWNER` by exactly these names, and the mainnet
+guard now refuses a treasury that equals the broadcaster and a registry owner that is not a
+contract (wave-2 S-LOW-1) — but it cannot tell a deliberate value from a leftover. Clear them:
+
+```bash
+unset SEPOLIA_RPC_URL DEPLOYER TREASURY REGISTRY_OWNER USDC WETH WBTC CBZEC_USDC_TICK FACTORY REGISTRY ROUTER AAVE_VENUE LP_VENUE SWAP_ADAPTER MORPHO_VENUE CBZEC ENGINE MOCK_POOL MOCK_SWAP_ROUTER AERO
+```

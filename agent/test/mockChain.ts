@@ -78,7 +78,7 @@ export class MockChain {
   contracts = new Map<string, (data: Hex, from?: Address) => Promise<Hex> | Hex>();
   /** Raw transaction hook: receives the raw tx hex, returns the hash. */
   onSendRawTransaction: ((raw: Hex) => Promise<Hex> | Hex) | null = null;
-  receipts = new Map<string, { status: "0x1" | "0x0"; blockNumber: bigint }>();
+  receipts = new Map<string, { status: "0x1" | "0x0"; blockNumber: bigint; logs?: MockLog[] }>();
   txCount = new Map<string, number>();
   gasPrice = 1_000_000n;
 
@@ -241,7 +241,17 @@ export class MockChain {
           gasUsed: "0x0",
           effectiveGasPrice: numberToHex(this.gasPrice),
           contractAddress: null,
-          logs: [],
+          logs: (r.logs ?? []).map((l, i) => ({
+            address: l.address,
+            topics: l.topics,
+            data: l.data,
+            blockNumber: numberToHex(l.blockNumber),
+            blockHash: padHex("0x1", { size: 32 }),
+            transactionHash: h,
+            transactionIndex: "0x0",
+            logIndex: numberToHex(BigInt(i)),
+            removed: false,
+          })),
           logsBloom: "0x" + "00".repeat(256),
           type: "0x2",
         };

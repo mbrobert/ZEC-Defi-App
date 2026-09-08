@@ -114,6 +114,10 @@ contract Deploy is Script {
         uint256 pythMaxAge;
         uint256 pythMaxDeviationBps;
         uint32 pythTwapWindow;
+        /// @dev CONFIRM_BASE_MAINNET — the explicit opt-in the guard requires on chain id 8453.
+        bool confirmBaseMainnet;
+        /// @dev ALLOW_ANY_CHAIN — run on a non-Base chain with every address given by env (tests).
+        bool allowAnyChain;
     }
 
     struct Deployed {
@@ -133,6 +137,10 @@ contract Deploy is Script {
     error NoCode(string name, address addr);
     error AaveProviderDrift(string what, address expected, address actual);
     error UnexpectedToken(string what);
+    /// @notice On mainnet the fee destination must not be the broadcasting key (audit wave 2, S-LOW-1).
+    error TreasuryIsBroadcaster(address treasury);
+    /// @notice On mainnet the registry owner must be a contract (a Safe), never an EOA (audit wave 2, S-LOW-1).
+    error RegistryOwnerNotAContract(address registryOwner);
 
     string internal constant CBZEC_NOTE = "no collateral market on Base yet";
 
@@ -180,6 +188,8 @@ contract Deploy is Script {
         c.pythMaxAge = vm.envOr("PYTH_MAX_AGE", uint256(60));
         c.pythMaxDeviationBps = vm.envOr("PYTH_MAX_DEVIATION_BPS", uint256(300));
         c.pythTwapWindow = uint32(vm.envOr("PYTH_TWAP_WINDOW", uint256(1800)));
+        c.confirmBaseMainnet = vm.envOr("CONFIRM_BASE_MAINNET", false);
+        c.allowAnyChain = vm.envOr("ALLOW_ANY_CHAIN", false);
     }
 
     // ----------------------------------------------------------------- guard
@@ -190,14 +200,24 @@ contract Deploy is Script {
     ///         / oracle. A drift means VERIFIED-BASE-FACTS must be re-read before deploying.
     function guard(Config memory c) public view {
         bool isBase = block.chainid == BaseAddresses.CHAIN_ID;
+        // The two opt-ins travel in the config (read from env by `configFromEnv`), so this guard is
+        // a pure function of its argument: tests no longer race on process-wide `vm.setEnv`.
         if (isBase) {
-            if (!vm.envOr("CONFIRM_BASE_MAINNET", false)) revert MainnetNotConfirmed();
-        } else if (!vm.envOr("ALLOW_ANY_CHAIN", false)) {
+            if (!c.confirmBaseMainnet) revert MainnetNotConfirmed();
+        } else if (!c.allowAnyChain) {
             revert UnsupportedChain(block.chainid);
         }
         if (c.treasury == address(0)) revert MissingEnv("TREASURY");
         if (c.registryOwner == address(0)) revert MissingEnv("REGISTRY_OWNER");
         if (c.aerodromeSwapRouter == address(0)) revert MissingEnv("AERODROME_SWAP_ROUTER");
+        if (isBase) {
+            // What the header above promises, enforced (audit wave 2, S-LOW-1): the treasury is
+            // immutable in SnuggleLpVenue and must not be the key that broadcasts; the registry
+            // owner must be a contract — a Safe — never a personal key left in the shell by the
+            // Sepolia runbook. Off mainnet both are allowed (a local chain, Sepolia's own script).
+            if (c.treasury == c.deployer) revert TreasuryIsBroadcaster(c.treasury);
+            if (c.registryOwner.code.length == 0) revert RegistryOwnerNotAContract(c.registryOwner);
+        }
 
         _requireCode("USDC", c.usdc);
         _requireCode("WETH", c.weth);

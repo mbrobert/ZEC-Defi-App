@@ -16,8 +16,16 @@ interface ICollateralVenue {
     /// @return withdrawn Amount actually withdrawn.
     function withdraw(address asset, uint256 amount) external returns (uint256 withdrawn);
 
-    /// @notice Borrow `amount` of `asset` on behalf of the calling account; funds land in it.
+    /// @notice Borrow `amount` of `asset` on behalf of the calling account; funds land in it. On
+    ///         an isolated-market venue the market is the venue's choice (most headroom that can
+    ///         fill the amount); use `borrowAgainst` when the collateral is known.
     function borrow(address asset, uint256 amount) external;
+
+    /// @notice Borrow `amount` of `loanToken` against `collateralAsset` specifically. On a
+    ///         cross-collateral venue (Aave) this is `borrow`; on an isolated-market venue (Morpho)
+    ///         the debt lands in `collateralAsset`'s market, so the review screen's liquidation
+    ///         price names the asset the debt is really against (audit wave 2, M-MED-1).
+    function borrowAgainst(address collateralAsset, address loanToken, uint256 amount) external;
 
     /// @notice Repay `amount` of `asset` (type(uint256).max = full debt) from the calling account.
     /// @return repaid Amount actually repaid.

@@ -10,16 +10,23 @@ import {TickMath} from "../libraries/TickMath.sol";
 
 /// @title PythOracleAdapter — Morpho `IOracle.price()` for a cbZEC/USDC market. v1.1: BUILT, UNUSED.
 ///
-/// @notice Three hard rules, each failing closed:
-///   1. SAME-TX FRESHNESS. `price()` only answers after `refresh(updateData)` has posted a Pyth update
-///      in the same transaction (a transient flag), so a Morpho borrow / liquidation bundle must carry
-///      the update. Reading `price()` alone reverts `NoUpdateInTx`.
-///   2. MAX AGE. The Pyth price is read with `getPriceNoOlderThan(id, maxAge)`; a stale feed reverts.
-///   3. PEG BREAKER. The Aerodrome cbZEC/USDC pool TWAP (quote per base, over `twapWindow`) is compared
+/// @notice Two hard rules, each failing closed:
+///   1. MAX AGE. The Pyth price is read with `getPriceNoOlderThan(id, maxAge)`; a stale feed reverts.
+///      `refresh(updateData)` is the permissionless way to make it fresh — post a Pyth update (fee
+///      from msg.value, rest refunded) in the same transaction as a Morpho call, or let anyone post
+///      one before. Nothing requires the refresh and the read to share a transaction.
+///   2. PEG BREAKER. The Aerodrome cbZEC/USDC pool TWAP (quote per base, over `twapWindow`) is compared
 ///      with Pyth ZEC/USD; beyond `maxDeviationBps` the adapter reverts `PegBreak`, because a ZEC/USD
 ///      feed prices ZEC while the market holds cbZEC.
 ///   `price()` returns 1 base unit in quote units scaled by 1e36 (Morpho convention). Everything is
 ///   immutable; there is no admin. `peek()` is a diagnostic read with no gates for off-chain callers.
+///
+/// @dev The first version also carried a SAME-TRANSACTION flag: `price()` reverted unless `refresh`
+///      had run earlier in the same transaction. It added nothing to safety — `price()` re-reads
+///      `getPriceNoOlderThan(maxAge)` regardless, which already fails closed on a stale feed — and
+///      it cost liveness everywhere: every `eth_call` of a venue view for an account with collateral
+///      in such a market reverted, and a third-party liquidator calling `Morpho.liquidate` from an
+///      EOA could never clear the market (audit wave 2, P-MED-1).
 contract PythOracleAdapter is IMorphoOracle {
     IPyth public immutable PYTH;
     bytes32 public immutable PRICE_ID;
@@ -36,14 +43,12 @@ contract PythOracleAdapter is IMorphoOracle {
     uint256 private constant Q96 = 2 ** 96;
     uint256 private constant E8 = 1e8;
     uint256 private constant BPS = 10_000;
-    uint256 private constant T_UPDATED = uint256(keccak256("oilskin.pyth.transient.updated")) - 1;
 
     event Refreshed(uint256 fee, uint256 pythPriceE8, uint256 publishTime);
 
     error ZeroAddress();
     error InvalidConfig();
     error PoolTokensMismatch(address token0, address token1);
-    error NoUpdateInTx();
     error NonPositivePrice(int64 price);
     error InsufficientFee(uint256 sent, uint256 required);
     error PegBreak(uint256 pythPriceE8, uint256 twapPriceE8, uint256 deviationBps);
@@ -84,17 +89,14 @@ contract PythOracleAdapter is IMorphoOracle {
         twapWindow = twapWindow_;
     }
 
-    /// @notice Post a Pyth update (paying its fee from msg.value, refunding the rest) and arm
-    ///         `price()` for the rest of this transaction.
-    /// @dev Invariant: `price()` in this tx reads a price no older than `maxAge` that was just posted.
+    /// @notice Post a Pyth update (paying its fee from msg.value, refunding the rest). Permissionless:
+    ///         a borrower's bundle, a liquidator's bundle, or anyone at all may post it.
+    /// @dev Invariant: on return the on-chain price for `PRICE_ID` is no older than `maxAge` (the
+    ///      read below reverts otherwise, so a refresh that leaves the feed stale fails).
     function refresh(bytes[] calldata updateData) external payable {
         uint256 fee = PYTH.getUpdateFee(updateData);
         if (msg.value < fee) revert InsufficientFee(msg.value, fee);
         PYTH.updatePriceFeeds{value: fee}(updateData);
-        uint256 slot = T_UPDATED;
-        assembly ("memory-safe") {
-            tstore(slot, 1)
-        }
         (uint256 p, uint256 t) = _pythE8();
         emit Refreshed(fee, p, t);
         if (msg.value > fee) {
@@ -104,15 +106,10 @@ contract PythOracleAdapter is IMorphoOracle {
     }
 
     /// @inheritdoc IMorphoOracle
-    /// @dev Invariant: reverts unless refreshed in this tx, unless Pyth is within maxAge, and unless
-    ///      the pool TWAP is within maxDeviationBps of Pyth. Never returns a stale or de-pegged price.
+    /// @dev Invariant: reverts unless Pyth is within maxAge, and unless the pool TWAP is within
+    ///      maxDeviationBps of Pyth. Never returns a stale or de-pegged price. A plain view: any
+    ///      `eth_call`, any Morpho `liquidate`, answers as long as someone kept the feed fresh.
     function price() external view override returns (uint256) {
-        uint256 armed;
-        uint256 slot = T_UPDATED;
-        assembly ("memory-safe") {
-            armed := tload(slot)
-        }
-        if (armed == 0) revert NoUpdateInTx();
         (uint256 pythE8,) = _pythE8();
         uint256 twapE8 = twapPriceE8();
         uint256 dev = _deviationBps(pythE8, twapE8);
@@ -121,8 +118,8 @@ contract PythOracleAdapter is IMorphoOracle {
         return Math.mulDiv(pythE8, 1e36 * (10 ** QUOTE_DECIMALS), E8 * (10 ** BASE_DECIMALS));
     }
 
-    /// @notice Diagnostic read without the same-tx gate: (Pyth price E8, publish time, TWAP E8,
-    ///         deviation bps). Uses `getPriceUnsafe` — may be stale; never use for pricing.
+    /// @notice Diagnostic read without the max-age or peg gates: (Pyth price E8, publish time, TWAP
+    ///         E8, deviation bps). Uses `getPriceUnsafe` — may be stale; never use for pricing.
     function peek()
         external
         view

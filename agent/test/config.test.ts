@@ -20,6 +20,19 @@ describe("config — validation", () => {
     assert.equal(c.chainId, 8453);
   });
 
+  it("S-MED-1: an unsupported CHAIN_ID is refused by name — the shared address table is Base mainnet only", () => {
+    assert.throws(() => loadConfig({ ...BASE_ENV, CHAIN_ID: "84532" }), /CHAIN_ID: unsupported chain 84532.*packages\/shared.*8453/);
+    assert.throws(() => loadConfig({ ...BASE_ENV, CHAIN_ID: "1" }), /CHAIN_ID: unsupported chain 1/);
+    assert.equal(loadConfig({ ...BASE_ENV, CHAIN_ID: "8453" }).chainId, 8453);
+  });
+
+  it("N-MED-1: NOTIFY_ALLOW_LOG_ONLY is off by default and only \"1\" turns it on", () => {
+    assert.equal(loadConfig({ ...BASE_ENV }).notifyAllowLogOnly, false);
+    assert.equal(loadConfig({ ...BASE_ENV, NOTIFY_ALLOW_LOG_ONLY: "1" }).notifyAllowLogOnly, true);
+    assert.equal(loadConfig({ ...BASE_ENV, NOTIFY_ALLOW_LOG_ONLY: "0" }).notifyAllowLogOnly, false);
+    assert.throws(() => loadConfig({ ...BASE_ENV, NOTIFY_ALLOW_LOG_ONLY: "yes" }), /NOTIFY_ALLOW_LOG_ONLY/);
+  });
+
   it("requires BASE_RPC_URL, ACCOUNT_FACTORY_ADDRESS, STORE_PATH, DISCOVERY_FROM_BLOCK", () => {
     assert.throws(() => loadConfig({ ...BASE_ENV, BASE_RPC_URL: "" }), /BASE_RPC_URL: is required/);
     assert.throws(() => loadConfig({ ...BASE_ENV, DISCOVERY_FROM_BLOCK: undefined }), /DISCOVERY_FROM_BLOCK: is required/);

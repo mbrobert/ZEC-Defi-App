@@ -87,7 +87,7 @@ until the gate flips. The gate is computed, never curated
 | `web/` | Next.js 14 — wallet connect, cbZEC onboarding, wizard, chain-read dashboard with a keeper panel and a pending-venue banner, CoW spot; demo mode without a wallet | 125 unit tests; Playwright 12/12 |
 | `packages/shared/` | The one source for addresses, fees, the health-factor ladder, LTV presets, widths, pools | 53 tests |
 | `prototype/` | `simple.html` and `index.html` — dependency-free walkthroughs pinned to the same facts and model numbers | 289 checks (118 + 109 + 56) + 6 fuzz |
-| `scripts/verify-abi.mjs` | Generates / diffs `contracts/abi/oilskin-abi.json` from `contracts/out` | 321/321 |
+| `scripts/verify-abi.mjs` | Generates / diffs `contracts/abi/oilskin-abi.json` from `contracts/out` | 326/326 |
 | `docs/` | `ARCHITECTURE` · `FLOWS` · `DEPOSIT-FLOW` · `RISKS` · `AUDIT` · `AUDIT-SCOPE` · `AUDIT-2026-09-06` · `TESTING` · `PRIVACY` · `CONTRACT-ABI` · `VERIFIED-BASE-FACTS` · `BASE-PIVOT-2026-09` · `BUILD-SPEC-2026-09` · `YIELD-SERVICE` · `MODEL-NUMBERS-2026-09-05` · `CHANGELOG` | this build |
 
 ## Run every suite
@@ -97,7 +97,7 @@ until the gate flips. The gate is computed, never curated
 cd contracts
 git clone --depth 1 --branch v5.7.0 https://github.com/OpenZeppelin/openzeppelin-contracts lib/openzeppelin-contracts
 git clone --depth 1 --branch v1.16.2 https://github.com/foundry-rs/forge-std lib/forge-std
-forge test                                   # 244 pass, 8 fork tests SKIPPED without FORK_URL
+forge test                                   # 298 pass, 0 fail, 8 fork tests SKIPPED without FORK_URL (isolation pinned in foundry.toml; --no-isolate is green too)
 FORK_URL=<Base RPC> forge test --match-path test/fork/BaseFork.t.sol -vv   # the 8 fork tests
 # (offline container with a pre-fetched solc: FOUNDRY_PROFILE=local forge test)
 

@@ -27,16 +27,20 @@ export default function StrategyStep({
   ltvBps,
   borrowAprPct,
   onChange,
+  unsupportedVenues = [],
 }: {
   gate: GateView;
   state: WizardState;
   ltvBps: number;
   borrowAprPct: number;
   onChange: (patch: Partial<WizardState>) => void;
+  /** Collateral assets whose registry venue the keeper cannot read (audit wave 2, M-HIGH-2). */
+  unsupportedVenues?: readonly CollateralSymbol[];
 }) {
   const { mode } = useMode();
   const { prefs: notifyPrefs, setPrefs: setNotifyPrefs } = useNotifyPrefs();
   const collateral: CollateralSymbol = state.collateral;
+  const venueUnsupported = unsupportedVenues.includes(collateral);
   const choice = state.strategy;
   const offered = offeredEntries(gate, collateral);
   const rejected = rejectedEntries(gate, collateral);
@@ -109,6 +113,11 @@ export default function StrategyStep({
           />
           Tell me in the app if this position needs attention — a banner on your dashboard, nothing signed or sent anywhere.
         </label>
+        {venueUnsupported && (
+          <p className="note note-crit" role="alert" data-testid="keeper-venue-unsupported">
+            The Oilskin keeper cannot watch {collateral} right now: the registry points it at a lending contract the keeper does not read yet, so this position would open without protection. Nothing will act for you if its health factor falls.
+          </p>
+        )}
         <p className="text-[12.5px] text-oil-ink3">Simple mode shows one recommendation. Advanced mode (top right) shows every pool with its numbers, custom band widths, and spot swaps.</p>
       </div>
     );
@@ -204,9 +213,21 @@ export default function StrategyStep({
           </label>
         </div>
         <label className="mt-3 flex cursor-pointer items-center gap-2 text-[13.5px]">
-          <input type="checkbox" className="accent-brass" checked={state.keeperProtection} onChange={(e) => onChange({ keeperProtection: e.target.checked })} data-testid="keeper-protection" />
+          <input
+            type="checkbox"
+            className="accent-brass"
+            checked={state.keeperProtection && !venueUnsupported}
+            disabled={venueUnsupported}
+            onChange={(e) => onChange({ keeperProtection: e.target.checked })}
+            data-testid="keeper-protection"
+          />
           Grant the Oilskin keeper one revocable, budgeted permission — StrategyRouter.unwind and nothing else — so it can reduce or close this position at the ladder rungs. One extra transaction after opening; it expires after 30 days unless you renew it, and without it nobody acts for you.
         </label>
+        {venueUnsupported && (
+          <p className="note note-crit mt-2" role="alert" data-testid="keeper-venue-unsupported">
+            The keeper cannot watch {collateral} right now: Oilskin&rsquo;s registry points it at a lending contract the keeper does not read yet, so no permission would protect this position. Nothing will act for you if its health factor falls.
+          </p>
+        )}
         <label className="mt-3 flex cursor-pointer items-center gap-2 text-[13.5px]">
           <input
             type="checkbox"

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { alertRungFor, shouldNotify } from "@/lib/notify";
+import { alertRungFor, bannerStateFor, shouldNotify } from "@/lib/notify";
 import { useNotifyPrefs } from "@/lib/notifyPrefs";
 import { rungPlain } from "@/lib/keeper";
 
@@ -13,11 +13,13 @@ import { rungPlain } from "@/lib/keeper";
  * exists between this app and that process), so this is honest about what
  * it promises: you are told when you have the app open, not paged.
  *
- * Renders nothing when the owner has not opted in, or nothing is firing.
+ * Renders nothing when the owner has not opted in, or nothing is firing. An account read that
+ * failed renders an "unreadable" alert — never silence (audit wave 2, N-MED-2).
  */
-export default function NotifyBanner({ hf, collateral }: { hf: number; collateral: string }) {
+export default function NotifyBanner({ hf, collateral }: { hf: number | null; collateral: string }) {
   const { prefs } = useNotifyPrefs();
-  const rung = alertRungFor(hf);
+  const state = bannerStateFor(hf);
+  const rung = hf === null ? null : alertRungFor(hf);
   const lastNotifiedRungId = useRef<string | null>(null);
 
   useEffect(() => {
@@ -35,7 +37,15 @@ export default function NotifyBanner({ hf, collateral }: { hf: number; collatera
     }
   }, [prefs.optIn, prefs.channel, rung, collateral]);
 
-  if (!prefs.optIn || !rung) return null;
+  if (!prefs.optIn) return null;
+  if (state?.kind === "unreadable") {
+    return (
+      <div className="note note-warn" role="alert" data-testid="notify-unreadable">
+        <b className="text-oil-ink">Oilskin cannot read your health factor right now.</b> The account read from Aave did not come back, so this page cannot tell you whether {collateral} needs attention. That is not the same as being safe: check again shortly, or read your position directly on Aave.
+      </div>
+    );
+  }
+  if (!rung) return null;
   return (
     <div className={`note ${rung.severity >= 3 ? "note-crit" : "note-warn"}`} role="alert" data-testid="notify-banner">
       <b className="text-oil-ink">

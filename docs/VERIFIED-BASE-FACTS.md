@@ -260,7 +260,8 @@ deployment. **Consequence for the testnet plan:** `SnuggleLpVenue` and `Aerodrom
 exercised on Sepolia against the real engine. **Done in `contracts/script/DeploySepolia.s.sol`**
 (2026-09-07): stand-ins behind the same interfaces so the account → factory → registry → `AaveV3Venue`
 → router path runs end to end; see Addendum 2 below for the substitute table and `docs/DEPLOY-SEPOLIA.md`
-for the runbook. The LP venue's real-engine behaviour stays covered by the 8 mainnet fork tests.
+for the runbook. The LP venue's real-engine behaviour would be covered by the 8 mainnet fork tests
+when `FORK_URL` is set; they have not been run from any container yet (`RISKS.md` §11).
 
 
 ## Addendum 2 — Base Sepolia deploy dependencies, re-read 2026-09-07 15:11–15:15 UTC (block 46,512,825)

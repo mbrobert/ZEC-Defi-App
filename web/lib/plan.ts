@@ -60,6 +60,13 @@ export interface Deployment {
   swapAdapter: Address;
   engine: Address;
   keeper: Address | null;
+  /**
+   * Collateral assets the registry points at a venue this app (and the keeper) cannot read.
+   * Every account read here goes to the Aave pool directly, so a position on any other venue
+   * shows as "no debt" and nothing watches it (audit wave 2, M-HIGH-2). Empty = every enabled
+   * asset resolves to an AaveV3Venue over the Aave provider in `@zyo/shared`.
+   */
+  unsupportedVenues: CollateralSymbol[];
   /** True for the synthetic demo deployment (never signable). */
   demo: boolean;
 }
@@ -691,5 +698,6 @@ export const DEMO_DEPLOYMENT: Deployment = {
   swapAdapter: "0x0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
   engine: "0x8888888888888888888888888888888888888888",
   keeper: "0x9999999999999999999999999999999999999999",
+  unsupportedVenues: [],
   demo: true,
 };

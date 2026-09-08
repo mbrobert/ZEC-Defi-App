@@ -26,6 +26,8 @@ const {
   lpVenueAbi,
   swapAdapterAbi,
   clPoolAbi,
+  collateralRegistryAbi,
+  aaveVenueAbi,
   KEEPER_SELECTORS,
   GRANT_SELECTORS,
   KEEPER_GRANT_SHAPE,
@@ -111,6 +113,8 @@ compare("OilskinAccountFactory", oilskinAccountFactoryAbi, loadArtifact("Oilskin
 compare("StrategyRouter", strategyRouterAbi, loadArtifact("StrategyRouter"));
 compare("SnuggleLpVenue", lpVenueAbi, loadArtifact("SnuggleLpVenue"));
 compare("AerodromeSwapAdapter", swapAdapterAbi, loadArtifact("AerodromeSwapAdapter"));
+compare("CollateralRegistry", collateralRegistryAbi, loadArtifact("CollateralRegistry"));
+compare("AaveV3Venue", aaveVenueAbi, loadArtifact("AaveV3Venue"));
 
 // Grant selectors: the keeper refuses to act unless grantOf(keeper, target, selector) is active
 // for exactly these; a drift here would make every dispatch REFUSED (or worse, check the wrong grant).

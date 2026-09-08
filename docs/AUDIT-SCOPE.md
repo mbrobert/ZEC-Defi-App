@@ -25,7 +25,7 @@ procedure call; EIP = Ethereum Improvement Proposal; MC = Monte Carlo.
 | `venues/MorphoBlueVenue.sol` | ~330 | `ICollateralVenue` over the two verified Base Morpho markets; entry floor + registry gate in the venue; per-market isolation (worst-market HF, headroom borrow, worst-first repay); `libraries/MorphoMath.sol` reproduces Morpho's share/interest arithmetic. Deployed but not the registry's venue until propose → timelock → accept | `CollateralVenues.t.sol` (MorphoBlueVenueTest), `audit-regressions/MorphoEntryFloor.t.sol` |
 | `registry/CollateralRegistry.sol` | 257 | Asset → venue / enabled / note; `maxOfferedLtvBps` derived from LT **and** LTV; `entryHfFloorWad` in (1, 10]; **venue replacement behind an immutable timelock** with propose / accept / cancel and a `pendingVenue` view | `Ownable2Step` — the only owned contract |
 | `swap/AerodromeSwapAdapter.sol` | 111 | One Slipstream `exactInputSingle`, recipient = account; floor derived from a caller quote with an on-chain 500 bps cap; `minOutFor` view | none |
-| `oracle/PythOracleAdapter.sol` | 181 | v1.1 Morpho `IOracle` with same-tx Pyth refresh, `maxAge`, `PegBreak` vs pool TWAP — **built, not deployed, not used** | none |
+| `oracle/PythOracleAdapter.sol` | 181 | v1.1 Morpho `IOracle` with permissionless Pyth refresh, `maxAge`, `PegBreak` vs pool TWAP (the same-transaction gate was removed in the wave-2 fix round, P-MED-1) — **built, not deployed, not used** | none |
 | `libraries/TickMath.sol` | 48 | Vendored tick → sqrt-price | — |
 | `interfaces/*.sol` | 729 | `IOilskinAccount`, `ICollateralRegistry` (new), `ICollateralVenue`, `ILpVenue`, `ISwapAdapter`, `IAaveV3`, `ISnuggleVault` (verified 2026-09-03 shape), `IAerodromeCLPool`, `IAerodromeSwapRouter`, `IMorphoBlue`, `IPermit2`, `IPyth` | — |
 | `script/Deploy.s.sol` | 266 | `BaseAddresses` (from `VERIFIED-BASE-FACTS.md` only), env-driven config, mainnet guard, registry → venue deploy order, 2-day default venue timelock, two-step registry handover | — |
@@ -152,7 +152,7 @@ out of range / too wide / unreadable pool; enumeration shape-exact
 reported on `closeMany` / `claim` / `unwind`; degenerate pool refused on entry;
 close fee on yield only and once per distinct token; B20 rebase up and down,
 blocked account, blocked treasury, paused reward token, blocked swap; Pyth
-same-tx gate, stale, peg break both directions; deploy guard refuses unknown
+fresh-without-refresh, stale, one-call bundle, peg break both directions; deploy guard refuses unknown
 chain / missing env / no code / Aave provider drift.
 
 ## Not verified — say so before anyone relies on it

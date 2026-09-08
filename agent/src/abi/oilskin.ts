@@ -198,6 +198,27 @@ export const strategyRouterAbi = [
   { type: "function", name: "USDC", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
   { type: "function", name: "LP_VENUE", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
   { type: "function", name: "SWAP", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
+  { type: "function", name: "REGISTRY", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
+  /**
+   * What an unwind actually did. `confirm` reads it from the receipt: a repay
+   * rung whose transaction succeeded with `repaid == 0` is NOT confirmed — that
+   * is exactly how a venue switch stranded positions while the keeper reported
+   * success (audit wave 2, M-HIGH-1).
+   */
+  {
+    type: "event",
+    name: "LeveragedLpUnwound",
+    inputs: [
+      { name: "account", type: "address", indexed: true },
+      { name: "collateralAsset", type: "address", indexed: true },
+      { name: "closedCount", type: "uint256", indexed: false },
+      { name: "failedCount", type: "uint256", indexed: false },
+      { name: "usdcFromLp", type: "uint256", indexed: false },
+      { name: "repaid", type: "uint256", indexed: false },
+      { name: "withdrawn", type: "uint256", indexed: false },
+      { name: "healthFactor", type: "uint256", indexed: false },
+    ],
+  },
   { type: "error", name: "Expired", inputs: [{ name: "deadline", type: "uint256" }] },
   { type: "error", name: "ExitHfTooLow", inputs: [{ name: "healthFactor", type: "uint256" }, { name: "floor", type: "uint256" }] },
   { type: "error", name: "AssetNotRegistered", inputs: [{ name: "asset", type: "address" }] },
@@ -205,6 +226,9 @@ export const strategyRouterAbi = [
   // The DELTA form. `RouterHoldsBalance` (an absolute zero-balance assertion, and a
   // permanent denial of service for one base unit of anybody's USDC) is gone.
   { type: "error", name: "RouterBalanceChanged", inputs: [{ name: "token", type: "address" }, { name: "balanceBefore", type: "uint256" }, { name: "balanceAfter", type: "uint256" }] },
+  // The swap quote must imply a pool price inside the close's own band (audit wave 2, G-MED-1).
+  // The keeper builds both from the same live price, so this is a bug signal, never a market one.
+  { type: "error", name: "QuoteOutsideBand", inputs: [{ name: "impliedSqrtPriceX96", type: "uint256" }, { name: "minSqrtPriceX96", type: "uint160" }, { name: "maxSqrtPriceX96", type: "uint160" }] },
 ] as const;
 
 export const lpVenueAbi = [
@@ -264,6 +288,40 @@ export const lpVenueAbi = [
   { type: "error", name: "BandTooWide", inputs: [{ name: "min", type: "uint160" }, { name: "max", type: "uint160" }, { name: "maxBps", type: "uint256" }] },
   { type: "error", name: "EnumerationFailed", inputs: [{ name: "reason", type: "bytes" }] },
   { type: "error", name: "PriceUnreadable", inputs: [{ name: "pool", type: "address" }] },
+] as const;
+
+/**
+ * CollateralRegistry — read at startup by the venue guard (audit wave 2, M-HIGH-2): the keeper
+ * values every account through the Aave pool, so the registry must still point every ENABLED
+ * asset at an AaveV3Venue over that pool, or the keeper is blind to those positions.
+ */
+export const collateralRegistryAbi = [
+  {
+    type: "function",
+    name: "venueOf",
+    stateMutability: "view",
+    inputs: [{ name: "asset", type: "address" }],
+    outputs: [{ name: "", type: "address" }],
+  },
+  {
+    type: "function",
+    name: "isEnabled",
+    stateMutability: "view",
+    inputs: [{ name: "asset", type: "address" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "previousVenues",
+    stateMutability: "view",
+    inputs: [{ name: "asset", type: "address" }],
+    outputs: [{ name: "", type: "address[]" }],
+  },
+] as const;
+
+/** AaveV3Venue — `PROVIDER()` is what identifies a venue as the Aave venue the keeper reads. */
+export const aaveVenueAbi = [
+  { type: "function", name: "PROVIDER", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
 ] as const;
 
 /** AerodromeSwapAdapter — the keeper never calls it directly; it decodes its reverts. */

@@ -8,14 +8,25 @@ import {MorphoMath} from "../../src/libraries/MorphoMath.sol";
 
 /// @notice A Morpho `IOracle`: 1 collateral unit in loan units, scaled by 1e36. Settable.
 contract MockMorphoOracle is IMorphoOracle {
-    uint256 public price;
+    uint256 internal _price;
+    /// @dev A deprecated Chainlink aggregator behind Morpho's ChainlinkOracle reverts on read.
+    bool public reverting;
 
     constructor(uint256 price_) {
-        price = price_;
+        _price = price_;
     }
 
     function setPrice(uint256 price_) external {
-        price = price_;
+        _price = price_;
+    }
+
+    function setRevert(bool on) external {
+        reverting = on;
+    }
+
+    function price() external view returns (uint256) {
+        if (reverting) revert("oracle: feed deprecated");
+        return _price;
     }
 }
 
@@ -91,6 +102,25 @@ contract MockMorpho is IMorphoBlue {
         m.totalSupplyAssets += uint128(assets);
         m.totalSupplyShares += uint128(shares);
         IERC20(p.loanToken).safeTransferFrom(msg.sender, address(this), assets);
+        return (assets, shares);
+    }
+
+    /// @dev A lender's withdrawal (Morpho's `withdraw`), so a test can make a market shallow.
+    function withdraw(MarketParams memory p, uint256 assets, uint256, address onBehalf, address receiver)
+        external
+        returns (uint256, uint256)
+    {
+        bytes32 id = keccak256(abi.encode(p));
+        _requireCreated(id);
+        require(msg.sender == onBehalf, "unauthorized");
+        _accrue(id);
+        Market storage m = _market[id];
+        uint256 shares = assets.toSharesUp(m.totalSupplyAssets, m.totalSupplyShares);
+        _position[id][onBehalf].supplyShares -= shares;
+        m.totalSupplyShares -= uint128(shares);
+        m.totalSupplyAssets -= uint128(assets);
+        require(m.totalBorrowAssets <= m.totalSupplyAssets, "insufficient liquidity");
+        IERC20(p.loanToken).safeTransfer(receiver, assets);
         return (assets, shares);
     }
 

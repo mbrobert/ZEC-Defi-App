@@ -77,15 +77,41 @@ describe("owner-history channel — durable per-account record, not a delivery p
     await store.close();
   });
 
-  it("an account not yet registered is swallowed, not a delivery failure", async () => {
+  it("N-MED-1: an account not yet registered gets a DEFERRED record that attaches on registration — never dropped", async () => {
     const store = new KeeperStore(fresh());
     await store.open();
     const channel = ownerHistoryChannel(store);
 
-    // ACCOUNT_B was never registered — this must resolve, not reject.
+    // ACCOUNT_B was never registered — this must resolve, and the entry must survive.
     await channel.send({ kind: "rung-fired", severity: "critical", account: ACCOUNT_B, rung: "emergency", hf: 1.02, at: NOW.toISOString() });
+    assert.equal(store.getOwnerNotifyHistory(ACCOUNT_B).length, 1, "held in the deferred bucket under the account address");
 
-    assert.deepEqual(store.getOwnerNotifyHistory(ACCOUNT_B), []);
+    await store.registerAccount({ account: ACCOUNT_B, owner: OWNER_A, discoveredAtBlock: 9n }, NOW);
+    const history = store.getOwnerNotifyHistory(ACCOUNT_B);
+    assert.equal(history.length, 1);
+    assert.equal(history[0].rung, "emergency");
+    // …and it is now ON the record, not in the bucket: a second entry appends to the same list.
+    await channel.send({ kind: "notify", severity: "warn", account: ACCOUNT_B, rung: "warn", hf: 1.4, at: NOW.toISOString() });
+    assert.equal(store.getOwnerNotifyHistory(ACCOUNT_B).length, 2);
+    await store.close();
+  });
+
+  it("N-LOW-1: the cap is PER KIND — an emergency episode's dispatch/escalation entries never evict the warn rung", async () => {
+    const store = new KeeperStore(fresh(), { ownerNotifyHistoryCap: 3 });
+    await store.open();
+    await store.registerAccount({ account: ACCOUNT_A, owner: OWNER_A, discoveredAtBlock: 1n }, NOW);
+    const channel = ownerHistoryChannel(store);
+    await channel.send({ kind: "rung-fired", severity: "warn", account: ACCOUNT_A, rung: "warn", hf: 1.45, at: "2026-09-08T00:00:00.000Z" });
+    // Five failed attempts and five escalations at the emergency rung.
+    for (let i = 0; i < 5; i++) {
+      await channel.send({ kind: "dispatch", severity: "warn", account: ACCOUNT_A, rung: "emergency", hf: 1.01, at: `2026-09-08T00:1${i}:00.000Z` });
+      await channel.send({ kind: "escalation", severity: "critical", account: ACCOUNT_A, rung: "emergency", hf: 1.01, at: `2026-09-08T00:2${i}:00.000Z` });
+    }
+    const history = store.getOwnerNotifyHistory(ACCOUNT_A);
+    assert.ok(history.some((h) => h.kind === "rung-fired" && h.rung === "warn"), "the warn entry survived");
+    assert.equal(history.filter((h) => h.kind === "dispatch").length, 3, "dispatch entries capped at 3");
+    assert.equal(history.filter((h) => h.kind === "escalation").length, 3, "escalation entries capped at 3");
+    assert.equal(history.length, 7);
     await store.close();
   });
 
@@ -121,6 +147,7 @@ function env(storePath: string): NodeJS.ProcessEnv {
     RPC_DEADLINE_MS: "2000",
     WATCHDOG_STALL_MS: "5000",
     LOG_LEVEL: "info",
+    NOTIFY_ALLOW_LOG_ONLY: "1",
   };
 }
 

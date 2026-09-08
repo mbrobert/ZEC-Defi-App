@@ -41,6 +41,7 @@ function baseEnv(url: string, storePath: string, extra: Record<string, string> =
     WATCHDOG_STALL_MS: "3000",
     BACKOFF_MAX_MS: "1000",
     LOG_LEVEL: "info",
+    NOTIFY_ALLOW_LOG_ONLY: "1",
     ...extra,
   };
 }
@@ -166,6 +167,7 @@ describe("runKeeper in-process — end to end in keeper mode", () => {
           ACCOUNT_FACTORY_ADDRESS: FACTORY,
           STORE_PATH: storePath,
           DISCOVERY_FROM_BLOCK: "0",
+          NOTIFY_ALLOW_LOG_ONLY: "1",
           KEEPER_PRIVATE_KEY: KEY,
           STRATEGY_ROUTER_ADDRESS: ROUTER,
           HEALTH_POLL_MS: "20",
@@ -221,6 +223,7 @@ describe("runKeeper in-process — end to end in keeper mode", () => {
           ACCOUNT_FACTORY_ADDRESS: FACTORY,
           STORE_PATH: storePath,
           DISCOVERY_FROM_BLOCK: "0",
+          NOTIFY_ALLOW_LOG_ONLY: "1",
           HEALTH_POLL_MS: "10",
           RPC_DEADLINE_MS: "150",
           WATCHDOG_STALL_MS: "200",

@@ -6,6 +6,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ICollateralVenue} from "../src/interfaces/ICollateralVenue.sol";
 import {AaveV3Venue} from "../src/venues/AaveV3Venue.sol";
 import {MorphoBlueVenue} from "../src/venues/MorphoBlueVenue.sol";
+import {StrategyRouter} from "../src/router/StrategyRouter.sol";
 import {IMorphoBlue, MarketParams} from "../src/interfaces/IMorphoBlue.sol";
 import {CollateralRegistry} from "../src/registry/CollateralRegistry.sol";
 import {ICollateralRegistry} from "../src/interfaces/ICollateralRegistry.sol";
@@ -568,6 +569,127 @@ contract MorphoBlueVenueTest is Fixture {
         );
         assertEq(cbbtc.balanceOf(address(acct)), 10e8);
         assertEq(cbbtc.balanceOf(keeper), 0);
+    }
+
+    // ------------------------------------------------------------ audit wave 2 (M-MED-1, M-MED-2, M-LOW-1)
+
+    function _borrowOnlyParams(uint256 collateral, uint256 borrow_, uint256 nonce)
+        internal
+        view
+        returns (StrategyRouter.BorrowOnlyParams memory p)
+    {
+        p.collateralAsset = address(cbbtc);
+        p.collateralAmount = collateral;
+        p.permit = StrategyRouter.Permit2Pull({
+            nonce: nonce,
+            deadline: block.timestamp + 20 minutes,
+            signature: collateral == 0
+                ? bytes("")
+                : _signPermit(address(cbbtc), collateral, nonce, block.timestamp + 20 minutes, address(acct))
+        });
+        p.borrowAmount = borrow_;
+        p.deadline = block.timestamp + 15 minutes;
+    }
+
+    /// M-MED-1. The audit's scenario: 40 WETH already in the WETH market (headroom 40 × 2,453.45 ×
+    /// 0.86 = 84,398 USDC) beats 1 cbBTC (68,450), so the old headroom rule put a "borrow against
+    /// cbBTC" into the WETH market — the review screen's liquidation price named the wrong asset
+    /// and `unwind(cbBTC, withdraw max)` took the cbBTC back with the debt untouched. The debt now
+    /// lands in the market of the collateral the router just supplied.
+    function test_FIX_M2_borrowAgainstTheSuppliedCollateralNotTheBiggestHeadroom() public {
+        _supply(address(weth), 40e18);
+        cbbtc.mint(alice, 1e8);
+        vm.prank(alice);
+        cbbtc.approve(address(permit2), type(uint256).max);
+        _ownerExec(address(router), abi.encodeCall(StrategyRouter.openBorrowOnly, (_borrowOnlyParams(ONE_CBBTC, 20_000e6, 41))));
+        assertEq(_debtIn(morphoIdCbbtc), 20_000e6, "the debt is in the market of the collateral the user chose");
+        assertEq(_debtIn(morphoIdWeth), 0, "nothing landed on the WETH market");
+        // The HF the router reports is the cbBTC market's: 79,593.77 × 0.86 / 20,000 = 3.42.
+        assertApproxEqRel(morphoVenue.healthFactor(address(acct)), (uint256(PRICE_CBBTC_E8) * 86 / 100 / 100) * 1e18 / 20_000e6, 1e14);
+    }
+
+    /// M-MED-1 (fallback). `collateralAmount == 0` — borrow against what is already there — has no
+    /// "just supplied" market, so the headroom rule still decides; the floor applies to the worst.
+    function test_FIX_M2b_borrowAgainstExistingCollateralFallsBackToHeadroom() public {
+        _supply(address(weth), 40e18);
+        _supply(address(cbbtc), ONE_CBBTC);
+        _ownerExec(address(router), abi.encodeCall(StrategyRouter.openBorrowOnly, (_borrowOnlyParams(0, 20_000e6, 42))));
+        assertEq(_debtIn(morphoIdWeth), 20_000e6, "headroom picked WETH: 84,398 > 68,450");
+        assertEq(_debtIn(morphoIdCbbtc), 0);
+        // And an explicit borrowAgainst on an asset with no collateral is refused by name.
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(MorphoBlueVenue.NoCollateralPosition.selector, address(acct)));
+        acct.execWithCallback(address(morphoVenue), 0, abi.encodeCall(ICollateralVenue.borrowAgainst, (address(aero), address(usdc), 1e6)));
+    }
+
+    /// M-MED-2. One market's oracle reverting used to block `repay`, `debt` and `healthFactor` for
+    /// every account holding collateral there — including repaying the OTHER market, which Morpho
+    /// itself allows. `debt` needs no oracle; `repay` orders an unreadable market first; only a
+    /// market WITH debt reads its oracle, and an unreadable one reads as HF 0 (fail closed).
+    function test_FIX_M3_anotherMarketsBrokenOracleDoesNotBlockRepay() public {
+        _supply(address(cbbtc), ONE_CBBTC);
+        _borrow(30_000e6);
+        _supply(address(weth), 1e18); // parked WETH, no debt
+        morphoOracleWeth.setRevert(true);
+
+        assertEq(morphoVenue.debt(address(acct), address(usdc)), 30_000e6, "debt is shares x market totals, no oracle");
+        assertApproxEqRel(morphoVenue.healthFactor(address(acct)), (uint256(PRICE_CBBTC_E8) * 86 / 100 / 100) * 1e18 / 30_000e6, 1e14, "a market with no debt never reads its oracle");
+
+        bytes memory ret = _ownerExec(address(morphoVenue), abi.encodeCall(ICollateralVenue.repay, (address(usdc), type(uint256).max)));
+        assertEq(abi.decode(ret, (uint256)), 30_000e6, "the cbBTC debt was repaid past the WETH oracle");
+        assertEq(morphoVenue.debt(address(acct), address(usdc)), 0);
+        // …and a borrow still finds the cbBTC market (the unreadable one is skipped for headroom).
+        _borrow(10_000e6);
+        assertEq(_debtIn(morphoIdCbbtc), 10_000e6);
+    }
+
+    /// M-MED-2 (the market WITH debt). Its own oracle breaking makes its HF unreadable: the venue
+    /// answers 0 — a borrow is refused at the floor, a withdraw at the exit floor — and repay is
+    /// still never gated.
+    function test_FIX_M3b_theDebtMarketsBrokenOracleFailsClosedButNeverGatesRepay() public {
+        _supply(address(cbbtc), ONE_CBBTC);
+        _borrow(30_000e6);
+        _supply(address(weth), 1e18);
+        morphoOracleCbbtc.setRevert(true);
+
+        assertEq(morphoVenue.healthFactor(address(acct)), 0, "unreadable with debt = worst, never a revert");
+        vm.prank(alice);
+        vm.expectPartialRevert(MorphoBlueVenue.EntryHfTooLow.selector);
+        acct.execWithCallback(address(morphoVenue), 0, abi.encodeCall(ICollateralVenue.borrow, (address(usdc), 1e6)));
+
+        bytes memory ret = _ownerExec(address(morphoVenue), abi.encodeCall(ICollateralVenue.repay, (address(usdc), 10_000e6)));
+        assertEq(abi.decode(ret, (uint256)), 10_000e6);
+        assertEq(morphoVenue.debt(address(acct), address(usdc)), 20_000e6);
+    }
+
+    /// M-LOW-1. The fallback borrow used to pick the biggest headroom even when that market had no
+    /// idle USDC to lend, and Morpho reverted while the other market could have filled it.
+    function test_FIX_M4_headroomFallbackSkipsAMarketWithoutIdleLiquidity() public {
+        // Drain the WETH market to 5,000 USDC idle.
+        MarketParams memory mpWeth = morphoVenue.marketParamsOf(address(weth));
+        vm.prank(morphoLender);
+        morpho.withdraw(mpWeth, 50_000_000e6 - 5_000e6, 0, morphoLender, morphoLender);
+        _supply(address(weth), 40e18); // headroom 84,398 > cbBTC's 68,450, but only 5,000 idle
+        _supply(address(cbbtc), ONE_CBBTC);
+        _borrow(20_000e6);
+        assertEq(_debtIn(morphoIdCbbtc), 20_000e6, "the market that can fill it");
+        assertEq(_debtIn(morphoIdWeth), 0);
+        // Drain cbBTC's market to 5,000 idle as well: now nothing can fill 10,000 — named, not
+        // Morpho's "insufficient liquidity" string from whichever market happened to be picked.
+        MarketParams memory mpCbbtc = morphoVenue.marketParamsOf(address(cbbtc));
+        vm.prank(morphoLender);
+        morpho.withdraw(mpCbbtc, 50_000_000e6 - 20_000e6 - 5_000e6, 0, morphoLender, morphoLender);
+        // 5,000 fits in both; the bigger headroom (WETH, 84,398 vs cbBTC's 48,450) wins as before.
+        _borrow(5_000e6);
+        assertEq(_debtIn(morphoIdWeth), 5_000e6);
+        assertEq(_debtIn(morphoIdCbbtc), 20_000e6);
+        // WETH is now dry and cbBTC has 5,000: 10,000 fits nowhere — named, not Morpho's string.
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(MorphoBlueVenue.NoMarketCanFill.selector, uint256(10_000e6)));
+        acct.execWithCallback(address(morphoVenue), 0, abi.encodeCall(ICollateralVenue.borrow, (address(usdc), 10_000e6)));
+        // …and 5,000 goes to the only market that can still fill it.
+        _borrow(5_000e6);
+        assertEq(_debtIn(morphoIdCbbtc), 25_000e6);
     }
 
     // ------------------------------------------------------------ helpers

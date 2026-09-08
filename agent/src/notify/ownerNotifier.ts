@@ -1,5 +1,5 @@
-import { isFatalStoreError, StoreError, type KeeperStore, type OwnerNotifyEntry } from "../store/keeperStore.js";
-import type { KeeperEvent } from "./notifier.js";
+import type { KeeperStore, OwnerNotifyEntry } from "../store/keeperStore.js";
+import type { Channel } from "./notifier.js";
 
 /**
  * The keeper's per-account, durable notification history — NOT a live
@@ -17,24 +17,24 @@ import type { KeeperEvent } from "./notifier.js";
  * write-capable backend would read from once one exists, without redesigning
  * the notifier again.
  *
- * Deliberately does not let a narrow bookkeeping gap fail a real delivery: an
- * account not yet registered (a startup race between discovery and the first
- * tick) is swallowed, not counted as "nobody was told." A genuinely broken
- * store (tampered / lock lost / write failed) still propagates, so
- * MultiNotifier counts and logs it like any other channel failure.
+ * An account not yet registered (a startup race between discovery and the
+ * first tick) is NOT dropped: the store keeps the entry under the account's
+ * address in a deferred bucket and attaches it when the account is
+ * registered (audit wave 2, N-MED-1 — it used to be swallowed and the rung
+ * still reported NOTIFIED). A genuinely broken store (tampered / lock lost /
+ * write failed) propagates, so MultiNotifier counts and logs it like any
+ * other channel failure.
+ *
+ * `reachesAPerson: false` — a record on this host is not a notification.
  */
-export function ownerHistoryChannel(store: KeeperStore): { name: string; send: (e: KeeperEvent) => Promise<void> } {
+export function ownerHistoryChannel(store: KeeperStore): Channel {
   return {
     name: "owner-history",
+    reachesAPerson: false,
     send: async (e) => {
       if (!e.account) return; // fleet-level event — nothing to attribute to an owner
       const entry: OwnerNotifyEntry = { kind: e.kind, severity: e.severity, rung: e.rung, hf: e.hf ?? null, at: e.at };
-      try {
-        await store.recordOwnerNotification(e.account, entry);
-      } catch (err) {
-        if (err instanceof StoreError && !isFatalStoreError(err)) return;
-        throw err;
-      }
+      await store.recordOwnerNotification(e.account, entry);
     },
   };
 }

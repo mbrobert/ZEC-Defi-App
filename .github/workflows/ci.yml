@@ -18,8 +18,8 @@ jobs:
         run: |
           git clone --depth 1 --branch v5.7.0 https://github.com/OpenZeppelin/openzeppelin-contracts lib/openzeppelin-contracts
           git clone --depth 1 --branch v1.16.2 https://github.com/foundry-rs/forge-std lib/forge-std
-      - name: Unit + scenario + invariant suites
-        run: forge test -vv --no-isolate
+      - name: Unit + scenario + invariant suites (isolation pinned in foundry.toml)
+        run: forge test -vv
 
   agent:
     runs-on: ubuntu-latest

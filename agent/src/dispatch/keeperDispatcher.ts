@@ -2,6 +2,7 @@ import {
   BaseError,
   ContractFunctionRevertedError,
   decodeFunctionResult,
+  parseEventLogs,
   type Account,
   type Chain,
   type Hex,
@@ -110,6 +111,32 @@ function errMsg(e: unknown): string {
   return e instanceof Error ? `${e.name}: ${e.message.split("\n")[0]}` : String(e);
 }
 
+/** What every `LeveragedLpUnwound` in a receipt says the router did for `account`, summed. */
+export function summarizeUnwinds(
+  logs: readonly { address: `0x${string}`; data: `0x${string}`; topics: readonly `0x${string}`[] }[],
+  account: Address
+): { events: number; closed: bigint; failed: bigint; usdcFromLp: bigint; repaid: bigint; withdrawn: bigint } {
+  const out = { events: 0, closed: 0n, failed: 0n, usdcFromLp: 0n, repaid: 0n, withdrawn: 0n };
+  type Unwound = { account?: string; closedCount?: bigint; failedCount?: bigint; usdcFromLp?: bigint; repaid?: bigint; withdrawn?: bigint };
+  let parsed: { args: Unwound }[];
+  try {
+    parsed = parseEventLogs({ abi: strategyRouterAbi, logs: logs as never, eventName: "LeveragedLpUnwound" }) as unknown as { args: Unwound }[];
+  } catch {
+    return out;
+  }
+  for (const log of parsed) {
+    const a = log.args;
+    if (!a.account || a.account.toLowerCase() !== account.toLowerCase()) continue;
+    out.events += 1;
+    out.closed += a.closedCount ?? 0n;
+    out.failed += a.failedCount ?? 0n;
+    out.usdcFromLp += a.usdcFromLp ?? 0n;
+    out.repaid += a.repaid ?? 0n;
+    out.withdrawn += a.withdrawn ?? 0n;
+  }
+  return out;
+}
+
 export interface GrantState {
   active: boolean;
   allowCallback: boolean;
@@ -170,9 +197,11 @@ export class KeeperDispatcher implements Dispatcher {
 
     if (record.action === "notify") {
       // A notification nobody receives is not a notification: only report
-      // NOTIFIED when a channel actually accepted it (audit C-MED-7).
+      // NOTIFIED when a PERSON-FACING channel accepted it (audit C-MED-7, and
+      // wave 2 N-MED-1: the keeper's own log and store accept everything).
+      let delivery;
       try {
-        await this.deliver({
+        delivery = await this.deliver({
           kind: "notify",
           severity: "warn",
           account: record.account,
@@ -183,6 +212,10 @@ export class KeeperDispatcher implements Dispatcher {
         });
       } catch (e) {
         return { status: "FAILED", error: `notification not delivered: ${errMsg(e)}` };
+      }
+      if (!delivery.personReached) {
+        log.warn("NOTIFY: health warning written to the keeper's own log/store only — nobody was told", { rung: record.rung, hf: record.hf });
+        return { status: "LOGGED_ONLY", reason: "no person-facing channel accepted it (set NOTIFY_WEBHOOK_URL); the keeper's own log and store are not a notification" };
       }
       log.warn("NOTIFY: health warning delivered", { rung: record.rung, hf: record.hf });
       return { status: "NOTIFIED" };
@@ -373,7 +406,31 @@ export class KeeperDispatcher implements Dispatcher {
       // Still pending: keep SENT (the monitor keeps it SENT when we return SENT again).
       return { status: "SENT", txHash: record.txHash };
     }
-    if (receipt.status === "success") return { status: "CONFIRMED", txHash: record.txHash };
+    if (receipt.status === "success") {
+      // A successful transaction is not a successful PROTECTION. The router's
+      // `unwind` is a no-op when the venue it resolved holds nothing of the
+      // account's — after a registry venue switch every position on the old
+      // venue read exactly like that: repaid 0, closed 0, receipt status 1,
+      // and this method called it CONFIRMED while the Aave debt rode to
+      // liquidation (audit wave 2, M-HIGH-1). Read what the unwind DID from
+      // its own event and refuse to confirm a repay that repaid nothing.
+      const moved = summarizeUnwinds(receipt.logs, record.account);
+      if (moved.events === 0) {
+        return {
+          status: "FAILED",
+          error: `transaction ${record.txHash} succeeded but its receipt carries no LeveragedLpUnwound for this account — cannot confirm that anything moved`,
+        };
+      }
+      if (moved.repaid === 0n) {
+        return {
+          status: "FAILED",
+          error:
+            `transaction ${record.txHash} succeeded but repaid nothing (closed ${moved.closed}, failed ${moved.failed}, usdcFromLp ${moved.usdcFromLp}) — ` +
+            "a repay rung that moves no debt is not protection; the venue the router resolved may not hold this position",
+        };
+      }
+      return { status: "CONFIRMED", txHash: record.txHash };
+    }
 
     // A revert on chain after a clean simulation is usually the grant or a
     // budget consumed in between (audit C-MED-8). That is PERMANENT and needs
@@ -396,9 +453,9 @@ export class KeeperDispatcher implements Dispatcher {
 
   // ---- internals ----------------------------------------------------------
 
-  private async deliver(e: Parameters<typeof eventNow>[0]): Promise<void> {
-    if (!this.d.notifier) return;
-    await this.d.notifier.deliver(eventNow(e, this.now));
+  private async deliver(e: Parameters<typeof eventNow>[0]): Promise<{ personReached: boolean }> {
+    if (!this.d.notifier) return { personReached: false };
+    return this.d.notifier.deliver(eventNow(e, this.now));
   }
 
   private bandToleranceFor(attempts: number): number {

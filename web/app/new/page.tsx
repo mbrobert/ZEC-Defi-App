@@ -9,7 +9,7 @@ import { useAccountRead, useDeployment, useGate, useMarket, useSession } from "@
 import { useMode } from "@/lib/mode";
 import { fromAtomic } from "@/lib/math";
 import { buildOpenPlan, deadlineFromNow, type OpenPlanInput } from "@/lib/plan";
-import { grantTokenLimits, runOpen, type Emit } from "@/lib/execute";
+import { grantPoolTokenPricing, grantTokenLimits, runOpen, type Emit } from "@/lib/execute";
 import { WIZARD_STEPS, defaultWizardState, deriveReview, presetsFor, type WizardState } from "@/lib/wizard";
 import { DEMO_ACCOUNT } from "@/lib/demo";
 import { fmtUsd } from "@/lib/format";
@@ -88,7 +88,8 @@ function Wizard() {
       deployment,
       deadline,
       bandToleranceBps: state.bandToleranceBps,
-      keeperProtection: state.keeperProtection,
+      // Audit wave 2, M-HIGH-2: never ask for a keeper permission the keeper cannot honour.
+      keeperProtection: state.keeperProtection && !(deployment?.unsupportedVenues ?? []).includes(state.collateral),
       entryHf: review.loan.entryHf,
     };
   }, [review, s.address, s.mode, account, predictedAccount, state, deployment, deadline]);
@@ -126,8 +127,19 @@ function Wizard() {
   // Live executor: wagmi wallet + viem reads/gas behind the small interfaces lib/execute expects.
   const run = async (emit: Emit) => {
     if (!planInput || !publicClient) return null;
-    const r = market.reserves[state.collateral]!;
-    const limits = grantTokenLimits(planInput.borrowUsdc, { address: BASE_TOKENS[state.collateral].address, decimals: BASE_TOKENS[state.collateral].decimals, priceUsd: r.priceUsd }, state.strategy?.kind === "lp" ? [BASE_TOKENS[state.strategy.entry.pool.token0 as keyof typeof BASE_TOKENS]?.address, BASE_TOKENS[state.strategy.entry.pool.token1 as keyof typeof BASE_TOKENS]?.address].filter(Boolean) as Address[] : []);
+    const r = market.reserves[state.collateral];
+    // Every token in ITS OWN units at ITS OWN price; a token that cannot be priced blocks the
+    // grant step with the reason instead of signing a wrong line (audit wave 2, G-HIGH-1).
+    let limits: ReturnType<typeof grantTokenLimits> | Error;
+    try {
+      limits = grantTokenLimits(
+        planInput.borrowUsdc,
+        { address: BASE_TOKENS[state.collateral].address, symbol: state.collateral, decimals: BASE_TOKENS[state.collateral].decimals, priceUsd: r?.priceUsd ?? NaN },
+        state.strategy?.kind === "lp" ? grantPoolTokenPricing([state.strategy.entry.pool.token0, state.strategy.entry.pool.token1], market) : [],
+      );
+    } catch (e) {
+      limits = e as Error;
+    }
     return runOpen(
       {
         wallet: {
@@ -186,7 +198,9 @@ function Wizard() {
               keeperProtection={state.keeperProtection}
             />
           )}
-          {step === 2 && <StrategyStep gate={gate} state={state} ltvBps={review?.preset.ltvBps ?? 0} borrowAprPct={market.usdcBorrowAprPct} onChange={patch} />}
+          {step === 2 && (
+            <StrategyStep gate={gate} state={state} ltvBps={review?.preset.ltvBps ?? 0} borrowAprPct={market.usdcBorrowAprPct} onChange={patch} unsupportedVenues={deployment?.unsupportedVenues ?? []} />
+          )}
           {step === 3 && review && <ReviewStep state={state} d={review} calls={calls} marketSource={source} />}
           {step === 4 && review && planInput && (
             <SignStep calls={calls} mode={s.mode} flowKind="open" summary={summary} owner={s.address} demoAccount={DEMO_ACCOUNT} run={run} />

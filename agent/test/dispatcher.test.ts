@@ -63,8 +63,10 @@ async function rig(hf = 1.3) {
   const notifier = {
     failures: 0,
     channels: ["test"],
+    hasPersonChannel: true,
     deliver: async (e: { kind: string; account?: string }) => {
       notified.push(e);
+      return { personReached: true };
     },
   };
   const dispatcher = new KeeperDispatcher({
@@ -371,6 +373,55 @@ describe("KeeperDispatcher — acts only inside a readable grant", () => {
     assert.deepEqual(c, { status: "CONFIRMED", txHash: tx });
     // Dry runs (value probes + the plan simulation) mutated nothing.
     assert.ok(r.oil.executed.filter((e) => !e.mutate).length >= 1);
+  });
+
+  it("M-HIGH-1: a SUCCESSFUL receipt whose LeveragedLpUnwound.repaid == 0 on a repay rung is FAILED, never CONFIRMED", async () => {
+    const r = await rig(1.3);
+    r.oil.setPositions(ACCOUNT_A, [{ id: 1n, poolId: POOL_A }]);
+    r.grantAll();
+    // The stranded-venue shape: the router closes the LP, finds no debt on the venue it resolved,
+    // repays nothing and the transaction succeeds. The old confirm() called that CONFIRMED.
+    r.oil.strandRepay = true;
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: await r.valuation() });
+    assert.equal(res.status, "SENT");
+    const tx = (res as { txHash: Hex }).txHash;
+    const c = await r.dispatcher.confirm(record("repay", "repay", 1.3, { status: "SENT", txHash: tx }));
+    assert.equal(c.status, "FAILED", `a repay that repaid nothing must not be CONFIRMED: ${JSON.stringify(c)}`);
+    assert.match((c as { error: string }).error, /repaid nothing|repaid 0/i);
+    // …and the same receipt with a real repay is confirmed, so the check is the event, not the mode.
+    r.oil.strandRepay = false;
+    r.oil.setPositions(ACCOUNT_A, [{ id: 2n, poolId: POOL_A }]);
+    const ok = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3, { key: `${ACCOUNT_A.toLowerCase()}:1:2:repay` }), valuation: await r.valuation() });
+    assert.equal(ok.status, "SENT");
+    const c2 = await r.dispatcher.confirm(record("repay", "repay", 1.3, { status: "SENT", txHash: (ok as { txHash: Hex }).txHash }));
+    assert.equal(c2.status, "CONFIRMED");
+  });
+
+  it("M-HIGH-1: a successful receipt with NO LeveragedLpUnwound for the account is FAILED (fail closed)", async () => {
+    const r = await rig(1.3);
+    r.oil.setPositions(ACCOUNT_A, [{ id: 1n, poolId: POOL_A }]);
+    r.grantAll();
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: await r.valuation() });
+    const tx = (res as { txHash: Hex }).txHash;
+    // Strip the logs from the receipt: an RPC that returns a bare receipt cannot prove anything moved.
+    const rc = r.chain.receipts.get(tx.toLowerCase())!;
+    r.chain.receipts.set(tx.toLowerCase(), { ...rc, logs: [] });
+    const c = await r.dispatcher.confirm(record("repay", "repay", 1.3, { status: "SENT", txHash: tx }));
+    assert.equal(c.status, "FAILED");
+    assert.match((c as { error: string }).error, /LeveragedLpUnwound/);
+  });
+
+  it("N-MED-1: a warning that only the keeper's own log/store accepted is LOGGED_ONLY, never NOTIFIED", async () => {
+    const r = await rig(1.45);
+    // A notifier whose only channels reach nobody (log + owner-history): every event "delivers".
+    const logOnly = { failures: 0, channels: ["log", "owner-history"], hasPersonChannel: false, deliver: async () => ({ personReached: false }) };
+    const d = new KeeperDispatcher({ ...(r.dispatcher as unknown as { d: ConstructorParameters<typeof KeeperDispatcher>[0] }).d, notifier: logOnly });
+    const res = await d.dispatch({ record: record("notify", "warn", 1.45), valuation: null });
+    assert.equal(res.status, "LOGGED_ONLY");
+    assert.match((res as { reason: string }).reason, /NOTIFY_WEBHOOK_URL/);
+    // The same rung through a person-facing channel is NOTIFIED.
+    const ok = await r.dispatcher.dispatch({ record: record("notify", "warn", 1.45), valuation: null });
+    assert.deepEqual(ok, { status: "NOTIFIED" });
   });
 
   it("emergency closes everything; a reverted receipt is FAILED (retry with the same key later)", async () => {

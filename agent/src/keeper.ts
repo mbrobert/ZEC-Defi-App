@@ -3,18 +3,19 @@ import { privateKeyToAccount } from "viem/accounts";
 import { base } from "viem/chains";
 import { AAVE_V3_RESERVES, BORROW_ASSET, COLLATERAL_ASSETS, HF_LADDER } from "@zyo/shared";
 import { accountCreatedEvent, strategyRouterAbi } from "./abi/oilskin.js";
-import { describeConfig, loadConfig, type KeeperConfig } from "./config.js";
+import { ConfigError, describeConfig, loadConfig, type KeeperConfig } from "./config.js";
 import { KeeperDispatcher } from "./dispatch/keeperDispatcher.js";
 import { ObserveOnlyDispatcher } from "./dispatch/observeOnly.js";
 import type { Dispatcher } from "./dispatch/types.js";
 import { buildFeedPolicies, FeedSelfCheckError, logFeedPolicies, policyMap, selfCheckFeeds, type FeedPolicy } from "./engine/feeds.js";
 import { Logger, stdoutSink, type LogSink } from "./log.js";
-import { logChannel, MultiNotifier, webhookChannel, type KeeperEvent, type Notifier } from "./notify/notifier.js";
+import { logChannel, MultiNotifier, webhookChannel, type Channel, type KeeperEvent, type Notifier } from "./notify/notifier.js";
 import { ownerHistoryChannel } from "./notify/ownerNotifier.js";
 import { HealthMonitor, type TickReport } from "./monitors/healthMonitor.js";
 import { AaveReader, aaveAddressesFromShared, reserveSpecsFromShared } from "./services/chain.js";
 import { sleep } from "./services/deadline.js";
 import { AccountDiscovery } from "./services/discovery.js";
+import { assertAaveVenues, UnsupportedVenueError } from "./services/venues.js";
 import { KeeperStore } from "./store/keeperStore.js";
 import { ProgressWatchdog, type TickHandle } from "./watchdog.js";
 
@@ -40,8 +41,8 @@ export interface RunOptions {
   /** Test hook: a wallet client over the same transport as the public client. */
   makeWallet?: (config: KeeperConfig, account: Account) => WalletClient<Transport, Chain, Account>;
   makeDispatcher?: (config: KeeperConfig, log: Logger) => Dispatcher;
-  /** Extra delivery channel (tests, or an operator's own transport). */
-  notifyChannel?: { name: string; send: (e: KeeperEvent) => Promise<void> };
+  /** Extra delivery channel (tests, or an operator's own transport). Person-facing unless it says otherwise. */
+  notifyChannel?: { name: string; reachesAPerson?: boolean; send: (e: KeeperEvent) => Promise<void> };
   /** Replaces the whole notifier (tests). */
   notifier?: Notifier;
   /** Injected for tests; defaults to the global fetch. */
@@ -92,6 +93,32 @@ export async function runKeeper(env: NodeJS.ProcessEnv, opts: RunOptions = {}): 
   const chainId = await reader.chainId();
   if (chainId !== config.chainId) {
     throw new Error(`RPC reports chain id ${chainId}, config expects ${config.chainId}`);
+  }
+
+  // ---- venue guard: the keeper values through the Aave pool; the registry must agree ----
+  // Every valuation below reads Aave directly. If the registry points an enabled asset at any
+  // other venue, every position there is NO_DEBT to this process and the ladder never runs for
+  // it — while the dashboard says "active". Refuse to start rather than run blind
+  // (audit wave 2, M-HIGH-2). A venue-aware reader is the real fix; this is the floor.
+  if (config.routerAddress) {
+    try {
+      const guard = await assertAaveVenues(client, config.routerAddress, config.rpcDeadlineMs);
+      log.info("venue guard passed — every enabled asset resolves to an AaveV3Venue over the pool this keeper reads", {
+        registry: guard.registry,
+        venues: guard.checked.map((c) => `${c.symbol}:${c.venue}`),
+        skippedDisabled: guard.skippedDisabled,
+      });
+    } catch (e) {
+      if (e instanceof UnsupportedVenueError) {
+        log.error("VENUE GUARD FAILED — refusing to start blind", { problems: e.problems });
+      }
+      throw e;
+    }
+  } else {
+    log.warn(
+      "VENUE GUARD SKIPPED: STRATEGY_ROUTER_ADDRESS is not set, so the keeper cannot confirm the registry still points every " +
+        "enabled asset at the AaveV3Venue it values through — a position on any other venue is invisible here (audit wave 2, M-HIGH-2)"
+    );
   }
 
   // ---- feed self-check: the keeper must not run silently blind ------------
@@ -147,16 +174,26 @@ export async function runKeeper(env: NodeJS.ProcessEnv, opts: RunOptions = {}): 
   });
 
   // ---- notifications: every rung and every escalation leaves this process --
-  const channels = [logChannel(log), ownerHistoryChannel(store), ...(opts.notifyChannel ? [opts.notifyChannel] : [])];
+  const channels: Channel[] = [logChannel(log), ownerHistoryChannel(store)];
+  if (opts.notifyChannel) channels.push({ reachesAPerson: opts.notifyChannel.reachesAPerson ?? true, ...opts.notifyChannel });
   if (config.notifyWebhookUrl) {
     channels.push(webhookChannel({ url: config.notifyWebhookUrl, token: config.notifyWebhookToken, fetchImpl: opts.fetchImpl }));
-  } else if (!opts.notifyChannel) {
-    log.warn(
-      "NO NOTIFICATION CHANNEL: set NOTIFY_WEBHOOK_URL. Rung warnings and escalations will reach this log and nothing else — " +
-        "the user is shown a per-rung promise before they sign, and it cannot be kept from here"
-    );
   }
   const notifier: Notifier = opts.notifier ?? new MultiNotifier(log, channels, config.notifyDeadlineMs);
+  if (!notifier.hasPersonChannel) {
+    // The keeper's own log and store accept every event and reach nobody. Running with only those
+    // used to make every warning NOTIFIED and terminal (audit wave 2, N-MED-1). Refuse unless an
+    // operator has said, by name, that a log-only keeper is what they want.
+    const msg =
+      "NO PERSON-FACING NOTIFICATION CHANNEL: set NOTIFY_WEBHOOK_URL. Rung warnings and escalations would reach this log and " +
+      "the keeper's own store and nothing else — the user is shown a per-rung promise before they sign, and it cannot be kept from here";
+    if (!config.notifyAllowLogOnly) {
+      log.error(msg + " (set NOTIFY_ALLOW_LOG_ONLY=1 to run anyway; warnings are then recorded LOGGED_ONLY, never NOTIFIED)");
+      await store.close();
+      throw new ConfigError("NOTIFY_WEBHOOK_URL", "no person-facing notification channel; set it, or NOTIFY_ALLOW_LOG_ONLY=1 to run log-only");
+    }
+    log.warn(msg + " — NOTIFY_ALLOW_LOG_ONLY=1: running log-only; warnings are recorded LOGGED_ONLY, never NOTIFIED");
+  }
 
   let dispatcher: Dispatcher;
   if (opts.makeDispatcher) {

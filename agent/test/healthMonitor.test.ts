@@ -125,7 +125,8 @@ async function rig(opts: { chain?: MockChain; storePath?: string; config?: Parti
     notifier: {
       failures: 0,
       channels: ["test"],
-      deliver: async (e) => void events.push({ kind: e.kind, account: e.account, reasons: e.reasons }),
+      hasPersonChannel: true,
+      deliver: async (e) => (events.push({ kind: e.kind, account: e.account, reasons: e.reasons }), { personReached: true }),
     },
   });
   const tick = () => monitor.tick(watchdog.beginTick());

@@ -20,6 +20,19 @@ export function alertRungFor(hf: number | null | undefined): HfRung | null {
 }
 
 /**
+ * What the banner shows for a live health factor: nothing (healthy or not opted in), a rung, or —
+ * when the account read failed — an "unreadable" alert. The failure case is its own state
+ * because it used to render as "No debt" (audit wave 2, N-MED-2).
+ */
+export type BannerState = { kind: "unreadable" } | { kind: "rung"; rung: HfRung } | null;
+
+export function bannerStateFor(hf: number | null | undefined): BannerState {
+  if (hf === null || hf === undefined || Number.isNaN(hf)) return { kind: "unreadable" };
+  const rung = alertRungFor(hf);
+  return rung ? { kind: "rung", rung } : null;
+}
+
+/**
  * Whether a NEW browser notification should fire for the current rung, given
  * the id of the rung we last notified for (in this session). Fires once per
  * distinct rung — a steady "warn" is not repeated every poll, but recovering

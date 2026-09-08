@@ -3,6 +3,51 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-08 — Audit wave 2 fix round: every High, Medium and Low in `AUDIT-2026-09-07.md`
+
+Fifteen ids (3 High, 7 Medium, 4 Low, plus the Info wording), each with a test that failed on the
+tree before the fix (`docs/AUDIT-2026-09-07.md` §"Fix round" lists id → commit → test path).
+
+**Contracts.** `StrategyRouter.unwind` resolves the venue that HOLDS the calling account's position
+(`venueOf`, then the registry's new `previousVenues`), so a venue switch no longer strands what was
+opened on the old venue (M-HIGH-1; `test/audit-regressions/VenueSwitch.t.sol`). `ICollateralVenue`
+gained `borrowAgainst(collateral, loanToken, amount)`; the router uses it after it has just supplied
+a collateral, so on Morpho the debt lands in that collateral's market (M-MED-1). `MorphoBlueVenue`
+reads no oracle for `debt`, never for a market with no debt, and reads an unreadable debt market as
+health factor 0 rather than reverting, so a repay is never gated by another market's feed (M-MED-2);
+its headroom fallback skips markets without enough idle liquidity and reverts `NoMarketCanFill` by
+name (M-LOW-1). The router refuses a swap quote that implies a pool price outside the close's own
+band (`QuoteOutsideBand`, G-MED-1). `PythOracleAdapter` lost its same-transaction gate: the max-age
+and peg rules carry the safety, and every venue view and third-party liquidation now works without a
+bundle (P-MED-1; `foundry.toml` pins `isolate = true` and CI runs plain `forge test`, P-LOW-1). The
+mainnet deploy guard refuses a treasury equal to the broadcaster and a registry owner without code,
+and its two opt-ins travel in `Config` so tests stop racing on process env (S-LOW-1). The invariant
+handler gained `switchVenue` and a router-exit probe behind `invariant_userCanAlwaysExitViaRouter`
+(M-INFO-1). ABI bundle 321 → **326** entries.
+
+**Keeper.** `confirm()` reads `LeveragedLpUnwound` from the receipt and refuses to call a repay that
+repaid nothing CONFIRMED (M-HIGH-1). A startup venue guard refuses to run when the registry points any
+enabled asset at a venue that is not the `AaveV3Venue` over the pool it reads (M-HIGH-2). Channels
+declare whether they reach a person; a warning only the keeper's own log and store accepted is
+`LOGGED_ONLY` (retried, never terminal), startup is fatal without a person-facing channel unless
+`NOTIFY_ALLOW_LOG_ONLY=1`, and an event for an account not yet discovered is deferred and attached on
+registration instead of dropped (N-MED-1). The owner-history cap is per kind (N-LOW-1). `CHAIN_ID`
+other than 8453 is a named `ConfigError` (S-MED-1).
+
+**Web.** Every keeper-budget line is sized in its own token's decimals and price, an unknown or
+unpriced pool token refuses the grant with the reason, the dashboard re-grant includes the pool tokens
+of live positions, and `describeGrant` reports `no-budget` per token (G-HIGH-1). `readDeployment`
+marks assets the registry points at an unreadable venue; the dashboard says so, offers no keeper
+permission for them, and the wizard never plans one (M-HIGH-2). An unreadable health factor is
+`null` — "Unreadable" on the tile, an alert in the banner — never `+∞` / "No debt" (N-MED-2). Two
+absolute claims about what the keeper cannot do are now banned words (G-MED-1).
+
+**Docs.** `RISKS.md` §8/§10, `CONTRACT-ABI.md`, `DEPOSIT-FLOW.md` (box K0, borrowAgainst, the exit
+venue rule, the quote band), `DEPLOY-SEPOLIA.md` (§6.2: keeper and web are mainnet-only; §7: unset
+the Sepolia env before a mainnet run), `VERIFIED-BASE-FACTS.md` ("would be covered when FORK_URL is
+set"), `ARCHITECTURE.md` (Pyth), `AUDIT-2026-09-06.md` (the B-MED-3 wording), `TESTING.md` and
+`README.md` counts.
+
 ## 2026-09-07 — Step 2: `MorphoBlueVenue` built over the two verified Base Morpho Blue markets
 
 **Facts first.** The cbBTC/USDC and WETH/USDC Morpho Blue markets on Base were

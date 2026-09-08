@@ -63,6 +63,11 @@ contract CollateralRegistry is Ownable2Step, ICollateralRegistry {
 
     mapping(address => AssetConfig) internal _configs;
     mapping(address => PendingVenue) internal _pending;
+    /// @dev Every venue `asset` has been pointed at before the current one (audit wave 2,
+    ///      M-HIGH-1). The router's EXIT path walks this list so a position opened on a previous
+    ///      venue can still be repaid and withdrawn through the product after a switch. A venue
+    ///      that becomes current again leaves the list; nothing is ever listed twice.
+    mapping(address => address[]) internal _previousVenues;
     address[] internal _assets;
 
     event AssetRegistered(
@@ -150,7 +155,8 @@ contract CollateralRegistry is Ownable2Step, ICollateralRegistry {
 
     /// @notice Apply a venue change whose timelock has elapsed.
     /// @dev Invariant: owner-only; `eta` must have passed; the new venue is re-checked at this
-    ///      moment, not only when it was proposed.
+    ///      moment, not only when it was proposed; the venue being replaced is remembered in
+    ///      `previousVenues(asset)` so positions opened on it stay reachable through the router.
     function acceptVenue(address asset) external onlyOwner {
         PendingVenue memory pv = _pending[asset];
         if (pv.venue == address(0)) revert NoPendingChange(asset);
@@ -159,6 +165,7 @@ contract CollateralRegistry is Ownable2Step, ICollateralRegistry {
         if (c.enabled) _requireListed(asset, pv.venue);
         address previous = c.venue;
         delete _pending[asset];
+        if (previous != pv.venue) _rememberPrevious(asset, previous, pv.venue);
         c.venue = pv.venue;
         c.priceFeed = pv.priceFeed;
         c.decimals = IERC20Metadata(asset).decimals();
@@ -228,6 +235,13 @@ contract CollateralRegistry is Ownable2Step, ICollateralRegistry {
         return _configs[asset].venue;
     }
 
+    /// @notice Every venue `asset` was pointed at before the current one, most recent last. The
+    ///         router's exit path resolves a position from `[venueOf(asset), ...previousVenues]`,
+    ///         so a switch never strands what was opened on the old venue (audit wave 2, M-HIGH-1).
+    function previousVenues(address asset) external view returns (address[] memory) {
+        return _previousVenues[asset];
+    }
+
     function isEnabled(address asset) external view override returns (bool) {
         return _configs[asset].enabled;
     }
@@ -247,6 +261,22 @@ contract CollateralRegistry is Ownable2Step, ICollateralRegistry {
         if (v.liquidationThresholdBps(asset) == 0 || v.maxLtvBps(asset) == 0) {
             revert VenueDoesNotKnowAsset(asset);
         }
+    }
+
+    /// @dev `previous` joins the asset's history (once); `next`, now current, leaves it.
+    function _rememberPrevious(address asset, address previous, address next) internal {
+        address[] storage list = _previousVenues[asset];
+        for (uint256 i = 0; i < list.length; i++) {
+            if (list[i] == next) {
+                list[i] = list[list.length - 1];
+                list.pop();
+                break;
+            }
+        }
+        for (uint256 i = 0; i < list.length; i++) {
+            if (list[i] == previous) return;
+        }
+        list.push(previous);
     }
 
     function _setEntryHfFloor(uint256 wad) internal {

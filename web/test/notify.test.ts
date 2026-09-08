@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { HF_LADDER } from "@zyo/shared";
-import { alertRungFor, shouldNotify } from "../lib/notify";
+import { alertRungFor, bannerStateFor, shouldNotify } from "../lib/notify";
 
 test("alertRungFor: healthy / no-debt / unreadable HF all mean no alert", () => {
   assert.equal(alertRungFor(2.0), null);
@@ -33,4 +33,15 @@ test("shouldNotify: fires once per distinct rung id, not on every poll of the sa
   assert.equal(shouldNotify(warn, "warn"), false); // already notified for this rung
   assert.equal(shouldNotify(repay, "warn"), true); // worsened to a new rung
   assert.equal(shouldNotify(null, "warn"), false); // recovered — nothing to notify
+});
+
+test("N-MED-2: bannerStateFor — a failed read is an 'unreadable' alert, a rung is a rung, healthy is nothing", () => {
+  assert.deepEqual(bannerStateFor(null), { kind: "unreadable" });
+  assert.deepEqual(bannerStateFor(undefined), { kind: "unreadable" });
+  assert.deepEqual(bannerStateFor(Number.NaN), { kind: "unreadable" });
+  assert.equal(bannerStateFor(2.0), null);
+  assert.equal(bannerStateFor(Number.POSITIVE_INFINITY), null, "no debt is healthy, not unreadable");
+  const s = bannerStateFor(1.1);
+  assert.equal(s?.kind, "rung");
+  assert.equal(s?.kind === "rung" ? s.rung.id : null, "derisk");
 });

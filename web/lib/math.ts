@@ -204,7 +204,11 @@ export function fmtHalfWidth(rangeWidthBps: number): string {
 }
 
 /** Health-factor label for a chip, from the shared ladder (null rung = healthy). */
-export function hfBand(hf: number): { rung: HfRung | null; label: string; kind: "good" | "warn" | "crit" } {
+export function hfBand(hf: number | null): { rung: HfRung | null; label: string; kind: "good" | "warn" | "crit" } {
+  // `null` = the account read failed or has not resolved. It used to be substituted with +∞ and
+  // rendered "No debt" (audit wave 2, N-MED-2); an unreadable health factor is a warning, not a
+  // green tile.
+  if (hf === null) return { rung: null, label: "Unreadable", kind: "warn" };
   // rungFor throws on NaN/negative (fail closed) and treats +Infinity as healthy.
   const rung = rungFor(hf);
   if (hf === Number.POSITIVE_INFINITY) return { rung: null, label: "No debt", kind: "good" };
@@ -213,6 +217,17 @@ export function hfBand(hf: number): { rung: HfRung | null; label: string; kind: 
 }
 
 /** Current LTV from account data (debt / collateral), bps. 0 when no collateral. */
+/**
+ * The health factor of a live account read, or `null` when it cannot be known: no account, or
+ * the Aave `getUserAccountData` leg of the read failed. Never +∞ for "unknown" — +∞ means "no
+ * debt", which is a different, reassuring statement (audit wave 2, N-MED-2).
+ */
+export function accountHf(account: { aave: { healthFactor: number } | null } | null | undefined): number | null {
+  if (!account || !account.aave) return null;
+  const hf = account.aave.healthFactor;
+  return typeof hf === "number" && !Number.isNaN(hf) ? hf : null;
+}
+
 export function currentLtvBps(collateralUsd: number, debtUsd: number): number {
   if (collateralUsd <= 0) return 0;
   return Math.round((debtUsd / collateralUsd) * BPS_DENOMINATOR);

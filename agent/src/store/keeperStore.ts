@@ -89,7 +89,11 @@ export interface AccountRecord {
   };
   /** Times a rung was re-armed because the action it fired did not clear it. */
   rungRefires?: Record<string, number>;
-  /** Durable per-account notification history (see notify/ownerNotifier.ts). Capped, oldest dropped first. */
+  /**
+   * Durable per-account notification history (see notify/ownerNotifier.ts). Capped PER KIND,
+   * oldest of that kind dropped first — one emergency episode's dispatch and escalation entries
+   * used to push the `warn` entry out of a single shared ring (audit wave 2, N-LOW-1).
+   */
   notifyHistory?: OwnerNotifyEntry[];
 }
 
@@ -112,7 +116,9 @@ export interface OwnerNotifyEntry {
  * PENDING    — key persisted, nothing sent yet (resume: dispatch with the same key)
  * SENT       — broadcast, awaiting receipt (resume: confirm)
  * CONFIRMED  — receipt success
- * NOTIFIED   — off-chain action (warn rung) delivered
+ * NOTIFIED   — off-chain action (warn rung) delivered to a PERSON-FACING channel
+ * LOGGED_ONLY— off-chain action written only to the keeper's own log/store;
+ *              NOT terminal — retried like FAILED (audit wave 2, N-MED-1)
  * FAILED     — send/receipt failure; retried with the SAME key while the
  *              episode is open and attempts < max
  * REFUSED    — no grant on-chain / keeper cannot act; re-checked like FAILED
@@ -125,6 +131,7 @@ export type DispatchStatus =
   | "SENT"
   | "CONFIRMED"
   | "NOTIFIED"
+  | "LOGGED_ONLY"
   | "FAILED"
   | "REFUSED"
   | "SUPERSEDED"
@@ -135,6 +142,7 @@ export const DISPATCH_STATUSES: readonly DispatchStatus[] = [
   "SENT",
   "CONFIRMED",
   "NOTIFIED",
+  "LOGGED_ONLY",
   "FAILED",
   "REFUSED",
   "SUPERSEDED",
@@ -180,6 +188,12 @@ export interface StoreState {
   counters: { episode: number; dispatchSeq: number; tick: number };
   accounts: AccountRecord[];
   dispatches: DispatchRecord[];
+  /**
+   * Owner-notification entries for accounts not registered yet (a startup race between
+   * discovery and the first tick), keyed by lowercase account address; attached to the record on
+   * registration. Additive, no version bump (audit wave 2, N-MED-1).
+   */
+  deferredNotify?: Record<string, OwnerNotifyEntry[]>;
 }
 
 export function emptyState(): StoreState {
@@ -650,8 +664,11 @@ export class KeeperStore {
 
   /** An account's owner-notification history, oldest first, capped. */
   getOwnerNotifyHistory(account: Address): OwnerNotifyEntry[] {
-    const a = this.snapshot().accounts.find((x) => x.account === lowerAddress(account));
-    return structuredClone(a?.notifyHistory ?? []);
+    const id = lowerAddress(account);
+    const a = this.snapshot().accounts.find((x) => x.account === id);
+    if (a) return structuredClone(a.notifyHistory ?? []);
+    // Not registered yet: whatever was recorded for it is waiting in the deferred bucket.
+    return structuredClone(this.snapshot().deferredNotify?.[id] ?? []);
   }
 
   getDispatch(key: string): DispatchRecord | undefined {
@@ -728,6 +745,12 @@ export class KeeperStore {
         lastEvaluatedAt: null,
         unknownStreak: 0,
       };
+      // Entries recorded before discovery reached this account (audit wave 2, N-MED-1).
+      const deferred = s.deferredNotify?.[id];
+      if (deferred && deferred.length) {
+        a.notifyHistory = deferred;
+        delete s.deferredNotify![id];
+      }
       s.accounts.push(a);
       return structuredClone(a);
     });
@@ -745,20 +768,31 @@ export class KeeperStore {
 
   /**
    * Append one entry to `account`'s owner-notification history, capped at
-   * `ownerNotifyHistoryCap` (oldest dropped first). Throws StoreError if the
-   * account is not registered — callers that must not fail a whole delivery
-   * over that (notify/ownerNotifier.ts) catch it explicitly.
+   * `ownerNotifyHistoryCap` PER KIND (oldest of that kind dropped first). An account that is not
+   * registered yet gets the entry in a deferred bucket that `registerAccount` attaches later —
+   * never dropped, never a delivery failure (audit wave 2, N-MED-1 / N-LOW-1).
    */
   recordOwnerNotification(account: Address, entry: OwnerNotifyEntry): Promise<OwnerNotifyEntry[]> {
     return this.mutate((s) => {
       const id = lowerAddress(account);
       const a = s.accounts.find((x) => x.account === id);
-      if (!a) throw new StoreError(`account ${id} not registered`);
-      const list = a.notifyHistory ?? (a.notifyHistory = []);
+      const list = a ? (a.notifyHistory ?? (a.notifyHistory = [])) : ((s.deferredNotify ??= {})[id] ??= []);
       list.push(entry);
-      if (list.length > this.ownerNotifyHistoryCap) list.splice(0, list.length - this.ownerNotifyHistoryCap);
+      this.capPerKind(list, entry.kind);
       return structuredClone(list);
     });
+  }
+
+  private capPerKind(list: OwnerNotifyEntry[], kind: string): void {
+    let count = list.filter((e) => e.kind === kind).length;
+    for (let i = 0; i < list.length && count > this.ownerNotifyHistoryCap; ) {
+      if (list[i].kind === kind) {
+        list.splice(i, 1);
+        count -= 1;
+      } else {
+        i += 1;
+      }
+    }
   }
 
   setCursor(lastScannedBlock: bigint): Promise<void> {

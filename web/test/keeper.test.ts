@@ -78,6 +78,41 @@ test("a grant with no token budget cannot repay or close, and says so", () => {
   assert.equal(zeroed.kind, "no-budget");
 });
 
+test("G-HIGH-1: a live pool token with no budget line is 'no budget', not 'active' — by name", () => {
+  const live = [
+    { address: BASE_TOKENS.USDC.address, symbol: "USDC" },
+    { address: BASE_TOKENS.WETH.address, symbol: "WETH" },
+  ];
+  // The grant budgets USDC only (the old dashboard re-grant): the WETH leg cannot be swapped.
+  const s = describeGrant(grant(), { keeperConfigured: true, nowSeconds: NOW, livePoolTokens: live });
+  assert.equal(s.kind, "no-budget");
+  assert.match(s.label, /WETH/);
+  assert.match(s.plain, /no daily budget for WETH/);
+  assert.deepEqual(s.rungsCovered, []);
+  // A zero WETH line is the same as no line.
+  const zero = describeGrant(grant({ tokens: [...grant().tokens, { token: BASE_TOKENS.WETH.address, symbol: "WETH", amountPerPeriod: 0n, spent: 0n }] }), { keeperConfigured: true, nowSeconds: NOW, livePoolTokens: live });
+  assert.equal(zero.kind, "no-budget");
+  // With a real WETH line the grant is active; USDC never needs a pool line of its own (it is the repay line).
+  const ok = describeGrant(grant({ tokens: [...grant().tokens, { token: BASE_TOKENS.WETH.address, symbol: "WETH", amountPerPeriod: 24n * 10n ** 18n, spent: 0n }] }), { keeperConfigured: true, nowSeconds: NOW, livePoolTokens: live });
+  assert.equal(ok.kind, "active");
+  // No positions → nothing to check → unchanged.
+  assert.equal(describeGrant(grant(), { keeperConfigured: true, nowSeconds: NOW, livePoolTokens: [] }).kind, "active");
+});
+
+test("M-HIGH-2: an unsupported venue outranks a live grant — the permission is real, the protection is not", () => {
+  const s = describeGrant(grant(), { keeperConfigured: true, nowSeconds: NOW, venueSupported: false });
+  assert.equal(s.kind, "venue-unsupported");
+  assert.equal(s.tone, "crit");
+  assert.deepEqual(s.rungsCovered, [], "no rung is served on a venue the keeper cannot read");
+  assert.match(s.plain, /cannot see this position/);
+  assert.match(s.plain, /repay or close it yourself/);
+  // The default is unchanged: a supported venue with a live grant is active.
+  assert.equal(describeGrant(grant(), { keeperConfigured: true, nowSeconds: NOW, venueSupported: true }).kind, "active");
+  assert.equal(describeGrant(grant(), { keeperConfigured: true, nowSeconds: NOW }).kind, "active");
+  // No keeper configured still wins over everything: there is nothing to be unsupported.
+  assert.equal(describeGrant(grant(), { keeperConfigured: false, nowSeconds: NOW, venueSupported: false }).kind, "not-configured");
+});
+
 test("no grant, and no keeper at all, are different states and both say what it means for the user", () => {
   const none = describeGrant(null, { keeperConfigured: true, nowSeconds: NOW });
   assert.equal(none.kind, "not-granted");

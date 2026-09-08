@@ -19,8 +19,12 @@ import type { Address } from "../types/evm.js";
  *     wedged webhook must not wedge the fleet (audit C-HIGH-3);
  *   • delivery failures are counted and logged at error, so "nobody was told"
  *     is itself visible;
- *   • the `notify` RUNG is only reported NOTIFIED when delivery SUCCEEDED —
- *     otherwise it is a FAILED dispatch and gets retried like any other.
+ *   • the `notify` RUNG is only reported NOTIFIED when a PERSON-FACING channel
+ *     accepted it. The keeper's own log and its own store are channels too,
+ *     and they always accept — so with no webhook configured every warning
+ *     used to be NOTIFIED and terminal after being written to a file on a
+ *     host the user cannot see (audit wave 2, N-MED-1). A delivery that only
+ *     the log/store took is LOGGED_ONLY: not terminal, retried each tick.
  */
 
 export type KeeperEventKind =
@@ -53,20 +57,39 @@ export interface KeeperEvent {
   at: string;
 }
 
+/** One outbound channel. `reachesAPerson` is the honest label: the keeper's own log and store do not. */
+export interface Channel {
+  name: string;
+  /**
+   * True only for a channel that leaves this host towards a human (a webhook to a pager, a
+   * mailer). False for the keeper's own log and store — they always accept, and accepting is
+   * not telling anyone.
+   */
+  reachesAPerson: boolean;
+  send: (e: KeeperEvent, signal?: AbortSignal) => Promise<void>;
+}
+
+/** What one delivery achieved: every channel accepted (else `deliver` rejects), and whether any of them reaches a person. */
+export interface Delivery {
+  personReached: boolean;
+}
+
 export interface Notifier {
-  /** Deliver one event. Resolves on success, REJECTS when nobody was told. */
-  deliver(e: KeeperEvent): Promise<void>;
+  /** Deliver one event. Resolves on success, REJECTS when a channel refused it. */
+  deliver(e: KeeperEvent): Promise<Delivery>;
   /** Delivery failures since start (for the heartbeat line). */
   readonly failures: number;
   readonly channels: readonly string[];
+  /** Whether any configured channel reaches a person at all. */
+  readonly hasPersonChannel: boolean;
 }
 
-/** Fan-out: an event is delivered if EVERY channel accepted it. */
+/** Fan-out: an event is delivered if EVERY channel accepted it; it reached a person if any person-facing one did. */
 export class MultiNotifier implements Notifier {
   private failed = 0;
   constructor(
     private readonly log: Logger,
-    private readonly targets: readonly { name: string; send: (e: KeeperEvent, signal?: AbortSignal) => Promise<void> }[],
+    private readonly targets: readonly Channel[],
     private readonly deadlineMs: number
   ) {}
 
@@ -76,12 +99,17 @@ export class MultiNotifier implements Notifier {
   get channels(): readonly string[] {
     return this.targets.map((t) => t.name);
   }
+  get hasPersonChannel(): boolean {
+    return this.targets.some((t) => t.reachesAPerson);
+  }
 
-  async deliver(e: KeeperEvent): Promise<void> {
+  async deliver(e: KeeperEvent): Promise<Delivery> {
     const errors: string[] = [];
+    let personReached = false;
     for (const t of this.targets) {
       try {
         await withDeadline(`notify:${t.name}`, this.deadlineMs, undefined, () => t.send(e));
+        if (t.reachesAPerson) personReached = true;
       } catch (err) {
         errors.push(`${t.name}: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -96,13 +124,15 @@ export class MultiNotifier implements Notifier {
       });
       throw new Error(`notification not delivered (${errors.join("; ")})`);
     }
+    return { personReached };
   }
 }
 
-/** Always-on channel: the keeper's own structured log, at a level matching severity. */
-export function logChannel(log: Logger): { name: string; send: (e: KeeperEvent) => Promise<void> } {
+/** Always-on channel: the keeper's own structured log, at a level matching severity. Reaches nobody. */
+export function logChannel(log: Logger): Channel {
   return {
     name: "log",
+    reachesAPerson: false,
     send: async (e) => {
       const level = e.severity === "critical" ? "error" : e.severity === "warn" ? "warn" : "info";
       log[level](`NOTIFY ${e.kind}`, {
@@ -133,10 +163,11 @@ export interface WebhookOptions {
  * This is the seam an operator points at their pager / mailer / dashboard
  * ingest; the keeper does not care which.
  */
-export function webhookChannel(opts: WebhookOptions): { name: string; send: (e: KeeperEvent) => Promise<void> } {
+export function webhookChannel(opts: WebhookOptions): Channel {
   const f = opts.fetchImpl ?? fetch;
   return {
     name: "webhook",
+    reachesAPerson: true,
     send: async (e) => {
       const res = await f(opts.url, {
         method: "POST",
@@ -151,12 +182,13 @@ export function webhookChannel(opts: WebhookOptions): { name: string; send: (e: 
   };
 }
 
-/** A notifier that drops everything — used only where a test wants silence. */
+/** A notifier that drops everything — used only where a test wants silence. Reaches nobody. */
 export class NullNotifier implements Notifier {
   readonly failures = 0;
   readonly channels: readonly string[] = [];
-  async deliver(): Promise<void> {
-    /* no channel configured */
+  readonly hasPersonChannel = false;
+  async deliver(): Promise<Delivery> {
+    return { personReached: false };
   }
 }
 

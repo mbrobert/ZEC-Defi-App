@@ -111,7 +111,7 @@ async function rig(opts: { chain?: MockChain; dispatcher: Dispatcher; config?: P
     // The HOST clock, deliberately skewable; the keeper must judge feeds by CHAIN time.
     now: () => new Date((Number(chain.nowS) + (opts.hostClockSkewS ?? 0)) * 1000),
     onEscalate: (e) => escalations.push(e),
-    notifier: { failures: 0, channels: ["test"], deliver: async (e) => void events.push(e) },
+    notifier: { failures: 0, channels: ["test"], hasPersonChannel: true, deliver: async (e) => (events.push(e), { personReached: true }) },
   });
   return { chain, store, sink, escalations, events, monitor, tick: () => monitor.tick(watchdog.beginTick()) };
 }

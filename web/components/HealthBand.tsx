@@ -19,13 +19,25 @@ export default function HealthBand({
   symbol,
   compact = false,
 }: {
-  hf: number;
+  hf: number | null;
   priceUsd: number;
   liquidationPriceUsd: number;
   symbol: string;
   compact?: boolean;
 }) {
   const band = hfBand(hf);
+  if (hf === null) {
+    // The read failed: say so, never draw a green band (audit wave 2, N-MED-2).
+    return (
+      <div data-testid="health-band-unreadable">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <span className="text-[13px] text-oil-ink2">Loan health</span>
+          <Chip kind="warn">Unreadable</Chip>
+        </div>
+        <p className="mt-2 text-[12.5px] text-oil-ink2">The account read from Aave did not come back. This page cannot say whether the position is healthy; it will retry.</p>
+      </div>
+    );
+  }
   const noDebt = !Number.isFinite(hf) || liquidationPriceUsd <= 0;
 
   if (noDebt) {

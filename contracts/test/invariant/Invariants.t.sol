@@ -26,6 +26,7 @@ contract InvariantsTest is Fixture {
         handler = new Handler(
             acct,
             aaveVenue,
+            morphoVenue,
             lpVenue,
             registry,
             router,
@@ -40,7 +41,7 @@ contract InvariantsTest is Fixture {
         handler.grantKeeper();
 
         targetContract(address(handler));
-        bytes4[] memory sel = new bytes4[](16);
+        bytes4[] memory sel = new bytes4[](18);
         sel[0] = Handler.supplyAndBorrow.selector;
         sel[1] = Handler.openLp.selector;
         sel[2] = Handler.accrueYield.selector;
@@ -57,11 +58,21 @@ contract InvariantsTest is Fixture {
         sel[13] = Handler.rawExitProbe.selector;
         sel[14] = Handler.ownerExit.selector;
         sel[15] = Handler.donate.selector;
+        sel[16] = Handler.switchVenue.selector;
+        sel[17] = Handler.routerExitProbe.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: sel}));
     }
 
     function invariant_userCanAlwaysExitViaExec() public view {
         assertFalse(handler.g_exitProbeFailed(), "raw owner exit failed in some state");
+    }
+
+    /// The product's own exit — `StrategyRouter.unwind` — reaches the position whatever the
+    /// registry points at: after a venue switch it used to resolve the new venue, repay nothing and
+    /// succeed (audit wave 2, M-HIGH-1). The handler switches cbBTC between Aave and Morpho at
+    /// random; the probe runs under a snapshot after any sequence.
+    function invariant_userCanAlwaysExitViaRouter() public view {
+        assertFalse(handler.g_routerExitProbeFailed(), "the router's unwind failed to reach the position in some state");
     }
 
     function invariant_keeperNeverExceedsGrant() public view {
@@ -160,5 +171,22 @@ contract InvariantsTest is Fixture {
         assertFalse(handler.g_exitProbeFailed(), "raw exit must succeed with a glitching engine, a disabled asset and no grants");
         // state was restored by the probe's snapshot
         assertGt(aaveVenue.debt(address(acct), address(usdc)), 0);
+
+        // Audit wave 2, M-HIGH-1: the registry moves cbBTC to Morpho. The position is on Aave; the
+        // product's own exit and the keeper's grant must both still reach it.
+        handler.switchVenue(true);
+        assertEq(handler.g_switches(), 1);
+        assertEq(registry.venueOf(address(cbbtc)), address(morphoVenue));
+        handler.glitchEnumeration(false); // let the ids enumerate so the probes actually close and repay
+        handler.routerExitProbe();
+        assertEq(handler.g_routerExitProbes(), 1);
+        assertFalse(handler.g_routerExitProbeFailed(), "the router exit must follow the position after a venue switch");
+        assertGt(aaveVenue.debt(address(acct), address(usdc)), 0, "probe state restored");
+        handler.regrant();
+        handler.keeperUnwind(5_000e6);
+        assertEq(handler.g_keeperUnwinds(), 3, "keeper unwind still repays the Aave debt with the registry pointing at Morpho");
+        handler.switchVenue(false);
+        assertEq(registry.venueOf(address(cbbtc)), address(aaveVenue));
+        assertEq(handler.g_switches(), 2);
     }
 }

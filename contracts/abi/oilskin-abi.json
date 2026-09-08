@@ -1549,6 +1549,11 @@
           "stateMutability": "nonpayable",
           "outputs": ""
         },
+        "borrowAgainst(address,address,uint256)": {
+          "selector": "0xbfa1806f",
+          "stateMutability": "nonpayable",
+          "outputs": ""
+        },
         "borrowRateRay(address)": {
           "selector": "0x99431ce5",
           "stateMutability": "view",
@@ -1686,6 +1691,29 @@
           "inputs": [
             {
               "name": "asset",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "outputs": [],
+          "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "borrowAgainst",
+          "inputs": [
+            {
+              "name": "",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "loanToken",
               "type": "address",
               "internalType": "address"
             },
@@ -1973,6 +2001,11 @@
           "stateMutability": "nonpayable",
           "outputs": ""
         },
+        "borrowAgainst(address,address,uint256)": {
+          "selector": "0xbfa1806f",
+          "stateMutability": "nonpayable",
+          "outputs": ""
+        },
         "borrowRateRay(address)": {
           "selector": "0x99431ce5",
           "stateMutability": "view",
@@ -2072,6 +2105,9 @@
         "NoMarket(address)": {
           "selector": "0x2df59b68"
         },
+        "NoMarketCanFill(uint256)": {
+          "selector": "0x7460f846"
+        },
         "NotLoanToken(address)": {
           "selector": "0x0ef74747"
         },
@@ -2163,6 +2199,29 @@
           "inputs": [
             {
               "name": "asset",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "outputs": [],
+          "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "borrowAgainst",
+          "inputs": [
+            {
+              "name": "collateralAsset",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "loanToken",
               "type": "address",
               "internalType": "address"
             },
@@ -2610,6 +2669,17 @@
               "name": "asset",
               "type": "address",
               "internalType": "address"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "NoMarketCanFill",
+          "inputs": [
+            {
+              "name": "amount",
+              "type": "uint256",
+              "internalType": "uint256"
             }
           ]
         },
@@ -4033,6 +4103,11 @@
           "stateMutability": "view",
           "outputs": "(address,address,uint40)"
         },
+        "previousVenues(address)": {
+          "selector": "0xbf40398d",
+          "stateMutability": "view",
+          "outputs": "address[]"
+        },
         "proposeVenue(address,address,address)": {
           "selector": "0xbf31b757",
           "stateMutability": "nonpayable",
@@ -4497,6 +4572,25 @@
                   "internalType": "uint40"
                 }
               ]
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "previousVenues",
+          "inputs": [
+            {
+              "name": "asset",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "",
+              "type": "address[]",
+              "internalType": "address[]"
             }
           ],
           "stateMutability": "view"
@@ -5380,6 +5474,9 @@
         "PoolWithoutUsdc(bytes32)": {
           "selector": "0x3a20909e"
         },
+        "QuoteOutsideBand(uint256,uint160,uint160)": {
+          "selector": "0xa02b0092"
+        },
         "RouterBalanceChanged(address,uint256,uint256)": {
           "selector": "0xc690fd22"
         },
@@ -6031,6 +6128,27 @@
         },
         {
           "type": "error",
+          "name": "QuoteOutsideBand",
+          "inputs": [
+            {
+              "name": "impliedSqrtPriceX96",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "minSqrtPriceX96",
+              "type": "uint160",
+              "internalType": "uint160"
+            },
+            {
+              "name": "maxSqrtPriceX96",
+              "type": "uint160",
+              "internalType": "uint160"
+            }
+          ]
+        },
+        {
+          "type": "error",
           "name": "RouterBalanceChanged",
           "inputs": [
             {
@@ -6168,9 +6286,6 @@
         },
         "InvalidConfig()": {
           "selector": "0x35be3ac8"
-        },
-        "NoUpdateInTx()": {
-          "selector": "0xb23dd9ac"
         },
         "NonPositivePrice(int64)": {
           "selector": "0x70272a2c"
@@ -6492,11 +6607,6 @@
         {
           "type": "error",
           "name": "InvalidConfig",
-          "inputs": []
-        },
-        {
-          "type": "error",
-          "name": "NoUpdateInTx",
           "inputs": []
         },
         {
@@ -7117,6 +7227,11 @@
           "stateMutability": "nonpayable",
           "outputs": ""
         },
+        "borrowAgainst(address,address,uint256)": {
+          "selector": "0xbfa1806f",
+          "stateMutability": "nonpayable",
+          "outputs": ""
+        },
         "borrowRateRay(address)": {
           "selector": "0x99431ce5",
           "stateMutability": "view",
@@ -7177,6 +7292,29 @@
           "inputs": [
             {
               "name": "asset",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "outputs": [],
+          "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "borrowAgainst",
+          "inputs": [
+            {
+              "name": "collateralAsset",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "loanToken",
               "type": "address",
               "internalType": "address"
             },

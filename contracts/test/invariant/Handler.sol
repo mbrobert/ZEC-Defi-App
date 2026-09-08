@@ -10,6 +10,7 @@ import {ILpVenue, LpOpenParams, PriceBand} from "../../src/interfaces/ILpVenue.s
 import {ISnuggleVault} from "../../src/interfaces/ISnuggleVault.sol";
 import {IAavePool} from "../../src/interfaces/IAaveV3.sol";
 import {AaveV3Venue} from "../../src/venues/AaveV3Venue.sol";
+import {MorphoBlueVenue} from "../../src/venues/MorphoBlueVenue.sol";
 import {SnuggleLpVenue} from "../../src/venues/SnuggleLpVenue.sol";
 import {CollateralRegistry} from "../../src/registry/CollateralRegistry.sol";
 import {StrategyRouter} from "../../src/router/StrategyRouter.sol";
@@ -24,6 +25,7 @@ import {MockSnuggleVault} from "../mocks/MockSnuggleVault.sol";
 contract Handler is Test {
     OilskinAccount immutable acct;
     AaveV3Venue immutable aaveVenue;
+    MorphoBlueVenue immutable morphoVenue;
     SnuggleLpVenue immutable lpVenue;
     CollateralRegistry immutable registry;
     StrategyRouter immutable router;
@@ -54,6 +56,13 @@ contract Handler is Test {
     uint256 public g_exitProbes;
     bool public g_exitProbeFailed;
     bool public g_keeperUngrantedSucceeded;
+    /// The router's exit — the product's own Close — failed to reach the position in some state
+    /// (audit wave 2, M-HIGH-1: it used to follow the registry's pointer and no-op after a switch).
+    bool public g_routerExitProbeFailed;
+    uint256 public g_routerExitProbes;
+    /// Registry venue switches (cbBTC: Aave ↔ Morpho) performed, so the exit probes above are
+    /// proved against a moved pointer and not only against the venue every position sits on.
+    uint256 public g_switches;
     uint256 public g_calls;
     /// Donations pushed at a peripheral — the invariant asserts they are INERT, not that they are
     /// impossible: anyone can transfer to any address, and a contract that treats that as fatal is
@@ -64,6 +73,7 @@ contract Handler is Test {
     constructor(
         OilskinAccount acct_,
         AaveV3Venue aaveVenue_,
+        MorphoBlueVenue morphoVenue_,
         SnuggleLpVenue lpVenue_,
         CollateralRegistry registry_,
         StrategyRouter router_,
@@ -77,6 +87,7 @@ contract Handler is Test {
     ) {
         acct = acct_;
         aaveVenue = aaveVenue_;
+        morphoVenue = morphoVenue_;
         lpVenue = lpVenue_;
         registry = registry_;
         router = router_;
@@ -293,6 +304,35 @@ contract Handler is Test {
 
     /// Owner exit through RAW exec to the underlying protocols — must work in every state.
     /// Snapshotted so the run keeps going after the probe.
+    /// The registry owner moves cbBTC between Aave and Morpho the only way it can (propose →
+    /// timelock → accept). Every position the handler opens sits on Aave; after a switch the
+    /// router's exit must still find it through `previousVenues` (audit wave 2, M-HIGH-1), and the
+    /// keeper's unwind inside its grant must still repay. Switching back is the same power.
+    function switchVenue(bool toMorpho) external {
+        g_calls++;
+        address target = toMorpho ? address(morphoVenue) : address(aaveVenue);
+        if (registry.venueOf(address(cbbtc)) == target) return;
+        address feed = registry.config(address(cbbtc)).priceFeed;
+        vm.prank(registryOwner);
+        registry.proposeVenue(address(cbbtc), target, feed);
+        vm.warp(block.timestamp + registry.TIMELOCK_DELAY());
+        vm.prank(registryOwner);
+        registry.acceptVenue(address(cbbtc));
+        g_switches++;
+    }
+
+    /// The product's own Close, under a snapshot: `unwind(ids, repay max)` must reach the account's
+    /// debt wherever it sits, and once the debt is gone `unwind(withdraw max)` must return the
+    /// collateral — whatever the registry currently points at.
+    function routerExitProbe() external {
+        g_calls++;
+        g_routerExitProbes++;
+        uint256 snap = vm.snapshotState();
+        bool ok = _routerExit();
+        if (!ok) g_routerExitProbeFailed = true;
+        vm.revertToState(snap);
+    }
+
     function rawExitProbe() external {
         g_calls++;
         g_exitProbes++;
@@ -322,6 +362,42 @@ contract Handler is Test {
     }
 
     // ------------------------------------------------------------ internal
+
+    function _routerExit() internal returns (bool) {
+        uint256 debtBefore = aaveVenue.debt(address(acct), address(usdc));
+        uint256 heldBefore = usdc.balanceOf(address(acct));
+        StrategyRouter.UnwindParams memory u = StrategyRouter.UnwindParams({
+            collateralAsset: address(cbbtc),
+            positionIds: _ids(),
+            band: _band(),
+            swap: StrategyRouter.SwapQuote({
+                quotedIn: 1e18,
+                quotedOut: 2453_450000,
+                maxSlippageBps: 100,
+                routeData: abi.encode(int24(100))
+            }),
+            repayAmount: type(uint256).max,
+            withdrawAmount: 0,
+            deadline: block.timestamp + 1
+        });
+        (bool ok,) = _exec(address(router), abi.encodeCall(StrategyRouter.unwind, (u)));
+        if (!ok) return false;
+        uint256 debtAfter = aaveVenue.debt(address(acct), address(usdc));
+        // The repay must have reached the debt: whatever the account holds AFTER is only what was
+        // left over once the debt was cleared. Debt remaining next to idle USDC means the router
+        // repaid a venue that holds nothing of this account's.
+        if (debtAfter != 0 && usdc.balanceOf(address(acct)) != 0) return false;
+        if (debtBefore != 0 && heldBefore != 0 && debtAfter == debtBefore) return false;
+        if (debtAfter == 0 && aaveVenue.collateral(address(acct), address(cbbtc)) != 0) {
+            u.positionIds = new uint256[](0);
+            u.repayAmount = 0;
+            u.withdrawAmount = type(uint256).max;
+            (ok,) = _exec(address(router), abi.encodeCall(StrategyRouter.unwind, (u)));
+            if (!ok) return false;
+            if (aaveVenue.collateral(address(acct), address(cbbtc)) != 0) return false;
+        }
+        return true;
+    }
 
     function _rawExit() internal returns (bool) {
         // 1. Close every engine id straight at the engine (no venue, no band, no enumeration

@@ -356,12 +356,15 @@ Residual: the quote is still caller-supplied, so a dishonest quote still gives
 a bad floor — but the lie is now an explicit number in calldata that a
 reviewer, a simulation or an event reader can compare against the market.
 
-`PythOracleAdapter` (181 lines) is built for the v1.1 Morpho cbZEC market and
-**not used by anything in v1**: `price()` reverts unless `refresh(updateData)`
-posted a Pyth update in the same transaction (`NoUpdateInTx`), reads with
-`getPriceNoOlderThan(maxAge)`, and reverts `PegBreak` when the Aerodrome
+`PythOracleAdapter` is built for the v1.1 Morpho cbZEC market and
+**not used by anything in v1**: `price()` reads with
+`getPriceNoOlderThan(maxAge)` and reverts `PegBreak` when the Aerodrome
 cbZEC/USDC pool TWAP deviates from Pyth ZEC/USD by more than
-`maxDeviationBps`.
+`maxDeviationBps`; `refresh(updateData)` is the permissionless way to make
+the feed fresh (a borrower's or liquidator's bundle, or anyone). The first
+version also required the refresh in the **same transaction** as the read; that
+gate added nothing to the max-age rule and made every venue view and every
+third-party `Morpho.liquidate` revert, so it was removed (wave-2 P-MED-1).
 
 ## Keeper (`agent/`, 5,558 source lines, viem)
 

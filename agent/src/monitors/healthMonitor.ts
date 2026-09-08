@@ -288,6 +288,9 @@ export class HealthMonitor {
       ...this.d.store.listDispatches({ status: "SENT" }),
       ...this.d.store.listDispatches({ status: "FAILED" }),
       ...this.d.store.listDispatches({ status: "REFUSED" }),
+      // A warning only the keeper's own log/store took is not delivered: retry it like a failure
+      // until a person-facing channel accepts it or the attempts run out (audit wave 2, N-MED-1).
+      ...this.d.store.listDispatches({ status: "LOGGED_ONLY" }),
     ].sort((a, b) => a.seq - b.seq);
     const budget = Math.max(1, this.d.config.maxResumePerTick);
     const slice = rotate(candidates, BigInt(this.tickCount)).slice(0, budget);
@@ -299,7 +302,7 @@ export class HealthMonitor {
       if (handle.signal.aborted) break;
       const l = log.child({ account: rec.account, key: rec.key, action: rec.action, status: rec.status });
       const isLastResort = rec.rung === this.lastResortRung.id;
-      if (rec.status === "FAILED" || rec.status === "REFUSED") {
+      if (rec.status === "FAILED" || rec.status === "REFUSED" || rec.status === "LOGGED_ONLY") {
         const acct = this.d.store.getAccount(rec.account);
         if (!acct || acct.episode !== rec.episode) {
           // Episode over: nothing left to protect under this key.
@@ -538,7 +541,7 @@ export class HealthMonitor {
         // A more severe rung subsumes any unfinished milder action for this
         // account: mark it so resume does not replay it after this one.
         for (const d of s.dispatches) {
-          if (d.account === rec.account && (d.status === "PENDING" || d.status === "FAILED" || d.status === "REFUSED")) {
+          if (d.account === rec.account && (d.status === "PENDING" || d.status === "FAILED" || d.status === "REFUSED" || d.status === "LOGGED_ONLY")) {
             d.status = "SUPERSEDED";
             d.error = `superseded by ${key}`;
             d.updatedAt = nowIso;
@@ -711,6 +714,10 @@ export class HealthMonitor {
       case "NOTIFIED":
         patch.status = "NOTIFIED";
         break;
+      case "LOGGED_ONLY":
+        patch.status = "LOGGED_ONLY";
+        patch.error = result.reason;
+        break;
       case "SENT":
         patch.status = "SENT";
         patch.txHash = result.txHash;
@@ -733,7 +740,7 @@ export class HealthMonitor {
         break;
     }
     this.handledThisTick.add(record.key);
-    const level = result.status === "FAILED" || result.status === "REFUSED" ? "warn" : "info";
+    const level = result.status === "FAILED" || result.status === "REFUSED" || result.status === "LOGGED_ONLY" ? "warn" : "info";
     l[level]("dispatch result", { key: record.key, ...result });
     if (record.action !== "notify") {
       await this.emit({

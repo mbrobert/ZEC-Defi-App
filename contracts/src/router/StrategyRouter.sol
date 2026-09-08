@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Peripheral} from "../account/Peripheral.sol";
 import {IOilskinAccount} from "../interfaces/IOilskinAccount.sol";
 import {ICollateralVenue} from "../interfaces/ICollateralVenue.sol";
@@ -139,6 +140,10 @@ contract StrategyRouter is Peripheral {
     /// @notice The router's own balance of `token` moved across the call: `before` → `current`.
     ///         Only reachable if the router actually acquired or lost a token, never by a donation.
     error RouterBalanceChanged(address token, uint256 balanceBefore, uint256 balanceAfter);
+    /// @notice The swap quote implies a pool price outside the close's own price band: the caller
+    ///         committed to `[min, max]` on the pool's sqrt price for the close and then quoted the
+    ///         leg as if the price were elsewhere (audit wave 2, G-MED-1).
+    error QuoteOutsideBand(uint256 impliedSqrtPriceX96, uint160 minSqrtPriceX96, uint160 maxSqrtPriceX96);
 
     constructor(
         CollateralRegistry registry,
@@ -325,10 +330,16 @@ contract StrategyRouter is Peripheral {
         if (collateralAmount != 0) {
             if (permit.signature.length != 0) _pull(account, collateralAsset, collateralAmount, permit);
             _nested(address(venue), abi.encodeCall(ICollateralVenue.supply, (collateralAsset, collateralAmount)));
+            // The debt goes against the collateral the user just chose — on an isolated-market
+            // venue the alternative put it wherever the headroom was biggest, and the review
+            // screen's liquidation price then named the wrong asset (audit wave 2, M-MED-1).
+            _nested(address(venue), abi.encodeCall(ICollateralVenue.borrowAgainst, (collateralAsset, USDC, borrowAmount)));
+        } else {
+            // Borrow against whatever is already here: the venue picks the market.
+            _nested(address(venue), abi.encodeCall(ICollateralVenue.borrow, (USDC, borrowAmount)));
         }
         // The venue itself refuses a borrow that breaks the floor; this re-reads it so the router's
         // own named error is what a caller sees when the router is the one composing the call.
-        _nested(address(venue), abi.encodeCall(ICollateralVenue.borrow, (USDC, borrowAmount)));
         healthFactor = venue.healthFactor(account);
         uint256 floor = REGISTRY.entryHfFloorWad();
         if (healthFactor < floor) revert EntryHfTooLow(healthFactor, floor);
@@ -363,7 +374,7 @@ contract StrategyRouter is Peripheral {
         );
         failedCount = failed.length;
         closed = p.positionIds.length - failedCount;
-        usdcFromLp = _toUsdc(t0, out0, p) + _toUsdc(t1, out1, p);
+        usdcFromLp = _toUsdc(t0, out0, p, true) + _toUsdc(t1, out1, p, false);
 
         _assertUnchanged(t0, beforeT0);
         _assertUnchanged(t1, beforeT1);
@@ -389,12 +400,13 @@ contract StrategyRouter is Peripheral {
         );
     }
 
-    function _toUsdc(address token, uint256 amount, UnwindParams calldata p)
+    function _toUsdc(address token, uint256 amount, UnwindParams calldata p, bool tokenIsToken0)
         internal
         returns (uint256)
     {
         if (amount == 0) return 0;
         if (token == USDC) return amount;
+        _requireQuoteInBand(tokenIsToken0, p.swap, p.band);
         return abi.decode(
             _nested(
                 address(SWAP),
@@ -416,14 +428,79 @@ contract StrategyRouter is Peripheral {
         );
     }
 
+    uint256 private constant Q192 = 2 ** 192;
+
+    /// @dev The quote must agree with the band. The adapter's floor is RELATIVE to the caller's
+    ///      quote, so a dishonest quote drives the floor wherever it likes (`quotedIn = amountIn ×
+    ///      quotedOut × 0.95` makes it one base unit). But the same caller has already committed
+    ///      to a price band for the close — `[minSqrtPriceX96, maxSqrtPriceX96]` on the pool's own
+    ///      sqrt price, checked against `slot0()` at execution and bounded at MAX_BAND_BPS — so the
+    ///      price the quote implies must sit inside it. A dishonest quote and an honest band cannot
+    ///      coexist; an honest quote taken from the same live price always passes (audit wave 2,
+    ///      G-MED-1). Pool price = token1 per token0 in raw units = (sqrtP / 2^96)²; the quote is
+    ///      `quotedOut` USDC for `quotedIn` of the other token. A zero quote is the adapter's
+    ///      `ZeroQuote`, not this check's.
+    function _requireQuoteInBand(bool tokenInIsToken0, SwapQuote calldata q, PriceBand calldata band)
+        internal
+        pure
+    {
+        if (q.quotedIn == 0 || q.quotedOut == 0) return;
+        (uint256 num, uint256 den) = tokenInIsToken0 ? (q.quotedOut, q.quotedIn) : (q.quotedIn, q.quotedOut);
+        // sqrt(num / den) × 2^96 = sqrt(num × 2^192 / den); an absurd ratio overflows and reverts.
+        uint256 impliedSqrt = Math.sqrt(Math.mulDiv(num, Q192, den));
+        if (impliedSqrt < band.minSqrtPriceX96 || impliedSqrt > band.maxSqrtPriceX96) {
+            revert QuoteOutsideBand(impliedSqrt, band.minSqrtPriceX96, band.maxSqrtPriceX96);
+        }
+    }
+
+    /// @dev Opens resolve the registry's CURRENT venue and require the asset flag. Exits follow the
+    ///      POSITION (audit wave 2, M-HIGH-1): the current venue if the calling account has debt or
+    ///      collateral there, else the first of the registry's `previousVenues` that does, else the
+    ///      current venue. A switch therefore never strands what was opened before it — the old
+    ///      `_venueFor` followed the pointer alone, found no debt on the new venue, repaid nothing
+    ///      and succeeded. The VENUE's own switch is honoured on every path, entry and exit: a venue
+    ///      that says it is off is not code the account should be handed to. Only the ASSET flag is
+    ///      bypassed on exit.
     function _venueFor(address asset, bool requireEnabled) internal view returns (ICollateralVenue) {
         CollateralRegistry.AssetConfig memory cfg = REGISTRY.config(asset);
         if (cfg.venue == address(0)) revert AssetNotRegistered(asset);
-        // The VENUE's own switch is honoured on every path, entry and exit: a venue that says it is
-        // off is not code the account should be handed to. Only the ASSET flag is bypassed on exit.
-        if (!ICollateralVenue(cfg.venue).enabled()) revert VenueDisabled(cfg.venue);
-        if (requireEnabled && !cfg.enabled) revert AssetDisabled(asset, cfg.note);
-        return ICollateralVenue(cfg.venue);
+        if (requireEnabled) {
+            if (!ICollateralVenue(cfg.venue).enabled()) revert VenueDisabled(cfg.venue);
+            if (!cfg.enabled) revert AssetDisabled(asset, cfg.note);
+            return ICollateralVenue(cfg.venue);
+        }
+        return _exitVenueFor(asset, cfg.venue, msg.sender);
+    }
+
+    function _exitVenueFor(address asset, address current, address account)
+        internal
+        view
+        returns (ICollateralVenue)
+    {
+        if (_holdsPosition(current, asset, account)) return _requireVenueEnabled(current);
+        address[] memory previous = REGISTRY.previousVenues(asset);
+        for (uint256 i = 0; i < previous.length; i++) {
+            if (_holdsPosition(previous[i], asset, account)) return _requireVenueEnabled(previous[i]);
+        }
+        return _requireVenueEnabled(current);
+    }
+
+    /// @dev Whether `venue` holds anything of `account`'s for `asset`. A venue whose views revert
+    ///      is treated as holding nothing — the keeper reads `LeveragedLpUnwound.repaid` from the
+    ///      receipt and refuses to call a repay that moved nothing a success.
+    function _holdsPosition(address venue, address asset, address account) internal view returns (bool) {
+        try ICollateralVenue(venue).debt(account, USDC) returns (uint256 owed) {
+            if (owed != 0) return true;
+        } catch {}
+        try ICollateralVenue(venue).collateral(account, asset) returns (uint256 held) {
+            if (held != 0) return true;
+        } catch {}
+        return false;
+    }
+
+    function _requireVenueEnabled(address venue) internal view returns (ICollateralVenue v) {
+        v = ICollateralVenue(venue);
+        if (!v.enabled()) revert VenueDisabled(venue);
     }
 
     function _nested(address peripheral, bytes memory data) internal returns (bytes memory) {

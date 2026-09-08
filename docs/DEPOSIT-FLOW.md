@@ -1,7 +1,7 @@
 # How a deposit flows — Oilskin v1 (Base-first)
 
 Written 2026-09-07 against the ABI (application binary interface) bundle at
-`contracts/abi/oilskin-abi.json` (321 selectors / topics / errors as of 2026-09-07). **Every box below that names a
+`contracts/abi/oilskin-abi.json` (326 selectors / topics / errors as of 2026-09-08). **Every box below that names a
 function is a function in that bundle**; the web encodes exactly these calls
 (`web/lib/plan.ts`) and the keeper plans exactly one of them
 (`agent/src/dispatch/policy.ts`). Three diagrams: Simple mode, Advanced mode,
@@ -82,7 +82,7 @@ flowchart TD
         X["registry.isEnabled(asset) · venueOf(asset)<br/>LP pool must contain USDC"] --> X1
         X1["Permit2.permitTransferFrom<br/>collateral: wallet → account"] --> X2
         X2["AaveV3Venue.supply(asset, amount)<br/>onBehalfOf = account"] --> X3
-        X3["AaveV3Venue.borrow(USDC, borrowAmount)<br/>reverts EntryHfTooLow if HF &lt; 1.55"] --> X4{hold or LP?}
+        X3["AaveV3Venue.borrowAgainst(asset, USDC, borrowAmount)<br/>(borrow(USDC, amount) when collateralAmount = 0)<br/>reverts EntryHfTooLow if HF &lt; 1.55"] --> X4{hold or LP?}
         X4 -- hold --> X5["done: USDC sits in the account"]
         X4 -- LP --> X6["SnuggleLpVenue.open(poolId, USDC single-sided,<br/>width, delay, price band, deadline)"]
         X6 --> X7["engine.depositSingleSided → NFT id minted to the account<br/>any bounce folded single-sided in the same tx"]
@@ -152,7 +152,7 @@ flowchart TD
     end
 
     subgraph keeper ["Keeper-initiated (only inside the grant)"]
-        K0["keeper reads HF from AaveV3Venue.healthFactor(account)<br/>+ per-feed staleness from each aggregator"] --> K1{rung?}
+        K0["keeper reads HF from the Aave pool directly<br/>(Pool.getUserAccountData + the data provider, agent/src/services/chain.ts)<br/>+ per-feed staleness from each aggregator"] --> K1{rung?}
         K1 -- "HF &lt; 1.50 warn" --> KW["notify only — no on-chain action"]
         K1 -- "HF &lt; 1.35 repay" --> KR["unwind: close enough LP → repay,<br/>withdrawAmount = 0"]
         K1 -- "HF &lt; 1.20 de-risk" --> KD["unwind: close more → repay,<br/>withdrawAmount = 0"]
@@ -169,10 +169,10 @@ flowchart TD
     K2 --> X
 
     subgraph router ["Inside StrategyRouter.unwind"]
-        X["registry.venueOf(collateralAsset)"] --> X1{"positionIds?"}
+        X["venue = the one holding the account's position:<br/>registry.venueOf(asset) first, then registry.previousVenues(asset)"] --> X1{"positionIds?"}
         X1 -- some --> X2["SnuggleLpVenue.closeMany(ids, band)<br/>per-id try/catch — one bad id does not block the rest<br/>engine.withdraw(id) → tokens to the account"]
         X2 --> X3{"non-USDC leg paid out?"}
-        X3 -- yes --> X4["AerodromeSwapAdapter.swap(…, quotedIn, quotedOut, maxSlippageBps)<br/>floor = quote − tolerance, hard cap 500 bps"]
+        X3 -- yes --> X4["AerodromeSwapAdapter.swap(…, quotedIn, quotedOut, maxSlippageBps)<br/>quote must imply a price inside the close's band (QuoteOutsideBand)<br/>floor = quote − tolerance, hard cap 500 bps"]
         X3 -- no --> X5
         X4 --> X5
         X1 -- none --> X5

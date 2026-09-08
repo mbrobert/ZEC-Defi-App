@@ -28,6 +28,12 @@ export interface DispatchIntent {
 
 export type DispatchResult =
   | { status: "NOTIFIED" }
+  /**
+   * The event was written, but only to channels that reach nobody (the keeper's
+   * own log and store). Not terminal: retried each tick like a FAILED dispatch
+   * until a person-facing channel accepts it (audit wave 2, N-MED-1).
+   */
+  | { status: "LOGGED_ONLY"; reason: string }
   | { status: "SENT"; txHash: `0x${string}` }
   | { status: "CONFIRMED"; txHash: `0x${string}` }
   /**

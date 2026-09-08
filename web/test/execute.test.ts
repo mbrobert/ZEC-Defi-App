@@ -2,14 +2,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Address, Hex } from "viem";
 import { BASE_TOKENS, CHAIN_ID, PERMIT2 } from "@zyo/shared";
-import { grantTokenLimits, runClaim, runGrant, runOpen, runRevokeAll, runUnwind, type RunContext, type StepEvent } from "../lib/execute";
+import { grantPoolTokenPricing, grantTokenLimits, runClaim, runGrant, runOpen, runRevokeAll, runUnwind, type RunContext, type StepEvent } from "../lib/execute";
 import { MAX_QUOTE_DIVERGENCE } from "../lib/quote";
 import { buildOpenPlan, DEMO_DEPLOYMENT, type Deployment, type OpenPlanInput } from "../lib/plan";
 import { assessGas, estimateForWrite } from "../lib/gas";
 import { bandFromSqrtPrice, isInRange, isqrt, token1ShareOfValue, usdcShareOfValue } from "../lib/tickmath";
 import { clearInflight, isInterrupted, loadInflight, nextPendingStep, saveInflight, type InflightFlow } from "../lib/inflight";
 import { recommend } from "../lib/recommend";
-import { demoGate } from "../lib/demo";
+import { DEMO_MARKET, demoGate } from "../lib/demo";
 import type { WriteSpec } from "../lib/plan";
 
 const OWNER = "0x1111111111111111111111111111111111111111" as const;
@@ -137,7 +137,7 @@ test("runOpen: approve → sign permit (spender = account) → band quoted → c
   const { ctx, writes, signed } = fakeCtx();
   const { events, emit } = collect();
   const calls = buildOpenPlan(openInput);
-  const res = await runOpen(ctx, openInput, calls, emit, grantTokenLimits(15926.178, { address: BASE_TOKENS.cbBTC.address, decimals: 8, priceUsd: 79630.89 }, []));
+  const res = await runOpen(ctx, openInput, calls, emit, grantTokenLimits(15926.178, { address: BASE_TOKENS.cbBTC.address, symbol: "cbBTC", decimals: 8, priceUsd: 79630.89 }, []));
   assert.deepEqual(res, { account: ACCOUNT });
   assert.equal(writes.length, 3, "approve, open, grant");
   assert.equal(writes[0].functionName, "approve");
@@ -280,7 +280,7 @@ test("runClaim goes through the account as execBatch, with a band quoted from th
 
 test("the keeper grant can be renewed and every permission revoked, each as its own guarded write", async () => {
   const { ctx, writes } = fakeCtx();
-  const limits = grantTokenLimits(1_000, { address: BASE_TOKENS.cbBTC.address, decimals: 8, priceUsd: 80_000 }, []);
+  const limits = grantTokenLimits(1_000, { address: BASE_TOKENS.cbBTC.address, symbol: "cbBTC", decimals: 8, priceUsd: 80_000 }, []);
   assert.equal(await runGrant(ctx, { account: ACCOUNT, deployment: LIVE, tokenLimits: limits }, collect().emit), HASH);
   assert.equal(writes[0].functionName, "grant");
   assert.equal(await runRevokeAll(ctx, ACCOUNT, collect().emit), HASH);
@@ -289,16 +289,58 @@ test("the keeper grant can be renewed and every permission revoked, each as its 
 });
 
 test("grantTokenLimits lists USDC, the collateral, AERO and every pool token exactly once", () => {
-  const l = grantTokenLimits(10_000, { address: BASE_TOKENS.cbBTC.address, decimals: 8, priceUsd: 80_000 }, [BASE_TOKENS.WETH.address, BASE_TOKENS.USDC.address]);
+  const l = grantTokenLimits(10_000, { address: BASE_TOKENS.cbBTC.address, symbol: "cbBTC", decimals: 8, priceUsd: 80_000 }, [
+    { address: BASE_TOKENS.WETH.address, symbol: "WETH", decimals: 18, priceUsd: 2_000 },
+    { address: BASE_TOKENS.USDC.address, symbol: "USDC", decimals: 6, priceUsd: 1 },
+  ]);
   assert.deepEqual(
     l.map((x) => x.token),
     [BASE_TOKENS.USDC.address, BASE_TOKENS.cbBTC.address, BASE_TOKENS.AERO.address, BASE_TOKENS.WETH.address],
   );
   assert.equal(l[0].amountPerPeriod, 20_000_000_000n); // 2 × 10,000 USDC
   assert.equal(l[1].amountPerPeriod, 25_000_000n); // 2 × 10,000 / 80,000 BTC = 0.25 cbBTC
-  // The chain refuses a zero budget line (InvalidPermission), so no line may be zero.
-  const degenerate = grantTokenLimits(0, { address: BASE_TOKENS.cbBTC.address, decimals: 8, priceUsd: NaN }, []);
-  assert.ok(degenerate.every((x) => x.amountPerPeriod > 0n), JSON.stringify(degenerate.map((x) => String(x.amountPerPeriod))));
+  assert.equal(l[3].amountPerPeriod, 10n * 10n ** 18n); // 2 × 10,000 / 2,000 = 10 WETH, in wei
+});
+
+/**
+ * Audit wave 2, G-HIGH-1. The pool-token line used to be the COLLATERAL's number reused for a
+ * different token: a cbBTC user in the WETH/USDC pool signed a WETH budget of ~7.5e-11 WETH, the
+ * keeper's swap approve failed TokenBudgetExceeded on every rung, and the panel said "active".
+ */
+test("G-HIGH-1: a pool token is sized in ITS OWN decimals and price, never the collateral's", () => {
+  // cbBTC $79,593.77, debt 30,000 USDC, LP in WETH/USDC at $2,453.45 (VERIFIED-BASE-FACTS 2026-09-05).
+  const l = grantTokenLimits(30_000, { address: BASE_TOKENS.cbBTC.address, symbol: "cbBTC", decimals: 8, priceUsd: 79_593.77 }, [
+    { address: BASE_TOKENS.WETH.address, symbol: "WETH", decimals: 18, priceUsd: 2_453.45 },
+    { address: BASE_TOKENS.USDC.address, symbol: "USDC", decimals: 6, priceUsd: 1 },
+  ]);
+  const weth = l.find((x) => x.token.toLowerCase() === BASE_TOKENS.WETH.address.toLowerCase())!;
+  const cbbtc = l.find((x) => x.token.toLowerCase() === BASE_TOKENS.cbBTC.address.toLowerCase())!;
+  // 2 × 30,000 / 2,453.45 = 24.455… WETH → in wei, not in cbBTC base units.
+  assert.equal(weth.amountPerPeriod, BigInt(Math.ceil((60_000 / 2_453.45) * 1e18)));
+  assert.ok(weth.amountPerPeriod > 24n * 10n ** 18n && weth.amountPerPeriod < 25n * 10n ** 18n, `WETH line is ${weth.amountPerPeriod} wei`);
+  assert.notEqual(weth.amountPerPeriod, cbbtc.amountPerPeriod, "the WETH line is not the cbBTC line reused");
+  // A 6.11 WETH leg (half of a $30k LP) fits comfortably inside the line the keeper will need.
+  assert.ok(weth.amountPerPeriod > 611n * 10n ** 16n);
+});
+
+test("G-HIGH-1: a pool token this app does not know, or has no USD price for, is refused — never a wrong line", () => {
+  const coll = { address: BASE_TOKENS.cbBTC.address, symbol: "cbBTC", decimals: 8, priceUsd: 79_593.77 };
+  assert.throws(() => grantPoolTokenPricing(["USDT", "USDC"], DEMO_MARKET), /USDT.*not a token this app knows/);
+  assert.throws(() => grantTokenLimits(30_000, coll, [{ address: BASE_TOKENS.cbZEC.address, symbol: "cbZEC", decimals: 8, priceUsd: NaN }]), /no USD price for cbZEC/);
+  // …and the collateral itself: a NaN price used to become a 1-base-unit line that read as "listed".
+  assert.throws(() => grantTokenLimits(30_000, { ...coll, priceUsd: NaN }, []), /no USD price for cbBTC/);
+  // The two offerable pools resolve from the market read: USDC at $1, cbBTC and WETH from their reserves.
+  const priced = grantPoolTokenPricing(["WETH", "USDC"], DEMO_MARKET);
+  assert.deepEqual(
+    priced.map((p) => [p.symbol, p.decimals, p.priceUsd]),
+    [
+      ["WETH", 18, DEMO_MARKET.reserves.WETH!.priceUsd],
+      ["USDC", 6, 1],
+    ],
+  );
+  // With no debt there is nothing to size against: one base unit per line, never zero (the chain refuses zero).
+  const idle = grantTokenLimits(0, coll, []);
+  assert.ok(idle.every((x) => x.amountPerPeriod > 0n));
 });
 
 test("gas: assessGas headroom, plain sentences, estimateForWrite surfaces reverts", async () => {

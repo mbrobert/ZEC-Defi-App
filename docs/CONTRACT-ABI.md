@@ -2,7 +2,7 @@
 
 **Source of truth is the compiled artifact, not this page.** `contracts/abi/oilskin-abi.json` is
 generated from `contracts/out` by `node scripts/verify-abi.mjs --write` and carries the full ABI plus
-every selector / topic / error for 17 contracts and interfaces — **321 entries** as of 2026-09-07 (200 functions, 30 events, 91 errors; 303 before `MorphoBlueVenue` was built — it added 19 functions and 13 errors and dropped `VenueDisabled`).
+every selector / topic / error for 17 contracts and interfaces — **326 entries** as of 2026-09-08 (204 functions, 30 events, 92 errors). The wave-2 fix round (`AUDIT-2026-09-07.md`) added `CollateralRegistry.previousVenues`, `ICollateralVenue.borrowAgainst` on both venues, `MorphoBlueVenue.NoMarketCanFill` and `StrategyRouter.QuoteOutsideBand`, and dropped `PythOracleAdapter.NoUpdateInTx` (321 before it; 303 before `MorphoBlueVenue` was built).
 Import that JSON; run `node scripts/verify-abi.mjs` in your area's test script — it exits 1 on any
 drift. The previous project lost this seam twice by encoding from a written document
 (AUDIT-FINDINGS Part 4); this document is a *reading aid* and every selector below was read out of
@@ -136,9 +136,12 @@ period = 86400, expiry ≤ 30 d ahead, maxValuePerPeriod = 0, allowCallback = TR
 `allowCallback: true` is mandatory: the router must call back into the account to close, repay and
 withdraw. A grant without it looks live in the UI and every dispatch reverts `NotActivePeripheral`
 inside the router while nothing is broadcast — treat that as a configuration error, not a retryable
-one. Every token the tree may *approve or transfer* must be listed. `unwind` always pays the
-**account** (never the keeper), and `withdrawAmount` is HF-gated, so a compromised keeper key can at
-worst churn within budgets. Do **not** grant `openLeveragedLp`, `openBorrowOnly`, `borrow`, `sweep`,
+one. Every token the tree may *approve or transfer* must be listed — **each in its own decimals at
+its own price** (a cbBTC user in the WETH/USDC pool needs a WETH line in wei; wave-2 G-HIGH-1).
+`unwind` always pays the **account** (never the keeper); `withdrawAmount` is HF-gated and lands in
+the account; and the swap quote must imply a pool price inside the close's price band
+(`QuoteOutsideBand`, wave-2 G-MED-1), so a compromised keeper key can at worst churn within
+budgets and within the band it committed to. Do **not** grant `openLeveragedLp`, `openBorrowOnly`, `borrow`, `sweep`,
 `closeMany` or raw token selectors to a keeper — the keeper's whole surface is one `unwind` per pool.
 
 ### Health factor floor (what the chain enforces, what the UI may claim)
@@ -240,6 +243,7 @@ ICollateralRegistry registry)` — deploy order is registry → venue → regist
 | `0xf2b9fdb8` | `supply(address asset,uint256 amount)` | **registry must point `asset` at THIS venue and have it enabled** (`AssetNotOffered`) → approve-exact → `Pool.supply(asset, amount, account, 0)` → approve 0 |
 | `0xf3fef3a3` | `withdraw(address asset,uint256 amount) → uint256` | `Pool.withdraw(asset, amount, account)`; max = all; gated on nothing |
 | `0x4b8a3529` | `borrow(address asset,uint256 amount)` | variable rate, `onBehalfOf` = account → then reads the account's GLOBAL health factor and reverts **`EntryHfTooLow(hf, floor)`** below `REGISTRY.entryHfFloorWad()` |
+| — | `borrowAgainst(address collateralAsset,address loanToken,uint256 amount)` | **new (wave-2 M-MED-1):** what the router calls after it has just supplied `collateralAsset`. On Aave — one cross-collateral position — it is exactly `borrow`, floor included; on Morpho the debt lands in that collateral's market |
 | `0x22867d78` | `repay(address asset,uint256 amount) → uint256` | approves min(amount, debt); max = full debt; `NothingToRepay` if 0; gated on nothing |
 | `0x6ad9f9df` | `healthFactor(address account) → uint256` | WAD; max when no debt |
 | `0x5d462920` | `liquidationThresholdBps(address asset) → uint256` · `0xc2f2d31c` `maxLtvBps(address) → uint256` | live from the PoolDataProvider (0 = not listed, e.g. cbZEC) |
@@ -255,11 +259,16 @@ Errors: `ZeroAmount()` `0x1f2a2005`, `NothingToRepay()` `0xd32e7fc6`, `ZeroAddre
 from Aave, per function: `supply` → `Morpho.supplyCollateral(params, amount, account, "")` after the same
 registry gate (`AssetNotOffered`) and `NoMarket(asset)` if no market here takes it; `withdraw` →
 `withdrawCollateral(params, amount, account, account)`, max = the position's collateral,
-`NothingToWithdraw` if 0; `borrow` → only `LOAN_TOKEN` (`NotLoanToken`), from the market with the most
-headroom (`NoCollateralPosition` if none), then **`EntryHfTooLow`** against the WORST market's HF; `repay` →
-worst market first, whole-market repays by shares, max = every market (`NothingToRepay` if 0);
-`healthFactor` = min over markets; `liquidationThresholdBps` = `maxLtvBps` = live LLTV / 1e14 (0 = no
-market); `debt(account, LOAN_TOKEN)` = Σ markets incl. interest Morpho will accrue this block;
+`NothingToWithdraw` if 0; `borrowAgainst(collateral, LOAN_TOKEN, amount)` → that collateral's market
+(`NoCollateralPosition` if the account holds nothing there); `borrow` → only `LOAN_TOKEN`
+(`NotLoanToken`), from the market with the most headroom among those whose oracle answers and that hold
+`amount` of idle loan token (`NoCollateralPosition` if none holds collateral, **`NoMarketCanFill(amount)`**
+if none can lend it — wave-2 M-LOW-1), then **`EntryHfTooLow`** against the WORST market's HF; `repay` →
+worst market first, whole-market repays by shares, max = every market (`NothingToRepay` if 0), and never
+gated by any market's oracle; `healthFactor` = min over markets, where a market with no debt never reads
+its oracle and a market with debt whose oracle reverts reads **0** (wave-2 M-MED-2);
+`liquidationThresholdBps` = `maxLtvBps` = live LLTV / 1e14 (0 = no market); `debt(account, LOAN_TOKEN)` =
+Σ markets incl. interest Morpho will accrue this block, with no oracle read;
 `borrowRateRay(LOAN_TOKEN)` = the highest market rate, per-second WAD × 365 days × 1e9. Extras:
 `marketId((address,address,address,address,uint256)) → bytes32` `0xdf3fb657`, `MORPHO()` `0x3acb5624`,
 `REGISTRY()`, `LOAN_TOKEN()`, `marketIdOf(address) → bytes32`, `marketParamsOf(address) → MarketParams`,
@@ -318,7 +327,7 @@ Constructor: `(address initialOwner, uint256 entryHfFloorWad, uint256 timelockDe
 | `0x5ba1c1a9` | `TIMELOCK_DELAY()` · `0x169070eb` `MIN_TIMELOCK_DELAY()` (1 h) · `0x2a083ca3` `MAX_TIMELOCK_DELAY()` (30 d) · `0x79306d58` `MAX_OFFERED_LTV_CAP_BPS()` (5000) · `0x6a146024` `WAD()` · `0x249d39e9` `BPS()` |
 | OZ | `owner() pendingOwner() transferOwnership(address) acceptOwnership() renounceOwnership()` |
 
-Events `AssetRegistered(address indexed asset,address indexed venue,uint8 decimals,address priceFeed,bool enabled)` (`0x59232194…`) · `AssetEnabled(address indexed asset,bool enabled,string note)` (`0x42a6f4a9…`) · `EntryHfFloorSet(uint256)` (`0x98b6d9d9…`) · **new:** `VenueChangeProposed(address indexed asset,address indexed currentVenue,address indexed proposedVenue,address priceFeed,uint40 eta)` (`0xabc5b6d3…`) · `VenueChangeCancelled(address indexed asset,address indexed proposedVenue)` (`0xe2ab07b5…`) · `VenueChangeAccepted(address indexed asset,address indexed previousVenue,address indexed newVenue)` (`0xc81b3a86…`) (+ OZ ownership events).
+Events `AssetRegistered(address indexed asset,address indexed venue,uint8 decimals,address priceFeed,bool enabled)` (`0x59232194…`) · `AssetEnabled(address indexed asset,bool enabled,string note)` (`0x42a6f4a9…`) · `EntryHfFloorSet(uint256)` (`0x98b6d9d9…`) · **new:** `VenueChangeProposed(address indexed asset,address indexed currentVenue,address indexed proposedVenue,address priceFeed,uint40 eta)` (`0xabc5b6d3…`) · `VenueChangeCancelled(address indexed asset,address indexed proposedVenue)` (`0xe2ab07b5…`) · `VenueChangeAccepted(address indexed asset,address indexed previousVenue,address indexed newVenue)` (`0xc81b3a86…`) (+ OZ ownership events). **New (wave-2 M-HIGH-1):** `previousVenues(address asset) → address[]` — every venue the asset was pointed at before the current one; `acceptVenue` appends the venue it replaces (a venue that becomes current again leaves the list). `StrategyRouter.unwind` resolves the venue holding the calling account's position from `[venueOf(asset), ...previousVenues(asset)]`, so a switch never strands an open position; opens still use `venueOf` only.
 
 Errors `ZeroAddress()` `0xd92e233d` · `VenueDisabled(address)` `0x251897fd` · `UnknownAsset(address)` `0xad61e2ba` · `InvalidHfFloor(uint256)` `0x4a3368d2` · `VenueDoesNotKnowAsset(address)` `0xa2fef359` · **new:** `AssetNotEnabled(address)` `0xf6f24b83` · `InvalidTimelock(uint256)` `0x81872b29` · `AssetAlreadyRegistered(address)` `0x9690e53c` · `NoPendingChange(address)` `0x3c89b279` · `TimelockNotElapsed(uint40)` `0x4b1b3dcf` · OZ `OwnableUnauthorizedAccount(address)`.
 
@@ -376,7 +385,7 @@ Errors `ZeroAddress()` `0xd92e233d` · `Expired(uint256)` `0xf80dbaea` · `Asset
 
 ## 8. PythOracleAdapter (v1.1, built, UNUSED)  (`src/oracle/PythOracleAdapter.sol`)
 
-`0xd828d374` `refresh(bytes[] updateData) payable` — posts the Pyth update (fee from msg.value, rest refunded) and arms `price()` for this tx · `0xa035b1fe` `price() → uint256` — Morpho `IOracle`: 1 base unit in quote units × 1e36; reverts `NoUpdateInTx()` `0xb23dd9ac` unless refreshed in the same tx, Pyth `StalePrice` past `maxAge`, `PegBreak(uint256 pythE8,uint256 twapE8,uint256 deviationBps)` `0x5963163c` beyond `maxDeviationBps` vs the Aerodrome cbZEC/USDC TWAP · `0x59e02dd7` `peek() → (pythPriceE8,publishTime,twapE8,deviationBps)` (diagnostic, no gate) · `0x48534330` `twapPriceE8()` · immutables `PYTH PRICE_ID POOL BASE_TOKEN QUOTE_TOKEN BASE_DECIMALS QUOTE_DECIMALS BASE_IS_TOKEN0 maxAge maxDeviationBps twapWindow`. Event `Refreshed(uint256,uint256,uint256)` (`0x9ff2bd21…`). Other errors `ZeroAddress InvalidConfig NonPositivePrice(int64) InsufficientFee(uint256,uint256) RefundFailed PoolTokensMismatch(address,address) TickOutOfRange(int24)`.
+`0xd828d374` `refresh(bytes[] updateData) payable` — posts the Pyth update (fee from msg.value, rest refunded); permissionless, and nothing requires it in the same transaction as the read (the same-transaction gate was removed — wave-2 P-MED-1) · `0xa035b1fe` `price() → uint256` — Morpho `IOracle`: 1 base unit in quote units × 1e36; reverts Pyth `StalePrice` past `maxAge`, `PegBreak(uint256 pythE8,uint256 twapE8,uint256 deviationBps)` `0x5963163c` beyond `maxDeviationBps` vs the Aerodrome cbZEC/USDC TWAP · `0x59e02dd7` `peek() → (pythPriceE8,publishTime,twapE8,deviationBps)` (diagnostic, no gate) · `0x48534330` `twapPriceE8()` · immutables `PYTH PRICE_ID POOL BASE_TOKEN QUOTE_TOKEN BASE_DECIMALS QUOTE_DECIMALS BASE_IS_TOKEN0 maxAge maxDeviationBps twapWindow`. Event `Refreshed(uint256,uint256,uint256)` (`0x9ff2bd21…`). Other errors `ZeroAddress InvalidConfig NonPositivePrice(int64) InsufficientFee(uint256,uint256) RefundFailed PoolTokensMismatch(address,address) TickOutOfRange(int24)`.
 
 ## 9. External surfaces we encode against (verified selectors)
 

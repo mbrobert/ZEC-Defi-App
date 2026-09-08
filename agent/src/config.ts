@@ -92,6 +92,12 @@ export interface KeeperConfig {
   notifyWebhookUrl?: string;
   notifyWebhookToken?: string;
   notifyDeadlineMs: number;
+  /**
+   * Run with the keeper's own log and store as the ONLY notification channels. Off by default:
+   * without a person-facing channel every warning is written to a host the user cannot see and
+   * nothing else, so startup refuses unless an operator says so explicitly (audit wave 2, N-MED-1).
+   */
+  notifyAllowLogOnly: boolean;
   /** Terminal dispatch records kept per account before pruning. */
   storeKeepTerminalPerAccount: number;
   /** A store lock whose heartbeat is older than this is reclaimable. */
@@ -268,6 +274,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): KeeperConfig {
     throw new ConfigError("DISPATCH_DEADLINE_MS", `must be ≥ RPC_DEADLINE_MS (${rpcDeadlineMs})`);
   }
 
+  // Every Aave, token and feed address this keeper reads comes from packages/shared and is Base
+  // mainnet only. Pointing CHAIN_ID anywhere else would run those mainnet addresses against the
+  // wrong chain — every account UNKNOWN, or a fatal feed self-check with a misleading reason — so
+  // an unsupported chain is refused by name here (audit wave 2, S-MED-1).
+  const chainId = num(env, "CHAIN_ID", CONFIG_DEFAULTS.chainId, { min: 1, integer: true });
+  if (chainId !== CONFIG_DEFAULTS.chainId) {
+    throw new ConfigError(
+      "CHAIN_ID",
+      `unsupported chain ${chainId}: the Aave, token and Chainlink addresses in packages/shared are Base mainnet (${CONFIG_DEFAULTS.chainId}) only — there is no address table for another chain yet`
+    );
+  }
+
   const notifyWebhookUrl = readRaw(env, "NOTIFY_WEBHOOK_URL");
   if (notifyWebhookUrl !== undefined) {
     let u: URL;
@@ -281,7 +299,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): KeeperConfig {
 
   return {
     rpcUrl,
-    chainId: num(env, "CHAIN_ID", CONFIG_DEFAULTS.chainId, { min: 1, integer: true }),
+    chainId,
     keeperPrivateKey,
     factoryAddress,
     routerAddress,
@@ -320,6 +338,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): KeeperConfig {
     notifyWebhookUrl,
     notifyWebhookToken: readRaw(env, "NOTIFY_WEBHOOK_TOKEN"),
     notifyDeadlineMs: num(env, "NOTIFY_DEADLINE_MS", CONFIG_DEFAULTS.notifyDeadlineMs, { min: 1, integer: true }),
+    notifyAllowLogOnly: oneOf(env, "NOTIFY_ALLOW_LOG_ONLY", ["0", "1"] as const, "0") === "1",
     storeKeepTerminalPerAccount: num(env, "STORE_KEEP_TERMINAL_PER_ACCOUNT", CONFIG_DEFAULTS.storeKeepTerminalPerAccount, {
       min: 1,
       max: 100_000,
@@ -377,6 +396,7 @@ export function describeConfig(c: KeeperConfig): Record<string, unknown> {
     // The URL is reduced to its origin by the logger's redaction; the token is
     // never serialised at all, only its presence.
     notify: c.notifyWebhookUrl ? { webhook: redactString(c.notifyWebhookUrl), token: c.notifyWebhookToken ? "set" : "unset" } : null,
+    notifyAllowLogOnly: c.notifyAllowLogOnly,
     notifyDeadlineMs: c.notifyDeadlineMs,
     storeKeepTerminalPerAccount: c.storeKeepTerminalPerAccount,
     storeLockStaleMs: c.storeLockStaleMs,

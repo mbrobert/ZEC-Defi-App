@@ -197,7 +197,7 @@ function chainClient(answer: (c: { address: string; functionName: string; args?:
 const deploymentAnswer =
   (over: Record<string, unknown> = {}) =>
   (c: { functionName: string }): unknown => {
-    const table: Record<string, unknown> = { REGISTRY, LP_VENUE, SWAP, PERMIT2, venueOf: AAVE_VENUE, ENGINE, ...over };
+    const table: Record<string, unknown> = { REGISTRY, LP_VENUE, SWAP, PERMIT2, venueOf: AAVE_VENUE, isEnabled: true, PROVIDER: AAVE_V3.poolAddressesProvider, ENGINE, ...over };
     if (!(c.functionName in table)) throw new Error(`unexpected ${c.functionName}`);
     const v = table[c.functionName];
     if (v instanceof Error) throw v;
@@ -219,6 +219,38 @@ test("readDeployment discovers the swap adapter, and refuses a router without on
     () => readDeployment(chainClient(deploymentAnswer({ PERMIT2: "0x000000000000000000000000000000000000dEaD" })), "0x3333333333333333333333333333333333333333", ROUTER, KEEPER),
     /canonical Permit2/,
   );
+});
+
+test("readDeployment: every enabled asset on an AaveV3Venue over the shared provider → no unsupported venues", async () => {
+  const d = await readDeployment(chainClient(deploymentAnswer()), "0x3333333333333333333333333333333333333333", ROUTER, KEEPER);
+  assert.deepEqual(d.unsupportedVenues, []);
+});
+
+test("M-HIGH-2: readDeployment marks an enabled asset whose venue does not answer PROVIDER() as unsupported (the Morpho venue after acceptVenue)", async () => {
+  const MORPHO_VENUE = "0xdddddddddddddddddddddddddddddddddddddddd";
+  const client = chainClient((c) => {
+    if (c.functionName === "venueOf") {
+      return String(c.args?.[0] ?? "").toLowerCase() === BASE_TOKENS.cbBTC.address.toLowerCase() ? MORPHO_VENUE : AAVE_VENUE;
+    }
+    if (c.functionName === "PROVIDER") {
+      if (c.address.toLowerCase() === MORPHO_VENUE) throw new Error("execution reverted: no such function");
+      return AAVE_V3.poolAddressesProvider;
+    }
+    return deploymentAnswer()(c);
+  });
+  const d = await readDeployment(client, "0x3333333333333333333333333333333333333333", ROUTER, KEEPER);
+  assert.deepEqual(d.unsupportedVenues, ["cbBTC"], "cbBTC is on a venue this app cannot read; WETH and cbZEC are not");
+});
+
+test("M-HIGH-2: an AaveV3Venue over a DIFFERENT provider is unsupported too; a disabled asset is never reported", async () => {
+  const OTHER_PROVIDER = "0x00000000000000000000000000000000000000ff";
+  const client = chainClient((c) => {
+    if (c.functionName === "isEnabled") return String(c.args?.[0] ?? "").toLowerCase() !== BASE_TOKENS.cbZEC.address.toLowerCase();
+    if (c.functionName === "PROVIDER") return OTHER_PROVIDER;
+    return deploymentAnswer()(c);
+  });
+  const d = await readDeployment(client, "0x3333333333333333333333333333333333333333", ROUTER, KEEPER);
+  assert.deepEqual(d.unsupportedVenues, ["cbBTC", "WETH"]);
 });
 
 test("readPendingVenues surfaces a proposed venue replacement and ignores the empty slots", async () => {

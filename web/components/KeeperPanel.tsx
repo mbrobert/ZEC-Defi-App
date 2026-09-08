@@ -29,6 +29,8 @@ export default function KeeperPanel({
   onGrant,
   onRevoke,
   busy,
+  venueSupported = true,
+  livePoolTokens = [],
 }: {
   grant: KeeperGrantRead | null;
   deployment: Deployment | null;
@@ -37,9 +39,13 @@ export default function KeeperPanel({
   onGrant?: () => void;
   onRevoke?: () => void;
   busy?: boolean;
+  /** False when the registry points this collateral at a venue the keeper cannot read. */
+  venueSupported?: boolean;
+  /** Tokens the account's live LP positions pay out; each needs a budget line or no rung can run. */
+  livePoolTokens?: readonly { address: `0x${string}`; symbol: string }[];
 }) {
   const { mode } = useMode();
-  const status = describeGrant(grant, { keeperConfigured: !!deployment?.keeper, nowSeconds });
+  const status = describeGrant(grant, { keeperConfigured: !!deployment?.keeper, nowSeconds, venueSupported, livePoolTokens });
   const covered = new Set(status.rungsCovered.map((r) => r.id));
 
   return (
@@ -119,7 +125,7 @@ export default function KeeperPanel({
 
       {(onGrant || onRevoke) && (
         <div className="mt-4 flex flex-wrap gap-2">
-          {onGrant && status.kind !== "not-configured" && (
+          {onGrant && status.kind !== "not-configured" && status.kind !== "venue-unsupported" && (
             <button className="btn-brass" onClick={onGrant} disabled={busy} data-testid="keeper-grant-btn">
               {status.kind === "active" ? "Renew for another 30 days" : "Grant keeper protection"}
             </button>

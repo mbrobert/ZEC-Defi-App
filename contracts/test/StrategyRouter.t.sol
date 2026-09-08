@@ -325,11 +325,13 @@ contract StrategyRouterTest is Fixture {
         engine.setPendingFee(id, address(weth), 1e18);
         StrategyRouter.UnwindParams memory u = _unwind(_ids(id), 0, 0);
 
-        // An over-optimistic quote (4x the market) is refused by the swap, not silently accepted.
+        // An over-optimistic quote (4x the market) is refused by NAME at the router — it implies
+        // a price outside the close's own band (audit wave 2, G-MED-1) — before the adapter's
+        // floor would have refused it as TooLittleReceived.
         u.swap.quotedOut = 4 * 2453_450000;
         bytes memory data = abi.encodeCall(StrategyRouter.unwind, (u));
         vm.prank(alice);
-        vm.expectRevert(MockAerodromeSwapRouter.TooLittleReceived.selector);
+        vm.expectPartialRevert(StrategyRouter.QuoteOutsideBand.selector);
         acct.execWithCallback(address(router), 0, data);
 
         // A zero quote is refused: there is no way to express "accept anything".
@@ -348,6 +350,63 @@ contract StrategyRouterTest is Fixture {
             abi.encodeWithSelector(AerodromeSwapAdapter.SlippageTooHigh.selector, uint16(5001), uint16(500))
         );
         acct.execWithCallback(address(router), 0, data);
+    }
+
+    /// Audit wave 2, G-MED-1. The floor is RELATIVE to the caller's quote, so a keeper key that
+    /// lies about the quote drives it wherever it likes: `quotedIn = amountIn × quotedOut × 0.95`
+    /// makes `minOut` one base unit ("minOut = 1 is unrepresentable" was true only for an honest
+    /// quote). The router already carries the caller's price band for the close — checked against
+    /// the pool's own `slot0()` at execution and bounded at MAX_BAND_BPS — so the quote must imply
+    /// a price INSIDE that band. A dishonest quote and an honest band cannot coexist.
+    function test_FIX_G2_aQuoteOutsideTheCloseBandIsRefusedByName() public {
+        (uint256 id,) = _openViaAccount(_open(COLLATERAL, BORROW, 1));
+        engine.setPendingFee(id, address(weth), 1e18);
+        engine.setStaked(id, true);
+        StrategyRouter.UnwindParams memory u = _unwind(_ids(id), type(uint256).max, 0);
+        u.band = _band(poolWethUsdc, 500); // ±5 % on the sqrt price ≈ ±10 % on the price
+
+        // Half the pool price: the adapter's floor alone would accept 0.5 × 0.99 × spot and the
+        // mock router (paying spot) clears it — a "successful" sale at the quote's mercy.
+        u.swap.quotedOut = 2453_450000 / 2;
+        bytes memory data = abi.encodeCall(StrategyRouter.unwind, (u));
+        vm.prank(alice);
+        vm.expectPartialRevert(StrategyRouter.QuoteOutsideBand.selector);
+        acct.execWithCallback(address(router), 0, data);
+
+        // The same lie in the other direction (a quote twice spot) is outside the band too — the
+        // adapter would have refused it anyway (TooLittleReceived), the band refuses it by name.
+        u.swap.quotedOut = 2453_450000 * 2;
+        data = abi.encodeCall(StrategyRouter.unwind, (u));
+        vm.prank(alice);
+        vm.expectPartialRevert(StrategyRouter.QuoteOutsideBand.selector);
+        acct.execWithCallback(address(router), 0, data);
+
+        // 4 % below spot sits inside a ±10 % price band and goes through.
+        u.swap.quotedOut = (2453_450000 * 96) / 100;
+        data = abi.encodeCall(StrategyRouter.unwind, (u));
+        vm.prank(alice);
+        acct.execWithCallback(address(router), 0, data);
+        assertEq(aaveVenue.debt(address(acct), address(usdc)), 0, "closed, swapped, repaid");
+    }
+
+    /// The band the keeper actually sends (±1 %) makes the quote tolerance 1 %: 2 % below spot is
+    /// refused, 0.5 % below is accepted. The keeper builds both from the same live price.
+    function test_FIX_G2b_theKeepersOwnBandBoundsItsQuote() public {
+        (uint256 id,) = _openViaAccount(_open(COLLATERAL, BORROW, 1));
+        engine.setPendingFee(id, address(weth), 1e18);
+        StrategyRouter.UnwindParams memory u = _unwind(_ids(id), 0, 0);
+        u.band = _band(poolWethUsdc, 50); // ±0.5 % on sqrt ≈ ±1 % on price
+        u.swap.quotedOut = (2453_450000 * 98) / 100;
+        bytes memory data = abi.encodeCall(StrategyRouter.unwind, (u));
+        vm.prank(alice);
+        vm.expectPartialRevert(StrategyRouter.QuoteOutsideBand.selector);
+        acct.execWithCallback(address(router), 0, data);
+
+        u.swap.quotedOut = (2453_450000 * 995) / 1000;
+        data = abi.encodeCall(StrategyRouter.unwind, (u));
+        vm.prank(alice);
+        acct.execWithCallback(address(router), 0, data);
+        assertEq(weth.balanceOf(address(acct)), 0, "the leg was swapped at an honest quote");
     }
 
     /// The sandwich the old floor allowed: 0.9 WETH ($2,208) settling for 0.90 USDC. With the quote

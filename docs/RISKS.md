@@ -167,9 +167,18 @@ drop the UI shows is computed from the live LT
 `liquidationDropPct`); tests forbid typed literals.
 
 **On Morpho Blue (when the registry is moved there).** The same floor holds in
-`MorphoBlueVenue.borrow`, read from the registry and checked against the
-account's WORST market (Morpho positions are isolated per market, so the venue's
-health factor is the minimum over its markets). Morpho has ONE threshold: a
+`MorphoBlueVenue.borrow` / `borrowAgainst`, read from the registry and checked
+against the account's WORST market (Morpho positions are isolated per market, so
+the venue's health factor is the minimum over its markets). **The keeper and the
+dashboard do not yet read `ICollateralVenue`** (wave-2 M-HIGH-2): both value an
+account through the Aave pool directly. Until a venue-aware reader ships, the
+keeper refuses to start if the registry points any enabled asset at a venue
+that is not the `AaveV3Venue` over the pool it reads (`agent/src/services/
+venues.ts`), and the web marks that asset as unsupported, offers no keeper
+permission for it and says so on the dashboard. Moving cbBTC or WETH to Morpho
+therefore needs that reader first; the switch itself no longer strands
+positions opened on Aave — the router's exit path follows the position through
+`CollateralRegistry.previousVenues` (wave-2 M-HIGH-1). Morpho has ONE threshold: a
 borrow is allowed up to the 86 % LLTV and liquidated below it, with no gap
 between "max LTV" and "liquidation threshold" as on Aave, so the registry's
 derived offer is min(86 / 1.55 = 55.5 %, 86 %, 50 % cap) = 50 %, and a position
@@ -179,8 +188,11 @@ cbBTC = BTC, so a cbBTC depeg does not move that market's price and the venue's
 health factor, which reads the market's oracle, would not see it until
 liquidations already happened elsewhere; the keeper's Chainlink cbBTC/USD feed
 is the independent view. (2) Interest accrues per market on every touch; the
-venue computes debt the way Morpho will (`MorphoMath`), and the keeper must
-read `debt()` from the venue, not from `position()` shares.
+venue computes debt the way Morpho will (`MorphoMath`) without reading any
+oracle, and a venue-aware keeper must read `debt()` from the venue, not from
+`position()` shares. (3) A market with debt whose oracle cannot be read has
+health factor 0 at the venue — a borrow or withdraw fails closed at the floor,
+a repay is never gated by any market's oracle (wave-2 M-MED-2).
 
 **Does not.** The floor binds only sequences that go through the Oilskin venue.
 A user who hand-writes `account.exec(aavePool, borrow(...))` can still open at
@@ -218,10 +230,14 @@ single Oilskin keeper process. If it is down, wrong, or refused, nobody acts.
 
 **Mitigates (code).** The keeper acts only through `execAsKeeper` inside a
 grant the user signed (`OilskinAccount.grant`), bounded per token per period,
-revocable in one transaction (`revokeAll`); it can never withdraw collateral
-(`withdrawAmount: 0` in `policy.ts`) or pay anyone but the account
-(`StrategyRouter.unwind` pays `msg.sender`); a token mover the budget cannot
-parse is refused, not passed. Its whole surface is **one root
+revocable in one transaction (`revokeAll`); it pays nobody but the account
+(`StrategyRouter.unwind` pays `msg.sender`); its own plans never withdraw
+collateral (`withdrawAmount: 0` in `policy.ts`) — but the **permission** does
+allow an `unwind` with a withdraw, bounded by the router's exit health-factor
+floor and always into the account, and the pre-sign copy says so; a token mover
+the budget cannot parse is refused, not passed; the swap quote it sends must
+imply a pool price inside the close's own price band, so a keeper-chosen quote
+cannot drive the swap floor below the market (wave-2 G-MED-1). Its whole surface is **one root
 `StrategyRouter.unwind` per pool**, which is exactly the one `Permission` the
 web asks the user to sign, and `agent/scripts/verify-abi.mjs` fails the build
 if the plan ever contains anything else. Valuation is fail-closed
