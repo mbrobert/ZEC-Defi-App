@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Oilskin keeper: watches every OilskinAccount's Aave v3 health on Base via viem, runs the shared HF ladder with hysteresis, and acts only through execAsKeeper within the user's on-chain grant. Fail-closed valuation, progress watchdog, crash-safe store, idempotent dispatch.",
+  "description": "Oilskin keeper: watches every OilskinAccount's health on Base via viem across every lending venue the registry names (the Aave v3 pool cross-checked, any other venue through ICollateralVenue against the Chainlink feeds), runs the shared HF ladder with hysteresis, and acts only through execAsKeeper within the user's on-chain grant. Fail-closed valuation, progress watchdog, crash-safe store, idempotent dispatch.",
   "main": "./dist/src/index.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",

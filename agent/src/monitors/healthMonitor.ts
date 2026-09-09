@@ -1,12 +1,13 @@
-import type { TokenSymbol } from "@zyo/shared";
 import type { Dispatcher, DispatchResult } from "../dispatch/types.js";
 import { stepLadder, validateLadder, type LadderRung, type LadderState } from "../engine/ladder.js";
-import { evaluateSnapshot, UNTRACKED_COLLATERAL, type Valuation } from "../engine/valuation.js";
+import { UNTRACKED_COLLATERAL, type Valuation } from "../engine/valuation.js";
 import type { Logger } from "../log.js";
 import { eventNow, type KeeperEvent, type Notifier } from "../notify/notifier.js";
-import type { AaveReader, ReserveContextResult } from "../services/chain.js";
+import { readTickContexts, valueAccount, type TickContexts } from "../services/accountValuer.js";
+import type { AaveReader } from "../services/chain.js";
 import type { AccountDiscovery } from "../services/discovery.js";
 import { AbortedError, DeadlineError, mapBounded, withDeadline } from "../services/deadline.js";
+import type { VenueReader } from "../services/venues.js";
 import { DuplicateIdError, isFatalStoreError, KeeperStore, type AccountRecord, type DispatchRecord } from "../store/keeperStore.js";
 import type { Address } from "../types/evm.js";
 import type { TickHandle } from "../watchdog.js";
@@ -23,7 +24,8 @@ import type { TickHandle } from "../watchdog.js";
  *   2. discover — new `AccountCreated` logs since the persisted cursor.
  *      Isolated: a failed head read or a discovery error no longer skips the
  *      evaluation of every account (audit C-LOW-4);
- *   3. context — per-asset LT / prices, read once for the tick;
+ *   3. context — per-asset LT / prices, and the registry's venues per asset
+ *      (current and previous), read once for the tick;
  *   4. evaluate — every registered account, bounded concurrency, rotating by a
  *      PERSISTED tick counter (rotating by block number was a fixed
  *      permutation at the default poll — audit C-LOW-3), each account isolated;
@@ -66,6 +68,13 @@ export interface MonitorConfig {
 
 export interface MonitorDeps {
   reader: AaveReader;
+  /**
+   * Venue-aware reader over the registry (audit wave 2, M-HIGH-2). With it every account is
+   * valued through the Aave pool AND every venue the registry names for its collateral, and the
+   * ladder runs on the worst of them (`services/accountValuer.ts`). Without it — no router
+   * configured — only the Aave pool is read, as before.
+   */
+  venues?: VenueReader | null;
   discovery: AccountDiscovery;
   store: KeeperStore;
   ladder: readonly LadderRung[];
@@ -198,9 +207,14 @@ export class HealthMonitor {
         }
       }
 
-      const contexts = await this.d.reader.readReserveContexts(signal);
+      const contexts = await readTickContexts({ reader: this.d.reader, venues: this.d.venues ?? null }, signal);
       handle.bump();
-      for (const [sym, r] of contexts) if (!r.ok) log.warn("reserve context unreadable", { reserve: sym, reason: r.reason });
+      for (const [sym, r] of contexts.reserves) if (!r.ok) log.warn("reserve context unreadable", { reserve: sym, reason: r.reason });
+      if (contexts.venueError !== null) log.error("venue context unreadable — every account is UNKNOWN this tick", { error: contexts.venueError });
+      if (contexts.venues) {
+        for (const u of contexts.venues.unreadableAssets) log.warn("registry unreadable for an asset", { asset: u.symbol, reason: u.reason });
+        for (const v of contexts.venues.venues) if (v.problems.length) log.warn("venue context problems", { venue: v.venue, kind: v.kind, problems: v.problems });
+      }
 
       const accounts = this.d.store.listAccounts();
       let seq = this.tickCount;
@@ -452,7 +466,7 @@ export class HealthMonitor {
 
   private async evaluateOne(
     rec: AccountRecord,
-    contexts: Map<TokenSymbol, ReserveContextResult>,
+    contexts: TickContexts,
     head: bigint,
     chainNowS: bigint,
     handle: TickHandle,
@@ -463,14 +477,28 @@ export class HealthMonitor {
 
     let valuation: Valuation;
     try {
-      const snap = await this.d.reader.readAccount(rec.account, contexts, head, handle.signal);
-      valuation = evaluateSnapshot(snap, {
-        nowS: chainNowS,
-        priceMaxAgeS: this.d.config.priceMaxAgeS,
-        priceMaxAgeBySymbol: this.d.config.priceMaxAgeBySymbol,
-        oracleDeviationBps: this.d.config.oracleDeviationBps,
-        hfToleranceBps: this.d.config.hfToleranceBps,
-      });
+      const av = await valueAccount(
+        { reader: this.d.reader, venues: this.d.venues ?? null },
+        rec.account,
+        contexts,
+        head,
+        {
+          nowS: chainNowS,
+          priceMaxAgeS: this.d.config.priceMaxAgeS,
+          priceMaxAgeBySymbol: this.d.config.priceMaxAgeBySymbol,
+          oracleDeviationBps: this.d.config.oracleDeviationBps,
+          hfToleranceBps: this.d.config.hfToleranceBps,
+        },
+        handle.signal
+      );
+      valuation = av.valuation;
+      if (av.venues) {
+        l.debug("venue verdicts", {
+          aave: av.aave.kind,
+          venues: av.venues.map((v) => ({ venue: v.venue, kind: v.kind, assets: v.assets, hf: v.healthFactorWad?.toString() ?? null, verdict: v.valuation.kind })),
+          combined: valuation.kind,
+        });
+      }
     } catch (e) {
       if (e instanceof AbortedError || handle.signal.aborted) throw e;
       valuation = { kind: "UNKNOWN", reasons: [`read failed: ${errMsg(e)}`] };

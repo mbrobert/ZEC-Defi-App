@@ -170,15 +170,40 @@ drop the UI shows is computed from the live LT
 `MorphoBlueVenue.borrow` / `borrowAgainst`, read from the registry and checked
 against the account's WORST market (Morpho positions are isolated per market, so
 the venue's health factor is the minimum over its markets). **The keeper and the
-dashboard do not yet read `ICollateralVenue`** (wave-2 M-HIGH-2): both value an
-account through the Aave pool directly. Until a venue-aware reader ships, the
-keeper refuses to start if the registry points any enabled asset at a venue
-that is not the `AaveV3Venue` over the pool it reads (`agent/src/services/
-venues.ts`), and the web marks that asset as unsupported, offers no keeper
-permission for it and says so on the dashboard. Moving cbBTC or WETH to Morpho
-therefore needs that reader first; the switch itself no longer strands
-positions opened on Aave — the router's exit path follows the position through
-`CollateralRegistry.previousVenues` (wave-2 M-HIGH-1). Morpho has ONE threshold: a
+dashboard read every venue the registry names** (wave-2 M-HIGH-2; the reader
+shipped 2026-09-09): for each collateral asset, `venueOf(asset)` and every
+entry of `previousVenues(asset)` is asked `ICollateralVenue.{healthFactor,
+debt, collateral, liquidationThresholdBps}` for the account, on every tick
+(`agent/src/services/venues.ts`, `web/lib/reads.ts`). The Aave pool is still
+read directly and valued by the four G1–G4 guards, and the Aave venue's answers
+must reproduce that pool snapshot. Any other venue is accepted only when its
+health factor lies inside the band the keeper's own Chainlink feeds imply from
+the venue's collateral, debt and threshold — a single-market position makes the
+band a point; a multi-market Morpho position may sit anywhere between its worst
+market and the aggregate — within `ORACLE_DEVIATION_BPS`, the same bound that
+governs Chainlink against Aave's oracle, because threshold and debt are the
+venue's own words and only the price can differ. Outside the band, or with
+anything unreadable (a registry pointer, a previous venue, a threshold, a
+feed), the account is UNKNOWN: no rung runs, the escalation fires after the
+configured streak, and the dashboard shows "unreadable", never "No debt"
+(`agent/src/engine/venueValuation.ts`, guards V1–V4). The ladder runs on the
+WORST venue. Startup is fatal only for a venue that does not answer the
+interface; a venue that answers but is not Aave is a warning, and the web marks
+an asset unsupported only on such a venue. **Accepting a venue switch on
+mainnet is still the registry owner's explicit, separate step** — `proposeVenue`
+→ timelock → `acceptVenue` — and nothing in the keeper, the web or the deploy
+script performs it; `Deploy.s.sol` leaves cbBTC and WETH on `AaveV3Venue`. The
+switch itself no longer strands positions opened on Aave — the router's exit
+path follows the position through `CollateralRegistry.previousVenues` (wave-2
+M-HIGH-1). Two residuals: (a) the keeper's protective `unwind` is resolved by
+the router to the first venue holding the asset, so an account with positions
+on BOTH the Aave pool and the Morpho venue for the same asset may see the repay
+land on the healthier one; `confirm()` then sees a repay that did not lift the
+combined health factor and the re-arm bound escalates instead of retrying for
+ever (C-MED-2); (b) because the cbBTC market's oracle is BTC/USD while the
+keeper's feed is cbBTC/USD, a cbBTC depeg beyond the bound makes the Morpho
+position UNKNOWN rather than acted on early — the owner is told; the keeper
+does not guess which price is right. Morpho has ONE threshold: a
 borrow is allowed up to the 86 % LLTV and liquidated below it, with no gap
 between "max LTV" and "liquidation threshold" as on Aave, so the registry's
 derived offer is min(86 / 1.55 = 55.5 %, 86 %, 50 % cap) = 50 %, and a position
@@ -187,12 +212,13 @@ cbBTC market's oracle is Chainlink **BTC/USD** with no cbBTC leg — it assumes
 cbBTC = BTC, so a cbBTC depeg does not move that market's price and the venue's
 health factor, which reads the market's oracle, would not see it until
 liquidations already happened elsewhere; the keeper's Chainlink cbBTC/USD feed
-is the independent view. (2) Interest accrues per market on every touch; the
-venue computes debt the way Morpho will (`MorphoMath`) without reading any
-oracle, and a venue-aware keeper must read `debt()` from the venue, not from
-`position()` shares. (3) A market with debt whose oracle cannot be read has
-health factor 0 at the venue — a borrow or withdraw fails closed at the floor,
-a repay is never gated by any market's oracle (wave-2 M-MED-2).
+is the independent view, and the V4 band above is where the two meet. (2)
+Interest accrues per market on every touch; the venue computes debt the way
+Morpho will (`MorphoMath`) without reading any oracle, and the keeper reads
+`debt()` from the venue, not from `position()` shares. (3) A market with debt
+whose oracle cannot be read has health factor 0 at the venue — a borrow or
+withdraw fails closed at the floor, a repay is never gated by any market's
+oracle (wave-2 M-MED-2), and the keeper reads that 0 as UNKNOWN, not as a rung.
 
 **Does not.** The floor binds only sequences that go through the Oilskin venue.
 A user who hand-writes `account.exec(aavePool, borrow(...))` can still open at

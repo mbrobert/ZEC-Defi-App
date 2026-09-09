@@ -152,7 +152,7 @@ flowchart TD
     end
 
     subgraph keeper ["Keeper-initiated (only inside the grant)"]
-        K0["keeper reads HF from the Aave pool directly<br/>(Pool.getUserAccountData + the data provider, agent/src/services/chain.ts)<br/>+ per-feed staleness from each aggregator"] --> K1{rung?}
+        K0["keeper reads HF from EVERY venue the registry names for the collateral<br/>(registry.venueOf + previousVenues → ICollateralVenue.healthFactor / debt / collateral,<br/>agent/src/services/venues.ts; the Aave pool still read directly and cross-checked, G1–G4 + V1–V4;<br/>the worst venue runs the ladder) + per-feed staleness from each aggregator"] --> K1{rung?}
         K1 -- "HF &lt; 1.50 warn" --> KW["notify only — no on-chain action"]
         K1 -- "HF &lt; 1.35 repay" --> KR["unwind: close enough LP → repay,<br/>withdrawAmount = 0"]
         K1 -- "HF &lt; 1.20 de-risk" --> KD["unwind: close more → repay,<br/>withdrawAmount = 0"]

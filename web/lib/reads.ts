@@ -1,8 +1,15 @@
 /**
  * Chain reads (viem). The dashboard and the wizard read Aave reserve
  * parameters, oracle prices, the connected wallet's OilskinAccount and its
- * Aave position FROM CHAIN. The indexer is only a cache the UI paints from
+ * positions FROM CHAIN. The indexer is only a cache the UI paints from
  * while these resolve (see lib/indexer.ts).
+ *
+ * An account's health is read VENUE-AWARE (audit wave 2, M-HIGH-2): the registry names, per
+ * collateral asset, the venue it currently points at and every venue it pointed at before, and each
+ * of those is asked `ICollateralVenue.{healthFactor, debt, collateral, liquidationThresholdBps}`
+ * for the account. The Aave pool is still read directly (`getUserAccountData`, per-reserve rows) and
+ * the Aave venue's answer must agree with it; the health factor shown is the WORST venue's, and it
+ * is `null` — "unreadable", never "no debt" — whenever any venue could not be read (N-MED-2).
  *
  * Reads are batched through viem `multicall` (Multicall3 from viem's `base`
  * chain definition) and fall back to one eth_call per item if the batch
@@ -11,7 +18,7 @@
 import type { Address, Hex } from "viem";
 import { AAVE_V3, BASE_TOKENS, COLLATERAL_ASSETS, COLLATERAL_SYMBOLS, isZeroAddress, type CollateralSymbol } from "@zyo/shared";
 import { AAVE_ORACLE_ABI, ERC20_ABI, POOL_ABI, POOL_DATA_PROVIDER_ABI } from "./abi/aave";
-import { AAVE_VENUE_ABI, ACCOUNT_ABI, AERODROME_CLPOOL_ABI, COLLATERAL_REGISTRY_ABI, FACTORY_ABI, LP_VENUE_ABI, ROUTER_ABI, SNUGGLE_VAULT_ABI } from "./abi/oilskin";
+import { AAVE_VENUE_ABI, ACCOUNT_ABI, AERODROME_CLPOOL_ABI, COLLATERAL_REGISTRY_ABI, COLLATERAL_VENUE_ABI, FACTORY_ABI, LP_VENUE_ABI, ROUTER_ABI, SNUGGLE_VAULT_ABI } from "./abi/oilskin";
 import { baseUnitsToUsd, fromAtomic, rayToAprPct, wadHealthFactor } from "./math";
 import type { KeeperGrantRead } from "./keeper";
 import { UNWIND_SELECTOR, type Deployment } from "./plan";
@@ -58,6 +65,47 @@ export interface CollateralHolding {
   amountAtomic: bigint;
   amount: number;
   usd: number;
+  /** The venue holding it; absent for the Aave pool rows read before the venue-aware read existed. */
+  venue?: Address;
+  venueKind?: VenueKind;
+  /** The venue's live liquidation threshold for this asset (Morpho: its LLTV). Absent for Aave rows — the market read carries it. */
+  liquidationThresholdBps?: number;
+}
+
+/** "aave" = an AaveV3Venue over the Aave provider in `@zyo/shared`, i.e. the pool the `aave` leg of an account read describes. */
+export type VenueKind = "aave" | "other";
+
+/** One venue the registry names for the account's collateral, read through `ICollateralVenue`. */
+export interface VenueHealthRead {
+  venue: Address;
+  kind: VenueKind;
+  /** Collateral symbols the registry routes to this venue, now or before. */
+  assets: CollateralSymbol[];
+  /** True when at least one asset's CURRENT pointer is this venue (else it is only a previous venue). */
+  current: boolean;
+  /** `healthFactor(account)`: ∞ = no debt on this venue; null = unreadable. */
+  healthFactor: number | null;
+  /** `debt(account, USDC)`, human units; null = unreadable. */
+  debtUsdc: number | null;
+  /** `collateral(account, asset)` + `liquidationThresholdBps(asset)` per ENABLED asset routed here. */
+  collateral: { symbol: CollateralSymbol; amountAtomic: bigint; amount: number; liquidationThresholdBps: number | null }[];
+  /** Every word above decoded. A venue that is not readable makes the whole account unreadable. */
+  readable: boolean;
+}
+
+export interface VenueHealth {
+  registry: Address;
+  venues: VenueHealthRead[];
+  /**
+   * The WORST health factor across every venue (∞ when no venue carries debt). `null` when the
+   * registry or any venue could not be read, or when the Aave venue's answer does not agree with the
+   * pool read — "unreadable", which the dashboard shows as a warning, never as "No debt" (N-MED-2).
+   */
+  healthFactor: number | null;
+  /** Σ `debt(account, USDC)` over venues that are NOT the Aave pool, human units (the pool's own debt is in `aave`). */
+  otherDebtUsdc: number;
+  /** Why `healthFactor` is null, when it is. */
+  unreadableReason: string | null;
 }
 
 /** One engine position as read from chain (ISnuggleVault.positions + the pool's slot0). */
@@ -84,6 +132,7 @@ export interface AccountRead {
   /** Predicted (CREATE2) or deployed account address; null when the factory is not configured. */
   account: Address | null;
   deployed: boolean;
+  /** The Aave pool read directly (`getUserAccountData`); null when that leg failed. */
   aave: {
     totalCollateralUsd: number;
     totalDebtUsd: number;
@@ -92,6 +141,13 @@ export interface AccountRead {
     ltvBps: number;
     healthFactor: number;
   } | null;
+  /**
+   * Every venue the registry names for the account's collateral, read through `ICollateralVenue`
+   * (audit wave 2, M-HIGH-2). `null` when no registry was given (the deployment is unknown), in
+   * which case the page falls back to the Aave leg alone.
+   */
+  venues: VenueHealth | null;
+  /** Collateral under the account: the Aave pool's rows, plus one row per non-Aave venue holding. */
   collateral: CollateralHolding[];
   debtUsdc: number;
   /** Snuggle position ids owned by the account (via the LP venue). */
@@ -182,6 +238,8 @@ export interface AccountReadOptions {
   factory?: Address;
   lpVenue?: Address;
   engine?: Address;
+  /** CollateralRegistry — enables the venue-aware read. Without it only the Aave leg is read and `venues` is null. */
+  registry?: Address;
   /** Wallet ETH balance reader (viem getBalance); optional so tests can omit it. */
   getBalance?: (args: { address: Address }) => Promise<bigint>;
 }
@@ -225,13 +283,13 @@ export async function readDeployment(client: ReadClient, factory: Address, route
 }
 
 /**
- * Which ENABLED collateral assets the registry points at a venue this app cannot read.
- * Every account read in this file goes to the Aave pool and data provider directly; a
- * position on any other venue (the Morpho venue after `acceptVenue`, a future venue) is
- * invisible here and to the keeper. A venue counts as readable only when it answers
- * `PROVIDER()` with the Aave PoolAddressesProvider in `@zyo/shared` — that is what makes it the
- * AaveV3Venue over the pool these reads describe (audit wave 2, M-HIGH-2). An unreadable answer
- * counts as unsupported: fail closed.
+ * Which ENABLED collateral assets the registry points at a venue this app cannot read THROUGH
+ * `ICollateralVenue`. Every account read here goes through that interface to whatever venue the
+ * registry names — the Aave venue, the Morpho venue after `acceptVenue`, a future venue — so a
+ * venue counts as unsupported only when it does not answer it: `enabled()` false or unreadable, or
+ * `liquidationThresholdBps(asset)` zero or unreadable for an enabled asset (audit wave 2, M-HIGH-2).
+ * A position on such a venue is invisible here and to the keeper, which refuses to start on it. An
+ * unreadable answer counts as unsupported: fail closed. Being an AaveV3Venue is NOT required any more.
  */
 export async function readUnsupportedVenues(client: ReadClient, registry: Address): Promise<CollateralSymbol[]> {
   const enabledRows = await safeMulticall(
@@ -242,30 +300,147 @@ export async function readUnsupportedVenues(client: ReadClient, registry: Addres
     client,
     COLLATERAL_SYMBOLS.map((s) => ({ address: registry, abi: COLLATERAL_REGISTRY_ABI, functionName: "venueOf", args: [BASE_TOKENS[s].address] })),
   );
-  const venues = new Set<string>();
+  const pairs: { symbol: CollateralSymbol; venue: Address }[] = [];
   COLLATERAL_SYMBOLS.forEach((s, i) => {
     if (enabledRows[i] !== true) return;
     const v = venueRows[i];
-    if (typeof v === "string" && !isZeroAddress(v)) venues.add(v.toLowerCase());
+    if (typeof v === "string" && !isZeroAddress(v)) pairs.push({ symbol: s, venue: v as Address });
   });
-  const venueList = [...venues];
-  const providers = await safeMulticall(
-    client,
-    venueList.map((v) => ({ address: v as Address, abi: AAVE_VENUE_ABI, functionName: "PROVIDER" })),
-  );
-  const supported = new Map<string, boolean>();
-  venueList.forEach((v, i) => {
-    const p = providers[i];
-    supported.set(v, typeof p === "string" && p.toLowerCase() === AAVE_V3.poolAddressesProvider.toLowerCase());
-  });
+  const venueList = [...new Set(pairs.map((p) => p.venue.toLowerCase()))] as Address[];
+  const probes = await safeMulticall(client, [
+    ...venueList.map((v) => ({ address: v, abi: COLLATERAL_VENUE_ABI, functionName: "enabled" })),
+    ...pairs.map((p) => ({ address: p.venue, abi: COLLATERAL_VENUE_ABI, functionName: "liquidationThresholdBps", args: [BASE_TOKENS[p.symbol].address] })),
+  ]);
+  const venueEnabled = new Map<string, boolean>();
+  venueList.forEach((v, i) => venueEnabled.set(v.toLowerCase(), probes[i] === true));
   const out: CollateralSymbol[] = [];
   COLLATERAL_SYMBOLS.forEach((s, i) => {
     if (enabledRows[i] !== true) return;
     const v = venueRows[i];
-    const ok = typeof v === "string" && !isZeroAddress(v) && supported.get(v.toLowerCase()) === true;
+    if (typeof v !== "string" || isZeroAddress(v)) {
+      out.push(s);
+      return;
+    }
+    const pairIdx = pairs.findIndex((p) => p.symbol === s);
+    const lt = probes[venueList.length + pairIdx];
+    const ok = venueEnabled.get(v.toLowerCase()) === true && typeof lt === "bigint" && lt > 0n;
     if (!ok) out.push(s);
   });
   return out;
+}
+
+/**
+ * The keeper's tolerance for "the same health factor read twice" is HF_TOLERANCE_BPS = 100
+ * (agent/src/config.ts, 1 %): two reads of the pool a block apart drift by interest accrual, never
+ * by more than that. The Aave venue's `healthFactor(account)` and the pool's own `getUserAccountData`
+ * must agree within it, or the page says "unreadable" rather than pick one.
+ */
+export const HF_CROSS_CHECK_TOLERANCE = 0.01;
+
+function hfAgree(a: number, b: number): boolean {
+  if (a === b) return true;
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
+  const ref = Math.max(Math.abs(a), Math.abs(b));
+  return ref > 0 && Math.abs(a - b) / ref <= HF_CROSS_CHECK_TOLERANCE;
+}
+
+/**
+ * Read the account's health from EVERY venue the registry names for its collateral — the current
+ * pointer per asset and every previous venue (`previousVenues`, kept by `acceptVenue` so positions
+ * opened there stay reachable, M-HIGH-1) — through `ICollateralVenue`. Nothing is defaulted: a venue
+ * whose `healthFactor`, `debt` or a collateral/threshold pair did not decode is `readable: false`,
+ * and the combined health factor is then `null`.
+ */
+export async function readVenueHealth(client: ReadClient, registry: Address, account: Address): Promise<VenueHealth> {
+  const regRows = await safeMulticall(
+    client,
+    COLLATERAL_SYMBOLS.flatMap((s) => [
+      { address: registry, abi: COLLATERAL_REGISTRY_ABI, functionName: "venueOf", args: [BASE_TOKENS[s].address] },
+      { address: registry, abi: COLLATERAL_REGISTRY_ABI, functionName: "previousVenues", args: [BASE_TOKENS[s].address] },
+      { address: registry, abi: COLLATERAL_REGISTRY_ABI, functionName: "isEnabled", args: [BASE_TOKENS[s].address] },
+    ]),
+  );
+  type Spec = { venue: Address; assets: Map<CollateralSymbol, { enabled: boolean; current: boolean }> };
+  const specs = new Map<string, Spec>();
+  const unreadable: string[] = [];
+  COLLATERAL_SYMBOLS.forEach((s, i) => {
+    const cur = regRows[i * 3];
+    const prev = regRows[i * 3 + 1];
+    const enabled = regRows[i * 3 + 2];
+    if (typeof cur !== "string" || !Array.isArray(prev) || typeof enabled !== "boolean") {
+      unreadable.push(`registry unreadable for ${s}`);
+      return;
+    }
+    if (isZeroAddress(cur)) return; // not registered: nothing can be opened there
+    const add = (venue: string, current: boolean) => {
+      const key = venue.toLowerCase();
+      const spec = specs.get(key) ?? { venue: venue as Address, assets: new Map() };
+      const existing = spec.assets.get(s);
+      spec.assets.set(s, { enabled, current: current || (existing?.current ?? false) });
+      specs.set(key, spec);
+    };
+    add(cur, true);
+    for (const p of prev as string[]) if (typeof p === "string" && !isZeroAddress(p) && p.toLowerCase() !== cur.toLowerCase()) add(p, false);
+  });
+  if (unreadable.length) return { registry, venues: [], healthFactor: null, otherDebtUsdc: 0, unreadableReason: unreadable.join("; ") };
+
+  const venueList = [...specs.values()];
+  const calls: Call[] = [];
+  const plan: { venue: Spec; provider: number; hf: number; debt: number; collateral: { symbol: CollateralSymbol; amount: number; lt: number }[] }[] = [];
+  for (const v of venueList) {
+    const entry = { venue: v, provider: calls.length, hf: calls.length + 1, debt: calls.length + 2, collateral: [] as { symbol: CollateralSymbol; amount: number; lt: number }[] };
+    calls.push({ address: v.venue, abi: AAVE_VENUE_ABI, functionName: "PROVIDER" });
+    calls.push({ address: v.venue, abi: COLLATERAL_VENUE_ABI, functionName: "healthFactor", args: [account] });
+    calls.push({ address: v.venue, abi: COLLATERAL_VENUE_ABI, functionName: "debt", args: [account, BASE_TOKENS.USDC.address] });
+    for (const [sym, a] of v.assets) {
+      if (!a.enabled) continue; // an unlisted asset makes some venues revert here; a disabled asset's debt is still in healthFactor / debt
+      entry.collateral.push({ symbol: sym, amount: calls.length, lt: calls.length + 1 });
+      calls.push({ address: v.venue, abi: COLLATERAL_VENUE_ABI, functionName: "collateral", args: [account, BASE_TOKENS[sym].address] });
+      calls.push({ address: v.venue, abi: COLLATERAL_VENUE_ABI, functionName: "liquidationThresholdBps", args: [BASE_TOKENS[sym].address] });
+    }
+    plan.push(entry);
+  }
+  const out = await safeMulticall(client, calls);
+
+  const venues: VenueHealthRead[] = plan.map((e) => {
+    const provider = out[e.provider];
+    const kind: VenueKind = typeof provider === "string" && provider.toLowerCase() === AAVE_V3.poolAddressesProvider.toLowerCase() ? "aave" : "other";
+    const hfRaw = out[e.hf];
+    const debtRaw = out[e.debt];
+    let readable = typeof hfRaw === "bigint" && typeof debtRaw === "bigint";
+    const collateral = e.collateral.map((c) => {
+      const amountRaw = out[c.amount];
+      const ltRaw = out[c.lt];
+      if (typeof amountRaw !== "bigint" || typeof ltRaw !== "bigint") readable = false;
+      const amountAtomic = typeof amountRaw === "bigint" ? amountRaw : 0n;
+      return {
+        symbol: c.symbol,
+        amountAtomic,
+        amount: fromAtomic(amountAtomic, COLLATERAL_ASSETS[c.symbol].decimals),
+        liquidationThresholdBps: typeof ltRaw === "bigint" ? Number(ltRaw) : null,
+      };
+    });
+    return {
+      venue: e.venue.venue,
+      kind,
+      assets: [...e.venue.assets.keys()],
+      current: [...e.venue.assets.values()].some((a) => a.current),
+      healthFactor: typeof hfRaw === "bigint" ? wadHealthFactor(hfRaw) : null,
+      debtUsdc: typeof debtRaw === "bigint" ? fromAtomic(debtRaw, BASE_TOKENS.USDC.decimals) : null,
+      collateral,
+      readable,
+    };
+  });
+  const bad = venues.filter((v) => !v.readable);
+  const healthFactor = bad.length ? null : venues.reduce((worst, v) => Math.min(worst, v.healthFactor ?? Number.POSITIVE_INFINITY), Number.POSITIVE_INFINITY);
+  const otherDebtUsdc = venues.filter((v) => v.kind === "other").reduce((a, v) => a + (v.debtUsdc ?? 0), 0);
+  return {
+    registry,
+    venues,
+    healthFactor,
+    otherDebtUsdc,
+    unreadableReason: bad.length ? `venue ${bad.map((v) => `${v.venue.slice(0, 6)}…${v.venue.slice(-4)}`).join(", ")} did not answer` : null,
+  };
 }
 
 /**
@@ -431,6 +606,7 @@ export async function readAccount(
     account: null,
     deployed: false,
     aave: null,
+    venues: null,
     collateral: [],
     debtUsdc: 0,
     lpPositionIds: [],
@@ -481,7 +657,7 @@ export async function readAccount(
     if (amountAtomic === 0n) return;
     const amount = fromAtomic(amountAtomic, COLLATERAL_ASSETS[s].decimals);
     const price = market.reserves[s]?.priceUsd ?? NaN;
-    collateral.push({ symbol: s, amountAtomic, amount, usd: amount * price });
+    collateral.push({ symbol: s, amountAtomic, amount, usd: amount * price, venueKind: "aave" });
   });
   const usdcRow = out[1 + COLLATERAL_SYMBOLS.length];
   const debtUsdc = Array.isArray(usdcRow) ? fromAtomic((usdcRow[2] as bigint) + (usdcRow[1] as bigint), BASE_TOKENS.USDC.decimals) : 0;
@@ -491,5 +667,40 @@ export async function readAccount(
   const accountUsdc = typeof usdcBal === "bigint" ? usdcBal : 0n;
   const lpPositions = opts.engine ? await readPositions(client, opts.engine, lpPositionIds) : [];
 
-  return { ...base, account, deployed, aave, collateral, debtUsdc, lpPositionIds, lpPositions, accountUsdc };
+  // ---- venue-aware health (audit wave 2, M-HIGH-2) ------------------------------------------
+  let venues: VenueHealth | null = null;
+  if (opts.registry) {
+    venues = await readVenueHealth(client, opts.registry, account);
+    // The Aave venue reads the same pool as the `aave` leg above. The two must agree, or the page
+    // cannot tell which to believe — and a failed pool leg with a readable venue is still "unreadable",
+    // never a number pulled from one source when the other is silent.
+    const aaveVenues = venues.venues.filter((v) => v.kind === "aave");
+    if (venues.healthFactor !== null && aaveVenues.length) {
+      if (!aave) {
+        venues = { ...venues, healthFactor: null, unreadableReason: "the Aave pool read did not come back" };
+      } else {
+        const off = aaveVenues.find((v) => v.healthFactor === null || !hfAgree(v.healthFactor, aave.healthFactor));
+        if (off) venues = { ...venues, healthFactor: null, unreadableReason: `venue ${off.venue.slice(0, 6)}…${off.venue.slice(-4)} reports HF ${off.healthFactor ?? "?"} but the Aave pool reports ${aave.healthFactor}` };
+      }
+    }
+    // Collateral the account holds on a venue that is not the Aave pool is part of the picture too.
+    for (const v of venues.venues) {
+      if (v.kind !== "other") continue;
+      for (const c of v.collateral) {
+        if (c.amountAtomic === 0n) continue;
+        const price = market.reserves[c.symbol]?.priceUsd ?? NaN;
+        collateral.push({
+          symbol: c.symbol,
+          amountAtomic: c.amountAtomic,
+          amount: c.amount,
+          usd: c.amount * price,
+          venue: v.venue,
+          venueKind: "other",
+          ...(c.liquidationThresholdBps !== null ? { liquidationThresholdBps: c.liquidationThresholdBps } : {}),
+        });
+      }
+    }
+  }
+
+  return { ...base, account, deployed, aave, venues, collateral, debtUsdc, lpPositionIds, lpPositions, accountUsdc };
 }

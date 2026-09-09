@@ -18,9 +18,9 @@ MC = Monte Carlo.
 | Contracts, fork | `FORK_URL=<Base RPC> forge test --match-path test/fork/BaseFork.t.sol -vv` | 8 tests; **skipped without `FORK_URL`** (`vm.skip`), reported as skipped, never as passed. Not run from this container — there is no chain RPC here |
 | Root ABI seam | `node scripts/verify-abi.mjs` | **326** selectors / topics / errors across 17 contracts match `contracts/abi/oilskin-abi.json`; `--write` regenerates; exit 1 on drift |
 | Shared | `npm test -w @zyo/shared` | **53** (7 files: evm, base, health, collateral, fees, width, pools) |
-| Keeper | `npm test -w @zyo/agent` | tsc + its own `verify-abi` **61/61** (now also pins `CollateralRegistry` and `AaveV3Venue` fragments) + **190 tests / 39 suites** (~30 s) |
+| Keeper | `npm test -w @zyo/agent` | tsc + its own `verify-abi` **71/71** (pins `CollateralRegistry`, `AaveV3Venue` and, since 2026-09-09, the `ICollateralVenue` fragments against the interface and `MorphoBlueVenue`) + **215 tests / 44 suites** (~30 s; 2026-09-09, after the venue-aware reader: +23 `venueReader.test.ts`, `venueGuard.test.ts` 6 → 8) |
 | Yield | `npm test -w @zyo/yield` | tsc + **131 tests** (17 files; RPC mocked at the JSON-RPC boundary with recorded chain words) |
-| Web, unit | `npm test -w @zyo/web` | **138 tests, 136 passed, 2 skipped** (15 files; the two skips predate this round); the ABI-drift test and both model-number pins *ran* |
+| Web, unit | `npm test -w @zyo/web` | **144 tests, 142 passed, 2 skipped** (15 files; the two skips predate the wave-2 round; 2026-09-09: +6 venue-aware `reads` tests); the ABI-drift test and both model-number pins *ran* |
 | Web, e2e | `cd web && PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npx playwright test` | **12 passed / 0 failed** (6 scenarios × desktop-1360 / phone-390), zero console errors asserted |
 | Prototypes | `CHROMIUM_PATH=/opt/pw-browsers/chromium node prototype/test/run-all.mjs` | **verify-simple 118 · verify-advanced 109 · verify-toggle 56 · fuzz 6** (3 seeds × 5,000 actions × 2 builds = 30,000 reducer actions, 0 invariant violations) |
 
@@ -79,11 +79,13 @@ USDC would have permanently bricked the protocol. The Handler now has a
 and `test_handlerPathsAreLive` proves every path is reachable. Treat any
 invariant whose Handler cannot reach the forbidden state as decoration.
 
-## Keeper (`agent/test`, 21 files)
+## Keeper (`agent/test`, 22 files)
 
-`npm test` runs `tsc`, then `scripts/verify-abi.mjs` (**54 checks**: selectors,
+`npm test` runs `tsc`, then `scripts/verify-abi.mjs` (**71 checks**: selectors,
 output layouts, event indexed layout, error declarations on the right contract,
-the swap-adapter comparison, pinned Aave / Chainlink selectors including
+the swap-adapter comparison, the `CollateralRegistry` and `AaveV3Venue` fragments,
+the `ICollateralVenue` fragments the venue-aware reader encodes against the
+interface AND against `MorphoBlueVenue`, pinned Aave / Chainlink selectors including
 `getRoundData` `0x9a6fc8f5` and `tickSpacing` `0xd0c93a7c`, and two structural
 checks — `GRANT_SELECTORS` must contain **exactly one** entry and
 `KEEPER_GRANT_SHAPE` must name `unwind` with `allowCallback: true`; skips
@@ -105,6 +107,17 @@ account still evaluated on every tick), `fixC4-store` (a short write fails
 loudly with the last-good store intact), `fixC7-notify` (a rung is `NOTIFIED`
 only when a channel accepted it), `fixC9-crash-replay` (a replay after a lost
 transaction closes *less*, not more).
+
+The wave-2 M-HIGH-2 fix is `venueReader.test.ts` (23) and `venueGuard.test.ts`
+(8): every venue the registry names — current pointer and `previousVenues` — is
+read through `ICollateralVenue` on a behavioural mock whose non-Aave venue has
+Morpho's shape (worst-market health factor, per-market debt, LLTV read per
+asset); the Aave path is unchanged and cross-checked, a Morpho position is OK
+at 1.72 and never NO_DEBT, rungs fire on it through the monitor and the
+dispatcher (an end-to-end repay SENT → CONFIRMED with `repaid > 0`), a
+disagreement between the venue's health factor and the keeper's own feeds is
+UNKNOWN in both directions, and the startup probe is fatal only for a venue that
+does not answer the interface.
 
 ## Yield (`services/yield/test`, 17 files)
 
@@ -155,7 +168,10 @@ every topic; the banned entry words **and now "no operator custody" / "no owner
 powers"** do not appear under `app/`, `components/`, `lib/`; every `GateReason`
 has both Advanced text and a plain sentence, and no plain sentence leaks a
 `snake_case` code), plus `execute`, `gate`, `math`, `onboarding`, `positions`,
-`reads`, `wizard`.
+`reads` (now venue-aware: the Morpho venue's health, debt and collateral are
+visible at the venue's own threshold, the worst venue's health factor is shown,
+and any unreadable venue — or an Aave venue disagreeing with the pool read — is
+`null`, never ∞), `wizard`.
 
 E2E (`e2e/demo-flow.spec.ts`, `NEXT_PUBLIC_FORCE_DEMO=1`, no wallet, no RPC):
 landing → onboarding (jurisdiction first, three steps, wallet-address help,

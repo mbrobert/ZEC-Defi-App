@@ -169,7 +169,7 @@ function absDiff(a: bigint, b: bigint): bigint {
 }
 
 /** |a-b| ≤ tolBps of max(|a|,|b|). Two zeros agree; zero vs non-zero never do. */
-function withinBps(a: bigint, b: bigint, tolBps: number): boolean {
+export function withinBps(a: bigint, b: bigint, tolBps: number): boolean {
   if (a === b) return true;
   const ref = a > b ? a : b;
   if (ref <= 0n) return false;
@@ -183,29 +183,54 @@ export function normaliseTo8(answer: bigint, decimals: number): bigint {
   return answer * 10n ** BigInt(8 - decimals);
 }
 
-function checkChainlink(row: ReserveRow, p: ValuationParams, reasons: string[]): void {
-  const cl = row.chainlink;
+/**
+ * The G2 feed rules on one Chainlink read, shared with the venue-aware valuation
+ * (engine/venueValuation.ts), which prices a non-Aave venue from the same feed: decimals in range,
+ * answer > 0, updated at least once, not from the future, fresh against THIS feed's own bound, round
+ * finalised, and not rounding to 0 at 8 decimals. Every failed rule is pushed as a `${tag} ${symbol}:`
+ * reason; the return value is the 8-decimal price, or null when it cannot be used.
+ */
+export function usableFeedPrice8(symbol: string, cl: ChainlinkRead | null, p: ValuationParams, reasons: string[], tag = "G2"): bigint | null {
   if (cl === null) {
-    reasons.push(`G2 ${row.symbol}: no independent price feed wired for a reserve with exposure`);
-    return;
+    reasons.push(`${tag} ${symbol}: no independent price feed wired for a reserve with exposure`);
+    return null;
   }
   if (!Number.isInteger(cl.decimals) || cl.decimals < 0 || cl.decimals > 18) {
-    reasons.push(`G2 ${row.symbol}: feed decimals ${cl.decimals} out of range`);
+    reasons.push(`${tag} ${symbol}: feed decimals ${cl.decimals} out of range`);
+    return null;
+  }
+  const before = reasons.length;
+  if (cl.answer <= 0n) reasons.push(`${tag} ${symbol}: feed answer ${cl.answer} ≤ 0`);
+  if (cl.updatedAt === 0n) reasons.push(`${tag} ${symbol}: feed never updated`);
+  if (cl.updatedAt > p.nowS + FUTURE_SKEW_S) reasons.push(`${tag} ${symbol}: feed updatedAt in the future`);
+  const maxAge = maxAgeFor(p, symbol);
+  if (cl.updatedAt < p.nowS && p.nowS - cl.updatedAt > BigInt(maxAge)) {
+    reasons.push(`${tag} ${symbol}: feed stale by ${(p.nowS - cl.updatedAt).toString()}s (max ${maxAge}s for this feed)`);
+  }
+  if (cl.answeredInRound < cl.roundId) reasons.push(`${tag} ${symbol}: feed round not finalised`);
+  if (cl.answer <= 0n) return null;
+  const cl8 = normaliseTo8(cl.answer, cl.decimals);
+  if (cl8 <= 0n) {
+    reasons.push(`${tag} ${symbol}: feed answer rounds to 0 at 8 decimals`);
+    return null;
+  }
+  return reasons.length === before ? cl8 : null;
+}
+
+function checkChainlink(row: ReserveRow, p: ValuationParams, reasons: string[]): void {
+  const cl = row.chainlink;
+  if (cl === null || !Number.isInteger(cl.decimals) || cl.decimals < 0 || cl.decimals > 18) {
+    usableFeedPrice8(row.symbol, cl, p, reasons);
     return;
   }
-  if (cl.answer <= 0n) reasons.push(`G2 ${row.symbol}: feed answer ${cl.answer} ≤ 0`);
-  if (cl.updatedAt === 0n) reasons.push(`G2 ${row.symbol}: feed never updated`);
-  if (cl.updatedAt > p.nowS + FUTURE_SKEW_S) reasons.push(`G2 ${row.symbol}: feed updatedAt in the future`);
-  const maxAge = maxAgeFor(p, row.symbol);
-  if (cl.updatedAt < p.nowS && p.nowS - cl.updatedAt > BigInt(maxAge)) {
-    reasons.push(`G2 ${row.symbol}: feed stale by ${(p.nowS - cl.updatedAt).toString()}s (max ${maxAge}s for this feed)`);
-  }
-  if (cl.answeredInRound < cl.roundId) reasons.push(`G2 ${row.symbol}: feed round not finalised`);
+  // Same rules as before, but the Aave comparison runs whenever the answer is positive — a stale
+  // feed that also disagrees reports both, exactly as it always did.
+  const scratch: string[] = [];
+  usableFeedPrice8(row.symbol, cl, p, scratch);
+  reasons.push(...scratch);
   if (cl.answer > 0n) {
     const cl8 = normaliseTo8(cl.answer, cl.decimals);
-    if (cl8 <= 0n) {
-      reasons.push(`G2 ${row.symbol}: feed answer rounds to 0 at 8 decimals`);
-    } else if (!withinBps(cl8, row.aavePrice, p.oracleDeviationBps)) {
+    if (cl8 > 0n && !withinBps(cl8, row.aavePrice, p.oracleDeviationBps)) {
       reasons.push(
         `G2 ${row.symbol}: chainlink ${cl8} vs aave ${row.aavePrice} disagree beyond ${p.oracleDeviationBps} bps`
       );

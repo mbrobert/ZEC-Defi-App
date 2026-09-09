@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { Address } from "viem";
 import { usePublicClient, useSignTypedData, useWriteContract } from "wagmi";
-import { BASE_CHAIN, BASE_TOKENS, CHAIN_ID, COLLATERAL_ASSETS, feeBreakdown, shortAddress, type CollateralSymbol } from "@zyo/shared";
+import { BASE_CHAIN, BASE_TOKENS, CHAIN_ID, feeBreakdown, shortAddress, type CollateralSymbol } from "@zyo/shared";
 import { useAccountRead, useDeployment, useIndexed, useKeeperGrant, useMarket, usePendingVenues, useSession } from "@/lib/hooks";
 import { useMode } from "@/lib/mode";
 import { DEMO_ACCOUNT, DEMO_ACCOUNT_STATE, DEMO_SNAPSHOT_AT } from "@/lib/demo";
@@ -57,7 +57,7 @@ export default function DashboardPage() {
     if (s.mode === "demo") {
       const holdings = DEMO_ACCOUNT_STATE.collateral.map((c) => {
         const r = market.reserves[c.symbol]!;
-        return { symbol: c.symbol as CollateralSymbol, amount: c.amount, usd: c.amount * r.priceUsd, ltBps: r.liquidationThresholdBps, priceUsd: r.priceUsd };
+        return { symbol: c.symbol as CollateralSymbol, amount: c.amount, usd: c.amount * r.priceUsd, ltBps: r.liquidationThresholdBps, priceUsd: r.priceUsd, venue: null, venueKind: "aave" as const };
       });
       const collateralUsd = holdings.reduce((a, h) => a + h.usd, 0);
       const debtUsd = DEMO_ACCOUNT_STATE.debtUsdc;
@@ -76,24 +76,37 @@ export default function DashboardPage() {
         activity: DEMO_ACCOUNT_STATE.activity,
         readAt: market.readAt,
         dataSource: "demo" as const,
+        venues: null,
       };
     }
+    // One row per holding, whichever venue holds it: the Aave pool's rows carry the market read's
+    // threshold; a row from another venue (the Morpho venue after acceptVenue) carries the threshold
+    // that venue reports live — its LLTV (audit wave 2, M-HIGH-2).
     const holdings = (account?.collateral ?? []).map((c) => ({
       symbol: c.symbol,
       amount: c.amount,
       usd: c.usd,
-      ltBps: market.reserves[c.symbol]?.liquidationThresholdBps ?? 0,
+      ltBps: c.liquidationThresholdBps ?? market.reserves[c.symbol]?.liquidationThresholdBps ?? 0,
       priceUsd: market.reserves[c.symbol]?.priceUsd ?? NaN,
+      venue: c.venue ?? null,
+      venueKind: c.venueKind ?? ("aave" as const),
     }));
+    const venueAware = !!account?.venues;
+    const collateralUsd = venueAware ? holdings.reduce((a, h) => a + h.usd, 0) : (account?.aave?.totalCollateralUsd ?? 0);
+    // Debt: the Aave pool's own total plus whatever the other venues report owed, at the USDC price the market read carries.
+    const debtUsd = (account?.aave?.totalDebtUsd ?? 0) + (account?.venues?.otherDebtUsdc ?? 0) * (market.reserves.USDC?.priceUsd ?? 1);
+    const ltBps = venueAware && collateralUsd > 0 ? Math.round(holdings.reduce((a, h) => a + h.ltBps * h.usd, 0) / collateralUsd) : (account?.aave?.currentLiquidationThresholdBps ?? 0);
     return {
       accountAddr: account?.account ?? null,
       deployed: !!account?.deployed,
       holdings,
-      collateralUsd: account?.aave?.totalCollateralUsd ?? 0,
-      debtUsd: account?.aave?.totalDebtUsd ?? 0,
-      ltBps: account?.aave?.currentLiquidationThresholdBps ?? 0,
-      // null = unreadable (no account read, or the Aave leg failed); never +∞ (audit wave 2, N-MED-2).
+      collateralUsd,
+      debtUsd,
+      ltBps,
+      // null = unreadable (no account read, the Aave leg failed, or a venue the registry names could not
+      // be read); never +∞ (audit wave 2, N-MED-2). With the registry known this is the WORST venue's HF.
       hf: accountHf(account),
+      venues: account?.venues ?? null,
       accountUsdc: account ? Number(account.accountUsdc) / 10 ** BASE_TOKENS.USDC.decimals : 0,
       positions: mergePositions(account ? account.lpPositions : null, indexed),
       activity: indexed?.activity ?? [],
@@ -110,8 +123,9 @@ export default function DashboardPage() {
   const netValue = view.collateralUsd + lpValue + view.accountUsdc - view.debtUsd;
   const band = hfBand(view.hf);
   const ltvBps = currentLtvBps(view.collateralUsd, view.debtUsd);
-  // Audit wave 2, M-HIGH-2: this page and the keeper read the Aave pool directly. An asset the
-  // registry points anywhere else is invisible to both, so say so and offer no keeper grant.
+  // Audit wave 2, M-HIGH-2: this page and the keeper read every venue the registry names through
+  // ICollateralVenue. An asset on a venue that does not answer it is invisible to both, so say so
+  // and offer no keeper grant for it.
   const unsupportedVenues = deployment?.unsupportedVenues ?? [];
   const venueSupported = !primary || !unsupportedVenues.includes(primary.symbol);
   // Every token the account's LP positions can pay out on close — what the keeper's grant must budget.
@@ -265,8 +279,8 @@ export default function DashboardPage() {
       {unsupportedVenues.length > 0 && (
         <div className="note note-crit" role="alert" data-testid="unsupported-venue">
           <b className="text-oil-ink">This app cannot see positions on the current lending contract for {unsupportedVenues.join(", ")}.</b> Oilskin&rsquo;s registry points{" "}
-          {unsupportedVenues.length === 1 ? "that asset" : "those assets"} at a venue this dashboard and the Oilskin keeper do not read yet: numbers here come from Aave only, so a position
-          opened there shows as no debt, no rung fires for it, and no keeper permission protects it. Do not open a new position against {unsupportedVenues.join(" or ")} from this app until
+          {unsupportedVenues.length === 1 ? "that asset" : "those assets"} at a venue that does not answer the venue interface this dashboard and the Oilskin keeper read, so a position
+          opened there does not appear here, no rung fires for it, and no keeper permission protects it. Do not open a new position against {unsupportedVenues.join(" or ")} from this app until
           it is updated; anything you already hold you can still repay or close from your own account.
         </div>
       )}
@@ -292,7 +306,7 @@ export default function DashboardPage() {
 
           <div className="grid grid-cols-2 gap-2.5 sm:gap-3.5 lg:grid-cols-4">
             <StatTile label="Net value" value={fmtUsd0(netValue)} sub={`collateral ${fmtUsd0(view.collateralUsd)} + LP ${fmtUsd0(lpValue)}${view.accountUsdc > 0 ? ` + USDC ${fmtUsd0(view.accountUsdc)}` : ""} − debt ${fmtUsd0(view.debtUsd)}`} hint="Collateral + LP value + USDC held − debt. What a full unwind returns before exit costs." testId="tile-net" />
-            <StatTile label="Health factor" value={fmtHf(view.hf)} sub={band.label} tone={band.kind} hint="Aave account health, read from the pool. Liquidation at 1.0." testId="tile-hf" />
+            <StatTile label="Health factor" value={fmtHf(view.hf)} sub={band.label} tone={band.kind} hint="Read from every lending venue Oilskin's registry names for your collateral; the worst one is shown. Liquidation at 1.0." testId="tile-hf" />
             <StatTile label="Borrowed" value={`${fmtUsd0(view.debtUsd)}`} sub={view.debtUsd > 0 ? `USDC · ${fmtPct(ltvBps / 100, 1)} LTV · ${fmtPct(market.usdcBorrowAprPct)} variable` : "no debt"} testId="tile-debt" />
             <StatTile label="Claimable rewards" value={fmtUsd(claimable.net)} sub={`${fmtUsd(claimable.gross)} accrued − ${fmtUsd(claimable.performanceFee)} fee`} hint="AERO emissions accrued by your engine positions, net of the performance fee. Claimed to your wallet." testId="tile-claim" />
           </div>
@@ -324,7 +338,12 @@ export default function DashboardPage() {
                   )}
                 </div>
                 <p className="mt-2 text-[11.5px] text-oil-ink3">
-                  {source === "live" ? "Threshold, price and HF read from Aave v3 on Base" : `Snapshot ${market.readAt.slice(0, 10)}`}; registry LT {view.holdings.map((h) => `${h.symbol} ${fmtPct(h.ltBps / 100, 0)}`).join(", ") || "—"}. Anything you can do from the account, the keeper can only do within your grant.
+                  {source === "live"
+                    ? view.venues
+                      ? `Threshold, price and HF read from ${view.venues.venues.length} lending venue${view.venues.venues.length === 1 ? "" : "s"} the registry names (${view.venues.venues.map((v) => (v.kind === "aave" ? "Aave v3" : `venue ${shortAddress(v.venue)}`)).join(", ")})`
+                      : "Threshold, price and HF read from Aave v3 on Base"
+                    : `Snapshot ${market.readAt.slice(0, 10)}`}
+                  ; venue LT {view.holdings.map((h) => `${h.symbol} ${fmtPct(h.ltBps / 100, 0)}`).join(", ") || "—"}. Anything you can do from the account, the keeper can only do within your grant.
                 </p>
               </div>
 
@@ -374,12 +393,15 @@ export default function DashboardPage() {
 
               {view.holdings.length > 0 && (
                 <div className="card p-5">
-                  <h3 className="text-[15px]">Collateral on Aave (under your account)</h3>
+                  <h3 className="text-[15px]">Collateral (under your account)</h3>
                   <ul className="num mt-2 space-y-1 text-[13.5px]">
                     {view.holdings.map((h) => (
-                      <li key={h.symbol} className="flex justify-between">
+                      <li key={`${h.symbol}-${h.venue ?? "aave"}`} className="flex justify-between">
                         <span>
-                          {fmtAmount(h.amount, 8)} {h.symbol} <span className="text-oil-ink3">· LT {fmtPct(h.ltBps / 100, 0)} · {COLLATERAL_ASSETS[h.symbol].venue}</span>
+                          {fmtAmount(h.amount, 8)} {h.symbol}{" "}
+                          <span className="text-oil-ink3">
+                            · LT {fmtPct(h.ltBps / 100, 0)} · {h.venueKind === "aave" ? "Aave v3" : `venue ${h.venue ? shortAddress(h.venue) : "?"}`}
+                          </span>
                         </span>
                         <span>{fmtUsd(h.usd)}</span>
                       </li>
@@ -408,9 +430,20 @@ export default function DashboardPage() {
                     <dd>{deployment ? `${deployment.factory} / ${deployment.router}${deployment.demo ? " (demo)" : ""}` : "not configured"}</dd>
                     <dt className="text-oil-ink3">registry / LP venue / Aave venue / engine</dt>
                     <dd>{deployment ? `${deployment.registry} / ${deployment.lpVenue} / ${deployment.aaveVenue} / ${deployment.engine}` : "—"}</dd>
-                    <dt className="text-oil-ink3">Aave account data</dt>
+                    <dt className="text-oil-ink3">account data</dt>
                     <dd>
-                      collateral {fmtUsd(view.collateralUsd)} · debt {fmtUsd(view.debtUsd)} · current LT {view.ltBps} bps · HF {fmtHf(view.hf)}
+                      collateral {fmtUsd(view.collateralUsd)} · debt {fmtUsd(view.debtUsd)} · blended LT {view.ltBps} bps · HF {fmtHf(view.hf)}
+                    </dd>
+                    <dt className="text-oil-ink3">venues (ICollateralVenue)</dt>
+                    <dd data-testid="raw-venues">
+                      {view.venues
+                        ? view.venues.venues.length
+                          ? view.venues.venues
+                              .map((v) => `${shortAddress(v.venue)} ${v.kind}${v.current ? "" : " (previous)"} · HF ${v.readable ? fmtHf(v.healthFactor) : "unreadable"} · debt ${v.debtUsdc === null ? "unreadable" : `${fmtAmount(v.debtUsdc, 2)} USDC`}`)
+                              .join(" ; ")
+                          : "registry names no venue"
+                        : "registry unknown — Aave pool only"}
+                      {view.venues?.unreadableReason ? ` — ${view.venues.unreadableReason}` : ""}
                     </dd>
                     <dt className="text-oil-ink3">keeper</dt>
                     <dd>{deployment?.keeper ?? "not configured"} — grants are revocable from your account (revokeAll)</dd>

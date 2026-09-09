@@ -28,6 +28,7 @@ const {
   clPoolAbi,
   collateralRegistryAbi,
   aaveVenueAbi,
+  collateralVenueAbi,
   KEEPER_SELECTORS,
   GRANT_SELECTORS,
   KEEPER_GRANT_SHAPE,
@@ -115,6 +116,13 @@ compare("SnuggleLpVenue", lpVenueAbi, loadArtifact("SnuggleLpVenue"));
 compare("AerodromeSwapAdapter", swapAdapterAbi, loadArtifact("AerodromeSwapAdapter"));
 compare("CollateralRegistry", collateralRegistryAbi, loadArtifact("CollateralRegistry"));
 compare("AaveV3Venue", aaveVenueAbi, loadArtifact("AaveV3Venue"));
+// The venue-aware reader (audit wave 2, M-HIGH-2) calls these on whatever venue the registry names.
+// Pinned against the interface AND against MorphoBlueVenue, so the venue the registry can be pointed
+// at is known to answer exactly what the reader encodes. (AaveV3Venue implements the same selectors
+// but declares `enabled()` `pure` — it always answers true — so its artifact differs from the
+// interface by that one mutability letter; the reader encodes through the interface either way.)
+compare("ICollateralVenue", collateralVenueAbi, loadArtifact("ICollateralVenue"));
+compare("MorphoBlueVenue", collateralVenueAbi, loadArtifact("MorphoBlueVenue"));
 
 // Grant selectors: the keeper refuses to act unless grantOf(keeper, target, selector) is active
 // for exactly these; a drift here would make every dispatch REFUSED (or worse, check the wrong grant).

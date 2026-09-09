@@ -402,7 +402,8 @@ Errors `ZeroAddress()` `0xd92e233d` · `Expired(uint256)` `0xf80dbaea` · `Asset
 * `IPyth`: `getPriceNoOlderThan` `0xa4ae35e0`, `getPriceUnsafe` `0x96834ad3`, `getUpdateFee`
   `0xd47eed45`, `updatePriceFeeds` `0xef9e5e28`.
 * The keeper additionally pins Chainlink `getRoundData(uint80)` `0x9a6fc8f5` (per-feed heartbeat
-  measurement) and ERC-20 `decimals()`; see `agent/scripts/verify-abi.mjs` (54 checks).
+  measurement) and ERC-20 `decimals()`; see `agent/scripts/verify-abi.mjs` (71 checks, including the
+  `ICollateralVenue` fragments the venue-aware reader encodes, pinned against the interface and `MorphoBlueVenue`).
 
 ## 10. Addresses (Base 8453) — from VERIFIED-BASE-FACTS only, mirrored in `script/Deploy.s.sol::BaseAddresses`
 

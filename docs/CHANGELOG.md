@@ -3,6 +3,37 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-09 — M-HIGH-2's real fix: the keeper and the dashboard read every venue the registry names
+
+**Keeper.** `agent/src/services/venues.ts` `VenueReader` replaces the Aave-only startup guard: on
+every tick it reads, per collateral asset, `venueOf`, `previousVenues` and `isEnabled` from the
+registry, classifies each venue (`PROVIDER()` = the Aave provider in `@zyo/shared` → the pool the
+G1–G4 valuation reads; anything else → read through `ICollateralVenue` alone) and asks every venue
+`healthFactor`, `debt` and `collateral` for the account. `agent/src/engine/venueValuation.ts` adds
+guards V1–V4: the Aave venue must reproduce the pool snapshot, any other venue's health factor must lie
+inside the band the keeper's own Chainlink feeds imply from the venue's collateral, debt and threshold
+within `ORACLE_DEVIATION_BPS`, and the combined verdict is the worst venue — UNKNOWN (no rung, an
+escalation after the streak) whenever any venue, pointer, threshold or feed is unreadable or the venue
+and the feeds disagree. `agent/src/services/accountValuer.ts` is the one path the monitor and the
+dispatcher's world check value through. Startup is fatal only for a venue that does not answer the
+interface (`UnsupportedVenueError`); a non-Aave venue that answers is a warning. The ABI seam pins the
+`ICollateralVenue` fragments against the interface and `MorphoBlueVenue` (61 → **71** checks). Without
+a router the keeper still values the Aave pool alone and says so.
+
+**Web.** `readVenueHealth` / `AccountRead.venues`: the dashboard's health factor is the worst venue's,
+`null` ("unreadable", N-MED-2 kept) when the registry or any venue cannot be read or the Aave venue
+disagrees with the pool read; holdings and debt on a non-Aave venue appear with that venue's live
+threshold; `readUnsupportedVenues` now means "does not answer `ICollateralVenue`", so the Morpho venue
+is supported and the banner / `venue-unsupported` / wizard opt-out remain for an unreadable venue
+only. `COLLATERAL_VENUE_ABI` generated from the bundle (hash unchanged: no contract changed).
+
+**Not done, by design.** `acceptVenue` is not introduced anywhere; `Deploy.s.sol` is untouched; cbBTC
+and WETH stay on `AaveV3Venue`. Moving an asset to Morpho is still the registry owner's explicit
+propose → timelock → accept. Residuals in `RISKS.md` §8.
+
+**Counts.** Keeper 215 tests / 44 suites, `verify-abi` 71/71; web 144 tests, 142 passed, 2 skipped;
+contracts unchanged 298 / 0 / 8.
+
 ## 2026-09-08 — Audit wave 2 fix round: every High, Medium and Low in `AUDIT-2026-09-07.md`
 
 Fifteen ids (3 High, 7 Medium, 4 Low, plus the Info wording), each with a test that failed on the

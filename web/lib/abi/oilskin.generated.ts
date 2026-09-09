@@ -2687,6 +2687,145 @@ export const AAVE_V3VENUE_ABI = [
     "inputs": []
   }
 ] as const;
+export const COLLATERAL_VENUE_ABI = [
+  {
+    "type": "function",
+    "name": "borrowRateRay",
+    "inputs": [
+      {
+        "name": "asset",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "collateral",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "asset",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "debt",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "asset",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "enabled",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "healthFactor",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "liquidationThresholdBps",
+    "inputs": [
+      {
+        "name": "asset",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "maxLtvBps",
+    "inputs": [
+      {
+        "name": "asset",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  }
+] as const;
 export const COLLATERAL_REGISTRY_ABI = [
   {
     "type": "function",
@@ -3546,6 +3685,15 @@ export const SELECTORS = {
     "repay(address,uint256)": "0x22867d78",
     "supply(address,uint256)": "0xf2b9fdb8",
     "withdraw(address,uint256)": "0xf3fef3a3"
+  },
+  "ICollateralVenue": {
+    "borrowRateRay(address)": "0x99431ce5",
+    "collateral(address,address)": "0xcc218ece",
+    "debt(address,address)": "0xd449300d",
+    "enabled()": "0x238dafe0",
+    "healthFactor(address)": "0x6ad9f9df",
+    "liquidationThresholdBps(address)": "0x5d462920",
+    "maxLtvBps(address)": "0xc2f2d31c"
   },
   "CollateralRegistry": {
     "TIMELOCK_DELAY()": "0x5ba1c1a9",

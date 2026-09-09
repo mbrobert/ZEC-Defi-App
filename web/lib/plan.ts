@@ -61,10 +61,11 @@ export interface Deployment {
   engine: Address;
   keeper: Address | null;
   /**
-   * Collateral assets the registry points at a venue this app (and the keeper) cannot read.
-   * Every account read here goes to the Aave pool directly, so a position on any other venue
-   * shows as "no debt" and nothing watches it (audit wave 2, M-HIGH-2). Empty = every enabled
-   * asset resolves to an AaveV3Venue over the Aave provider in `@zyo/shared`.
+   * Collateral assets the registry points at a venue this app (and the keeper) cannot read through
+   * `ICollateralVenue`. Account reads go through that interface to every venue the registry names,
+   * so this is non-empty only for a venue that does not answer it; a position there is invisible
+   * here and to the keeper, which refuses to start on it (audit wave 2, M-HIGH-2). Empty = every
+   * enabled asset resolves to a venue that answers — the Aave venue, the Morpho venue, or another.
    */
   unsupportedVenues: CollateralSymbol[];
   /** True for the synthetic demo deployment (never signable). */

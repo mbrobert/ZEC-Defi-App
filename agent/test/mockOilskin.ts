@@ -11,7 +11,7 @@ import {
   type Hex,
 } from "viem";
 import { AAVE_V3, COLLATERAL_ASSETS, COLLATERAL_SYMBOLS } from "@zyo/shared";
-import { aaveVenueAbi, clPoolAbi, collateralRegistryAbi, erc20BalanceAbi, lpVenueAbi, oilskinAccountAbi, strategyRouterAbi, swapAdapterAbi } from "../src/abi/oilskin.js";
+import { aaveVenueAbi, clPoolAbi, collateralRegistryAbi, collateralVenueAbi, erc20BalanceAbi, lpVenueAbi, oilskinAccountAbi, strategyRouterAbi, swapAdapterAbi } from "../src/abi/oilskin.js";
 import type { Address } from "../src/types/evm.js";
 import { MAX_UINT256 } from "../src/types/evm.js";
 import type { MockChain, MockLog } from "./mockChain.js";
@@ -63,8 +63,24 @@ export const OTHER_TOKEN = getAddress("0x0000000000000000000000000000000000000e1
 export const POOL_ADDR = getAddress("0x00000000000000000000000000000000000000b0") as Address;
 export const REGISTRY_ADDR = getAddress("0x0000000000000000000000000000000000000e12") as Address;
 export const AAVE_VENUE_ADDR = getAddress("0x0000000000000000000000000000000000000e13") as Address;
-/** A venue that is NOT an AaveV3Venue (a MorphoBlueVenue, say): `PROVIDER()` reverts on it. */
+/**
+ * A venue that is NOT an AaveV3Venue — a MorphoBlueVenue stand-in: `PROVIDER()` reverts on it and
+ * its ICollateralVenue views answer from the isolated-market state in `MockOilskin.morpho`
+ * (worst-market health factor, per-market debt, LLTV read per asset), the shape
+ * `contracts/src/venues/MorphoBlueVenue.sol` has.
+ */
 export const OTHER_VENUE_ADDR = getAddress("0x0000000000000000000000000000000000000e14") as Address;
+export const MORPHO_VENUE_ADDR = OTHER_VENUE_ADDR;
+/** An address with a contract that answers NOTHING the reader asks — a venue the keeper cannot talk to. */
+export const DEAD_VENUE_ADDR = getAddress("0x0000000000000000000000000000000000000e16") as Address;
+
+/** One isolated-market position on the Morpho-style mock venue. */
+export interface MockMorphoPosition {
+  /** Collateral held in the market, raw units of the collateral token. */
+  collateral: bigint;
+  /** USDC owed in that market, raw units (6 decimals). */
+  debt: bigint;
+}
 
 export class MockOilskin {
   readonly usdc: Address;
@@ -95,12 +111,36 @@ export class MockOilskin {
   /** `LeveragedLpUnwound` logs emitted by the transaction being executed right now. */
   private pendingLogs: MockLog[] = [];
   /**
-   * The registry as the venue guard reads it (audit wave 2, M-HIGH-2): which assets are enabled,
-   * which venue each resolves to, and what each venue answers to `PROVIDER()`.
+   * The registry as the venue reader reads it (audit wave 2, M-HIGH-2): which assets are enabled,
+   * which venue each resolves to now and resolved to before, and what each venue answers.
    */
   enabledAssets = new Map<string, boolean>(COLLATERAL_SYMBOLS.map((s) => [COLLATERAL_ASSETS[s].address.toLowerCase(), COLLATERAL_ASSETS[s].enabled]));
   venueOf = new Map<string, Address>();
+  /** `registry.previousVenues(asset)` — what `acceptVenue` appends on chain (audit wave 2, M-HIGH-1). */
+  previousVenuesOf = new Map<string, Address[]>();
   venueProviders = new Map<string, Address | null>();
+  /** `venue.enabled()` per venue; default true. */
+  venueEnabled = new Map<string, boolean>();
+  /** `${venue}:${functionName}` (lowercase) → the call reverts. */
+  venueFaults = new Set<string>();
+  /** `${venue}:${functionName}` (lowercase) → a fixed answer instead of the derived one (to make a venue lie). */
+  venueOverrides = new Map<string, bigint>();
+  /** `${functionName}:${asset}` (lowercase) → the registry call reverts. */
+  registryFaults = new Set<string>();
+  /**
+   * Isolated-market venue state behind every NON-Aave mock venue (the Morpho stand-in). LLTV per
+   * collateral defaults to the 86 % both verified Base markets carry (docs/VERIFIED-BASE-FACTS.md,
+   * 2026-09-07); the market oracle price defaults to the chain's Aave price for the asset, so the
+   * venue and the keeper's feed agree unless a test moves one of them.
+   */
+  morpho = {
+    lltvBps: new Map<string, bigint>(
+      COLLATERAL_SYMBOLS.filter((s) => COLLATERAL_ASSETS[s].enabled).map((s) => [COLLATERAL_ASSETS[s].address.toLowerCase(), 8600n])
+    ),
+    /** Market oracle price: USDC per one collateral unit, 8 decimals (the mock of Morpho's 1e36-scaled price). */
+    price8: new Map<string, bigint>(),
+    positions: new Map<string, Map<string, MockMorphoPosition>>(),
+  };
 
   constructor(
     private readonly chain: MockChain,
@@ -146,9 +186,23 @@ export class MockOilskin {
   get aaveVenue(): Address {
     return this.opts.aaveVenue ?? AAVE_VENUE_ADDR;
   }
-  /** Point `asset` at `venue` in the mock registry (what `acceptVenue` does on chain). */
-  setVenue(asset: Address, venue: Address): void {
-    this.venueOf.set(asset.toLowerCase(), venue);
+  /**
+   * Point `asset` at `venue` in the mock registry and remember the venue it replaced in
+   * `previousVenues`, exactly what `acceptVenue` does on chain (audit wave 2, M-HIGH-1).
+   * Pass `remember: false` to model a registry that was DEPLOYED pointing there.
+   */
+  setVenue(asset: Address, venue: Address, remember = true): void {
+    const key = asset.toLowerCase();
+    const previous = this.venueOf.get(key) ?? this.aaveVenue;
+    if (remember && previous.toLowerCase() !== venue.toLowerCase()) {
+      const list = this.previousVenuesOf.get(key) ?? [];
+      if (!list.some((v) => v.toLowerCase() === previous.toLowerCase())) list.push(previous);
+      this.previousVenuesOf.set(key, list.filter((v) => v.toLowerCase() !== venue.toLowerCase()));
+    }
+    this.venueOf.set(key, venue);
+  }
+  setPreviousVenues(asset: Address, venues: Address[]): void {
+    this.previousVenuesOf.set(asset.toLowerCase(), [...venues]);
   }
   setEnabled(asset: Address, enabled: boolean): void {
     this.enabledAssets.set(asset.toLowerCase(), enabled);
@@ -156,6 +210,61 @@ export class MockOilskin {
   /** What `venue.PROVIDER()` answers; `null` makes the call revert (a venue with no such view). */
   setVenueProvider(venue: Address, provider: Address | null): void {
     this.venueProviders.set(venue.toLowerCase(), provider);
+  }
+  /** Make one ICollateralVenue view on one venue revert. */
+  failVenueCall(venue: Address, functionName: string): void {
+    this.venueFaults.add(`${venue}:${functionName}`.toLowerCase());
+  }
+  /** Make one ICollateralVenue view on one venue answer a fixed word (a venue that lies). */
+  overrideVenueAnswer(venue: Address, functionName: string, value: bigint): void {
+    this.venueOverrides.set(`${venue}:${functionName}`.toLowerCase(), value);
+  }
+  failRegistryCall(functionName: string, asset: Address): void {
+    this.registryFaults.add(`${functionName}:${asset}`.toLowerCase());
+  }
+  /** A Morpho-style position for `account` in `asset`'s market on every non-Aave mock venue. */
+  setMorphoPosition(account: Address, asset: Address, pos: MockMorphoPosition): void {
+    const a = account.toLowerCase();
+    if (!this.morpho.positions.has(a)) this.morpho.positions.set(a, new Map());
+    this.morpho.positions.get(a)!.set(asset.toLowerCase(), { ...pos });
+  }
+  /** The Morpho market's oracle price for `asset` (USDC per unit, 8 decimals). */
+  setMorphoPrice(asset: Address, price8: bigint): void {
+    this.morpho.price8.set(asset.toLowerCase(), price8);
+  }
+  setMorphoLltv(asset: Address, bps: bigint): void {
+    this.morpho.lltvBps.set(asset.toLowerCase(), bps);
+  }
+  morphoPosition(account: Address, asset: Address): MockMorphoPosition {
+    return this.morpho.positions.get(account.toLowerCase())?.get(asset.toLowerCase()) ?? { collateral: 0n, debt: 0n };
+  }
+  private morphoPrice8(asset: string): bigint {
+    return this.morpho.price8.get(asset) ?? this.chain.reserves.get(asset)?.aavePrice ?? 0n;
+  }
+  private assetDecimals(asset: string): number {
+    return this.chain.reserves.get(asset)?.decimals ?? this.tokenDecimals.get(asset) ?? 18;
+  }
+  /** Worst-market health factor, WAD, as `MorphoBlueVenue._healthFactor` computes it; MAX with no debt. */
+  morphoHealthFactor(account: Address): bigint {
+    let worst = MAX_UINT256;
+    for (const [asset, pos] of this.morpho.positions.get(account.toLowerCase()) ?? []) {
+      if (pos.debt === 0n) continue;
+      const value8 = (pos.collateral * this.morphoPrice8(asset)) / 10n ** BigInt(this.assetDecimals(asset));
+      const maxBorrow8 = (value8 * (this.morpho.lltvBps.get(asset) ?? 0n)) / 10_000n;
+      const debt8 = pos.debt * 100n; // USDC 6 dp → 8 dp
+      const hf = (maxBorrow8 * 10n ** 18n) / debt8;
+      if (hf < worst) worst = hf;
+    }
+    return worst;
+  }
+  morphoDebt(account: Address): bigint {
+    let total = 0n;
+    for (const pos of (this.morpho.positions.get(account.toLowerCase()) ?? new Map<string, MockMorphoPosition>()).values()) total += pos.debt;
+    return total;
+  }
+  private isAaveKind(venue: string): boolean {
+    const provider = this.venueProviders.has(venue) ? this.venueProviders.get(venue) : (AAVE_V3.poolAddressesProvider as Address);
+    return !!provider && provider.toLowerCase() === AAVE_V3.poolAddressesProvider.toLowerCase();
   }
 
   install(accounts: Address[]): void {
@@ -170,18 +279,22 @@ export class MockOilskin {
     c.set(this.registry.toLowerCase(), (data) => {
       const { functionName, args } = decodeFunctionData({ abi: collateralRegistryAbi, data });
       const [asset] = args as [Address];
+      if (this.registryFaults.has(`${functionName}:${asset}`.toLowerCase())) throw revert(`mock registry: ${functionName} fault`);
       if (functionName === "isEnabled") {
         return encodeFunctionResult({ abi: collateralRegistryAbi, functionName, result: this.enabledAssets.get(asset.toLowerCase()) ?? false });
       }
       if (functionName === "venueOf") {
         return encodeFunctionResult({ abi: collateralRegistryAbi, functionName, result: this.venueOf.get(asset.toLowerCase()) ?? this.aaveVenue });
       }
-      if (functionName === "previousVenues") return encodeFunctionResult({ abi: collateralRegistryAbi, functionName, result: [] });
+      if (functionName === "previousVenues") {
+        return encodeFunctionResult({ abi: collateralRegistryAbi, functionName, result: this.previousVenuesOf.get(asset.toLowerCase()) ?? [] });
+      }
       throw revert("mock registry: unsupported");
     });
     this.installVenue(this.aaveVenue);
     this.venueProviders.set(OTHER_VENUE_ADDR.toLowerCase(), null);
     this.installVenue(OTHER_VENUE_ADDR);
+    this.installDeadVenue(DEAD_VENUE_ADDR);
     c.set(this.opts.lpVenue.toLowerCase(), (data) => {
       const { functionName, args } = decodeFunctionData({ abi: lpVenueAbi, data });
       if (functionName === "positionsOf") {
@@ -253,14 +366,61 @@ export class MockOilskin {
     };
   }
 
-  /** Put a venue contract at `venue` whose `PROVIDER()` answers per `setVenueProvider` (Aave's by default). */
+  /**
+   * Put a venue contract at `venue`. `PROVIDER()` answers per `setVenueProvider` (Aave's by
+   * default; `null` reverts). The ICollateralVenue views answer from the chain's Aave state when
+   * the provider is the shared Aave one (an `AaveV3Venue` over the pool the keeper reads), and from
+   * the isolated-market `morpho` state otherwise.
+   */
   installVenue(venue: Address): void {
-    this.chain.contracts.set(venue.toLowerCase(), (data: Hex) => {
-      const { functionName } = decodeFunctionData({ abi: aaveVenueAbi, data });
-      if (functionName !== "PROVIDER") throw revert("mock venue: unsupported");
-      const provider = this.venueProviders.has(venue.toLowerCase()) ? this.venueProviders.get(venue.toLowerCase()) : (AAVE_V3.poolAddressesProvider as Address);
-      if (provider === null || provider === undefined) throw revert("mock venue: no PROVIDER() here");
-      return encodeFunctionResult({ abi: aaveVenueAbi, functionName, result: provider });
+    const key = venue.toLowerCase();
+    const abi = [...aaveVenueAbi, ...collateralVenueAbi] as const;
+    this.chain.contracts.set(key, (data: Hex) => {
+      const { functionName, args } = decodeFunctionData({ abi, data });
+      const fnKey = `${key}:${functionName}`.toLowerCase();
+      if (this.venueFaults.has(fnKey)) throw revert(`mock venue: ${functionName} fault`);
+      const override = this.venueOverrides.get(fnKey);
+      if (functionName === "PROVIDER") {
+        const provider = this.venueProviders.has(key) ? this.venueProviders.get(key) : (AAVE_V3.poolAddressesProvider as Address);
+        if (provider === null || provider === undefined) throw revert("mock venue: no PROVIDER() here");
+        return encodeFunctionResult({ abi, functionName, result: provider });
+      }
+      if (functionName === "enabled") return encodeFunctionResult({ abi, functionName, result: this.venueEnabled.get(key) ?? true });
+      const aave = this.isAaveKind(key);
+      if (functionName === "healthFactor") {
+        const [acct] = args as [Address];
+        const hf = override ?? (aave ? this.chain.accountData(acct)[5] : this.morphoHealthFactor(acct));
+        return encodeFunctionResult({ abi, functionName, result: hf });
+      }
+      if (functionName === "debt") {
+        const [acct, asset] = args as [Address, Address];
+        let owed: bigint;
+        if (aave) {
+          const u = this.chain.users.get(acct.toLowerCase())?.get(asset.toLowerCase());
+          owed = u ? u.stableDebt + u.variableDebt : 0n;
+        } else {
+          owed = asset.toLowerCase() === this.usdc.toLowerCase() ? this.morphoDebt(acct) : 0n;
+        }
+        return encodeFunctionResult({ abi, functionName, result: override ?? owed });
+      }
+      if (functionName === "collateral") {
+        const [acct, asset] = args as [Address, Address];
+        const held = aave ? (this.chain.users.get(acct.toLowerCase())?.get(asset.toLowerCase())?.aTokenBalance ?? 0n) : this.morphoPosition(acct, asset).collateral;
+        return encodeFunctionResult({ abi, functionName, result: override ?? held });
+      }
+      if (functionName === "liquidationThresholdBps") {
+        const [asset] = args as [Address];
+        const lt = aave ? (this.chain.reserves.get(asset.toLowerCase())?.liquidationThresholdBps ?? 0n) : (this.morpho.lltvBps.get(asset.toLowerCase()) ?? 0n);
+        return encodeFunctionResult({ abi, functionName, result: override ?? lt });
+      }
+      throw revert("mock venue: unsupported");
+    });
+  }
+
+  /** A contract that reverts on every call — a venue address the reader cannot talk to. */
+  installDeadVenue(venue: Address): void {
+    this.chain.contracts.set(venue.toLowerCase(), () => {
+      throw revert("dead venue: no such function");
     });
   }
 
@@ -356,19 +516,26 @@ export class MockOilskin {
 
     let repaid = 0n;
     if (p.repayAmount !== 0n && !this.strandRepay) {
+      // The router's exit path follows the position (audit wave 2, M-HIGH-1): the Aave debt when
+      // there is one, else the Morpho-style market of the collateral asset the call names.
       const user = this.chain.users.get(acct)?.get(this.usdc.toLowerCase());
-      const owed = user ? user.variableDebt + user.stableDebt : 0n;
+      const aaveOwed = user ? user.variableDebt + user.stableDebt : 0n;
+      const morphoPos = aaveOwed === 0n ? this.morphoPosition(account as Address, p.collateralAsset) : null;
+      const owed = morphoPos ? morphoPos.debt : aaveOwed;
       const held = this.usdcBalances.get(acct) ?? 0n;
       let amount = p.repayAmount === MAX_UINT256 ? (owed < held ? owed : held) : p.repayAmount;
       if (amount > held) throw revert("ERC20: transfer amount exceeds balance");
       if (amount > owed) amount = owed;
-      if (amount !== 0n && user) {
-        user.variableDebt -= amount;
+      if (amount !== 0n) {
+        if (morphoPos) this.setMorphoPosition(account as Address, p.collateralAsset, { ...morphoPos, debt: morphoPos.debt - amount });
+        else if (user) user.variableDebt -= amount;
         this.usdcBalances.set(acct, held - amount);
         repaid = amount;
       }
     }
-    const [, , , , , hf] = this.chain.accountData(account as Address);
+    const [, , , , , aaveHf] = this.chain.accountData(account as Address);
+    const morphoHf = this.morphoHealthFactor(account as Address);
+    const hf = aaveHf < morphoHf ? aaveHf : morphoHf;
     // The router's event, exactly as the keeper's `confirm` reads it from the receipt.
     const topics = encodeEventTopics({
       abi: strategyRouterAbi,
@@ -446,12 +613,14 @@ export class MockOilskin {
       positions: new Map([...this.positions].map(([k, v]) => [k, [...v]])),
       usdc: new Map(this.usdcBalances),
       users: structuredClone(this.chain.users),
+      morpho: new Map([...this.morpho.positions].map(([k, v]) => [k, new Map([...v].map(([a, p]) => [a, { ...p }]))])),
     };
   }
   private restore(s: ReturnType<MockOilskin["snapshot"]>) {
     this.positions = s.positions;
     this.usdcBalances = s.usdc;
     this.chain.users = s.users;
+    this.morpho.positions = s.morpho;
   }
 }
 

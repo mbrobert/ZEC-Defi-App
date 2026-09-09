@@ -61,7 +61,7 @@ export const RISKS: readonly RiskItem[] = [
   {
     id: "liquidation",
     title: "Liquidation",
-    body: "Borrowing USDC against cbBTC or WETH on Aave v3 can be liquidated if the collateral price falls enough. The liquidation threshold is read from Aave at the moment you sign; the health factor, the price at which liquidation starts and each keeper rung are computed from it and shown before you sign. A liquidation sells collateral at a penalty set by Aave.",
+    body: "Borrowing USDC against cbBTC or WETH on the lending venue Oilskin's registry names for it (Aave v3 today) can be liquidated if the collateral price falls enough. The liquidation threshold is read from that venue at the moment you sign; the health factor, the price at which liquidation starts and each keeper rung are computed from it and shown before you sign. A liquidation sells collateral at a penalty set by the venue.",
     scope: ["review", "dashboard"],
   },
   {

@@ -219,11 +219,21 @@ export function hfBand(hf: number | null): { rung: HfRung | null; label: string;
 /** Current LTV from account data (debt / collateral), bps. 0 when no collateral. */
 /**
  * The health factor of a live account read, or `null` when it cannot be known: no account, or
- * the Aave `getUserAccountData` leg of the read failed. Never +∞ for "unknown" — +∞ means "no
- * debt", which is a different, reassuring statement (audit wave 2, N-MED-2).
+ * the Aave `getUserAccountData` leg of the read failed or, with the venue-aware read, any venue the
+ * registry names could not be read. Never +∞ for "unknown" — +∞ means "no debt", which is a
+ * different, reassuring statement (audit wave 2, N-MED-2).
  */
-export function accountHf(account: { aave: { healthFactor: number } | null } | null | undefined): number | null {
-  if (!account || !account.aave) return null;
+export function accountHf(
+  account: { aave: { healthFactor: number } | null; venues?: { healthFactor: number | null } | null } | null | undefined,
+): number | null {
+  if (!account) return null;
+  if (account.venues) {
+    // Venue-aware read (audit wave 2, M-HIGH-2): the WORST venue the registry names, already
+    // cross-checked against the Aave leg in lib/reads.ts. null there means unreadable, and stays null.
+    const hf = account.venues.healthFactor;
+    return typeof hf === "number" && !Number.isNaN(hf) ? hf : null;
+  }
+  if (!account.aave) return null;
   const hf = account.aave.healthFactor;
   return typeof hf === "number" && !Number.isNaN(hf) ? hf : null;
 }

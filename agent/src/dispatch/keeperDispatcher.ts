@@ -20,11 +20,13 @@ import {
   GRANT_SELECTORS,
 } from "../abi/oilskin.js";
 import type { LadderRung } from "../engine/ladder.js";
-import { evaluateSnapshot, WAD, type Valuation } from "../engine/valuation.js";
+import { WAD, type Valuation } from "../engine/valuation.js";
 import type { Logger } from "../log.js";
 import { eventNow, type Notifier } from "../notify/notifier.js";
+import { readTickContexts, valueAccount } from "../services/accountValuer.js";
 import type { AaveReader } from "../services/chain.js";
 import { withDeadline } from "../services/deadline.js";
+import type { VenueReader } from "../services/venues.js";
 import type { DispatchRecord } from "../store/keeperStore.js";
 import type { Address } from "../types/evm.js";
 import { planAction, type KeeperCall, type PlannedPosition, type PoolInfo } from "./policy.js";
@@ -65,6 +67,8 @@ export interface KeeperDispatcherDeps {
   lpVenue: Address;
   usdc: Address;
   reader: AaveReader;
+  /** Same venue-aware reader the monitor uses; the world check must see every venue the monitor saw. */
+  venues?: VenueReader | null;
   ladder: readonly LadderRung[];
   log: Logger;
   config: {
@@ -634,16 +638,24 @@ export class KeeperDispatcher implements Dispatcher {
       valuation = given;
     } else {
       try {
+        const valuer = { reader: this.d.reader, venues: this.d.venues ?? null };
         const head = await this.d.reader.head(signal);
-        const ctx = await this.d.reader.readReserveContexts(signal);
-        const snap = await this.d.reader.readAccount(record.account, ctx, head.number, signal);
-        valuation = evaluateSnapshot(snap, {
-          nowS: head.timestamp,
-          priceMaxAgeS: this.d.config.priceMaxAgeS,
-          priceMaxAgeBySymbol: this.d.config.priceMaxAgeBySymbol,
-          oracleDeviationBps: this.d.config.oracleDeviationBps,
-          hfToleranceBps: this.d.config.hfToleranceBps,
-        });
+        const ctx = await readTickContexts(valuer, signal);
+        const av = await valueAccount(
+          valuer,
+          record.account,
+          ctx,
+          head.number,
+          {
+            nowS: head.timestamp,
+            priceMaxAgeS: this.d.config.priceMaxAgeS,
+            priceMaxAgeBySymbol: this.d.config.priceMaxAgeBySymbol,
+            oracleDeviationBps: this.d.config.oracleDeviationBps,
+            hfToleranceBps: this.d.config.hfToleranceBps,
+          },
+          signal
+        );
+        valuation = av.valuation;
       } catch (e) {
         return { kind: "STOP", result: { status: "REFUSED", reason: `world check failed (fail closed): ${errMsg(e)}` } };
       }

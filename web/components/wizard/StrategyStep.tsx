@@ -34,7 +34,7 @@ export default function StrategyStep({
   ltvBps: number;
   borrowAprPct: number;
   onChange: (patch: Partial<WizardState>) => void;
-  /** Collateral assets whose registry venue the keeper cannot read (audit wave 2, M-HIGH-2). */
+  /** Collateral assets whose registry venue does not answer the venue interface the keeper reads (audit wave 2, M-HIGH-2). */
   unsupportedVenues?: readonly CollateralSymbol[];
 }) {
   const { mode } = useMode();
@@ -115,7 +115,7 @@ export default function StrategyStep({
         </label>
         {venueUnsupported && (
           <p className="note note-crit" role="alert" data-testid="keeper-venue-unsupported">
-            The Oilskin keeper cannot watch {collateral} right now: the registry points it at a lending contract the keeper does not read yet, so this position would open without protection. Nothing will act for you if its health factor falls.
+            The Oilskin keeper cannot watch {collateral} right now: the registry points it at a lending contract that does not answer the venue interface the keeper reads, so this position would open without protection. Nothing will act for you if its health factor falls.
           </p>
         )}
         <p className="text-[12.5px] text-oil-ink3">Simple mode shows one recommendation. Advanced mode (top right) shows every pool with its numbers, custom band widths, and spot swaps.</p>
@@ -225,7 +225,7 @@ export default function StrategyStep({
         </label>
         {venueUnsupported && (
           <p className="note note-crit mt-2" role="alert" data-testid="keeper-venue-unsupported">
-            The keeper cannot watch {collateral} right now: Oilskin&rsquo;s registry points it at a lending contract the keeper does not read yet, so no permission would protect this position. Nothing will act for you if its health factor falls.
+            The keeper cannot watch {collateral} right now: Oilskin&rsquo;s registry points it at a lending contract that does not answer the venue interface the keeper reads, so no permission would protect this position. Nothing will act for you if its health factor falls.
           </p>
         )}
         <label className="mt-3 flex cursor-pointer items-center gap-2 text-[13.5px]">

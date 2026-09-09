@@ -90,9 +90,9 @@ export function describeGrant(
     keeperConfigured: boolean;
     nowSeconds: number;
     /**
-     * False when the registry points this position's collateral at a venue the keeper cannot
-     * read (audit wave 2, M-HIGH-2). Outranks a live grant: the permission is real, the
-     * protection is not.
+     * False when the registry points this position's collateral at a venue that does not answer
+     * the venue interface the keeper reads (audit wave 2, M-HIGH-2). Outranks a live grant: the
+     * permission is real, the protection is not.
      */
     venueSupported?: boolean;
     /**
@@ -122,7 +122,7 @@ export function describeGrant(
       tone: "crit",
       daysLeft: null,
       plain:
-        "The lending contract behind this collateral is no longer the Aave venue the Oilskin keeper reads, so the keeper cannot see this position and nothing watches it — even if a permission is granted. " +
+        "The lending contract behind this collateral does not answer the venue interface the Oilskin keeper reads, so the keeper cannot see this position and nothing watches it — even if a permission is granted. " +
         "You can always repay or close it yourself from your account.",
     };
   }

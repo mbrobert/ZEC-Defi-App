@@ -149,6 +149,12 @@ test("N-MED-2: an unreadable health factor is a warning, never 'No debt'", () =>
   assert.equal(accountHf({ aave: { healthFactor: 1.1 } }), 1.1);
   assert.equal(accountHf({ aave: { healthFactor: Number.POSITIVE_INFINITY } }), Number.POSITIVE_INFINITY);
   assert.equal(accountHf({ aave: { healthFactor: Number.NaN } }), null);
+  // With the venue-aware read (M-HIGH-2) the WORST venue's number is the account's — and an unreadable
+  // venue is null even when the Aave leg read fine.
+  assert.equal(accountHf({ aave: { healthFactor: 1.95 }, venues: { healthFactor: 1.72 } }), 1.72);
+  assert.equal(accountHf({ aave: { healthFactor: 1.95 }, venues: { healthFactor: null } }), null);
+  assert.equal(accountHf({ aave: null, venues: { healthFactor: Number.POSITIVE_INFINITY } }), Number.POSITIVE_INFINITY, "no debt on any venue");
+  assert.equal(accountHf({ aave: { healthFactor: 1.1 }, venues: null }), 1.1, "no registry known → the Aave leg alone, as before");
 });
 
 test("hfBand follows the shared ladder", () => {

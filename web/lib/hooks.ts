@@ -135,6 +135,8 @@ export function useAccountRead(market: MarketRead) {
       factory: deployment && !deployment.demo ? deployment.factory : undefined,
       lpVenue: deployment && !deployment.demo ? deployment.lpVenue : undefined,
       engine: deployment && !deployment.demo ? deployment.engine : undefined,
+      // The registry turns the read venue-aware: every venue it names is asked for the account's health.
+      registry: deployment && !deployment.demo ? deployment.registry : undefined,
       getBalance: client ? (a: { address: Address }) => client.getBalance(a) : undefined,
     }),
     [deployment, client],

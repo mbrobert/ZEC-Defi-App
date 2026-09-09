@@ -24,6 +24,7 @@ import {
   ACCOUNT_ABI,
   AAVE_VENUE_ABI,
   COLLATERAL_REGISTRY_ABI,
+  COLLATERAL_VENUE_ABI,
   FACTORY_ABI,
   LP_VENUE_ABI,
   PERMIT2_ABI,
@@ -59,6 +60,7 @@ const OURS: Record<string, readonly unknown[]> = {
   ISnuggleVault: SNUGGLE_VAULT_ABI,
   AaveV3Venue: AAVE_VENUE_ABI,
   CollateralRegistry: COLLATERAL_REGISTRY_ABI,
+  ICollateralVenue: COLLATERAL_VENUE_ABI,
   IPermit2: PERMIT2_ABI,
   AerodromeSwapAdapter: SWAP_ADAPTER_ABI,
 };

@@ -34,7 +34,7 @@ export default function HealthBand({
           <span className="text-[13px] text-oil-ink2">Loan health</span>
           <Chip kind="warn">Unreadable</Chip>
         </div>
-        <p className="mt-2 text-[12.5px] text-oil-ink2">The account read from Aave did not come back. This page cannot say whether the position is healthy; it will retry.</p>
+        <p className="mt-2 text-[12.5px] text-oil-ink2">The account read from the lending venue did not come back, or two reads of it disagree. This page cannot say whether the position is healthy; it will retry.</p>
       </div>
     );
   }

@@ -29,6 +29,9 @@ const WANT = {
   SnuggleLpVenue: { functions: ["positionsOf", "claim", "close", "closeMany", "increase", "poolTokens", "poolOf", "poolSqrtPriceX96", "performanceBps", "MIN_WIDTH_BPS", "MAX_WIDTH_BPS", "MAX_BAND_BPS", "MAX_REBALANCE_DELAY", "REWARD_TOKEN", "treasury", "ENGINE"], events: ["LpOpened", "LpClosed", "PerformanceFee"], errors: true },
   ISnuggleVault: { functions: ["positions", "userPositions", "approvedPools"], events: [], errors: false },
   AaveV3Venue: { functions: ["supply", "borrow", "repay", "withdraw", "healthFactor", "liquidationThresholdBps", "maxLtvBps", "debt", "collateral", "borrowRateRay", "enabled", "assetPrice", "PROVIDER"], events: [], errors: true },
+  // The venue-aware account read (lib/reads.ts readVenueHealth) talks to WHATEVER venue the registry
+  // names through this interface — the Aave venue, the Morpho venue, a future one (audit wave 2, M-HIGH-2).
+  ICollateralVenue: { functions: ["healthFactor", "liquidationThresholdBps", "maxLtvBps", "debt", "collateral", "borrowRateRay", "enabled"], events: [], errors: false },
   CollateralRegistry: { functions: ["maxOfferedLtvBps", "entryHfForLtv", "entryHfFloorWad", "config", "isEnabled", "venueOf", "previousVenues", "assets", "pendingVenue", "TIMELOCK_DELAY"], events: ["VenueChangeProposed", "VenueChangeAccepted", "VenueChangeCancelled"], errors: true },
   AerodromeSwapAdapter: { functions: ["minOutFor", "MAX_SLIPPAGE_BPS", "BPS", "ROUTER"], events: ["Swapped"], errors: true },
   IPermit2: { functions: ["permitTransferFrom", "DOMAIN_SEPARATOR"], events: [], errors: false },

@@ -59,7 +59,13 @@ export interface ReserveContext {
   chainlink: ChainlinkRead | null;
 }
 
-export type ReserveContextResult = { ok: true; ctx: ReserveContext } | { ok: false; reason: string };
+/**
+ * A failed context still carries the independent Chainlink read when THAT leg answered: a venue that
+ * is not the Aave pool (the Morpho venue) is priced from this same feed by the venue-aware valuation
+ * (engine/venueValuation.ts), and an Aave reserve being frozen or mis-decoded must not blind the
+ * keeper to a position held elsewhere. `chainlink` is absent, not null, when the feed itself failed.
+ */
+export type ReserveContextResult = { ok: true; ctx: ReserveContext } | { ok: false; reason: string; chainlink?: ChainlinkRead | null };
 
 /** One published aggregator round, reduced to what a cadence probe needs. */
 export interface RoundRead {
@@ -76,6 +82,17 @@ export interface ReaderOptions {
 function errMsg(e: unknown): string {
   if (e instanceof Error) return `${e.name}: ${e.message.split("\n")[0]}`;
   return String(e);
+}
+
+/** A reserve-context failure that may still carry the feed read (see ReserveContextResult). */
+class ContextError extends Error {
+  constructor(
+    message: string,
+    readonly chainlink: ChainlinkRead | null | undefined
+  ) {
+    super(message);
+    this.name = "ContextError";
+  }
 }
 
 export class AaveReader {
@@ -125,7 +142,8 @@ export class AaveReader {
         try {
           out.set(spec.symbol, { ok: true, ctx: await this.readReserveContext(spec, signal) });
         } catch (e) {
-          out.set(spec.symbol, { ok: false, reason: errMsg(e) });
+          if (e instanceof ContextError) out.set(spec.symbol, e.chainlink === undefined ? { ok: false, reason: e.message } : { ok: false, reason: e.message, chainlink: e.chainlink });
+          else out.set(spec.symbol, { ok: false, reason: errMsg(e) });
         }
       })
     );
@@ -133,31 +151,43 @@ export class AaveReader {
   }
 
   private async readReserveContext(spec: ReserveSpec, signal?: AbortSignal): Promise<ReserveContext> {
-    const [cfg, aavePrice, chainlink] = await Promise.all([
-      this.call(`getReserveConfigurationData(${spec.symbol})`, signal, () =>
-        this.client.readContract({
-          address: this.addresses.dataProvider,
-          abi: aavePoolDataProviderAbi,
-          functionName: "getReserveConfigurationData",
-          args: [spec.asset],
-        })
-      ),
-      this.call(`getAssetPrice(${spec.symbol})`, signal, () =>
-        this.client.readContract({
-          address: this.addresses.oracle,
-          abi: aaveOracleAbi,
-          functionName: "getAssetPrice",
-          args: [spec.asset],
-        })
-      ),
-      spec.feed ? this.readChainlink(spec, spec.feed, signal) : Promise.resolve(null),
+    // The Aave legs and the Chainlink leg are settled separately so that a failed Aave leg can still
+    // hand the feed read to the caller (see ReserveContextResult).
+    const [aaveLegs, feedLeg] = await Promise.all([
+      Promise.allSettled([
+        this.call(`getReserveConfigurationData(${spec.symbol})`, signal, () =>
+          this.client.readContract({
+            address: this.addresses.dataProvider,
+            abi: aavePoolDataProviderAbi,
+            functionName: "getReserveConfigurationData",
+            args: [spec.asset],
+          })
+        ),
+        this.call(`getAssetPrice(${spec.symbol})`, signal, () =>
+          this.client.readContract({
+            address: this.addresses.oracle,
+            abi: aaveOracleAbi,
+            functionName: "getAssetPrice",
+            args: [spec.asset],
+          })
+        ),
+      ]),
+      spec.feed ? this.readChainlink(spec, spec.feed, signal).then((r) => ({ ok: true as const, r })).catch((e: unknown) => ({ ok: false as const, e })) : Promise.resolve({ ok: true as const, r: null }),
     ]);
+    const chainlink = feedLeg.ok ? feedLeg.r : undefined;
+    const failed = aaveLegs.find((l): l is PromiseRejectedResult => l.status === "rejected");
+    if (failed) throw new ContextError(errMsg(failed.reason), chainlink);
+    if (!feedLeg.ok) throw new ContextError(errMsg(feedLeg.e), undefined);
+    const [cfg, aavePrice] = aaveLegs.map((l) => (l as PromiseFulfilledResult<unknown>).value) as [
+      readonly [bigint, bigint, bigint, bigint, bigint, boolean, boolean, boolean, boolean, boolean],
+      bigint,
+    ];
     const [decimals, , liquidationThreshold, , , , , , isActive] = cfg;
     if (Number(decimals) !== spec.decimals) {
-      throw new Error(`reserve decimals ${decimals} ≠ expected ${spec.decimals}`);
+      throw new ContextError(`reserve decimals ${decimals} ≠ expected ${spec.decimals}`, chainlink);
     }
-    if (!isActive) throw new Error("reserve is not active");
-    return { spec, liquidationThresholdBps: liquidationThreshold, aavePrice, chainlink };
+    if (!isActive) throw new ContextError("reserve is not active", chainlink);
+    return { spec, liquidationThresholdBps: liquidationThreshold, aavePrice, chainlink: chainlink ?? null };
   }
 
   private async readChainlink(spec: ReserveSpec, feed: Address, signal?: AbortSignal): Promise<ChainlinkRead> {

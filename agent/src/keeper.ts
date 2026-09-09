@@ -15,7 +15,7 @@ import { HealthMonitor, type TickReport } from "./monitors/healthMonitor.js";
 import { AaveReader, aaveAddressesFromShared, reserveSpecsFromShared } from "./services/chain.js";
 import { sleep } from "./services/deadline.js";
 import { AccountDiscovery } from "./services/discovery.js";
-import { assertAaveVenues, UnsupportedVenueError } from "./services/venues.js";
+import { UnsupportedVenueError, VenueReader } from "./services/venues.js";
 import { KeeperStore } from "./store/keeperStore.js";
 import { ProgressWatchdog, type TickHandle } from "./watchdog.js";
 
@@ -95,29 +95,47 @@ export async function runKeeper(env: NodeJS.ProcessEnv, opts: RunOptions = {}): 
     throw new Error(`RPC reports chain id ${chainId}, config expects ${config.chainId}`);
   }
 
-  // ---- venue guard: the keeper values through the Aave pool; the registry must agree ----
-  // Every valuation below reads Aave directly. If the registry points an enabled asset at any
-  // other venue, every position there is NO_DEBT to this process and the ladder never runs for
-  // it — while the dashboard says "active". Refuse to start rather than run blind
-  // (audit wave 2, M-HIGH-2). A venue-aware reader is the real fix; this is the floor.
+  // ---- venues: every account is valued through the Aave pool AND through every venue the ----
+  // ---- registry names for its collateral (audit wave 2, M-HIGH-2) -------------------------
+  // The router names the registry; the registry names, per asset, the current venue and every
+  // previous one. Each is read through ICollateralVenue on every tick and cross-checked against the
+  // keeper's own Chainlink feeds (engine/venueValuation.ts). Startup is FATAL only for a venue the
+  // reader cannot talk to at all — every account would be UNKNOWN on every tick — and a WARNING for
+  // a venue that answers but is not the Aave venue over the pool the G1–G4 valuation reads.
+  let venues: VenueReader | null = null;
   if (config.routerAddress) {
+    venues = new VenueReader(client, config.routerAddress, { deadlineMs: config.rpcDeadlineMs, onProgress });
     try {
-      const guard = await assertAaveVenues(client, config.routerAddress, config.rpcDeadlineMs);
-      log.info("venue guard passed — every enabled asset resolves to an AaveV3Venue over the pool this keeper reads", {
-        registry: guard.registry,
-        venues: guard.checked.map((c) => `${c.symbol}:${c.venue}`),
-        skippedDisabled: guard.skippedDisabled,
+      const probe = await venues.probe();
+      const describe = (v: { venue: string; kind: string; provider: string | null; assets: { symbol: string; role: string; enabled: boolean; liquidationThresholdBps: bigint | null }[] }) => ({
+        venue: v.venue,
+        kind: v.kind,
+        provider: v.provider,
+        assets: v.assets.map((a) => `${a.symbol}:${a.role}${a.enabled ? "" : ":disabled"}${a.liquidationThresholdBps !== null ? `:lt=${a.liquidationThresholdBps}` : ""}`),
+      });
+      if (probe.otherVenues.length) {
+        log.warn(
+          "NON-AAVE VENUE(S) IN THE REGISTRY: these are read through ICollateralVenue and cross-checked against the keeper's Chainlink feeds " +
+            "(V1–V4); the keeper's protective unwind is resolved by the router to the venue holding the asset. Accepting a venue switch on " +
+            "mainnet remains the registry owner's explicit step — nothing here does it",
+          { registry: probe.registry, otherVenues: probe.otherVenues.map(describe) }
+        );
+      }
+      log.info("venue probe passed — every registered asset resolves to a venue this keeper can read", {
+        registry: probe.registry,
+        venues: probe.venues.map(describe),
+        unregistered: probe.unregistered,
       });
     } catch (e) {
       if (e instanceof UnsupportedVenueError) {
-        log.error("VENUE GUARD FAILED — refusing to start blind", { problems: e.problems });
+        log.error("VENUE PROBE FAILED — refusing to start blind", { problems: e.problems });
       }
       throw e;
     }
   } else {
     log.warn(
-      "VENUE GUARD SKIPPED: STRATEGY_ROUTER_ADDRESS is not set, so the keeper cannot confirm the registry still points every " +
-        "enabled asset at the AaveV3Venue it values through — a position on any other venue is invisible here (audit wave 2, M-HIGH-2)"
+      "VENUE READER OFF: STRATEGY_ROUTER_ADDRESS is not set, so the keeper cannot find the registry and values every account through the " +
+        "Aave pool only — a position on any other venue is invisible here (audit wave 2, M-HIGH-2). Set the router to watch every venue"
     );
   }
 
@@ -217,6 +235,7 @@ export async function runKeeper(env: NodeJS.ProcessEnv, opts: RunOptions = {}): 
       lpVenue,
       usdc,
       reader,
+      venues,
       ladder: HF_LADDER,
       log,
       config: {
@@ -247,6 +266,7 @@ export async function runKeeper(env: NodeJS.ProcessEnv, opts: RunOptions = {}): 
 
   const monitor = new HealthMonitor({
     reader,
+    venues,
     discovery,
     store,
     ladder: HF_LADDER,

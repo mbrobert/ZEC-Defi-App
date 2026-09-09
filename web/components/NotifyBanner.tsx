@@ -41,7 +41,7 @@ export default function NotifyBanner({ hf, collateral }: { hf: number | null; co
   if (state?.kind === "unreadable") {
     return (
       <div className="note note-warn" role="alert" data-testid="notify-unreadable">
-        <b className="text-oil-ink">Oilskin cannot read your health factor right now.</b> The account read from Aave did not come back, so this page cannot tell you whether {collateral} needs attention. That is not the same as being safe: check again shortly, or read your position directly on Aave.
+        <b className="text-oil-ink">Oilskin cannot read your health factor right now.</b> The account read from the lending venue did not come back, so this page cannot tell you whether {collateral} needs attention. That is not the same as being safe: check again shortly, or read your position directly on the lending venue.
       </div>
     );
   }

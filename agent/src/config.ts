@@ -102,7 +102,12 @@ export interface KeeperConfig {
   storeKeepTerminalPerAccount: number;
   /** A store lock whose heartbeat is older than this is reclaimable. */
   storeLockStaleMs: number;
-  /** Chainlink vs Aave-oracle disagreement beyond this ⇒ UNKNOWN. */
+  /**
+   * Chainlink vs Aave-oracle disagreement beyond this ⇒ UNKNOWN. The same bound governs a
+   * non-Aave venue's own health factor against the health factor the keeper's feeds imply from the
+   * venue's collateral, debt and threshold (engine/venueValuation.ts V4): the venue's threshold and
+   * debt are its own words, so the only thing the two can disagree about is the price its oracle used.
+   */
   oracleDeviationBps: number;
   /** Chain HF vs locally recomputed HF disagreement beyond this ⇒ UNKNOWN. */
   hfToleranceBps: number;

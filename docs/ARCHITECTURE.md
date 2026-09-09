@@ -81,6 +81,7 @@ flowchart LR
     R -- "permitTransferFrom" --> P2
     UI -- "signed order (spot)" --> COW
     K -- "AccountCreated logs · getUserAccountData · getRoundData" --> F & AAVE
+    K -- "venueOf · previousVenues · ICollateralVenue.healthFactor / debt / collateral" --> REG & AV
     K -- "execAsKeeper: unwind (one root call per pool)" --> A
     UI -- "/v1/gate · /v1/rates" --> Y
     UI -- "pendingVenue · grantOf · tokenBudgetOf" --> REG & A
@@ -391,6 +392,16 @@ own proofs of concept, re-run with the expectations flipped.
    in a reserve the keeper does not track (a distinct, immediately escalated
    `G3 UNTRACKED_COLLATERAL` reason). All time comes from the chain head, so a
    slow host clock cannot blind the fleet. The ladder never runs on `UNKNOWN`.
+   **Venue-aware** (wave-2 M-HIGH-2, `services/venues.ts`, `engine/venueValuation.ts`):
+   the registry's `venueOf` and `previousVenues` per collateral asset name every
+   venue the account may sit on; each is read through `ICollateralVenue`
+   (`healthFactor`, `debt`, `collateral`, `liquidationThresholdBps`). The Aave
+   venue must reproduce the pool snapshot (V3); any other venue's health factor
+   must lie inside the band the keeper's own Chainlink feeds imply from the
+   venue's collateral, debt and threshold, within `ORACLE_DEVIATION_BPS` (V4);
+   the combined verdict is the worst venue, and UNKNOWN if any venue is
+   unreadable (V1) or any feed fails the G2 rules (V2). Startup is fatal only
+   for a venue that does not answer the interface.
 3. **Staleness is per feed and measured, not declared** (`engine/feeds.ts`).
    The keeper walks each aggregator's own recent rounds (`getRoundData`) at
    startup, measures the gaps it actually publishes, and enforces
@@ -559,7 +570,10 @@ uses, with the enforced floor read back from `AerodromeSwapAdapter.minOutFor`)
 and refuses rather than degrading; `lib/execute.ts` asks the wallet only after
 `estimateGas` and an ETH-balance check. The dashboard reads **from chain**
 (`lib/reads.ts` `safeMulticall`; `lib/positions.ts`): Aave
-`getUserAccountData`, per-reserve holdings, `SnuggleLpVenue.positionsOf` →
+`getUserAccountData`, per-reserve holdings, every venue the registry names for
+the collateral through `ICollateralVenue` (`readVenueHealth`: the worst venue's
+health factor is shown, `null`/"unreadable" when any venue cannot be read or the
+Aave venue disagrees with the pool read), `SnuggleLpVenue.positionsOf` →
 engine `positions(id)` → pool `slot0`, plus `CollateralRegistry.pendingVenue`
 (rendered as a pending-venue banner) and the user's own grant
 (`lib/keeper.ts`: `grantOf` + `grantTokens` + `tokenBudgetOf` → one of

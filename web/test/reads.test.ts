@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { AAVE_V3, BASE_TOKENS, PERMIT2 } from "@zyo/shared";
-import { decodeReserve, readAccount, readDeployment, readKeeperGrant, readMarket, readPendingVenues, safeMulticall, type ReadClient } from "../lib/reads";
+import { decodeReserve, readAccount, readDeployment, readKeeperGrant, readMarket, readPendingVenues, readVenueHealth, safeMulticall, type ReadClient } from "../lib/reads";
+import { accountHf } from "../lib/math";
 import { DEMO_MARKET } from "../lib/demo";
 import { UNWIND_SELECTOR } from "../lib/plan";
 
@@ -197,7 +198,20 @@ function chainClient(answer: (c: { address: string; functionName: string; args?:
 const deploymentAnswer =
   (over: Record<string, unknown> = {}) =>
   (c: { functionName: string }): unknown => {
-    const table: Record<string, unknown> = { REGISTRY, LP_VENUE, SWAP, PERMIT2, venueOf: AAVE_VENUE, isEnabled: true, PROVIDER: AAVE_V3.poolAddressesProvider, ENGINE, ...over };
+    const table: Record<string, unknown> = {
+      REGISTRY,
+      LP_VENUE,
+      SWAP,
+      PERMIT2,
+      venueOf: AAVE_VENUE,
+      previousVenues: [],
+      isEnabled: true,
+      PROVIDER: AAVE_V3.poolAddressesProvider,
+      enabled: true,
+      liquidationThresholdBps: 7800n,
+      ENGINE,
+      ...over,
+    };
     if (!(c.functionName in table)) throw new Error(`unexpected ${c.functionName}`);
     const v = table[c.functionName];
     if (v instanceof Error) throw v;
@@ -226,31 +240,217 @@ test("readDeployment: every enabled asset on an AaveV3Venue over the shared prov
   assert.deepEqual(d.unsupportedVenues, []);
 });
 
-test("M-HIGH-2: readDeployment marks an enabled asset whose venue does not answer PROVIDER() as unsupported (the Morpho venue after acceptVenue)", async () => {
+test("M-HIGH-2: a Morpho venue that answers ICollateralVenue is SUPPORTED even though it has no PROVIDER(); a venue that answers nothing is not", async () => {
   const MORPHO_VENUE = "0xdddddddddddddddddddddddddddddddddddddddd";
+  const DEAD_VENUE = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
   const client = chainClient((c) => {
     if (c.functionName === "venueOf") {
-      return String(c.args?.[0] ?? "").toLowerCase() === BASE_TOKENS.cbBTC.address.toLowerCase() ? MORPHO_VENUE : AAVE_VENUE;
+      const asset = String(c.args?.[0] ?? "").toLowerCase();
+      if (asset === BASE_TOKENS.cbBTC.address.toLowerCase()) return MORPHO_VENUE;
+      if (asset === BASE_TOKENS.WETH.address.toLowerCase()) return DEAD_VENUE;
+      return AAVE_VENUE;
     }
-    if (c.functionName === "PROVIDER") {
-      if (c.address.toLowerCase() === MORPHO_VENUE) throw new Error("execution reverted: no such function");
-      return AAVE_V3.poolAddressesProvider;
-    }
+    if (c.address.toLowerCase() === DEAD_VENUE) throw new Error("execution reverted: no such function");
+    if (c.functionName === "PROVIDER" && c.address.toLowerCase() === MORPHO_VENUE) throw new Error("execution reverted: no such function");
+    if (c.functionName === "liquidationThresholdBps" && c.address.toLowerCase() === MORPHO_VENUE) return 8600n; // the LLTV, read live
     return deploymentAnswer()(c);
   });
   const d = await readDeployment(client, "0x3333333333333333333333333333333333333333", ROUTER, KEEPER);
-  assert.deepEqual(d.unsupportedVenues, ["cbBTC"], "cbBTC is on a venue this app cannot read; WETH and cbZEC are not");
+  assert.deepEqual(d.unsupportedVenues, ["WETH"], "cbBTC on Morpho is readable; WETH on a venue that answers nothing is not; cbZEC is disabled");
 });
 
-test("M-HIGH-2: an AaveV3Venue over a DIFFERENT provider is unsupported too; a disabled asset is never reported", async () => {
+test("M-HIGH-2: a venue over a DIFFERENT Aave provider is readable too; a zero threshold for an enabled asset is unsupported; a disabled asset is never reported", async () => {
   const OTHER_PROVIDER = "0x00000000000000000000000000000000000000ff";
-  const client = chainClient((c) => {
-    if (c.functionName === "isEnabled") return String(c.args?.[0] ?? "").toLowerCase() !== BASE_TOKENS.cbZEC.address.toLowerCase();
+  const readable = chainClient((c) => {
     if (c.functionName === "PROVIDER") return OTHER_PROVIDER;
     return deploymentAnswer()(c);
   });
-  const d = await readDeployment(client, "0x3333333333333333333333333333333333333333", ROUTER, KEEPER);
-  assert.deepEqual(d.unsupportedVenues, ["cbBTC", "WETH"]);
+  assert.deepEqual((await readDeployment(readable, "0x3333333333333333333333333333333333333333", ROUTER, KEEPER)).unsupportedVenues, []);
+
+  const zeroLt = chainClient((c) => {
+    if (c.functionName === "isEnabled") return String(c.args?.[0] ?? "").toLowerCase() !== BASE_TOKENS.cbZEC.address.toLowerCase();
+    if (c.functionName === "liquidationThresholdBps") return String(c.args?.[0] ?? "").toLowerCase() === BASE_TOKENS.WETH.address.toLowerCase() ? 0n : 7800n;
+    return deploymentAnswer()(c);
+  });
+  assert.deepEqual((await readDeployment(zeroLt, "0x3333333333333333333333333333333333333333", ROUTER, KEEPER)).unsupportedVenues, ["WETH"]);
+
+  const venueOff = chainClient((c) => {
+    if (c.functionName === "isEnabled") return String(c.args?.[0] ?? "").toLowerCase() !== BASE_TOKENS.cbZEC.address.toLowerCase();
+    return c.functionName === "enabled" ? false : deploymentAnswer()(c);
+  });
+  assert.deepEqual((await readDeployment(venueOff, "0x3333333333333333333333333333333333333333", ROUTER, KEEPER)).unsupportedVenues, ["cbBTC", "WETH"], "a venue that reports enabled() == false serves nothing; the disabled cbZEC is not reported");
+});
+
+// ---------------------------------------------------------------------------
+// The venue-aware account read (audit wave 2, M-HIGH-2)
+// ---------------------------------------------------------------------------
+
+const MORPHO_VENUE = "0xdddddddddddddddddddddddddddddddddddddddd" as const;
+const DEAD_VENUE = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" as const;
+const OWNER = "0x1111111111111111111111111111111111111111" as const;
+const WAD = 10n ** 18n;
+
+/**
+ * The fake client from above (Aave pool: 0.5 cbBTC, 15,926 USDC debt, HF 1.95) plus a registry and
+ * venues. `venueTable` answers per venue address and function; anything it does not name reverts.
+ */
+function venueClient(venueTable: Record<string, Record<string, (args?: readonly unknown[]) => unknown>>, registry: Record<string, (asset: string) => unknown>, base = fakeClient()): ReadClient {
+  const answer = (c: { address: string; functionName: string; args?: readonly unknown[] }): unknown => {
+    const addr = c.address.toLowerCase();
+    if (addr === REGISTRY.toLowerCase()) {
+      const fn = registry[c.functionName];
+      if (!fn) throw new Error(`registry: unexpected ${c.functionName}`);
+      return fn(String(c.args?.[0] ?? "").toLowerCase());
+    }
+    const venue = venueTable[addr];
+    if (venue) {
+      const fn = venue[c.functionName];
+      if (!fn) throw new Error(`execution reverted: ${c.functionName} not on this venue`);
+      return fn(c.args);
+    }
+    return base.readContract(c as never);
+  };
+  return {
+    async multicall({ contracts }) {
+      return Promise.all(
+        (contracts as { address: string; functionName: string; args?: readonly unknown[] }[]).map(async (c) => {
+          try {
+            return { status: "success" as const, result: await answer(c) };
+          } catch {
+            return { status: "failure" as const };
+          }
+        }),
+      );
+    },
+    async readContract(c) {
+      return answer(c as never);
+    },
+    getCode: base.getCode,
+  };
+}
+
+/** An AaveV3Venue over the shared provider that mirrors the fake pool (HF 1.95, 15,926 USDC debt, 0.5 cbBTC). */
+const aaveVenueMirror = (hfWad = 1_950_000_000_000_000_000n) => ({
+  PROVIDER: () => AAVE_V3.poolAddressesProvider,
+  healthFactor: () => hfWad,
+  debt: () => 15_926_178_000n,
+  collateral: (args?: readonly unknown[]) => (String(args?.[1] ?? "").toLowerCase() === BASE_TOKENS.cbBTC.address.toLowerCase() ? 50_000_000n : 0n),
+  liquidationThresholdBps: (args?: readonly unknown[]) => (String(args?.[0] ?? "").toLowerCase() === BASE_TOKENS.cbBTC.address.toLowerCase() ? 7800n : 8300n),
+  enabled: () => true,
+});
+/** A Morpho-style venue: 1 cbBTC against 39,796 USDC in its cbBTC market, HF = 0.86 / 0.50 = 1.72 (no PROVIDER view). */
+const morphoVenue = (hfWad = 1_720_000_000_000_000_000n, debt = 39_796_000_000n) => ({
+  healthFactor: () => hfWad,
+  debt: (args?: readonly unknown[]) => (String(args?.[1] ?? "").toLowerCase() === BASE_TOKENS.USDC.address.toLowerCase() ? debt : 0n),
+  collateral: (args?: readonly unknown[]) => (String(args?.[1] ?? "").toLowerCase() === BASE_TOKENS.cbBTC.address.toLowerCase() ? 100_000_000n : 0n),
+  liquidationThresholdBps: () => 8600n,
+  enabled: () => true,
+});
+const registryAaveOnly = {
+  venueOf: () => AAVE_VENUE,
+  previousVenues: () => [],
+  isEnabled: (asset: string) => asset !== BASE_TOKENS.cbZEC.address.toLowerCase(),
+};
+/** cbBTC moved to Morpho by acceptVenue: the Aave venue is remembered as its previous venue. */
+const registryCbbtcOnMorpho = {
+  venueOf: (asset: string) => (asset === BASE_TOKENS.cbBTC.address.toLowerCase() ? MORPHO_VENUE : AAVE_VENUE),
+  previousVenues: (asset: string) => (asset === BASE_TOKENS.cbBTC.address.toLowerCase() ? [AAVE_VENUE] : []),
+  isEnabled: (asset: string) => asset !== BASE_TOKENS.cbZEC.address.toLowerCase(),
+};
+const readOpts = { factory: "0x3333333333333333333333333333333333333333", lpVenue: LP_VENUE, registry: REGISTRY } as const;
+
+test("venue-aware readAccount: an Aave-only registry reads the Aave venue, cross-checks it against the pool, and shows the pool's HF", async () => {
+  const market = await readMarket(fakeClient());
+  const client = venueClient({ [AAVE_VENUE.toLowerCase()]: aaveVenueMirror() }, registryAaveOnly);
+  const a = await readAccount(client, OWNER, market, readOpts);
+  assert.ok(a.venues);
+  assert.equal(a.venues!.venues.length, 1);
+  assert.equal(a.venues!.venues[0].kind, "aave");
+  assert.equal(a.venues!.venues[0].current, true);
+  assert.deepEqual(a.venues!.venues[0].assets, ["cbBTC", "WETH", "cbZEC"]);
+  assert.ok(Math.abs((a.venues!.healthFactor ?? 0) - 1.95) < 1e-9);
+  assert.equal(a.venues!.otherDebtUsdc, 0);
+  assert.equal(accountHf(a), a.aave!.healthFactor, "same number as before the venue-aware read existed");
+  assert.equal(a.collateral.length, 1, "no duplicate row for the Aave venue's collateral");
+});
+
+test("M-HIGH-2: a Morpho position is VISIBLE — HF 1.72 from the venue, its debt and collateral on the page, the Aave leg alone would have said no debt", async () => {
+  const market = await readMarket(fakeClient());
+  // The pool leg has no position for this account here: make the fake pool empty to isolate the Morpho view.
+  const emptyPool = fakeClient();
+  const empty: ReadClient = {
+    ...emptyPool,
+    async readContract(c) {
+      if (c.functionName === "getUserAccountData") return [0n, 0n, 0n, 0n, 0n, 2n ** 256n - 1n];
+      if (c.functionName === "getUserReserveData") return [0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, false];
+      return emptyPool.readContract(c);
+    },
+  };
+  const client = venueClient({ [AAVE_VENUE.toLowerCase()]: { ...aaveVenueMirror(2n ** 256n - 1n), debt: () => 0n, collateral: () => 0n }, [MORPHO_VENUE]: morphoVenue() }, registryCbbtcOnMorpho, empty);
+  const a = await readAccount(client, OWNER, market, readOpts);
+  assert.equal(a.aave?.healthFactor, Number.POSITIVE_INFINITY, "the blind spot: the pool sees nothing");
+  assert.ok(a.venues);
+  const morpho = a.venues!.venues.find((v) => v.kind === "other")!;
+  assert.equal(morpho.venue.toLowerCase(), MORPHO_VENUE);
+  assert.equal(morpho.current, true);
+  assert.deepEqual(morpho.assets, ["cbBTC"]);
+  assert.ok(Math.abs((morpho.healthFactor ?? 0) - 1.72) < 1e-9);
+  assert.ok(Math.abs((morpho.debtUsdc ?? 0) - 39_796) < 1e-9);
+  assert.deepEqual(morpho.collateral.map((c) => [c.symbol, c.amount, c.liquidationThresholdBps]), [["cbBTC", 1, 8600]]);
+  const aave = a.venues!.venues.find((v) => v.kind === "aave")!;
+  assert.equal(aave.current, true, "WETH and cbZEC still point at it");
+  assert.deepEqual(aave.assets, ["cbBTC", "WETH", "cbZEC"], "cbBTC keeps the Aave venue as a PREVIOUS venue (M-HIGH-1)");
+  assert.ok(Math.abs((a.venues!.healthFactor ?? 0) - 1.72) < 1e-9, "the worst venue's HF");
+  assert.ok(Math.abs(a.venues!.otherDebtUsdc - 39_796) < 1e-9);
+  assert.equal(accountHf(a), a.venues!.healthFactor);
+  const row = a.collateral.find((c) => c.venueKind === "other")!;
+  assert.equal(row.symbol, "cbBTC");
+  assert.equal(row.amount, 1);
+  assert.equal(row.liquidationThresholdBps, 8600);
+  assert.equal(row.venue?.toLowerCase(), MORPHO_VENUE);
+});
+
+test("worst venue wins: Aave at 1.95 and Morpho at 1.72 → 1.72; Morpho at 5.0 → the pool's 1.95", async () => {
+  const market = await readMarket(fakeClient());
+  const low = await readAccount(venueClient({ [AAVE_VENUE.toLowerCase()]: aaveVenueMirror(), [MORPHO_VENUE]: morphoVenue() }, registryCbbtcOnMorpho), OWNER, market, readOpts);
+  assert.ok(Math.abs((accountHf(low) ?? 0) - 1.72) < 1e-9);
+  const high = await readAccount(venueClient({ [AAVE_VENUE.toLowerCase()]: aaveVenueMirror(), [MORPHO_VENUE]: morphoVenue(5n * WAD) }, registryCbbtcOnMorpho), OWNER, market, readOpts);
+  assert.ok(Math.abs((accountHf(high) ?? 0) - 1.95) < 1e-9);
+});
+
+test("N-MED-2 still holds: a venue the registry names that cannot be read → HF null (unreadable), never ∞ and never the other venue's number", async () => {
+  const market = await readMarket(fakeClient());
+  const registry = { ...registryCbbtcOnMorpho, previousVenues: (asset: string) => (asset === BASE_TOKENS.cbBTC.address.toLowerCase() ? [AAVE_VENUE, DEAD_VENUE] : []) };
+  const a = await readAccount(venueClient({ [AAVE_VENUE.toLowerCase()]: aaveVenueMirror(), [MORPHO_VENUE]: morphoVenue() }, registry), OWNER, market, readOpts);
+  assert.ok(a.venues);
+  const dead = a.venues!.venues.find((v) => v.venue.toLowerCase() === DEAD_VENUE)!;
+  assert.equal(dead.readable, false);
+  assert.equal(dead.healthFactor, null);
+  assert.equal(a.venues!.healthFactor, null);
+  assert.match(a.venues!.unreadableReason ?? "", /did not answer/);
+  assert.equal(accountHf(a), null, "unreadable — the tile says so and the banner alerts (N-MED-2)");
+  assert.ok(a.aave, "the pool leg itself was fine; the page still refuses to show its number alone");
+});
+
+test("the Aave venue must agree with the pool: a venue reporting HF 5.0 against a pool at 1.95 is unreadable, not a choice", async () => {
+  const market = await readMarket(fakeClient());
+  const a = await readAccount(venueClient({ [AAVE_VENUE.toLowerCase()]: aaveVenueMirror(5n * WAD) }, registryAaveOnly), OWNER, market, readOpts);
+  assert.equal(accountHf(a), null);
+  assert.match(a.venues!.unreadableReason ?? "", /reports HF 5 but the Aave pool reports 1.95/);
+  // …and a registry that cannot be read is unreadable too.
+  const broken = venueClient({ [AAVE_VENUE.toLowerCase()]: aaveVenueMirror() }, { ...registryAaveOnly, previousVenues: () => { throw new Error("rpc"); } });
+  const b = await readAccount(broken, OWNER, market, readOpts);
+  assert.equal(accountHf(b), null);
+  assert.match(b.venues!.unreadableReason ?? "", /registry unreadable/);
+});
+
+test("readVenueHealth alone: no registry pointer for an asset is not an error; a zero-debt venue reads ∞", async () => {
+  const client = venueClient({ [AAVE_VENUE.toLowerCase()]: { ...aaveVenueMirror(2n ** 256n - 1n), debt: () => 0n } }, { ...registryAaveOnly, venueOf: (asset: string) => (asset === BASE_TOKENS.cbZEC.address.toLowerCase() ? ZERO : AAVE_VENUE) });
+  const v = await readVenueHealth(client, REGISTRY, ACCOUNT);
+  assert.equal(v.venues.length, 1);
+  assert.deepEqual(v.venues[0].assets, ["cbBTC", "WETH"], "cbZEC is not registered");
+  assert.equal(v.healthFactor, Number.POSITIVE_INFINITY);
+  assert.equal(v.unreadableReason, null);
 });
 
 test("readPendingVenues surfaces a proposed venue replacement and ignores the empty slots", async () => {

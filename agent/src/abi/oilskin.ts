@@ -291,9 +291,10 @@ export const lpVenueAbi = [
 ] as const;
 
 /**
- * CollateralRegistry — read at startup by the venue guard (audit wave 2, M-HIGH-2): the keeper
- * values every account through the Aave pool, so the registry must still point every ENABLED
- * asset at an AaveV3Venue over that pool, or the keeper is blind to those positions.
+ * CollateralRegistry — read by the venue-aware reader (audit wave 2, M-HIGH-2): which venue each
+ * collateral asset currently resolves to (`venueOf`), every venue it was pointed at before
+ * (`previousVenues`, kept by `acceptVenue` so positions opened there stay reachable), and whether
+ * the asset is enabled. Read once per tick; nothing about a venue is cached across ticks.
  */
 export const collateralRegistryAbi = [
   {
@@ -319,9 +320,59 @@ export const collateralRegistryAbi = [
   },
 ] as const;
 
-/** AaveV3Venue — `PROVIDER()` is what identifies a venue as the Aave venue the keeper reads. */
+/**
+ * AaveV3Venue — `PROVIDER()` is what identifies a venue as the `AaveV3Venue` over the pool the
+ * keeper's G1–G4 valuation reads directly; such a venue is cross-checked against that pool snapshot
+ * instead of against the feed-implied bounds (services/venues.ts).
+ */
 export const aaveVenueAbi = [
   { type: "function", name: "PROVIDER", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
+] as const;
+
+/**
+ * ICollateralVenue — the views the venue-aware reader calls on EVERY venue the registry names for an
+ * account's collateral (`venueOf` and `previousVenues`), whatever the venue is built over (audit
+ * wave 2, M-HIGH-2). `healthFactor` is WAD with `type(uint256).max` for no debt; on Morpho it is the
+ * WORST market's; `debt` and `collateral` are raw token units; `liquidationThresholdBps` is read
+ * live (Aave's LT, Morpho's LLTV). Pinned by verify-abi against the interface artifact AND against
+ * `MorphoBlueVenue`, so the Morpho venue is known to answer exactly these selectors.
+ */
+export const collateralVenueAbi = [
+  {
+    type: "function",
+    name: "healthFactor",
+    stateMutability: "view",
+    inputs: [{ name: "account", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "debt",
+    stateMutability: "view",
+    inputs: [
+      { name: "account", type: "address" },
+      { name: "asset", type: "address" },
+    ],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "collateral",
+    stateMutability: "view",
+    inputs: [
+      { name: "account", type: "address" },
+      { name: "asset", type: "address" },
+    ],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "liquidationThresholdBps",
+    stateMutability: "view",
+    inputs: [{ name: "asset", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  { type: "function", name: "enabled", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "bool" }] },
 ] as const;
 
 /** AerodromeSwapAdapter — the keeper never calls it directly; it decodes its reverts. */
