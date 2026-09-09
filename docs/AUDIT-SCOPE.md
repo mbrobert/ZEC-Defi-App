@@ -3,7 +3,7 @@
 What an auditor is asked to read, what it must guarantee, and what we have
 not verified ourselves. Line counts are `wc -l` on this tree. The ABI seam
 (selectors, errors, events) is `CONTRACT-ABI.md` and the generated
-`contracts/abi/oilskin-abi.json` (321 entries as of 2026-09-07); read the code, not the tables.
+`contracts/abi/oilskin-abi.json` (326 entries as of 2026-09-08); read the code, not the tables.
 Wave 1 of the internal audit and the fix round it produced are in
 `AUDIT-2026-09-06.md`.
 
