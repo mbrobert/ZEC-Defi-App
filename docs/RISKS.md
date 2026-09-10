@@ -224,7 +224,13 @@ is only ever as wide as the asset the rung named: a venue that the dominant
 collateral's registry history does not name is out of that call's reach, and
 the same rule reports it FAILED rather than CONFIRMED. Tests:
 `contracts/test/audit-regressions/VenueSwitch.t.sol` (M1g–M1l),
-`agent/test/dispatcher.test.ts` ("RISKS §8 residual (a)"). Residual (b)
+`agent/test/dispatcher.test.ts` ("RISKS §8 residual (a)"), and since
+2026-09-10 `invariant_repayReachesEveryBook` (`contracts/test/invariant/`):
+the handler now opens on the registry's current venue, so the fuzz reaches
+accounts owing USDC on both Aave and Morpho, and after an owner
+`unwind(repay max)` with USDC to cover, no venue the registry names for the
+asset may still owe (or the call reverted with a named error) — the two-book
+state the 2026-09-07 audit's M-INFO-1 said no invariant could see. Residual (b)
 stands: because the cbBTC market's oracle is BTC/USD while the keeper's feed
 is cbBTC/USD, a cbBTC depeg beyond the bound makes the Morpho position UNKNOWN
 rather than acted on early — the owner is told; the keeper does not guess
@@ -357,8 +363,9 @@ every call; no standing allowances (`_approveCallReset`;
 `invariant_noStandingAllowances`); reentrancy lock in transient storage;
 peripheral rights opt-in per call and bounded in depth; revert data bubbled
 untouched; **304 unit / fuzz / invariant tests green** (2026-09-10; plus 8 fork
-tests skipped without `FORK_URL`), with 6 invariants including the user-can-always-exit and
-fee-never-touches-principal properties and the two new donation properties.
+tests skipped without `FORK_URL`), with 9 invariants including the user-can-always-exit (raw and via the
+router), repay-reaches-every-book, fee-never-touches-principal and the two
+donation properties.
 The one owned contract is the registry, which cannot touch an account — but
 see §16 for what it *can* do.
 

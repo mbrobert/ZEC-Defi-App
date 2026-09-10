@@ -41,7 +41,7 @@ contract InvariantsTest is Fixture {
         handler.grantKeeper();
 
         targetContract(address(handler));
-        bytes4[] memory sel = new bytes4[](18);
+        bytes4[] memory sel = new bytes4[](20);
         sel[0] = Handler.supplyAndBorrow.selector;
         sel[1] = Handler.openLp.selector;
         sel[2] = Handler.accrueYield.selector;
@@ -60,6 +60,8 @@ contract InvariantsTest is Fixture {
         sel[15] = Handler.donate.selector;
         sel[16] = Handler.switchVenue.selector;
         sel[17] = Handler.routerExitProbe.selector;
+        sel[18] = Handler.supplyAndBorrowOnCurrentVenue.selector;
+        sel[19] = Handler.repayAcrossProbe.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: sel}));
     }
 
@@ -73,6 +75,20 @@ contract InvariantsTest is Fixture {
     /// random; the probe runs under a snapshot after any sequence.
     function invariant_userCanAlwaysExitViaRouter() public view {
         assertFalse(handler.g_routerExitProbeFailed(), "the router's unwind failed to reach the position in some state");
+    }
+
+    /// 2026-09-10 (slice 2): the repay leg reaches EVERY book. The handler can now open on the
+    /// registry's current venue — Morpho, after its own test-only propose → warp → accept — while
+    /// the Aave book is still open. After an owner `unwind(repay max)` with enough USDC to cover
+    /// the account's debt on every venue the registry names for cbBTC, no venue (the pointer or a
+    /// `previousVenues` entry) still owes USDC, or the call reverted with a named custom error.
+    /// `RISKS.md` §8 residual (a): before this, `invariant_userCanAlwaysExitViaRouter` could not
+    /// see a two-book account because no action put debt on the second book.
+    function invariant_repayReachesEveryBook() public view {
+        assertFalse(
+            handler.g_repayAcrossFailed(),
+            "a venue still owed USDC after unwind(repay max) with USDC to cover, or the unwind reverted without a name"
+        );
     }
 
     function invariant_keeperNeverExceedsGrant() public view {
@@ -102,9 +118,10 @@ contract InvariantsTest is Fixture {
     /// action that could transfer a token to a peripheral, so the vacuous assertion looked strong
     /// while one base unit of USDC would have bricked the protocol for everyone, permanently.
     function invariant_peripheralsAcquireNothing() public view {
-        address[4] memory peripherals = [address(router), address(aaveVenue), address(lpVenue), address(swapAdapter)];
+        address[5] memory peripherals =
+            [address(router), address(aaveVenue), address(lpVenue), address(swapAdapter), address(morphoVenue)];
         MockERC20[4] memory toks = [usdc, weth, cbbtc, aero];
-        for (uint256 i = 0; i < 4; i++) {
+        for (uint256 i = 0; i < 5; i++) {
             for (uint256 j = 0; j < 4; j++) {
                 assertEq(
                     toks[j].balanceOf(peripherals[i]),
@@ -124,9 +141,9 @@ contract InvariantsTest is Fixture {
     }
 
     function invariant_noStandingAllowances() public view {
-        address[3] memory spenders = [address(aave), address(engine), address(aeroRouter)];
+        address[4] memory spenders = [address(aave), address(engine), address(aeroRouter), address(morpho)];
         MockERC20[3] memory toks = [usdc, weth, cbbtc];
-        for (uint256 i = 0; i < 3; i++) {
+        for (uint256 i = 0; i < 4; i++) {
             for (uint256 j = 0; j < 3; j++) {
                 assertEq(toks[j].allowance(address(acct), spenders[i]), 0, "allowance left behind");
             }
@@ -185,6 +202,25 @@ contract InvariantsTest is Fixture {
         handler.regrant();
         handler.keeperUnwind(5_000e6);
         assertEq(handler.g_keeperUnwinds(), 3, "keeper unwind still repays the Aave debt with the registry pointing at Morpho");
+
+        // 2026-09-10, slice 2: the two-book state. With the registry on Morpho an open lands on
+        // Morpho while the Aave book is still open; the owner's unwind(repay max) with USDC to
+        // cover must clear BOTH, worst first (RISKS §8 residual (a)), and both exits must still
+        // work with two books. (cbBTC was paused above; an open needs it offered, an exit never does.)
+        handler.toggleAsset(true);
+        handler.supplyAndBorrowOnCurrentVenue(1e8, 4000);
+        assertEq(handler.g_morphoOpens(), 1, "the open landed on the registry's current venue, Morpho");
+        assertGt(morphoVenue.debt(address(acct), address(usdc)), 0);
+        assertGt(aaveVenue.debt(address(acct), address(usdc)), 0, "the Aave book is still open");
+        handler.repayAcrossProbe();
+        assertEq(handler.g_twoBookProbes(), 1, "the probe saw debt on both books");
+        assertFalse(handler.g_repayAcrossFailed(), "unwind(repay max) must clear every book the registry names");
+        assertEq(handler.g_repayAcrossNamedReverts(), 0, "nothing to refuse with USDC to cover");
+        assertGt(morphoVenue.debt(address(acct), address(usdc)), 0, "probe state restored");
+        handler.routerExitProbe();
+        assertFalse(handler.g_routerExitProbeFailed(), "the router exit clears two books and withdraws from both venues");
+        handler.rawExitProbe();
+        assertFalse(handler.g_exitProbeFailed(), "the raw exit clears the Morpho book too");
         handler.switchVenue(false);
         assertEq(registry.venueOf(address(cbbtc)), address(aaveVenue));
         assertEq(handler.g_switches(), 2);

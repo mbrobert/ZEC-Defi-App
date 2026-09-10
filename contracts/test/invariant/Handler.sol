@@ -9,6 +9,7 @@ import {ICollateralVenue} from "../../src/interfaces/ICollateralVenue.sol";
 import {ILpVenue, LpOpenParams, PriceBand} from "../../src/interfaces/ILpVenue.sol";
 import {ISnuggleVault} from "../../src/interfaces/ISnuggleVault.sol";
 import {IAavePool} from "../../src/interfaces/IAaveV3.sol";
+import {IMorphoBlue, MarketParams} from "../../src/interfaces/IMorphoBlue.sol";
 import {AaveV3Venue} from "../../src/venues/AaveV3Venue.sol";
 import {MorphoBlueVenue} from "../../src/venues/MorphoBlueVenue.sol";
 import {SnuggleLpVenue} from "../../src/venues/SnuggleLpVenue.sol";
@@ -17,6 +18,7 @@ import {StrategyRouter} from "../../src/router/StrategyRouter.sol";
 import {AerodromeSwapAdapter} from "../../src/swap/AerodromeSwapAdapter.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
 import {MockAave} from "../mocks/MockAave.sol";
+import {MockMorpho} from "../mocks/MockMorpho.sol";
 import {MockCLPool} from "../mocks/MockCLPool.sol";
 import {MockSnuggleVault} from "../mocks/MockSnuggleVault.sol";
 
@@ -31,6 +33,7 @@ contract Handler is Test {
     StrategyRouter immutable router;
     AerodromeSwapAdapter immutable swapAdapter;
     MockAave immutable aave;
+    MockMorpho immutable morpho;
     MockSnuggleVault immutable engine;
     MockCLPool immutable pool;
     MockERC20 immutable usdc;
@@ -63,6 +66,18 @@ contract Handler is Test {
     /// Registry venue switches (cbBTC: Aave ↔ Morpho) performed, so the exit probes above are
     /// proved against a moved pointer and not only against the venue every position sits on.
     uint256 public g_switches;
+    /// Two-book repay (2026-09-10). After the owner's `unwind(repay max)` with enough USDC to cover
+    /// every book, a venue the registry names for cbBTC — the current pointer or a `previousVenues`
+    /// entry — still owed USDC, or the call reverted without a name (empty data, `Panic`, a bare
+    /// reason string). Set only by `repayAcrossProbe`, checked by `invariant_repayReachesEveryBook`.
+    bool public g_repayAcrossFailed;
+    uint256 public g_repayAcrossProbes;
+    /// Probes that started with USDC owed on BOTH venues — the state the property is about.
+    uint256 public g_twoBookProbes;
+    uint256 public g_repayAcrossNamedReverts;
+    bytes4 public g_lastRepayAcrossSelector;
+    /// Opens that landed on Morpho: reachable only after `switchVenue(true)`.
+    uint256 public g_morphoOpens;
     uint256 public g_calls;
     /// Donations pushed at a peripheral — the invariant asserts they are INERT, not that they are
     /// impossible: anyone can transfer to any address, and a contract that treats that as fatal is
@@ -93,6 +108,7 @@ contract Handler is Test {
         router = router_;
         swapAdapter = swapAdapter_;
         aave = aave_;
+        morpho = MockMorpho(address(morphoVenue_.MORPHO()));
         engine = engine_;
         pool = pool_;
         (usdc, weth, cbbtc, aero) = (tokens[0], tokens[1], tokens[2], tokens[3]);
@@ -131,18 +147,44 @@ contract Handler is Test {
 
     // ------------------------------------------------------------- actions
 
-    /// Owner supplies cbBTC and borrows USDC within the venue's LTV.
+    /// Owner supplies cbBTC and borrows USDC within the venue's LTV, on Aave (the venue refuses
+    /// `AssetNotOffered` while the registry points elsewhere — the existing behaviour).
     function supplyAndBorrow(uint256 amount, uint256 ltvBps) external {
         g_calls++;
+        _open(address(aaveVenue), amount, ltvBps);
+    }
+
+    /// Owner supplies cbBTC and borrows USDC on WHATEVER venue the registry names for cbBTC right
+    /// now: Aave in the production wiring, Morpho only once `switchVenue(true)` has done the
+    /// test-only propose → warp → accept in this handler (never in Deploy.s.sol). Opening on the
+    /// new pointer while the Aave book is still open is what puts USDC debt on two books — the
+    /// state the worst-first repay (`RISKS.md` §8 residual (a)) exists for and that no action
+    /// could reach before 2026-09-10.
+    function supplyAndBorrowOnCurrentVenue(uint256 amount, uint256 ltvBps) external {
+        g_calls++;
+        _open(registry.venueOf(address(cbbtc)), amount, ltvBps);
+    }
+
+    function _open(address venue, uint256 amount, uint256 ltvBps) internal {
         amount = bound(amount, 0.01e8, 2e8);
-        // The venue enforces the registry's 1.55 entry floor (LT 7800 → LTV ≤ 5032 bps).
+        // Both venues enforce the registry's 1.55 entry floor: Aave LT 7800 → LTV ≤ 5032 bps,
+        // Morpho LLTV 8600 → ≤ 5548; 5000 clears both.
         ltvBps = bound(ltvBps, 1000, 5000);
         cbbtc.mint(address(acct), amount);
-        _exec(address(aaveVenue), abi.encodeCall(ICollateralVenue.supply, (address(cbbtc), amount)));
+        _exec(venue, abi.encodeCall(ICollateralVenue.supply, (address(cbbtc), amount)));
+        // The Morpho oracle in the fixture is seeded from the same price, so one figure sizes both.
         uint256 usd = (amount * aave.getAssetPrice(address(cbbtc))) / 1e8; // E8
         uint256 borrow = (usd * ltvBps) / 10_000 / 100; // USDC 6 dec
         if (borrow == 0) return;
-        _exec(address(aaveVenue), abi.encodeCall(ICollateralVenue.borrow, (address(usdc), borrow)));
+        if (venue == address(morphoVenue)) {
+            // The router's opens use `borrowAgainst` so the debt lands in cbBTC's market (M-MED-1).
+            (bool ok,) = _exec(
+                venue, abi.encodeCall(ICollateralVenue.borrowAgainst, (address(cbbtc), address(usdc), borrow))
+            );
+            if (ok) g_morphoOpens++;
+        } else {
+            _exec(venue, abi.encodeCall(ICollateralVenue.borrow, (address(usdc), borrow)));
+        }
     }
 
     /// Owner deploys idle USDC into the LP venue.
@@ -363,8 +405,66 @@ contract Handler is Test {
 
     // ------------------------------------------------------------ internal
 
+    /// Slice 2 (2026-09-10) — the property `invariant_repayReachesEveryBook` checks. Under a
+    /// snapshot: fund the account with enough USDC to cover EVERY book it owes on for cbBTC, run
+    /// the owner's `unwind(repay max)` (no ids, no withdraw), and require that no venue the
+    /// registry names for cbBTC — the current pointer and every `previousVenues` entry — still
+    /// owes USDC. A revert is tolerated only when it carries a NAME: a custom-error selector, not
+    /// empty data, not `Panic`, not a bare reason string — so a silent no-op, a truncated loop or
+    /// a mock's "insufficient allowance" can never pass as "nothing to do".
+    function repayAcrossProbe() external {
+        g_calls++;
+        g_repayAcrossProbes++;
+        // Ghosts are written AFTER the snapshot is reverted, or the revert would erase them and
+        // the invariant would be vacuous.
+        uint256 snap = vm.snapshotState();
+        (bool twoBook, bool failed, bool namedRevert, bytes4 sel) = _repayAcross();
+        vm.revertToState(snap);
+        if (twoBook) g_twoBookProbes++;
+        if (failed) g_repayAcrossFailed = true;
+        if (namedRevert) {
+            g_repayAcrossNamedReverts++;
+            g_lastRepayAcrossSelector = sel;
+        }
+    }
+
+    function _repayAcross() internal returns (bool twoBook, bool failed, bool namedRevert, bytes4 sel) {
+        uint256 owedAave = aaveVenue.debt(address(acct), address(usdc));
+        uint256 owedMorpho = morphoVenue.debt(address(acct), address(usdc));
+        twoBook = owedAave != 0 && owedMorpho != 0;
+        uint256 total = owedAave + owedMorpho;
+        if (total == 0) return (twoBook, false, false, bytes4(0));
+        uint256 need = total + total / 100 + 1;
+        uint256 held = usdc.balanceOf(address(acct));
+        if (held < need) usdc.mint(address(acct), need - held);
+        StrategyRouter.UnwindParams memory u = StrategyRouter.UnwindParams({
+            collateralAsset: address(cbbtc),
+            positionIds: new uint256[](0),
+            band: _band(),
+            swap: StrategyRouter.SwapQuote({
+                quotedIn: 1e18,
+                quotedOut: 2453_450000,
+                maxSlippageBps: 100,
+                routeData: abi.encode(int24(100))
+            }),
+            repayAmount: type(uint256).max,
+            withdrawAmount: 0,
+            deadline: block.timestamp + 1
+        });
+        (bool ok, bytes memory ret) = _exec(address(router), abi.encodeCall(StrategyRouter.unwind, (u)));
+        if (!ok) {
+            bool named;
+            (sel, named) = _revertName(ret);
+            return (twoBook, !named, named, sel);
+        }
+        address[] memory venues = _venuesFor(address(cbbtc));
+        for (uint256 i = 0; i < venues.length; i++) {
+            if (ICollateralVenue(venues[i]).debt(address(acct), address(usdc)) != 0) failed = true;
+        }
+    }
+
     function _routerExit() internal returns (bool) {
-        uint256 debtBefore = aaveVenue.debt(address(acct), address(usdc));
+        uint256 debtBefore = _totalDebt();
         uint256 heldBefore = usdc.balanceOf(address(acct));
         StrategyRouter.UnwindParams memory u = StrategyRouter.UnwindParams({
             collateralAsset: address(cbbtc),
@@ -382,21 +482,60 @@ contract Handler is Test {
         });
         (bool ok,) = _exec(address(router), abi.encodeCall(StrategyRouter.unwind, (u)));
         if (!ok) return false;
-        uint256 debtAfter = aaveVenue.debt(address(acct), address(usdc));
-        // The repay must have reached the debt: whatever the account holds AFTER is only what was
-        // left over once the debt was cleared. Debt remaining next to idle USDC means the router
-        // repaid a venue that holds nothing of this account's.
+        uint256 debtAfter = _totalDebt();
+        // The repay must have reached the debt on EVERY book: whatever the account holds AFTER is
+        // only what was left once every venue was cleared. Debt remaining on any venue next to
+        // idle USDC means the router repaid a venue that holds nothing of this account's, or
+        // stopped at the first book.
         if (debtAfter != 0 && usdc.balanceOf(address(acct)) != 0) return false;
         if (debtBefore != 0 && heldBefore != 0 && debtAfter == debtBefore) return false;
-        if (debtAfter == 0 && aaveVenue.collateral(address(acct), address(cbbtc)) != 0) {
+        if (debtAfter == 0) {
+            // The withdraw leg goes to the first venue holding anything of the account's, so a
+            // two-book account takes one `unwind(withdraw max)` per venue — what a Close does.
             u.positionIds = new uint256[](0);
             u.repayAmount = 0;
             u.withdrawAmount = type(uint256).max;
-            (ok,) = _exec(address(router), abi.encodeCall(StrategyRouter.unwind, (u)));
-            if (!ok) return false;
-            if (aaveVenue.collateral(address(acct), address(cbbtc)) != 0) return false;
+            for (uint256 i = 0; i < 2 && _totalCollateral() != 0; i++) {
+                (ok,) = _exec(address(router), abi.encodeCall(StrategyRouter.unwind, (u)));
+                if (!ok) return false;
+            }
+            if (_totalCollateral() != 0) return false;
         }
         return true;
+    }
+
+    function _totalDebt() internal view returns (uint256) {
+        return aaveVenue.debt(address(acct), address(usdc)) + morphoVenue.debt(address(acct), address(usdc));
+    }
+
+    function _totalCollateral() internal view returns (uint256) {
+        return aaveVenue.collateral(address(acct), address(cbbtc))
+            + morphoVenue.collateral(address(acct), address(cbbtc));
+    }
+
+    /// Every venue the registry names for `asset`: the current pointer first, then the history —
+    /// the same list `StrategyRouter._exitVenues` walks.
+    function _venuesFor(address asset) internal view returns (address[] memory venues) {
+        address[] memory prev = registry.previousVenues(asset);
+        venues = new address[](prev.length + 1);
+        venues[0] = registry.venueOf(asset);
+        for (uint256 i = 0; i < prev.length; i++) {
+            venues[i + 1] = prev[i];
+        }
+    }
+
+    bytes4 internal constant ERROR_STRING_SELECTOR = 0x08c379a0; // Error(string)
+    bytes4 internal constant PANIC_SELECTOR = 0x4e487b71; // Panic(uint256)
+
+    /// A revert "by name" is a custom error: four bytes of selector that are not `Error(string)`,
+    /// not `Panic(uint256)` and not zero. Empty data is the shape of a bare `revert()`, an
+    /// out-of-gas and a proxy miss, and is never a name.
+    function _revertName(bytes memory ret) internal pure returns (bytes4 sel, bool named) {
+        if (ret.length < 4) return (bytes4(0), false);
+        assembly ("memory-safe") {
+            sel := mload(add(ret, 32))
+        }
+        named = sel != bytes4(0) && sel != ERROR_STRING_SELECTOR && sel != PANIC_SELECTOR;
     }
 
     function _rawExit() internal returns (bool) {
@@ -433,11 +572,46 @@ contract Handler is Test {
                 if (!ok) return false;
             }
         }
+        // 2b. The Morpho book, raw at Morpho (2026-09-10, once the handler could open there): repay
+        //     by SHARES when the account holds enough USDC (Morpho's rounding cannot leave a wei of
+        //     debt that way), else whatever it holds; withdraw the collateral once nothing is owed.
+        if (!_rawExitMorpho()) return false;
         address[3] memory toks = [address(usdc), address(cbbtc), address(weth)];
         for (uint256 i = 0; i < 3; i++) {
             uint256 bal = IERC20(toks[i]).balanceOf(address(acct));
             if (bal == 0) continue;
             (bool ok,) = _execPlain(toks[i], abi.encodeCall(IERC20.transfer, (alice, bal)));
+            if (!ok) return false;
+        }
+        return true;
+    }
+
+    function _rawExitMorpho() internal returns (bool) {
+        bytes32 mid = morphoVenue.marketIdOf(address(cbbtc));
+        MarketParams memory mp = morphoVenue.marketParamsOf(address(cbbtc));
+        (, uint128 bShares, uint128 coll) = morpho.position(mid, address(acct));
+        if (bShares != 0) {
+            uint256 owedM = morphoVenue.debt(address(acct), address(usdc));
+            uint256 heldM = usdc.balanceOf(address(acct));
+            if (heldM != 0) {
+                bytes memory repayData = heldM >= owedM
+                    ? abi.encodeCall(IMorphoBlue.repay, (mp, 0, bShares, address(acct), ""))
+                    : abi.encodeCall(IMorphoBlue.repay, (mp, heldM, 0, address(acct), ""));
+                Call[] memory calls = new Call[](3);
+                calls[0] = Call(address(usdc), 0, abi.encodeCall(IERC20.approve, (address(morpho), heldM)), false);
+                calls[1] = Call(address(morpho), 0, repayData, false);
+                calls[2] = Call(address(usdc), 0, abi.encodeCall(IERC20.approve, (address(morpho), 0)), false);
+                vm.prank(alice);
+                (bool ok,) = address(acct).call(abi.encodeCall(OilskinAccount.execBatch, (calls)));
+                if (!ok) return false;
+            }
+            (, bShares, coll) = morpho.position(mid, address(acct));
+        }
+        if (bShares == 0 && coll != 0) {
+            (bool ok,) = _execPlain(
+                address(morpho),
+                abi.encodeCall(IMorphoBlue.withdrawCollateral, (mp, coll, address(acct), address(acct)))
+            );
             if (!ok) return false;
         }
         return true;
@@ -474,11 +648,11 @@ contract Handler is Test {
     /// service on an immutable contract. After this runs, every other action must still work.
     function donate(uint256 seed, uint256 amount) external {
         g_calls++;
-        address[4] memory peripherals =
-            [address(router), address(aaveVenue), address(lpVenue), address(swapAdapter)];
+        address[5] memory peripherals =
+            [address(router), address(aaveVenue), address(lpVenue), address(swapAdapter), address(morphoVenue)];
         MockERC20[4] memory toks = [usdc, weth, cbbtc, aero];
-        address to = peripherals[seed % 4];
-        MockERC20 t = toks[(seed / 4) % 4];
+        address to = peripherals[seed % 5];
+        MockERC20 t = toks[(seed / 5) % 4];
         amount = bound(amount, 1, 1_000e6);
         t.mint(to, amount);
         g_donated[to][address(t)] += amount;
