@@ -16,7 +16,7 @@
  * itself fails, so a missing/reverting multicall never blanks the page.
  */
 import { BaseError, ContractFunctionRevertedError, type Address, type Hex } from "viem";
-import { COLLATERAL_SYMBOLS, describeLpEnumerationFault, isZeroAddress, type CollateralSymbol } from "@zyo/shared";
+import { COLLATERAL_SYMBOLS, describeLpEnumerationFault, isLoanDust, isZeroAddress, type CollateralSymbol } from "@zyo/shared";
 import { AAVE_V3, BASE_TOKENS, COLLATERAL_ASSETS } from "./chain";
 import { AAVE_ORACLE_ABI, ERC20_ABI, POOL_ABI, POOL_DATA_PROVIDER_ABI } from "./abi/aave";
 import { AAVE_VENUE_ABI, ACCOUNT_ABI, AERODROME_CLPOOL_ABI, COLLATERAL_REGISTRY_ABI, COLLATERAL_VENUE_ABI, FACTORY_ABI, LP_VENUE_ABI, ROUTER_ABI, SNUGGLE_VAULT_ABI } from "./abi/oilskin";
@@ -88,6 +88,8 @@ export interface VenueHealthRead {
   healthFactor: number | null;
   /** `debt(account, USDC)`, human units; null = unreadable. */
   debtUsdc: number | null;
+  /** True when `debtUsdc` is at or below the shared LOAN_DUST_UNITS: rounding, shown as no debt (slice C). */
+  debtIsDust: boolean;
   /** `collateral(account, asset)` + `liquidationThresholdBps(asset)` per ENABLED asset routed here. */
   collateral: { symbol: CollateralSymbol; amountAtomic: bigint; amount: number; liquidationThresholdBps: number | null }[];
   /** Every word above decoded. A venue that is not readable makes the whole account unreadable. */
@@ -215,6 +217,12 @@ export interface AccountRead {
   lpUnreadable: string | null;
   /** USDC held in the account (hold strategy / un-swept proceeds), base units. */
   accountUsdc: bigint;
+  /**
+   * True when every USDC debt the read found — the Aave pool's row and each venue's `debt` — is at
+   * or below the shared LOAN_DUST_UNITS (slice C, RISKS §8): rounding, not a loan. The dashboard
+   * says "no debt" from this, never from `debtUsdc === 0`. False when nothing could be read.
+   */
+  debtIsDust: boolean;
   /** Native ETH in the wallet, wei — for the gas check. */
   walletEth: bigint | null;
   walletBalances: Partial<Record<"cbBTC" | "WETH" | "USDC" | "cbZEC", bigint>>;
@@ -467,6 +475,9 @@ export async function readVenueHealth(client: ReadClient, registry: Address, acc
     const hfRaw = out[e.hf];
     const debtRaw = out[e.debt];
     let readable = typeof hfRaw === "bigint" && typeof debtRaw === "bigint";
+    // Slice C (RISKS §8): a USDC residual at or below LOAN_DUST_UNITS is rounding, not a book — the
+    // venue's finite, enormous health factor for it reads as "no debt" (∞), as the keeper values it.
+    const debtIsDust = typeof debtRaw === "bigint" && isLoanDust(debtRaw);
     const collateral = e.collateral.map((c) => {
       const amountRaw = out[c.amount];
       const ltRaw = out[c.lt];
@@ -484,8 +495,9 @@ export async function readVenueHealth(client: ReadClient, registry: Address, acc
       kind,
       assets: [...e.venue.assets.keys()],
       current: [...e.venue.assets.values()].some((a) => a.current),
-      healthFactor: typeof hfRaw === "bigint" ? wadHealthFactor(hfRaw) : null,
+      healthFactor: typeof hfRaw === "bigint" ? (debtIsDust ? Number.POSITIVE_INFINITY : wadHealthFactor(hfRaw)) : null,
       debtUsdc: typeof debtRaw === "bigint" ? fromAtomic(debtRaw, BASE_TOKENS.USDC.decimals) : null,
+      debtIsDust,
       collateral,
       readable,
       priceDisagreement: null,
@@ -497,7 +509,7 @@ export async function readVenueHealth(client: ReadClient, registry: Address, acc
   const bad = checked.filter((v) => !v.readable);
   const disputed = checked.filter((v) => v.priceDisagreement !== null);
   const healthFactor = bad.length || disputed.length ? null : checked.reduce((worst, v) => Math.min(worst, v.healthFactor ?? Number.POSITIVE_INFINITY), Number.POSITIVE_INFINITY);
-  const otherDebtUsdc = checked.filter((v) => v.kind === "other").reduce((a, v) => a + (v.debtUsdc ?? 0), 0);
+  const otherDebtUsdc = checked.filter((v) => v.kind === "other" && !v.debtIsDust).reduce((a, v) => a + (v.debtUsdc ?? 0), 0);
   return {
     registry,
     venues: checked,
@@ -681,6 +693,7 @@ export async function readAccount(
     lpPositions: [],
     lpUnreadable: null,
     accountUsdc: 0n,
+    debtIsDust: false,
     walletEth,
     walletBalances,
     readAt,
@@ -723,6 +736,11 @@ export async function readAccount(
   }
 
   const acct = out[0];
+  const usdcRow = out[1 + COLLATERAL_SYMBOLS.length];
+  const usdcDebtAtomic = Array.isArray(usdcRow) ? (usdcRow[2] as bigint) + (usdcRow[1] as bigint) : null;
+  // Slice C (RISKS §8): the pool's USDC debt at or below LOAN_DUST_UNITS is rounding; its finite,
+  // enormous health factor reads as "no debt" (∞) here and in the venue leg, so the two agree.
+  const aaveDebtIsDust = usdcDebtAtomic !== null && isLoanDust(usdcDebtAtomic);
   const aave = Array.isArray(acct)
     ? {
         totalCollateralUsd: baseUnitsToUsd(acct[0] as bigint),
@@ -730,7 +748,7 @@ export async function readAccount(
         availableBorrowsUsd: baseUnitsToUsd(acct[2] as bigint),
         currentLiquidationThresholdBps: Number(acct[3] as bigint),
         ltvBps: Number(acct[4] as bigint),
-        healthFactor: wadHealthFactor(acct[5] as bigint),
+        healthFactor: aaveDebtIsDust ? Number.POSITIVE_INFINITY : wadHealthFactor(acct[5] as bigint),
       }
     : null;
 
@@ -744,8 +762,7 @@ export async function readAccount(
     const price = market.reserves[s]?.priceUsd ?? NaN;
     collateral.push({ symbol: s, amountAtomic, amount, usd: amount * price, venueKind: "aave" });
   });
-  const usdcRow = out[1 + COLLATERAL_SYMBOLS.length];
-  const debtUsdc = Array.isArray(usdcRow) ? fromAtomic((usdcRow[2] as bigint) + (usdcRow[1] as bigint), BASE_TOKENS.USDC.decimals) : 0;
+  const debtUsdc = usdcDebtAtomic !== null ? fromAtomic(usdcDebtAtomic, BASE_TOKENS.USDC.decimals) : 0;
   const usdcBal = out[calls.length - 1];
   const accountUsdc = typeof usdcBal === "bigint" ? usdcBal : 0n;
   const lpPositions = opts.engine ? await readPositions(client, opts.engine, lpPositionIds) : [];
@@ -788,7 +805,8 @@ export async function readAccount(
     }
   }
 
-  return { ...base, account, deployed, aave, venues, collateral, debtUsdc, lpPositionIds, lpPositions, lpUnreadable, accountUsdc };
+  const debtIsDust = aaveDebtIsDust && (venues === null || venues.venues.every((v) => v.debtIsDust));
+  return { ...base, account, deployed, aave, venues, collateral, debtUsdc, lpPositionIds, lpPositions, lpUnreadable, accountUsdc, debtIsDust };
 }
 
 /** The custom error a viem read rejected with, by name, or null when it was not a decoded revert. */

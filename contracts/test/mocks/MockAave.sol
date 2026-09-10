@@ -78,6 +78,12 @@ contract MockAave is IPoolAddressesProvider, IAavePool, IAavePoolDataProvider, I
         reserves[asset].priceE8 = priceE8;
     }
 
+    /// @dev The measured rounding (VERIFIED-BASE-FACTS Addendum 3): Aave reads a same-block borrow
+    ///      `units` over what it lent. A test-only hook; the real pool does this on its own.
+    function bumpDebt(address user, address asset, uint256 units) external {
+        debtOf[user][asset] += units;
+    }
+
     /// @dev Simulate interest: grow a user's debt by `bps`.
     function accrueDebt(address user, address asset, uint256 bps) external {
         debtOf[user][asset] += (debtOf[user][asset] * bps) / BPS;

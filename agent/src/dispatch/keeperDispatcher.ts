@@ -19,7 +19,7 @@ import {
   swapAdapterAbi,
   GRANT_SELECTORS,
 } from "../abi/oilskin.js";
-import { describeLpEnumerationFault } from "@zyo/shared";
+import { describeLpEnumerationFault, isLoanDust } from "@zyo/shared";
 import type { LadderRung } from "../engine/ladder.js";
 import { WAD, type Valuation } from "../engine/valuation.js";
 import type { Logger } from "../log.js";
@@ -206,8 +206,8 @@ export function judgeUntouched(
   const snap = new Map(books.map((b) => [b.venue.toLowerCase(), { debt: BigInt(b.debtUsdc), hf: BigInt(b.hfWad) }]));
   for (const u of untouched) {
     const at = snap.get(u.venue.toLowerCase());
-    if (!at || at.debt === 0n) {
-      return { honest: false, why: `USDC debt on ${u.venue} that owed nothing when this dispatch was sized (${at ? "0" : "not in the snapshot"}) — not this receipt's to confirm` };
+    if (!at || isLoanDust(at.debt)) {
+      return { honest: false, why: `USDC debt on ${u.venue} that owed nothing when this dispatch was sized (${at ? `${at.debt}, rounding` : "not in the snapshot"}) — not this receipt's to confirm` };
     }
   }
   for (const [v, amt] of byVenue) {
@@ -631,7 +631,8 @@ export class KeeperDispatcher implements Dispatcher {
     ];
     if (problems.length) return { unreadable: problems.join("; "), untouched: [], heldAfter: null };
     const untouched = snap.venues
-      .filter((v) => v.debtUsdc > 0n && (byVenue.get(v.venue.toLowerCase()) ?? 0n) === 0n)
+      // A residual at or below LOAN_DUST_UNITS is rounding, not a book still owed (slice C, RISKS §8).
+      .filter((v) => !isLoanDust(v.debtUsdc) && (byVenue.get(v.venue.toLowerCase()) ?? 0n) === 0n)
       .map((v) => ({ venue: v.venue, debtUsdc: v.debtUsdc }));
     let heldAfter: bigint | null = null;
     if (untouched.length) {

@@ -520,6 +520,25 @@ describe("RISKS §8 residual (a) — a receipt that leaves a venue the account s
     };
   }
 
+  it("slice C: a rounding unit that appears on another book between dispatch and confirm is not an untouched debt → CONFIRMED", async () => {
+    const r = await rig(1.3, { venues: true });
+    r.oil.setVenue(CBBTC, MORPHO_VENUE_ADDR);
+    r.oil.setUsdc(ACCOUNT_A, 60_000_000_000n);
+    r.grantAll();
+    const snap = snapshotting();
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: null, persistBeforeSend: snap.persistBeforeSend });
+    assert.equal(res.status, "SENT", JSON.stringify(res));
+    // Morpho owed nothing at dispatch; by confirm time its book reads one unit (Morpho's toAssetsUp).
+    r.oil.setMorphoPosition(ACCOUNT_A, CBBTC, { collateral: ONE_BTC, debt: 1n });
+    const c = await r.dispatcher.confirm(record("repay", "repay", 1.3, { status: "SENT", txHash: sent(res), venueBooks: snap.books() }));
+    assert.equal(c.status, "CONFIRMED", `one unit is rounding, not a book left untouched: ${JSON.stringify(c)}`);
+    // 101 units IS a book that owed nothing when sized → not this receipt's to confirm
+    r.oil.setMorphoPosition(ACCOUNT_A, CBBTC, { collateral: ONE_BTC, debt: 101n });
+    const c2 = await r.dispatcher.confirm(record("repay", "repay", 1.3, { status: "SENT", txHash: sent(res), venueBooks: snap.books() }));
+    assert.equal(c2.status, "FAILED");
+    assert.match((c2 as { error: string }).error, /owed nothing when this dispatch was sized/);
+  });
+
   it("the 2026-09-08 router: the repay landed on the healthy Morpho book (the first venue holding anything) while the Aave debt rides → FAILED, naming the Aave venue", async () => {
     const r = await twoBooks(20_000_000_000n);
     r.oil.repayFirstHoldingVenueOnly = true;

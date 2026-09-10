@@ -97,6 +97,17 @@ describe("venue-aware valuation — the Aave path is unchanged", () => {
     assert.equal(av.venues![0].valuation.kind, "NO_DEBT");
   });
 
+  it("slice C: a Morpho venue left with one unit of USDC (rounding) is NO_DEBT, not a book to protect; 101 units is a book", async () => {
+    const w = morphoWorld(1.72, (oil) => oil.setMorphoPosition(ACCOUNT_A, CBBTC, { collateral: ONE_BTC, debt: 1n }));
+    const av = await w.value();
+    assert.equal(av.valuation.kind, "NO_DEBT", `kind ${av.valuation.kind}${av.valuation.kind === "UNKNOWN" ? `: ${av.valuation.reasons.join("; ")}` : ""}`);
+    const morpho = av.venues!.find((v) => v.kind !== "aave")!;
+    assert.equal(morpho.valuation.kind, "NO_DEBT");
+    const w2 = morphoWorld(1.72, (oil) => oil.setMorphoPosition(ACCOUNT_A, CBBTC, { collateral: ONE_BTC, debt: 101n }));
+    const av2 = await w2.value();
+    assert.equal(av2.valuation.kind, "OK", "one unit above the threshold is a (very healthy) book");
+  });
+
   it("1 cbBTC against USDC on Aave is OK at the same health factor as before", async () => {
     const w = world((_, chain) => cbBtcPosition(chain, ACCOUNT_A, debtForHf(2.0)));
     const av = await w.value();

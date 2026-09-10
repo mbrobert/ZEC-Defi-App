@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 import {Peripheral} from "../account/Peripheral.sol";
 import {Call} from "../interfaces/IOilskinAccount.sol";
 import {ICollateralVenue} from "../interfaces/ICollateralVenue.sol";
@@ -38,6 +40,8 @@ contract AaveV3Venue is ICollateralVenue, Peripheral {
     error ZeroAmount();
     error ZeroAddress();
     error NothingToRepay();
+    /// @notice The account holds none of the loan token it asked to repay with (`held` = 0).
+    error InsufficientLoanToken(address asset, uint256 held, uint256 owed);
     /// @notice The registry does not offer this asset at this venue (or has it disabled).
     error AssetNotOffered(address asset, address venue);
     /// @notice The borrow would leave the account below the registry's entry floor.
@@ -120,21 +124,34 @@ contract AaveV3Venue is ICollateralVenue, Peripheral {
     }
 
     /// @inheritdoc ICollateralVenue
-    /// @dev Invariant: repays the calling account's own debt only; approves exactly what is owed.
+    /// @dev Invariant: repays the calling account's own debt only; approves exactly what Aave will
+    ///      pull, which is never more than the account holds. Aave reads a same-block borrow one
+    ///      unit over what it lent (measured 2026-09-10, `VERIFIED-BASE-FACTS.md` Addendum 3), so an
+    ///      account holding exactly what it borrowed asking for `type(uint256).max` used to die in
+    ///      Aave's `transferFrom`; it now repays everything it holds and leaves the rounding unit,
+    ///      which `debt()` reports and `LoanDust` classifies (slice C, `RISKS.md` §8). `repaid` is
+    ///      what Aave took. An account holding none of the loan token is refused by name.
     function repay(address asset, uint256 amount) external override returns (uint256 repaid) {
         if (amount == 0) revert ZeroAmount();
         address pool = PROVIDER.getPool();
         uint256 owed = _debt(asset, msg.sender);
         if (owed == 0) revert NothingToRepay();
-        uint256 toApprove = amount > owed ? owed : amount;
+        uint256 held = IERC20(asset).balanceOf(msg.sender);
+        if (held == 0) revert InsufficientLoanToken(asset, held, owed);
+        uint256 pay = amount > owed ? owed : amount;
+        bool clamped = pay > held;
+        if (clamped) pay = held;
+        // Aave's own "everything" path when the account can cover the whole debt; the exact held
+        // amount when it cannot.
+        uint256 askAave = clamped ? pay : amount;
         bytes memory ret = _approveCallReset(
             asset,
             pool,
-            toApprove,
+            pay,
             Call({
                 target: pool,
                 value: 0,
-                data: abi.encodeCall(IAavePool.repay, (asset, amount, VARIABLE_RATE, msg.sender)),
+                data: abi.encodeCall(IAavePool.repay, (asset, askAave, VARIABLE_RATE, msg.sender)),
                 callback: false
             })
         );

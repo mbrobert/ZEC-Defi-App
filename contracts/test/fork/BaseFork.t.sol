@@ -17,6 +17,7 @@ import {IAerodromeCLPool} from "../../src/interfaces/IAerodromeCLPool.sol";
 import {IPoolAddressesProvider} from "../../src/interfaces/IAaveV3.sol";
 import {CollateralRegistry} from "../../src/registry/CollateralRegistry.sol";
 import {ICollateralRegistry} from "../../src/interfaces/ICollateralRegistry.sol";
+import {LoanDust} from "../../src/libraries/LoanDust.sol";
 
 /// @title BaseFork — the tests that can only be true against the chain (Part 6 lesson 2: "verify
 ///        the external contract against the chain, not against your own mock").
@@ -186,27 +187,69 @@ contract BaseForkTest is Test {
 
     // -------------------------------------------------------------- flows
 
+    /// supply → borrow → repay(max) → withdraw(max) under the account against the real Aave pool,
+    /// funded exactly as a user would be (slice C, 2026-09-10; `RISKS.md` §8 "Rounding dust"):
+    /// the borrow lands the borrowed USDC and nothing else. Aave reads the aToken one unit under and
+    /// the debt one unit over in the same block (Addendum 3), so: (a) `repay(max)` with exactly the
+    /// borrowed balance repays everything held and leaves the rounding residual, which is dust by the
+    /// shared threshold; (b) `withdraw(max)` with that residual outstanding is refused by Aave itself
+    /// — the venues do not forgive dust, only the app's reading of it; (c) topping the account up to
+    /// the `debt()` the venue reports — what the dashboard tells the user to hold — clears it; (d)
+    /// `withdraw(max)` then returns the aToken balance, one unit under what was supplied. Every
+    /// number is logged for the facts.
     function test_fork_supplyBorrowRepayWithdrawUnderTheAccount() public onlyForked {
         deal(BaseAddresses.CBBTC, address(acct), 1e8);
         vm.startPrank(alice);
         acct.execWithCallback(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.supply, (BaseAddresses.CBBTC, 1e8)));
-        // Aave v3 mints aTokens as a scaled balance (amount / liquidityIndex, then * index on read), so
-        // a 1e8 supply reads back 1 unit short. Live: `PoolDataProvider.getUserReserveData(cbBTC, acct)`
-        // → currentATokenBalance 99,999,999 with liquidityIndex 1.002030255356308190911377929e27 at
-        // block 51,127,409 (2026-09-10; the same 99999999 != 100000000 at block 51,001,138 on 2026-09-07).
-        assertApproxEqAbs(aaveVenue.collateral(address(acct), BaseAddresses.CBBTC), 1e8, 1, "aToken index rounding");
+        uint256 collateralRead = aaveVenue.collateral(address(acct), BaseAddresses.CBBTC);
+        console2.log("collateral read after supplying 1e8", collateralRead);
+        assertApproxEqAbs(collateralRead, 1e8, 1, "aToken index rounding");
+
         uint256 borrow = 10_000e6;
         acct.execWithCallback(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.borrow, (BaseAddresses.USDC, borrow)));
-        assertEq(IERC20(BaseAddresses.USDC).balanceOf(address(acct)), borrow, "borrowed USDC lands in the account");
+        assertEq(IERC20(BaseAddresses.USDC).balanceOf(address(acct)), borrow, "borrowed USDC lands in the account, nothing else");
         uint256 hf = aaveVenue.healthFactor(address(acct));
         console2.log("HF after borrow (wad)", hf);
         assertGt(hf, 1e18);
-        assertApproxEqAbs(aaveVenue.debt(address(acct), BaseAddresses.USDC), borrow, 2);
-        acct.execWithCallback(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.repay, (BaseAddresses.USDC, type(uint256).max)));
-        assertEq(aaveVenue.debt(address(acct), BaseAddresses.USDC), 0);
-        acct.execWithCallback(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.withdraw, (BaseAddresses.CBBTC, type(uint256).max)));
+        uint256 owed = aaveVenue.debt(address(acct), BaseAddresses.USDC);
+        console2.log("debt read after borrowing 10,000e6", owed);
+        assertApproxEqAbs(owed, borrow, 2);
+
+        // (a) repay(max) holding exactly the borrow: everything held goes, the residual is dust.
+        bytes memory ret = acct.execWithCallback(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.repay, (BaseAddresses.USDC, type(uint256).max)));
+        uint256 repaid = abi.decode(ret, (uint256));
+        uint256 residual = aaveVenue.debt(address(acct), BaseAddresses.USDC);
+        console2.log("repay(max) with exactly the borrow: repaid / residual debt", repaid, residual);
+        assertEq(repaid, owed > borrow ? borrow : owed, "repaid everything the account held");
+        assertEq(IERC20(BaseAddresses.USDC).balanceOf(address(acct)), 0);
+        assertLe(residual, LoanDust.UNITS, "the residual is rounding by the shared threshold");
+        assertEq(IERC20(BaseAddresses.USDC).allowance(address(acct), BaseAddresses.AAVE_POOL), 0);
+
+        // (b) With the residual outstanding, Aave itself refuses to release the last of the collateral.
+        if (residual != 0) {
+            try acct.execWithCallback(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.withdraw, (BaseAddresses.CBBTC, type(uint256).max))) {
+                fail("Aave released all collateral with debt outstanding");
+            } catch (bytes memory r) {
+                console2.log("withdraw(max) with dust debt outstanding reverted with:");
+                console2.logBytes(r);
+            }
+            assertEq(aaveVenue.collateral(address(acct), BaseAddresses.CBBTC), collateralRead, "collateral untouched by the refused withdraw");
+            // (c) Fund the residual — what the dashboard's Close asks the user to hold — and clear it.
+            deal(BaseAddresses.USDC, address(acct), residual);
+            ret = acct.execWithCallback(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.repay, (BaseAddresses.USDC, type(uint256).max)));
+            console2.log("repay(max) of the residual: repaid", abi.decode(ret, (uint256)));
+        }
+        assertEq(aaveVenue.debt(address(acct), BaseAddresses.USDC), 0, "debt fully cleared");
+        assertEq(aaveVenue.healthFactor(address(acct)), type(uint256).max, "no debt: HF is max");
+
+        // (d) withdraw(max) returns the aToken balance, one unit under what was supplied.
+        ret = acct.execWithCallback(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.withdraw, (BaseAddresses.CBBTC, type(uint256).max)));
+        uint256 withdrawn = abi.decode(ret, (uint256));
         vm.stopPrank();
-        assertEq(IERC20(BaseAddresses.CBBTC).balanceOf(address(acct)), 1e8);
+        console2.log("withdraw(max): withdrawn", withdrawn);
+        assertEq(IERC20(BaseAddresses.CBBTC).balanceOf(address(acct)), withdrawn);
+        assertApproxEqAbs(withdrawn, 1e8, 1, "one unit of aToken rounding at most");
+        assertEq(aaveVenue.collateral(address(acct), BaseAddresses.CBBTC), 0);
         assertEq(IERC20(BaseAddresses.CBBTC).allowance(address(acct), BaseAddresses.AAVE_POOL), 0);
         assertEq(IERC20(BaseAddresses.USDC).allowance(address(acct), BaseAddresses.AAVE_POOL), 0);
     }

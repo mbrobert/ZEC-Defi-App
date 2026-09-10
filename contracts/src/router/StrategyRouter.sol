@@ -6,6 +6,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Peripheral} from "../account/Peripheral.sol";
 import {IOilskinAccount} from "../interfaces/IOilskinAccount.sol";
 import {ICollateralVenue} from "../interfaces/ICollateralVenue.sol";
+import {LoanDust} from "../libraries/LoanDust.sol";
 import {ILpVenue, LpOpenParams, PriceBand} from "../interfaces/ILpVenue.sol";
 import {ISwapAdapter} from "../interfaces/ISwapAdapter.sol";
 import {IPermit2} from "../interfaces/IPermit2.sol";
@@ -606,10 +607,14 @@ contract StrategyRouter is Peripheral {
 
     /// @dev Whether `venue` holds anything of `account`'s for `asset`. A venue whose views revert
     ///      is treated as holding nothing — the keeper reads `LeveragedLpUnwound.repaid` from the
-    ///      receipt and refuses to call a repay that moved nothing a success.
+    ///      receipt and refuses to call a repay that moved nothing a success. Loan-token debt at or
+    ///      below `LoanDust.UNITS` is rounding, not a position (slice C, `RISKS.md` §8): a book that
+    ///      holds only such a residual must not attract the withdraw leg, or a Close on a two-book
+    ///      account would be sent to the venue with nothing to withdraw. The REPAY leg still visits
+    ///      it (`_owingWorstFirst`), so the residual is cleared whenever USDC is available.
     function _holdsPosition(address venue, address asset, address account) internal view returns (bool) {
         try ICollateralVenue(venue).debt(account, USDC) returns (uint256 owed) {
-            if (owed != 0) return true;
+            if (!LoanDust.isDust(owed)) return true;
         } catch {}
         try ICollateralVenue(venue).collateral(account, asset) returns (uint256 held) {
             if (held != 0) return true;

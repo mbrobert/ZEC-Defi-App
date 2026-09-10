@@ -3,6 +3,47 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-10 — Slice C: one dust threshold, applied wherever "fully repaid" or "holds nothing" is decided
+
+**Why.** Measured at block 51,127,409 (Addendum 3): Aave reads a same-block supply of 1e8 cbBTC as
+99,999,999 and a borrow of 10,000 USDC as 10,000,000,001. `AaveV3Venue.repay(max)` approved and Aave
+pulled the full debt, so an account holding exactly what it borrowed died in `transferFrom`; and
+every exact-equality reading of "no debt" — the router's exit routing, the keeper's `confirm` and
+NO_DEBT verdict, the dashboard's tile — would have misread the residual.
+
+**The threshold.** `LOAN_DUST_UNITS` = **100 units of the loan token** (`packages/shared/src/dust.ts`,
+with the rationale; `contracts/src/libraries/LoanDust.sol` mirrors it and the agent's ABI seam pins
+the two, 75 → **76** checks). Units, not a percentage, because rounding is additive per operation:
+two orders above the largest error measured or derivable, five below the smallest amount anyone
+spends a transaction on.
+
+**Where it is applied.** `StrategyRouter._holdsPosition` (a residual is not a position, so a
+two-book Close is not routed to a venue with nothing to withdraw; the repay leg still clears it);
+`AaveV3Venue.repay` approves what Aave will pull and never more than the account holds — an
+exact-balance `max` repays everything held and leaves the rounding, an account holding no USDC is
+`InsufficientLoanToken(asset, held, owed)` by name (ABI 329 → **330**); the keeper's Aave G-guards and
+venue valuation read a residual on the USDC row / a venue's `debt` as NO_DEBT (the pool's finite,
+enormous HF is not a fault; literally nothing owed still demands `MAX_UINT256`); `confirm()` does not
+count a venue owing at most the threshold as untouched and `judgeUntouched` treats such a
+dispatch-time book as owing nothing; the web's pool leg and venue leg both read such a residual as
+HF ∞ so they agree, `AccountRead.debtIsDust` drives the dashboard's "no debt" and `otherDebtUsdc`
+excludes it. `MorphoBlueVenue.repay(max)` already clears by shares; unchanged.
+
+**What it does not do.** The venues do not forgive dust: on the fork an exact-balance `repay(max)`
+left 2 units (Aave's read plus the repay's own rounding) and `withdraw(max)` reverted
+`HealthFactorLowerThanLiquidationThreshold()` (`0x6679996d`) until they were repaid; the aToken hands
+back 99,999,999 of 100,000,000 cbBTC. The app must ask for the full `debt()`, never the borrow
+(Addendum 6, `RISKS.md` §8).
+
+**Tests.** `test_fork_supplyBorrowRepayWithdrawUnderTheAccount` green at the pinned block, funded by
+the borrow alone and then by `debt()` (fork 7 / 2 → **8 / 1** of 9); `LoanDust.t.sol` +5 (contracts
+324 → **329** / 0 / 9, `MockAave.bumpDebt` models the +1); keeper 234 → **237** (the never-NO_DEBT and
+poison properties scoped to debts above the threshold, USDC row only); web 153 → **154**; shared
+62 → **65**.
+
+**Not done.** No `acceptVenue`, `Deploy.s.sol` untouched, nothing broadcast, `contracts/.env` not
+written.
+
 ## 2026-09-10 — Slice B: open → close on the engine's real Aerodrome entry; the mocks carry the measured revert shapes
 
 **Fork test.** `test_fork_lpOpenCloseOnLiveEngine` selects the engine's entry by PROPERTY (active,

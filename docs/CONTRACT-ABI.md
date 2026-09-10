@@ -244,14 +244,14 @@ ICollateralRegistry registry)` — deploy order is registry → venue → regist
 | `0xf3fef3a3` | `withdraw(address asset,uint256 amount) → uint256` | `Pool.withdraw(asset, amount, account)`; max = all; gated on nothing |
 | `0x4b8a3529` | `borrow(address asset,uint256 amount)` | variable rate, `onBehalfOf` = account → then reads the account's GLOBAL health factor and reverts **`EntryHfTooLow(hf, floor)`** below `REGISTRY.entryHfFloorWad()` |
 | — | `borrowAgainst(address collateralAsset,address loanToken,uint256 amount)` | **new (wave-2 M-MED-1):** what the router calls after it has just supplied `collateralAsset`. On Aave — one cross-collateral position — it is exactly `borrow`, floor included; on Morpho the debt lands in that collateral's market |
-| `0x22867d78` | `repay(address asset,uint256 amount) → uint256` | approves min(amount, debt); max = full debt; `NothingToRepay` if 0; gated on nothing |
+| `0x22867d78` | `repay(address asset,uint256 amount) → uint256` | approves min(amount, debt, what the account holds) — slice C: an exact-balance `max` repays everything held and leaves Aave's rounding unit, which `debt()` reports and `LoanDust` classifies; max with enough held = Aave's own full-debt path; `NothingToRepay` if 0 owed; `InsufficientLoanToken(asset, held, owed)` if the account holds none; gated on nothing |
 | `0x6ad9f9df` | `healthFactor(address account) → uint256` | WAD; max when no debt |
 | `0x5d462920` | `liquidationThresholdBps(address asset) → uint256` · `0xc2f2d31c` `maxLtvBps(address) → uint256` | live from the PoolDataProvider (0 = not listed, e.g. cbZEC) |
 | `0xd449300d` | `debt(address,address)` · `0xcc218ece` `collateral(address,address)` · `0x99431ce5` `borrowRateRay(address)` | live |
 | `0x238dafe0` | `enabled() → bool` | Aave true; Morpho true when built over ≥ 1 market, false over none (Sepolia) |
 | `0xb883b058` | `assetPrice(address) → uint256` · `0x00d34411` `PROVIDER()` · `0x06433b1b` `REGISTRY()` | |
 
-Errors: `ZeroAmount()` `0x1f2a2005`, `NothingToRepay()` `0xd32e7fc6`, `ZeroAddress()` `0xd92e233d`,
+Errors: `ZeroAmount()` `0x1f2a2005`, `NothingToRepay()` `0xd32e7fc6`, **`InsufficientLoanToken(address,uint256,uint256)` `0xaed251f3`** (slice C), `ZeroAddress()` `0xd92e233d`,
 **new:** `AssetNotOffered(address asset,address venue)` `0xbff4059e`, `EntryHfTooLow(uint256,uint256)`
 `0xd40fd174` (same selector as the router's — identical signature).
 **MorphoBlueVenue** — same `ICollateralVenue` selectors, constructor

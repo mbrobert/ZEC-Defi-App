@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { AAVE_V3, BASE_TOKENS, PERMIT2 } from "@zyo/shared";
 import { decodeReserve, readAccount, readDeployment, readKeeperGrant, readMarket, readPendingVenues, readVenueHealth, safeMulticall, type ReadClient } from "../lib/reads";
-import { accountHf } from "../lib/math";
+import { accountHf, hfBand } from "../lib/math";
 import { DEMO_MARKET } from "../lib/demo";
 import { UNWIND_SELECTOR } from "../lib/plan";
 import { ContractFunctionRevertedError, encodeErrorResult } from "viem";
@@ -512,6 +512,46 @@ test("residual (b): inside the 3 % bound the venue's own number stands (the cbBT
   const raw = await readVenueHealth(venueClient({ [AAVE_VENUE.toLowerCase()]: aaveVenueMirror(), [MORPHO_VENUE]: morphoVenue(2_500_000_000_000_000_000n) }, registryCbbtcOnMorpho), REGISTRY, ACCOUNT);
   assert.equal(raw.venues.find((v) => v.kind === "other")!.priceDisagreement, null);
   assert.ok(Math.abs((raw.healthFactor ?? 0) - 1.95) < 1e-9);
+});
+
+test("slice C: a one-unit USDC residual on the pool and on every venue is NO DEBT — HF ∞ on both legs, the tile's decision from the dust flag, never from a zero", async () => {
+  const market = await readMarket(fakeClient());
+  // The pool after the fork's repay(max) with exactly the borrow: 1 unit of variable debt, 100 base
+  // units of totalDebtBase, a finite and enormous health factor.
+  const base = fakeClient();
+  const dustPool: ReadClient = {
+    ...base,
+    async readContract(c) {
+      if (c.functionName === "getUserAccountData") return [3_981_544_500_000n, 100n, 0n, 7800n, 7300n, 31_056_047_100_000_000_000_000_000_000n];
+      if (c.functionName === "getUserReserveData" && String(c.args?.[0]).toLowerCase() === BASE_TOKENS.USDC.address.toLowerCase()) return [0n, 0n, 1n, 0n, 0n, 0n, 0n, 0n, false];
+      return base.readContract(c);
+    },
+  };
+  const hugeHf = 31_056_047_100_000_000_000_000_000_000n;
+  const client = venueClient({ [AAVE_VENUE.toLowerCase()]: { ...aaveVenueMirror(hugeHf), debt: () => 1n } }, registryAaveOnly, dustPool);
+  const a = await readAccount(client, OWNER, market, readOpts);
+  assert.equal(a.aave!.healthFactor, Number.POSITIVE_INFINITY, "the pool leg reads the residual as no debt");
+  assert.equal(a.venues!.venues[0].debtIsDust, true);
+  assert.equal(a.venues!.venues[0].healthFactor, Number.POSITIVE_INFINITY, "and so does the venue leg, so the two agree");
+  assert.equal(a.venues!.healthFactor, Number.POSITIVE_INFINITY);
+  assert.equal(a.debtIsDust, true);
+  assert.ok(Math.abs(a.debtUsdc - 0.000001) < 1e-12, "the number itself is still reported as read");
+  assert.equal(hfBand(accountHf(a)).label, "No debt");
+
+  // A Morpho venue with a unit of rounding contributes nothing to otherDebtUsdc; 101 units is a book.
+  const dusty = venueClient({ [AAVE_VENUE.toLowerCase()]: { ...aaveVenueMirror(hugeHf), debt: () => 1n }, [MORPHO_VENUE]: morphoVenue(hugeHf, 1n) }, registryCbbtcOnMorpho, dustPool);
+  const d = await readAccount(dusty, OWNER, market, readOpts);
+  assert.equal(d.venues!.otherDebtUsdc, 0);
+  assert.equal(d.debtIsDust, true);
+  const book = venueClient({ [AAVE_VENUE.toLowerCase()]: { ...aaveVenueMirror(hugeHf), debt: () => 1n }, [MORPHO_VENUE]: morphoVenue(5_000_000_000_000_000_000_000n, 101n) }, registryCbbtcOnMorpho, dustPool);
+  const b = await readAccount(book, OWNER, market, readOpts);
+  assert.equal(b.debtIsDust, false, "101 units on any venue is a debt");
+  assert.ok(Math.abs(b.venues!.otherDebtUsdc - 0.000101) < 1e-12);
+
+  // The real position is not dust.
+  const real = await readAccount(venueClient({ [AAVE_VENUE.toLowerCase()]: aaveVenueMirror() }, registryAaveOnly), OWNER, market, readOpts);
+  assert.equal(real.debtIsDust, false);
+  assert.equal(real.aave!.healthFactor < 2, true);
 });
 
 test("readVenueHealth alone: no registry pointer for an asset is not an error; a zero-debt venue reads ∞", async () => {

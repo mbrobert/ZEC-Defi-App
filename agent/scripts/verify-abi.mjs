@@ -214,5 +214,18 @@ for (const abi of [aavePoolAbi, aavePoolDataProviderAbi, aaveOracleAbi, chainlin
   }
 }
 
+// The loan-token dust threshold (slice C, RISKS §8) lives in @zyo/shared for the keeper and the web
+// and in contracts/src/libraries/LoanDust.sol for the router; the two numbers must be one number.
+{
+  checks += 1;
+  const { LOAN_DUST_UNITS } = await import("@zyo/shared");
+  const dustSrc = readFileSync(resolve(agentRoot, "..", "contracts", "src", "libraries", "LoanDust.sol"), "utf8");
+  const m = dustSrc.match(/uint256 internal constant UNITS = (\d+);/);
+  if (!m || BigInt(m[1]) !== LOAN_DUST_UNITS) {
+    failures += 1;
+    console.log(`verify-abi: FAIL LoanDust.UNITS ${m ? m[1] : "missing"} ≠ shared LOAN_DUST_UNITS ${LOAN_DUST_UNITS}`);
+  }
+}
+
 console.log(`verify-abi: ${checks - failures}/${checks} checks passed, ${skipped} contract(s) skipped${strict ? " (strict)" : ""}`);
 process.exit(failures ? 1 : 0);

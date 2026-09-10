@@ -579,3 +579,28 @@ or exits; the header says which is which.
 Still failing, unchanged, for slice C and the harness limit:
 `test_fork_supplyBorrowRepayWithdrawUnderTheAccount` (the +1 unit at the repay) and
 `test_fork_cbzecIsAB20WithLiveMultiplier` (`OpcodeNotFound`).
+
+## Addendum 6 — slice C, 2026-09-10: the Aave round trip, funded as a user would be, and the dust it leaves
+
+Purpose: make `test_fork_supplyBorrowRepayWithdrawUnderTheAccount` green against the real pool and
+record the rounding the dust policy (`RISKS.md` §8, `packages/shared/src/dust.ts`) is built on.
+Pinned at **block 51,127,409** (Foundry 1.8.1, public RPC, 2026-09-10); the account is funded by
+the borrow and by nothing else until the venue's own `debt()` says what is missing. Nothing signed
+or broadcast.
+
+| Call (through `OilskinAccount.execWithCallback` → `AaveV3Venue`) | Result |
+|---|---|
+| `deal(cbBTC, account, 1e8)`; `supply(cbBTC, 1e8)` | `collateral()` reads **99,999,999** (one unit under: the aToken is a scaled balance) |
+| `borrow(USDC, 10,000e6)` | the account holds exactly **10,000,000,000** USDC; `healthFactor()` 6.02; `debt()` reads **10,000,000,001** in the same block |
+| `repay(USDC, max)` holding exactly the borrow | **repaid 10,000,000,000** (everything held — the venue now clamps to the balance instead of dying in Aave's `transferFrom`); `debt()` after = **2** units (the unit Aave read over, plus one more from the burn's own rounding); ≤ `LOAN_DUST_UNITS` = 100; allowance 0 |
+| `withdraw(cbBTC, max)` with those 2 units outstanding | **reverts `0x6679996d` = `HealthFactorLowerThanLiquidationThreshold()`** — Aave v3's custom error (the Base deployment reverts with typed errors, not the older `"35"` string); collateral untouched |
+| `deal(USDC, account, 2)`; `repay(USDC, max)` | repaid **2**; `debt()` = 0; `healthFactor()` = `type(uint256).max` |
+| `withdraw(cbBTC, max)` | **withdrawn 99,999,999** — the aToken balance, one unit under what was supplied; `collateral()` = 0; both allowances 0 |
+
+**What this settles.** (1) The residual after an exact-balance `repay(max)` is 2 units here, not 1:
+one from the debt read, one from the repay's own rounding — the threshold must not be "1". (2) The
+venues do not forgive dust: Aave refuses to release the last of the collateral while 2 units
+(0.000002 USDC) are owed. The app's Close must ask the user for the full `debt()` the venue reports,
+never for the borrow, and the threshold governs only what the app says and which book the router
+and keeper act on. (3) One unit of cbBTC (≈ $0.0008 at this block) is lost to the aToken's
+rounding on a supply-then-withdraw; it is not recoverable and is now stated in `RISKS.md` §8.

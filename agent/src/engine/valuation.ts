@@ -1,4 +1,5 @@
 import type { Address } from "../types/evm.js";
+import { LOAN_DUST_UNITS, isLoanDust } from "@zyo/shared";
 import { MAX_UINT256 } from "../types/evm.js";
 
 /**
@@ -290,6 +291,10 @@ export function evaluateSnapshot(s: AccountSnapshot, p: ValuationParams): Valuat
   const collateral: CollateralShare[] = [];
   const debtRows: DebtShare[] = [];
   let anyReserveDebt = false;
+  // Slice C (RISKS §8): a loan-token residual at or below LOAN_DUST_UNITS is rounding. Σ over the
+  // debt rows of the threshold in base units, so the pool total can be judged the same way.
+  let anyReserveDebtAboveDust = false;
+  let dustBase = 0n;
 
   for (const r of validRows) {
     const hasExposure = r.debt > 0n || (r.aTokenBalance > 0n && r.usingAsCollateral);
@@ -299,6 +304,10 @@ export function evaluateSnapshot(s: AccountSnapshot, p: ValuationParams): Valuat
     const unit = 10n ** BigInt(r.decimals);
     if (r.debt > 0n) {
       anyReserveDebt = true;
+      // The threshold is in units of the LOAN token: only the USDC row can carry rounding dust; any
+      // debt in another reserve is a debt.
+      if (r.symbol !== "USDC" || !isLoanDust(r.debt)) anyReserveDebtAboveDust = true;
+      if (r.symbol === "USDC") dustBase += (LOAN_DUST_UNITS * r.aavePrice) / unit;
       const v = (r.debt * r.aavePrice) / unit;
       if (v === 0n && r.aavePrice > 0n) {
         // Dust debt below one base unit: not zero, so refuse to call it zero.
@@ -321,7 +330,8 @@ export function evaluateSnapshot(s: AccountSnapshot, p: ValuationParams): Valuat
   // Debt reported by the pool must be carried by a reserve row and vice versa.
   if (s.totalDebtBase > 0n && !anyReserveDebt) reasons.push("G1 pool reports debt but no reserve row carries any");
   if (s.totalDebtBase === 0n && anyReserveDebt) reasons.push("G1 a reserve row carries debt but the pool reports none");
-  if (s.totalDebtBase > 0n && anyReserveDebt && !withinBps(debtSum, s.totalDebtBase, p.hfToleranceBps)) {
+  const hasDebt = s.totalDebtBase > dustBase || anyReserveDebtAboveDust;
+  if (hasDebt && s.totalDebtBase > 0n && anyReserveDebt && !withinBps(debtSum, s.totalDebtBase, p.hfToleranceBps)) {
     reasons.push(`G3 Σ reserve debt ${debtSum} ≠ pool totalDebtBase ${s.totalDebtBase}`);
   }
   if (!withinBps(collateralSum, s.totalCollateralBase, p.hfToleranceBps)) {
@@ -344,11 +354,12 @@ export function evaluateSnapshot(s: AccountSnapshot, p: ValuationParams): Valuat
     reasons.push("G3 pool LT non-zero with zero collateral");
   }
 
-  const hasDebt = s.totalDebtBase > 0n || anyReserveDebt;
-
   // ---- G4 health factor --------------------------------------------------
   if (!hasDebt) {
-    if (s.healthFactorWad !== MAX_UINT256) reasons.push(`G4 no debt but pool HF ${s.healthFactorWad} ≠ MAX_UINT256`);
+    // Literally nothing owed: the pool must say so (MAX_UINT256). A rounding residual (slice C):
+    // the pool's health factor is finite and enormous, and that is not a fault.
+    if (!anyReserveDebt && s.totalDebtBase === 0n && s.healthFactorWad !== MAX_UINT256) reasons.push(`G4 no debt but pool HF ${s.healthFactorWad} ≠ MAX_UINT256`);
+    if ((anyReserveDebt || s.totalDebtBase > 0n) && s.healthFactorWad === MAX_UINT256) reasons.push(`G4 dust debt but pool HF is MAX_UINT256 (infinite)`);
     if (reasons.length) return { kind: "UNKNOWN", reasons };
     return { kind: "NO_DEBT", collateralBase: collateralSum };
   }

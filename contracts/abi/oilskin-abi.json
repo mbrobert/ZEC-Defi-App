@@ -1613,6 +1613,9 @@
         "EntryHfTooLow(uint256,uint256)": {
           "selector": "0xd40fd174"
         },
+        "InsufficientLoanToken(address,uint256,uint256)": {
+          "selector": "0xaed251f3"
+        },
         "NothingToRepay()": {
           "selector": "0xd32e7fc6"
         },
@@ -1956,6 +1959,27 @@
             },
             {
               "name": "floor",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "InsufficientLoanToken",
+          "inputs": [
+            {
+              "name": "asset",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "held",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "owed",
               "type": "uint256",
               "internalType": "uint256"
             }

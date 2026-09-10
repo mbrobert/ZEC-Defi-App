@@ -3,7 +3,7 @@
 What an auditor is asked to read, what it must guarantee, and what we have
 not verified ourselves. Line counts are `wc -l` on this tree. The ABI seam
 (selectors, errors, events) is `CONTRACT-ABI.md` and the generated
-`contracts/abi/oilskin-abi.json` (329 entries as of 2026-09-10); read the code, not the tables.
+`contracts/abi/oilskin-abi.json` (330 entries as of 2026-09-10); read the code, not the tables.
 Wave 1 of the internal audit and the fix round it produced are in
 `AUDIT-2026-09-06.md`.
 
@@ -160,7 +160,7 @@ chain / missing env / no code / Aave provider drift.
 
 | Item | State | Where it bites |
 |---|---|---|
-| **Fork tests against Base** | `contracts/test/fork/BaseFork.t.sol`, 9 tests, `vm.skip` without `FORK_URL` — **run against Base mainnet on 2026-09-10 at block 51,127,409: 4 passed / 4 failed of 8 on the first run, 5 / 3 after slice A, 7 / 2 of 9 after slice B** (`VERIFIED-BASE-FACTS.md` Addenda 3–5; `TESTING.md`). Reported as SKIPPED without `FORK_URL`, never as passed. | Aave provider resolution, live reserve params, cbZEC B20 shape, the engine's index-getter shape, supply → borrow → repay → withdraw under a real account, open → close on the live engine |
+| **Fork tests against Base** | `contracts/test/fork/BaseFork.t.sol`, 9 tests, `vm.skip` without `FORK_URL` — **run against Base mainnet on 2026-09-10 at block 51,127,409: 4 passed / 4 failed of 8 on the first run, 5 / 3 after slice A, 7 / 2 after slice B, 8 / 1 after slice C** — the one failure is the cbZEC B20 harness limit (`VERIFIED-BASE-FACTS.md` Addenda 3–6; `TESTING.md`). Reported as SKIPPED without `FORK_URL`, never as passed. | Aave provider resolution, live reserve params, cbZEC B20 shape, the engine's index-getter shape, supply → borrow → repay → withdraw under a real account, open → close on the live engine |
 | **The engine's single-sided deposit** | **Measured 2026-09-10 (slice B)**: it is NOT swapped to ratio — the verified mint library builds a one-sided range on the deposited token's side of the price, so the product's borrowed-USDC open holds only USDC and earns nothing until the price enters the range (`RISKS.md` §12, `ISnuggleVault` FACT 4 corrected). What the yield model should assume for this shape is not verified and is a product decision (slice E memo). | every leveraged LP open; the yield verdict |
 | **The engine's live end-of-list revert shape** | **Recorded 2026-09-10: empty `0x`**, and `positionsOf` redesigned for it the same day (slice A): gas under a measured stipend, canary / end / k + 1 shape agreement, liveness before and after, `positions(id).owner` per id — `EnumerationAmbiguous(fault, …)` otherwise, named by the keeper and the web (`RISKS.md` §12, Addendum 4; fork test green at block 51,127,409). **Still not verifiable on chain:** a getter-less implementation upgrade reads as an empty list for every account; the EIP-1967 slot (`0x359f…2d28`) is the only off-chain guard and is NOT compared by any shipped code — a product decision left open. An isolated failure at the last index is a list one shorter. | `positionsOf`, the dashboard's position list, the keeper's id discovery |
 | **Morpho Blue market ids** (cbBTC/USDC, WETH/USDC) | Discovered and chain-verified 2026-09-07, re-read at block 51,003,524 (`VERIFIED-BASE-FACTS.md`, Morpho addendum: both 86 % LLTV, ids recomputed from `idToMarketParams`). **In code**: `Deploy.s.sol` `MORPHO_MARKET_*` constants, shared `MORPHO_BLUE.marketIds`, and `MorphoBlueVenue` re-derives each at construction | venue deployed; registry still on Aave |

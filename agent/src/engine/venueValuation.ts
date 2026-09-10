@@ -1,4 +1,5 @@
 import type { TokenSymbol } from "@zyo/shared";
+import { isLoanDust } from "@zyo/shared";
 import type { ReserveContextResult } from "../services/chain.js";
 import type { VenueAccountRead, VenueContext, VenueKind, VenueSnapshot } from "../services/venues.js";
 import type { Address } from "../types/evm.js";
@@ -138,7 +139,9 @@ function evaluateOtherVenue(read: VenueAccountRead, spec: VenueContext["venues"]
   const tag = `venue ${short(read.venue)}`;
   const reasons: string[] = [];
   const held = read.collateral.filter((c) => c.amount > 0n);
-  const exposed = read.debtUsdc > 0n || held.length > 0;
+  // Loan-token debt at or below LOAN_DUST_UNITS is rounding, not a book (slice C, RISKS §8).
+  const debtIsDust = isLoanDust(read.debtUsdc);
+  const exposed = !debtIsDust || held.length > 0;
 
   // V1: a venue with problems this tick is inert only for an account with nothing on it.
   if (exposed && spec.problems.length) reasons.push(...spec.problems.map((x) => `V1 ${tag}: ${x}`));
@@ -170,9 +173,11 @@ function evaluateOtherVenue(read: VenueAccountRead, spec: VenueContext["venues"]
     shares.push({ asset: c.asset, symbol: c.symbol, valueBase: value, liquidationThresholdBps: lt });
   }
 
-  if (read.debtUsdc === 0n) {
-    // V4 for the no-debt case: the venue must say so too.
-    if (read.healthFactorWad !== MAX_UINT256) reasons.push(`V4 ${tag}: no debt but venue HF ${read.healthFactorWad} ≠ MAX_UINT256`);
+  if (debtIsDust) {
+    // V4 for the no-debt case: with literally nothing owed the venue must say so too (MAX_UINT256);
+    // with a rounding residual its health factor is finite and enormous, and that is not a fault.
+    if (read.debtUsdc === 0n && read.healthFactorWad !== MAX_UINT256) reasons.push(`V4 ${tag}: no debt but venue HF ${read.healthFactorWad} ≠ MAX_UINT256`);
+    if (read.debtUsdc > 0n && read.healthFactorWad === MAX_UINT256) reasons.push(`V4 ${tag}: dust debt ${read.debtUsdc} but venue HF is MAX_UINT256 (infinite)`);
     if (reasons.length) return { kind: "UNKNOWN", reasons };
     return { kind: "NO_DEBT", collateralBase };
   }

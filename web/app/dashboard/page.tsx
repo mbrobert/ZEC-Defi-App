@@ -72,6 +72,7 @@ export default function DashboardPage() {
         debtUsd,
         ltBps,
         hf: hf as number | null,
+        hasDebt: debtUsd > 0,
         accountUsdc: 0,
         positions: DEMO_ACCOUNT_STATE.positions.map(fromDemo),
         activity: DEMO_ACCOUNT_STATE.activity,
@@ -113,6 +114,9 @@ export default function DashboardPage() {
       // as cache, and the page says why; it never says "No LP positions".
       positions: mergePositions(account && !account.lpUnreadable ? account.lpPositions : null, indexed),
       lpUnreadable: account?.lpUnreadable ?? null,
+      // Slice C (RISKS §8): "no debt" is decided by the shared dust threshold on the USDC amounts the
+      // read returned, never by a USD figure being exactly zero.
+      hasDebt: account ? !account.debtIsDust && debtUsd > 0 : debtUsd > 0,
       activity: indexed?.activity ?? [],
       readAt: account?.readAt ?? "",
       dataSource: account ? ("chain" as const) : indexed ? ("cache" as const) : ("chain" as const),
@@ -314,7 +318,7 @@ export default function DashboardPage() {
           <div className="grid grid-cols-2 gap-2.5 sm:gap-3.5 lg:grid-cols-4">
             <StatTile label="Net value" value={fmtUsd0(netValue)} sub={`collateral ${fmtUsd0(view.collateralUsd)} + LP ${fmtUsd0(lpValue)}${view.accountUsdc > 0 ? ` + USDC ${fmtUsd0(view.accountUsdc)}` : ""} − debt ${fmtUsd0(view.debtUsd)}`} hint="Collateral + LP value + USDC held − debt. What a full unwind returns before exit costs." testId="tile-net" />
             <StatTile label="Health factor" value={fmtHf(view.hf)} sub={band.label} tone={band.kind} hint="Read from every lending venue Oilskin's registry names for your collateral; the worst one is shown. Liquidation at 1.0." testId="tile-hf" />
-            <StatTile label="Borrowed" value={`${fmtUsd0(view.debtUsd)}`} sub={view.debtUsd > 0 ? `USDC · ${fmtPct(ltvBps / 100, 1)} LTV · ${fmtPct(market.usdcBorrowAprPct)} variable` : "no debt"} testId="tile-debt" />
+            <StatTile label="Borrowed" value={`${fmtUsd0(view.debtUsd)}`} sub={view.hasDebt ? `USDC · ${fmtPct(ltvBps / 100, 1)} LTV · ${fmtPct(market.usdcBorrowAprPct)} variable` : "no debt"} testId="tile-debt" />
             <StatTile label="Claimable rewards" value={fmtUsd(claimable.net)} sub={`${fmtUsd(claimable.gross)} accrued − ${fmtUsd(claimable.performanceFee)} fee`} hint="AERO emissions accrued by your engine positions, net of the performance fee. Claimed to your wallet." testId="tile-claim" />
           </div>
 
@@ -324,7 +328,7 @@ export default function DashboardPage() {
                 <HealthBand hf={view.hf} priceUsd={primary?.priceUsd ?? 0} liquidationPriceUsd={liqPrice} symbol={primary?.symbol ?? "collateral"} />
                 <div className="num mt-3 flex flex-wrap justify-between gap-2 text-[13px] text-oil-ink2">
                   <span>
-                    {view.debtUsd > 0 ? (
+                    {view.hasDebt ? (
                       <>
                         Borrowed <b className="text-oil-ink">{fmtUsd(view.debtUsd)} USDC</b> against{" "}
                         {view.holdings.map((h) => (
@@ -338,7 +342,7 @@ export default function DashboardPage() {
                       <>No borrow against {fmtUsd0(view.collateralUsd)} of collateral.</>
                     )}
                   </span>
-                  {primary && view.debtUsd > 0 && (
+                  {primary && view.hasDebt && (
                     <span>
                       Liquidation at <b className="text-status-crit">{fmtUsd0(liqPrice)}</b> · {primary.symbol} now <b className="text-oil-ink">{fmtUsd0(primary.priceUsd)}</b>
                     </span>

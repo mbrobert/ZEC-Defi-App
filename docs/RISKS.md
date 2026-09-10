@@ -286,15 +286,51 @@ balances scaled by an index and rounds on every read: a supply of exactly
 1.00000000 cbBTC read back as 0.99999999 (`getUserReserveData` →
 99,999,999 with liquidityIndex 1.002030…e27), and a borrow of exactly 10,000
 USDC read back as 10,000.000001 in the same block (`debt()` →
-10,000,000,001). The second one bites: `AaveV3Venue.repay(USDC, max)`
-approves, and Aave pulls, the full debt, so an account holding exactly what it
-borrowed cannot fully repay through the venue — Aave reverts `ERC20: transfer
-amount exceeds balance` (the fork test stops there). The router's unwind
-clamps each venue's repay to the USDC the account holds (`_repayAcross`,
-`min(owed, held)`), so it does not revert but leaves 1 unit of debt behind;
-any exact-equality reading of "fully repaid" in the keeper's `confirm` or on
-the dashboard would misread that unit. Nothing was changed for this; it is
-recorded so nobody types an exact-equality assumption into either.
+10,000,000,001). The second one bit: `AaveV3Venue.repay(USDC, max)` approved,
+and Aave pulled, the full debt, so an account holding exactly what it borrowed
+could not repay through the venue — Aave reverted `ERC20: transfer amount
+exceeds balance` (the fork test stopped there on 2026-09-10). **Policy, slice C
+(2026-09-10).** ONE threshold, `LOAN_DUST_UNITS` = **100 units of the loan
+token** (`packages/shared/src/dust.ts`, mirrored as `LoanDust.UNITS` in
+`contracts/src/libraries/LoanDust.sol`; the agent's ABI seam fails if the two
+differ), in units and not a percentage because rounding is additive per
+operation: two orders of magnitude above the largest error measured or
+derivable (a unit per Aave operation, a unit per Morpho market from
+`toAssetsUp`), five below the smallest amount anyone would spend a transaction
+on. It governs every place "fully repaid" or "holds nothing" is DECIDED:
+`StrategyRouter._holdsPosition` no longer counts a residual at or below it as a
+position, so a two-book Close is not sent to a venue with nothing to withdraw
+(the repay leg still visits and clears it); `AaveV3Venue.repay` now approves
+what Aave will pull and never more than the account holds — an exact-balance
+`repay(max)` repays everything held and leaves the rounding unit, which
+`debt()` reports, and an account holding no USDC is refused by name
+(`InsufficientLoanToken`) instead of inside Aave's `transferFrom`;
+`MorphoBlueVenue.repay(max)` already goes by shares per market and clears to
+zero, and its partial path leaves at most a unit, so it needed no change; the
+keeper's valuation reads a residual at or below the threshold as `NO_DEBT` on
+the pool (`valuation.ts`, G1/G3/G4 relaxed only for that case: the pool's
+finite, enormous health factor is not a fault, while literally nothing owed
+still demands `MAX_UINT256`) and on any venue (`venueValuation.ts`), so the
+ladder does not run and the monitor does not escalate over a unit; `confirm()`
+does not count a venue owing at most a unit as "left untouched", and
+`judgeUntouched` treats a dispatch-time book at or below it as owing nothing;
+the dashboard shows "no debt" from `AccountRead.debtIsDust` — the pool's USDC
+row and every venue's `debt` at or below the threshold — never from a USD
+figure being exactly zero, and both the pool leg and the venue leg read such a
+residual as HF ∞ so they agree. **What the threshold does not do:** Aave and
+Morpho still refuse to release the last of the collateral while a single unit
+is owed — measured on the fork (`VERIFIED-BASE-FACTS.md` Addendum 6): after an
+exact-balance `repay(max)` left **two** units (the unit Aave read over, plus one
+from the repay's own rounding), `withdraw(max)` reverted inside Aave with
+`HealthFactorLowerThanLiquidationThreshold()` until they were repaid; and the
+aToken's rounding hands back one unit of cbBTC less than was supplied
+(99,999,999 of 100,000,000), which is not recoverable. A close that wants every satoshi back must repay the
+full `debt()` the venue reports, and the app must ask for that amount, not the
+borrow. Tests: `contracts/test/audit-regressions/LoanDust.t.sol`,
+`test_fork_supplyBorrowRepayWithdrawUnderTheAccount` (green at block
+51,127,409), `agent/test/valuation.test.ts` / `venueReader.test.ts` /
+`dispatcher.test.ts` (slice C cases), `web/test/reads.test.ts` (slice C),
+`packages/shared/test/dust.test.ts`.
 
 **Does not.** The floor binds only sequences that go through the Oilskin venue.
 A user who hand-writes `account.exec(aavePool, borrow(...))` can still open at
@@ -392,7 +428,7 @@ storage; the router's balance of every token it touches is unchanged across
 every call; no standing allowances (`_approveCallReset`;
 `invariant_noStandingAllowances`); reentrancy lock in transient storage;
 peripheral rights opt-in per call and bounded in depth; revert data bubbled
-untouched; **324 unit / fuzz / invariant tests green** (2026-09-10, slice B;
+untouched; **329 unit / fuzz / invariant tests green** (2026-09-10, slice C;
 plus 9 fork tests skipped without `FORK_URL`), with 9 invariants including the user-can-always-exit (raw and via the
 router), repay-reaches-every-book, fee-never-touches-principal and the two
 donation properties.
@@ -402,12 +438,14 @@ see §16 for what it *can* do.
 **Does not.** **No external audit has been done.** Wave 1 was an internal
 adversarial audit (four lenses), not an external one. The fork suite (9 tests
 since slice B) was run against Base mainnet on 2026-09-10 at block 51,127,409:
-4 passed, 4 failed of 8 on the first run, 7 / 2 of 9 after slices A and B (`VERIFIED-BASE-FACTS.md` Addendum 3; the founder's 2026-09-07 run
+4 passed, 4 failed of 8 on the first run, 7 / 2 after slices A and B, 8 / 1
+after slice C (the cbZEC B20 harness limit is the one left) (`VERIFIED-BASE-FACTS.md` Addendum 3; the founder's 2026-09-07 run
 at block 51,001,138 had the same 4 + 4). The engine's live end-of-list revert
 shape was recorded — empty `0x`, not `Panic(0x32)` — and `positionsOf` was
 redesigned for it the same day (slice A, §12, with the gas of every probe
 shape measured, Addendum 4); the Aave flow reached repay and stopped on a
-1-unit rounding shortfall (§8); the open → close flow stopped on a stub adapter
+1-unit rounding shortfall and, with the dust policy of slice C (§8), runs to
+the end; the open → close flow stopped on a stub adapter
 the engine lists first and, re-pointed at the real Aerodrome entry (slice B,
 §12, Addendum 5), opened, was refused inside the hold, and closed — showing the
 single-sided deposit is a one-sided range, not a swap to ratio; and

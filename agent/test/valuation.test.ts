@@ -4,6 +4,7 @@ import fc from "fast-check";
 import { BPS, WAD, evaluateSnapshot, normaliseTo8, type AccountSnapshot, type ReserveRow, type ValuationParams } from "../src/engine/valuation.js";
 import { MAX_UINT256 } from "../src/types/evm.js";
 import { CBBTC, LTS, PRICES, USDC, WETH } from "./fixtures.js";
+import { isLoanDust } from "@zyo/shared";
 
 const NOW = 1_800_000_000n;
 const PARAMS: ValuationParams = { nowS: NOW, priceMaxAgeS: 3 * 3600, oracleDeviationBps: 300, hfToleranceBps: 100 };
@@ -72,6 +73,20 @@ describe("valuation — happy paths", () => {
   it("no debt anywhere → NO_DEBT", () => {
     const s = consistent([row({ symbol: "WETH", aTokenBalance: 10n ** 18n, usingAsCollateral: true })]);
     assert.equal(evaluateSnapshot(s, PARAMS).kind, "NO_DEBT");
+  });
+
+  it("slice C: the measured one-unit USDC residual with collateral is NO_DEBT (rounding, not a book), and the pool's finite HF is not a fault", () => {
+    const rows = [row({ symbol: "cbBTC", aTokenBalance: ONE_BTC, usingAsCollateral: true }), row({ symbol: "USDC", debt: 1n })];
+    const s = consistent(rows); // totalDebtBase = 1 × 1e8 / 1e6 = 100 base units, HF finite and enormous
+    assert.notEqual(s.healthFactorWad, MAX_UINT256, "the pool reports a finite HF for a unit of debt");
+    const v = evaluateSnapshot(s, PARAMS);
+    assert.equal(v.kind, "NO_DEBT", `kind ${v.kind}${v.kind === "UNKNOWN" ? `: ${v.reasons.join("; ")}` : ""}`);
+    // …at the threshold it is still dust; one unit above it is a book, valued as OK
+    assert.equal(evaluateSnapshot(consistent([rows[0], row({ symbol: "USDC", debt: 100n })]), PARAMS).kind, "NO_DEBT");
+    assert.equal(evaluateSnapshot(consistent([rows[0], row({ symbol: "USDC", debt: 101n })]), PARAMS).kind, "OK");
+    // literally nothing owed still demands the pool's MAX_UINT256
+    const lying = consistent([rows[0]], { healthFactorWad: 5n * WAD });
+    assert.equal(evaluateSnapshot(lying, PARAMS).kind, "UNKNOWN");
   });
 
   it("empty account (no exposure at all) → NO_DEBT", () => {
@@ -350,7 +365,9 @@ describe("valuation — properties over adversarial account states", () => {
       fc.property(arbRows, (rows) => {
         const s = consistent(rows);
         const v = evaluateSnapshot(s, PARAMS);
-        const anyDebt = rows.some((r) => r.debt > 0n);
+        // Slice C (RISKS §8): USDC debt at or below LOAN_DUST_UNITS is rounding and reads NO_DEBT; any
+        // other debt — including a single unit of a collateral asset — is a book.
+        const anyDebt = rows.some((r) => r.debt > 0n && !(r.symbol === "USDC" && isLoanDust(r.debt)));
         if (anyDebt) {
           assert.notEqual(v.kind, "NO_DEBT");
           if (v.kind === "OK") {
@@ -392,6 +409,10 @@ describe("valuation — properties over adversarial account states", () => {
       fc.property(arbRows, arbPoison, fc.constantFrom(1, -1) as fc.Arbitrary<1 | -1>, (rows, poison, sign) => {
         const clean = consistent(rows);
         if (evaluateSnapshot(clean, PARAMS).kind === "UNKNOWN") return; // dust etc.; not a clean baseline
+        // Slice C (RISKS §8): a USDC residual at or below LOAN_DUST_UNITS is NO_DEBT by policy, so a
+        // poison on the debt side of such a snapshot has nothing to register against; the collateral
+        // side is covered by the dust-free baselines.
+        if (rows.some((r) => r.symbol === "USDC" && r.debt > 0n && isLoanDust(r.debt))) return;
         const s = consistent(structuredClone(rows));
         if (!applyPoison(s, poison, sign)) return;
         // A poison that happens to leave the snapshot unchanged proves nothing.
