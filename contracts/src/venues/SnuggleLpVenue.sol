@@ -14,11 +14,17 @@ import {IAerodromeCLPool} from "../interfaces/IAerodromeCLPool.sol";
 ///         owned by the calling account, every token movement is instructed back into that account.
 ///         Carries the fixes that survived the audit:
 ///           • C-2  index enumeration of `userPositions(address,uint256)` until the end-of-list revert.
-///                  A canary probe at a far index must FAIL (an engine that answers every index is
-///                  not a bounded list), and the terminating revert must be exactly `Panic(0x32)` —
-///                  the only shape an array-bounds read inside a generated getter produces. A bare
-///                  `revert()`, an out-of-gas or a proxy miss therefore fails CLOSED instead of
-///                  truncating the list into "owns fewer positions" or "owns nothing".
+///                  The live engine's end-of-list revert is EMPTY (measured 2026-09-10 at block
+///                  51,127,409, `VERIFIED-BASE-FACTS.md` Addendum 3/4) — by shape the same as a bare
+///                  `revert()`, an out-of-gas or a proxy miss — so shape alone decides nothing here.
+///                  A terminating revert (empty, or the `Panic(0x32)` a Solidity array read produces)
+///                  is accepted only when four checks agree, each failure named
+///                  (`EnumerationAmbiguous`): every probe runs under a fixed gas stipend and a probe
+///                  that exhausted it is an out-of-gas, not an end (EIP-150); the canary at a far
+///                  index must fail with the same bytes as the end; index k + 1 must fail like k and
+///                  the engine must still answer a plain view afterwards; every id read must be a
+///                  full `positions(id)` struct owned by the account. `RISKS.md` §12 has the design
+///                  and the two residuals it leaves.
 ///           • refund folding after EVERY engine deposit (the dual-deposit bounce is re-deposited
 ///                  single-sided in the same transaction; leftovers below a decimals-aware dust floor
 ///                  stay in the user's account — nothing is ever swept anywhere else).
@@ -64,9 +70,23 @@ contract SnuggleLpVenue is ILpVenue, Peripheral {
     ///         backstop only: the product's real tolerance is far tighter and set off chain.
     uint256 public constant MAX_BAND_BPS = 2500;
     uint256 private constant CANARY_INDEX = type(uint256).max;
-    /// @dev The one revert an array-bounds read inside a generated getter can produce.
+    /// @dev The revert a Solidity array read produces past the end — the shape the mocks used to
+    ///      pin. Still accepted as a terminal shape; the live engine's is empty (Addendum 3/4).
     bytes32 private constant PANIC_ARRAY_OOB_HASH =
         keccak256(abi.encodeWithSignature("Panic(uint256)", 0x32));
+    bytes32 private constant EMPTY_HASH = keccak256("");
+    /// @notice Gas handed to EVERY engine probe (`userPositions`, `positions`, `poolIdsCount`).
+    ///         Sized from the fork measurement at block 51,127,409 (Addendum 4): the end-of-list
+    ///         revert, the canary, a successful index read and a `positions(id)` read all sit below
+    ///         one eighth of it. A probe that fails after consuming all of it is an out-of-gas, not
+    ///         an end of list. Re-measure on any engine upgrade.
+    uint256 public constant PROBE_GAS = 200_000;
+    /// @dev EIP-150 forwards min(requested, 63/64 of what is left): the venue must hold this much
+    ///      right before a probe for the callee to receive exactly PROBE_GAS, else an out-of-gas
+    ///      inside the callee would consume less than the stipend and read as a cheap revert.
+    uint256 private constant PROBE_GAS_FLOOR = PROBE_GAS + PROBE_GAS / 63 + 10_000;
+    /// @dev `ISnuggleVault.positions` returns 17 static words; the owner is the third.
+    uint256 private constant POSITION_WORDS = 17;
 
     // ---------------------------------------------------------------- events
 
@@ -120,7 +140,25 @@ contract SnuggleLpVenue is ILpVenue, Peripheral {
     error DegeneratePool(bytes32 poolId, address token);
     error EngineUnreachable();
     error EnumerationFailed(bytes reason);
+    /// @notice Enumeration could not be trusted, and why (`RISKS.md` §12, slice A). `index` is the
+    ///         engine index being probed (`type(uint256).max` for the canary); `data` is what the
+    ///         engine returned, or the (id, owner) pair for `OwnerMismatch`.
+    error EnumerationAmbiguous(EnumerationFault fault, uint256 index, bytes data);
     error TooManyPositions(uint256 cap);
+
+    /// @notice Why `positionsOf` refused to answer. Order is part of the ABI (`uint8`): the keeper
+    ///         and the web name each value from `@zyo/shared`, and the agent's ABI seam pins the
+    ///         list against this enum's members.
+    enum EnumerationFault {
+        InsufficientGas, // the venue itself was not given enough gas to hand a probe the full stipend
+        ProbeOutOfGas, // a probe consumed the whole stipend: an out-of-gas, not an end of list
+        CanaryAnswered, // a far index answered: not a bounded list
+        TerminalShapeUnknown, // the canary failed with neither measured terminal shape
+        InconsistentEnd, // index k failed like the canary but k + 1 did not
+        LivenessLost, // `poolIdsCount()` stopped answering, or changed, during the enumeration
+        PositionUnreadable, // an id's `positions(id)` did not return a full, clean struct
+        OwnerMismatch // an id in the account's list is owned by someone else
+    }
 
     struct Ctx {
         bytes32 poolId;
@@ -304,45 +342,101 @@ contract SnuggleLpVenue is ILpVenue, Peripheral {
     // ----------------------------------------------------------------- views
 
     /// @inheritdoc ILpVenue
-    /// @dev C-2. The end-of-list revert shape is measured with a canary index first; a terminating
-    ///      revert of a different shape, or an engine that fails a plain liveness read, reverts —
-    ///      "cannot enumerate" is never reported as "owns nothing".
+    /// @dev C-2, redesigned 2026-09-10 (slice A, `RISKS.md` §12). Gas, shape, consistency and
+    ///      ownership must all agree before a revert is read as "the end of the list";
+    ///      "cannot enumerate" is never reported as "owns nothing" or "owns fewer".
     function positionsOf(address account) external view override returns (uint256[] memory ids) {
         // Liveness: a plain view must answer, or nothing below can be trusted.
-        (bool alive, bytes memory aliveRet) =
-            address(ENGINE).staticcall(abi.encodeCall(ISnuggleVault.poolIdsCount, ()));
-        if (!alive || aliveRet.length < 32) revert EngineUnreachable();
+        uint256 poolCount = _liveness();
 
-        (bool canaryOk, bytes memory canary) = address(ENGINE).staticcall(
-            abi.encodeCall(ISnuggleVault.userPositions, (account, CANARY_INDEX))
+        // The canary at a far index must FAIL — and HOW it fails is the terminal shape every later
+        // end-of-list candidate is held to. A far index that answers is not a bounded list.
+        (bool canaryOk, bytes memory terminal, bool canaryExhausted) = _probe(
+            abi.encodeCall(ISnuggleVault.userPositions, (account, CANARY_INDEX)), CANARY_INDEX
         );
-        if (canaryOk) revert EnumerationFailed(canary); // a far index answered: not a bounded list
-        // …and the WAY it failed must be the one shape that means "past the end of an array". A
-        // canary alone measures the shape of a revert, not its cause: a bare `revert()`, an
-        // out-of-gas or a proxy miss all look identical to it, so a transient failure mid-list would
-        // read as the end of the list and truncate it silently. Pin the shape.
-        if (keccak256(canary) != PANIC_ARRAY_OOB_HASH) revert EnumerationFailed(canary);
+        if (canaryOk) revert EnumerationAmbiguous(EnumerationFault.CanaryAnswered, CANARY_INDEX, terminal);
+        if (canaryExhausted) {
+            revert EnumerationAmbiguous(EnumerationFault.ProbeOutOfGas, CANARY_INDEX, terminal);
+        }
+        bytes32 terminalHash = keccak256(terminal);
+        if (terminalHash != EMPTY_HASH && terminalHash != PANIC_ARRAY_OOB_HASH) {
+            revert EnumerationAmbiguous(EnumerationFault.TerminalShapeUnknown, CANARY_INDEX, terminal);
+        }
 
         uint256[] memory buf = new uint256[](MAX_ENUMERATION);
         uint256 kept;
         for (uint256 i = 0;; i++) {
             if (i == MAX_ENUMERATION) revert TooManyPositions(MAX_ENUMERATION);
-            (bool ok, bytes memory ret) = address(ENGINE).staticcall(
-                abi.encodeCall(ISnuggleVault.userPositions, (account, i))
-            );
+            (bool ok, bytes memory ret, bool exhausted) =
+                _probe(abi.encodeCall(ISnuggleVault.userPositions, (account, i)), i);
             if (!ok) {
-                if (keccak256(ret) != PANIC_ARRAY_OOB_HASH) revert EnumerationFailed(ret);
+                if (exhausted) revert EnumerationAmbiguous(EnumerationFault.ProbeOutOfGas, i, ret);
+                // A mid-list revert of another shape is a fault of its own, as before.
+                if (keccak256(ret) != terminalHash) revert EnumerationFailed(ret);
+                // Candidate end at i: i + 1 must fail the same way (an isolated failing index
+                // before the true end used to read as a shorter list), and the engine must still
+                // be there afterwards.
+                (bool okNext, bytes memory next, bool nextExhausted) =
+                    _probe(abi.encodeCall(ISnuggleVault.userPositions, (account, i + 1)), i + 1);
+                if (okNext || nextExhausted || keccak256(next) != terminalHash) {
+                    revert EnumerationAmbiguous(EnumerationFault.InconsistentEnd, i + 1, next);
+                }
+                if (_liveness() != poolCount) {
+                    revert EnumerationAmbiguous(EnumerationFault.LivenessLost, i, "");
+                }
                 break;
             }
-            if (ret.length < 32) revert EnumerationFailed(ret);
+            if (ret.length != 32) revert EnumerationAmbiguous(EnumerationFault.PositionUnreadable, i, ret);
             uint256 id = abi.decode(ret, (uint256));
-            (,, address owner,,,,,,,,,,,,,,) = ENGINE.positions(id);
-            if (owner == account) buf[kept++] = id;
+            address owner = _ownerOf(id, i);
+            if (owner != account) {
+                revert EnumerationAmbiguous(EnumerationFault.OwnerMismatch, i, abi.encode(id, owner));
+            }
+            buf[kept++] = id;
         }
         ids = new uint256[](kept);
         for (uint256 i = 0; i < kept; i++) {
             ids[i] = buf[i];
         }
+    }
+
+    /// @dev `poolIdsCount()` under the stipend: the engine's plain liveness read.
+    function _liveness() internal view returns (uint256 count) {
+        (bool ok, bytes memory ret,) = _probe(abi.encodeCall(ISnuggleVault.poolIdsCount, ()), CANARY_INDEX);
+        if (!ok || ret.length != 32) revert EngineUnreachable();
+        count = abi.decode(ret, (uint256));
+    }
+
+    /// @dev One engine probe under exactly PROBE_GAS. `exhausted` is the EIP-150 verdict: the probe
+    ///      failed AND consumed the whole stipend (the caller's own call cost comes on top, so a
+    ///      callee that ran dry always measures >= PROBE_GAS; an honest revert measures a fraction).
+    function _probe(bytes memory data, uint256 index)
+        internal
+        view
+        returns (bool ok, bytes memory ret, bool exhausted)
+    {
+        if (gasleft() < PROBE_GAS_FLOOR) {
+            revert EnumerationAmbiguous(EnumerationFault.InsufficientGas, index, "");
+        }
+        uint256 before = gasleft();
+        (ok, ret) = address(ENGINE).staticcall{gas: PROBE_GAS}(data);
+        exhausted = !ok && before - gasleft() >= PROBE_GAS;
+    }
+
+    /// @dev `positions(id).owner`, corroborating the id the list handed back: the read must succeed
+    ///      under the stipend with the full struct and a clean address word.
+    function _ownerOf(uint256 id, uint256 index) internal view returns (address owner) {
+        (bool ok, bytes memory ret, bool exhausted) =
+            _probe(abi.encodeCall(ISnuggleVault.positions, (id)), index);
+        if (!ok || exhausted || ret.length != POSITION_WORDS * 32) {
+            revert EnumerationAmbiguous(EnumerationFault.PositionUnreadable, index, ret);
+        }
+        uint256 word;
+        assembly ("memory-safe") {
+            word := mload(add(ret, 0x60)) // third word: length prefix + 2 × 32
+        }
+        if (word >> 160 != 0) revert EnumerationAmbiguous(EnumerationFault.PositionUnreadable, index, ret);
+        owner = address(uint160(word));
     }
 
     /// @inheritdoc ILpVenue

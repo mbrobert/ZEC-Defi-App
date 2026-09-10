@@ -392,8 +392,8 @@ storage; the router's balance of every token it touches is unchanged across
 every call; no standing allowances (`_approveCallReset`;
 `invariant_noStandingAllowances`); reentrancy lock in transient storage;
 peripheral rights opt-in per call and bounded in depth; revert data bubbled
-untouched; **304 unit / fuzz / invariant tests green** (2026-09-10; plus 8 fork
-tests skipped without `FORK_URL`), with 9 invariants including the user-can-always-exit (raw and via the
+untouched; **323 unit / fuzz / invariant tests green** (2026-09-10, slice A;
+plus 8 fork tests skipped without `FORK_URL`), with 9 invariants including the user-can-always-exit (raw and via the
 router), repay-reaches-every-book, fee-never-touches-principal and the two
 donation properties.
 The one owned contract is the registry, which cannot touch an account — but
@@ -404,8 +404,9 @@ adversarial audit (four lenses), not an external one. The fork suite (8 tests)
 was run against Base mainnet on 2026-09-10 at block 51,127,409: 4 passed,
 4 failed (`VERIFIED-BASE-FACTS.md` Addendum 3; the founder's 2026-09-07 run
 at block 51,001,138 had the same 4 + 4). The engine's live end-of-list revert
-shape is now recorded — it is empty `0x`, not `Panic(0x32)` — so `positionsOf`
-as built fails closed on every account against the live engine (§12); the
+shape was recorded — empty `0x`, not `Panic(0x32)` — and `positionsOf` was
+redesigned for it the same day (slice A, §12: 5 / 3 at the same block after
+it, with the gas of every probe shape measured, Addendum 4); the
 Aave flow reached repay and stopped on a 1-unit rounding shortfall (§8); the
 open → close flow stopped on a stub adapter the engine lists first (§12); and
 the cbZEC B20 test cannot execute inside a fork EVM at all (its values were
@@ -428,33 +429,35 @@ after any deposit, and can refuse a withdrawal.
 keeper's read and its dispatch survivable; the keeper and the dashboard read
 `positionsOf(account)` fresh on every dispatch and every paint rather than
 caching ids, so a re-key is picked up; the venue never depends on enumeration
-for an exit (`close` / `closeMany` take explicit ids); enumeration fails closed
-on any revert shape other than `Panic(0x32)`; the fork test
-`test_fork_lpOpenCloseOnLiveEngine` exercises the live engine when `FORK_URL`
+for an exit (`close` / `closeMany` take explicit ids); enumeration accepts a
+terminating revert only when gas, shape, consistency and ownership all agree
+(the design below, slice A, 2026-09-10) and otherwise fails closed with the
+fault named; the fork tests `test_fork_engineIndexGetterShape` and
+`test_fork_lpOpenCloseOnLiveEngine` exercise the live engine when `FORK_URL`
 is set (first run 2026-09-10 — see "Measured" below).
 
 **Does not.** The engine's own contract risk is the user's. Fees the engine
 keeps are not Oilskin's to refund. The 60-second hold (verified 2026-08,
 `AUDIT-LEDGER-2026-08.md`) is not surfaced by the v1 web; a close seconds after
-a deposit reverts and is reported as a refused id. And a `Panic(0x32)` at index
-*k* from some cause other than the end of the list is still indistinguishable
-from the end of a *k*-element list — a property of the engine's generated
-getter that no amount of care in our venue removes.
+a deposit reverts and is reported as a refused id. And an isolated failure at
+the LAST index of the list (k = n − 1, with the terminal shape) is still
+indistinguishable from a list one shorter — the k + 1 probe below cannot see
+it — a property of the engine's generated getter that no amount of care in our
+venue removes; the two residuals the design leaves are stated under it.
 
 **Measured 2026-09-10 (fork at block 51,127,409; `VERIFIED-BASE-FACTS.md`
 Addendum 3).** The live engine's end-of-list revert is *empty*:
 `userPositions(account, 0)` for a fresh address and the canary at 2^256 − 1
 both revert with zero bytes of data, through the proxy and at the unchanged
 implementation `0x359F…2D28`. That is not `Panic(0x32)`, so `positionsOf`
-reverts `EnumerationFailed(0x)` for every account on the live engine: the
-dashboard's position list and the keeper's id discovery cannot work on
-mainnet as built, while exits (`close` / `closeMany` by explicit id) do not
-depend on it and still can. The empty shape is also exactly the shape of a
-bare `revert()`, an out-of-gas or a proxy miss, so the ambiguity the pin was
-written to remove cannot be removed by shape on this engine. Whether to accept
-`0x` as end-of-list, and how to bound the silent-truncation risk that comes
-with it, is a product decision and not a constant to flip; this document does
-not make it. Second measurement: the engine's registry entry at index 0
+reverted `EnumerationFailed(0x)` for every account on the live engine until
+slice A (below): the dashboard's position list and the keeper's id discovery
+could not work on mainnet as built, while exits (`close` / `closeMany` by
+explicit id) did not depend on it and still could. The empty shape is also
+exactly the shape of a bare `revert()`, an out-of-gas or a proxy miss, so the
+ambiguity the pin was written to remove cannot be removed by shape on this
+engine — which is why the design below removes it by other means and names
+what it cannot remove. Second measurement: the engine's registry entry at index 0
 (poolId `0x0ab2…65e2`) is one of 81 entries — of 214, all flagged active —
 that name the Uniswap v3 WETH/USDC pool `0xd0b5…F224` under 81 different
 token pairs, with a fee field of 9999 and a position adapter `0xCCBf…CED2`
@@ -464,6 +467,67 @@ twelve curated `enginePoolId`s in `packages/shared/src/pools.ts` is one of
 those 81 (all twelve sit on minting adapters), but a user-typed id could be,
 and the fork test's "first active WETH/USDC pool" selection is. The engine
 lists no cbZEC pool at all.
+
+**Design, slice A (2026-09-10): enumeration on the engine as it is.** The
+verified source of the implementation (`0x359f…2d28`, solc 0.8.33 via-IR,
+Blockscout, read 2026-09-10) shows `userPositions` is the compiler-generated
+getter of `mapping(address => uint256[]) public userPositions`; the engine
+keeps every listed id owned by the lister (`_removePosition` swap-and-pop,
+`_replacePositionId` in place, `positionIndexInUser` per id) and caps a list
+at `maxPositionsPerUser()` = 500 (read live, `VERIFIED-BASE-FACTS.md`
+Addendum 4). `positionsOf` therefore no longer pins `Panic(0x32)`. It accepts a
+terminating revert of either measured shape — empty (the live engine) or
+`Panic(0x32)` (a Solidity array read, what the mocks produced) — but never on
+shape alone: four independent checks must agree, and every failure names its
+reason through `EnumerationAmbiguous(fault, index, data)`.
+
+1. *Gas (EIP-150).* Every engine probe is a `staticcall` under a fixed
+   stipend, `PROBE_GAS`, and the venue first checks it holds at least 64/63
+   of that plus slack so the callee receives exactly the stipend
+   (`InsufficientGas` otherwise). A probe that failed after consuming the
+   whole stipend is an out-of-gas, not an end of list (`ProbeOutOfGas`).
+   This works only because the measured empty revert is a `REVERT` that
+   returns its unused gas, not an `INVALID` that burns it all: the node
+   reports `execution reverted`, and the fork meters the end-of-list, the
+   canary, a successful index read and a `positions(id)` read at the gas
+   figures in Addendum 4; the stipend is sized from those, at least 8× the
+   most expensive of them, and must be re-measured on any engine upgrade.
+2. *Shape agreement.* The canary at 2^256 − 1 must fail (`CanaryAnswered`)
+   with one of the two terminal shapes (`TerminalShapeUnknown`); the revert
+   that ends the list at index k must be byte-identical to the canary's; a
+   mid-list revert of any other shape is `EnumerationFailed(data)` as before.
+3. *Consistency (k, k + 1, liveness).* Index k + 1 must fail exactly like k
+   (`InconsistentEnd`) — an isolated failing index before the true end used
+   to read as a shorter list; `poolIdsCount()` must answer before the canary
+   and again after the terminal probe, with the same value (`LivenessLost`).
+4. *Corroboration.* Each id read at index i is checked against
+   `positions(id)`: the read must succeed with the full 17-word struct and a
+   clean address word (`PositionUnreadable`), and the owner must be the
+   account (`OwnerMismatch`) — a mismatch is corruption or a foreign engine,
+   not a row to skip, so it fails closed instead of being filtered.
+
+Off chain, the keeper and the web decode `EnumerationAmbiguous`,
+`EnumerationFailed` and `EngineUnreachable` by name (`@zyo/shared`
+`describeLpEnumerationFault`): the keeper REFUSES the dispatch with the fault
+named and never plans against an empty list, and the dashboard shows
+"positions unreadable" with the fault, never "No positions". *Residuals,
+stated.* (a) An isolated failure at the last index is a list one shorter (the
+"Does not" above). (b) A proxy miss — an implementation swap that drops the
+getter — reverts empty at every index for every account and is, by shape, gas
+and consistency, an empty list. The venue cannot read the proxy's
+implementation slot; the keeper and the web can (EIP-1967 slot, `0x359f…2d28`
+at the 2026-09-10 read, admin `0x7885…86cb`), and comparing it to the recorded
+value before trusting an empty list is the only guard. Taking it means an
+engine upgrade parks id discovery — and every LP close the keeper would plan —
+until the shape is re-measured; that is a product decision, recorded here and
+not made. (c) The stipend bounds what the engine may spend per probe: an
+engine that legitimately grew past it would read as out-of-gas and fail
+closed. Tests: `contracts/test/audit-regressions/EnumerationAmbiguity.t.sol`
+(every fault, both terminal shapes, the last-index residual asserted as such),
+`LpVenueCliffs.t.sol` B11 (flipped: the empty shape enumerates, an isolated
+failure before the end fails closed), `SnuggleLpVenue.t.sol` (both mock
+shapes), the fork test, `agent/test/dispatcher.test.ts` and
+`web/test/reads.test.ts` (fail closed, fault named).
 
 ## 13 · Price-band and swap floors (MEV)
 

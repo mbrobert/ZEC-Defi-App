@@ -87,6 +87,7 @@ export class MockOilskin {
   /** `${keeper}:${target}:${selector}` (lowercase) → grant */
   grants = new Map<string, MockGrant>();
   positions = new Map<string, { id: bigint; poolId: Hex }[]>();
+  positionsFault = new Map<string, { code: number; index: bigint }>();
   poolPrices = new Map<Hex, bigint>();
   /** poolId → (token0, token1, pool). Defaults to (USDC, OTHER_TOKEN, POOL_ADDR). */
   poolTokens = new Map<Hex, { token0: Address; token1: Address; pool: Address }>();
@@ -173,6 +174,11 @@ export class MockOilskin {
   }
   setPositions(account: Address, list: { id: bigint; poolId: Hex }[]): void {
     this.positions.set(account.toLowerCase(), [...list]);
+  }
+  /** Make the venue REFUSE to enumerate this account: `positionsOf` reverts `EnumerationAmbiguous(code, index, 0x)` (slice A). */
+  setPositionsFault(account: Address, fault: { code: number; index: bigint } | null): void {
+    if (fault) this.positionsFault.set(account.toLowerCase(), fault);
+    else this.positionsFault.delete(account.toLowerCase());
   }
   setUsdc(account: Address, amount: bigint): void {
     this.usdcBalances.set(account.toLowerCase(), amount);
@@ -325,6 +331,8 @@ export class MockOilskin {
       const { functionName, args } = decodeFunctionData({ abi: lpVenueAbi, data });
       if (functionName === "positionsOf") {
         const [acct] = args as [Address];
+        const fault = this.positionsFault.get(acct.toLowerCase());
+        if (fault) throw revertWith(encodeErrorResult({ abi: lpVenueAbi, errorName: "EnumerationAmbiguous", args: [fault.code, fault.index, "0x"] }));
         return encodeFunctionResult({ abi: lpVenueAbi, functionName, result: (this.positions.get(acct.toLowerCase()) ?? []).map((p) => p.id) });
       }
       if (functionName === "poolOf") {

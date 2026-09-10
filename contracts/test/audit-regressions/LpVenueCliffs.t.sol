@@ -15,8 +15,8 @@ import {MockCLPool} from "../mocks/MockCLPool.sol";
 ///         answers. Only the surface `SnuggleLpVenue.positionsOf` touches is implemented.
 contract AdversarialEngine {
     enum EndShape {
-        EmptyRevert, // `revert()` — no return data at all (proxy miss, OOG, bare revert)
-        Panic32, // the compiler-generated array-bounds shape the live engine uses
+        EmptyRevert, // `revert()` — no data: the LIVE engine's measured end-of-list (and a bare revert, an OOG, a proxy miss)
+        Panic32, // a Solidity array read past the end (the shape the mocks used to pin)
         Answers // a mapping-style getter: every index answers, nothing ever reverts
     }
 
@@ -72,7 +72,10 @@ contract AdversarialEngine {
 ///   B-MED-4   `_takeFee` ran twice on a pool whose two tokens were the same — 19 % at a 10 %
 ///             setting, above a cap the contract advertises as absolute.
 ///   B-MED-5   the enumeration canary measured the SHAPE of a revert, not its cause, so an engine
-///             whose out-of-range read is a bare `revert()` truncated the list silently.
+///             whose out-of-range read is a bare `revert()` truncated the list silently. (The wave-1
+///             fix pinned Panic(0x32); the live engine's shape turned out to be that bare revert —
+///             slice A, 2026-09-10, replaced the pin with the gas / shape / consistency / ownership
+///             checks of `RISKS.md` §12.)
 ///   B-LOW-2   the price band's WIDTH was unbounded: `[1, uint160.max]` was accepted as "a band".
 contract LpVenueCliffsRegressionTest is Fixture {
     function setUp() public override {
@@ -186,43 +189,70 @@ contract LpVenueCliffsRegressionTest is Fixture {
     }
 
     // =====================================================================
-    // FIX B-11 (B-MED-5). The terminating revert must be exactly Panic(0x32).
+    // FIX B-11 (B-MED-5), re-flipped 2026-09-10 (slice A). The wave-1 fix pinned Panic(0x32) as the
+    // one terminal shape; the live engine's is EMPTY (measured, Addendum 3), so the pin made every
+    // account unenumerable on mainnet. The redesign accepts either shape only when gas, shape,
+    // consistency and ownership agree (`RISKS.md` §12; the full matrix is
+    // `EnumerationAmbiguity.t.sol`). What B-MED-5 was about — an isolated failure being read as a
+    // shorter list — is caught by the k + 1 probe, at index 0 and mid-list alike.
     // =====================================================================
 
-    function test_FIX_B11_anEmptyRevertShapeFailsClosedInsteadOfTruncating() public {
+    function test_FIX_B11_theEmptyShapeEnumeratesAndAnIsolatedFailureBeforeTheEndFailsClosed() public {
         AdversarialEngine adv = new AdversarialEngine();
         SnuggleLpVenue v = new SnuggleLpVenue(ISnuggleVault(address(adv)), address(aero), treasury, 1000);
         uint256[] memory five = new uint256[](5);
         for (uint256 i = 0; i < 5; i++) five[i] = 100 + i;
         adv.configure(address(acct), five, AdversarialEngine.EndShape.EmptyRevert);
 
-        // An engine whose out-of-range read carries no data can no longer be enumerated at all:
-        // "cannot enumerate" is never reported as "owns fewer" or "owns nothing".
-        vm.expectRevert(abi.encodeWithSelector(SnuggleLpVenue.EnumerationFailed.selector, bytes("")));
-        v.positionsOf(address(acct));
+        // The measured live shape enumerates in full.
+        assertEq(v.positionsOf(address(acct)).length, 5, "the live engine's shape enumerates");
 
+        // An isolated failure before the end is no longer "owns fewer": the next index answers.
         adv.setTransientBadIndex(2);
-        vm.expectRevert(abi.encodeWithSelector(SnuggleLpVenue.EnumerationFailed.selector, bytes("")));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                SnuggleLpVenue.EnumerationAmbiguous.selector,
+                SnuggleLpVenue.EnumerationFault.InconsistentEnd,
+                uint256(3),
+                abi.encode(uint256(103))
+            )
+        );
         v.positionsOf(address(acct));
 
+        // …nor "owns nothing".
         adv.setTransientBadIndex(0);
-        vm.expectRevert(abi.encodeWithSelector(SnuggleLpVenue.EnumerationFailed.selector, bytes("")));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                SnuggleLpVenue.EnumerationAmbiguous.selector,
+                SnuggleLpVenue.EnumerationFault.InconsistentEnd,
+                uint256(1),
+                abi.encode(uint256(101))
+            )
+        );
         v.positionsOf(address(acct));
     }
 
-    function test_FIX_B11b_theLiveShapeStillEnumeratesButAMidListFailureFailsClosed() public {
+    function test_FIX_B11b_thePanicShapeStillEnumeratesAndAMidListFailureFailsClosed() public {
         AdversarialEngine adv = new AdversarialEngine();
         SnuggleLpVenue v = new SnuggleLpVenue(ISnuggleVault(address(adv)), address(aero), treasury, 1000);
         uint256[] memory three = new uint256[](3);
         (three[0], three[1], three[2]) = (7, 8, 9);
         adv.configure(address(acct), three, AdversarialEngine.EndShape.Panic32);
-        assertEq(v.positionsOf(address(acct)).length, 3, "the live shape still enumerates");
+        assertEq(v.positionsOf(address(acct)).length, 3, "the Panic shape still enumerates");
 
-        // A Panic(0x32) at index 1 is still indistinguishable from the end of a 1-element list —
-        // that is a property of the engine's getter, not of this contract. Recorded, not claimed
-        // fixed: the fix removes every OTHER shape that used to be mistaken for the end.
+        // Before slice A a Panic(0x32) at index 1 read as the end of a 1-element list. The k + 1
+        // probe sees index 2 answer and refuses. (An isolated failure at the LAST index remains the
+        // documented residual — `EnumerationAmbiguity.t.sol` A4.)
         adv.setTransientBadIndex(1);
-        assertEq(v.positionsOf(address(acct)).length, 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                SnuggleLpVenue.EnumerationAmbiguous.selector,
+                SnuggleLpVenue.EnumerationFault.InconsistentEnd,
+                uint256(2),
+                abi.encode(uint256(9))
+            )
+        );
+        v.positionsOf(address(acct));
     }
 
     function test_FIX_B11c_canaryThatAnswersStillFailsClosed() public {

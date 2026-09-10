@@ -9,8 +9,12 @@ import {MockCLPool} from "./MockCLPool.sol";
 
 /// @notice Test double for SnuggleVaultUpgradeable, faithful to the CHAIN-VERIFIED semantics
 ///         (AUDIT-FINDINGS-2026-09-03 Part 1), not to an interface we wished it had:
-///           • FACT 1  `userPositions(address,uint256)` index getter — reverts past the end
-///                     (Panic 0x32, the compiler-generated shape); no array-returning getter exists.
+///           • FACT 1  `userPositions(address,uint256)` index getter — reverts past the end with an
+///                     EMPTY revert (the shape MEASURED on the live engine 2026-09-10 at block
+///                     51,127,409, `VERIFIED-BASE-FACTS.md` Addendum 3; the getter is the
+///                     compiler-generated one, solc 0.8.33 via-IR). `setEndShape(Panic32)` keeps the
+///                     `Panic(0x32)` variant a Solidity array read produces, so both shapes the venue
+///                     accepts are covered. No array-returning getter exists.
 ///           • FACT 2  re-key REPLACES: the old id leaves the list and `positions(old)` reads zero.
 ///           • FACT 4  single-sided deposit mints with ≈ zero residual; dual deposit mints the
 ///                     balanced part at the pool price and BOUNCES the excess of the long leg to
@@ -72,7 +76,15 @@ contract MockSnuggleVault is ISnuggleVault {
     mapping(uint256 => address[]) internal feeTokens;
     mapping(uint256 => uint256[]) internal feeAmounts;
 
+    /// @notice How the index getter fails past the end: the live engine's empty revert (default,
+    ///         measured) or the `Panic(0x32)` variant.
+    enum EndShape {
+        Empty,
+        Panic32
+    }
+
     // failure-mode switches
+    EndShape public endShape;
     uint256 public minHoldTime;
     uint256 public withdrawSlippageBps;
     uint256 public singleSidedResidualBps;
@@ -112,6 +124,10 @@ contract MockSnuggleVault is ISnuggleVault {
 
     function setPaused(bool p) external {
         paused = p;
+    }
+
+    function setEndShape(EndShape s) external {
+        endShape = s;
     }
 
     /// @dev Make `userPositions(user, index)` revert with a NON-end-of-list shape.
@@ -319,12 +335,18 @@ contract MockSnuggleVault is ISnuggleVault {
         return (p.pool, p.token0, p.token1, p.fee, p.tickSpacing, p.active, address(0), address(0));
     }
 
-    /// @dev FACT 1: index getter, reverts past the end exactly like the compiler-generated one
-    ///      (array bounds → Panic 0x32). The glitch switch reproduces "some other revert".
+    /// @dev FACT 1: index getter. Past the end it reverts EMPTY, as the live engine measured
+    ///      (Addendum 3), or `Panic(0x32)` under `setEndShape(Panic32)`. The glitch switch
+    ///      reproduces "some other revert" mid-list.
     function userPositions(address user, uint256 index) external view returns (uint256) {
         _live();
         if (glitchArmed && user == glitchUser && index == glitchIndex) revert("engine glitch");
-        return _userPositions[user][index];
+        uint256[] storage list = _userPositions[user];
+        if (index >= list.length) {
+            if (endShape == EndShape.Panic32) return list[index]; // Panic(0x32)
+            revert(); // the measured live shape: no data
+        }
+        return list[index];
     }
 
     function poolIds(uint256 i) external view returns (bytes32) {

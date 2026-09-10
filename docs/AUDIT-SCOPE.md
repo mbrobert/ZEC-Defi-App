@@ -3,7 +3,7 @@
 What an auditor is asked to read, what it must guarantee, and what we have
 not verified ourselves. Line counts are `wc -l` on this tree. The ABI seam
 (selectors, errors, events) is `CONTRACT-ABI.md` and the generated
-`contracts/abi/oilskin-abi.json` (327 entries as of 2026-09-09); read the code, not the tables.
+`contracts/abi/oilskin-abi.json` (329 entries as of 2026-09-10); read the code, not the tables.
 Wave 1 of the internal audit and the fix round it produced are in
 `AUDIT-2026-09-06.md`.
 
@@ -147,8 +147,9 @@ disabled assets and refuses a disabled venue; a fixed repay against zero debt
 is a no-op; the swap floor is relative to the quote, capped at 500 bps, and a
 sandwich reverts; venue replacement timelocked, announced, cancellable;
 Permit2 wrong-spender / reused-nonce refused; width bounds; band required /
-out of range / too wide / unreadable pool; enumeration shape-exact
-(`Panic(0x32)` only) with every other shape failing closed; a stale first id
+out of range / too wide / unreadable pool; enumeration that accepts the
+measured empty end-of-list (or `Panic(0x32)`) only when gas, shape,
+consistency and ownership agree, every fault named; a stale first id
 reported on `closeMany` / `claim` / `unwind`; degenerate pool refused on entry;
 close fee on yield only and once per distinct token; B20 rebase up and down,
 blocked account, blocked treasury, paused reward token, blocked swap; Pyth
@@ -159,8 +160,8 @@ chain / missing env / no code / Aave provider drift.
 
 | Item | State | Where it bites |
 |---|---|---|
-| **Fork tests against Base** | `contracts/test/fork/BaseFork.t.sol`, 8 tests, `vm.skip` without `FORK_URL` — **run against Base mainnet on 2026-09-10 at block 51,127,409: 4 passed / 4 failed** (`VERIFIED-BASE-FACTS.md` Addendum 3; `TESTING.md`). Reported as SKIPPED without `FORK_URL`, never as passed. | Aave provider resolution, live reserve params, cbZEC B20 shape, the engine's index-getter shape, supply → borrow → repay → withdraw under a real account, open → close on the live engine |
-| **The engine's live end-of-list revert shape** | **Recorded 2026-09-10: the live shape is empty `0x`** (index 0 and the canary index both revert with no data). The venue requires exactly `Panic(0x32)` and fails closed on anything else, so against the live engine `positionsOf` reverts `EnumerationFailed(0x)` for every account. Fail-closed held; the product decision on what to accept is open (`RISKS.md` §12). | `positionsOf`, the dashboard's position list, the keeper's id discovery |
+| **Fork tests against Base** | `contracts/test/fork/BaseFork.t.sol`, 8 tests, `vm.skip` without `FORK_URL` — **run against Base mainnet on 2026-09-10 at block 51,127,409: 4 passed / 4 failed on the first run, 5 / 3 after slice A** (`VERIFIED-BASE-FACTS.md` Addenda 3–4; `TESTING.md`). Reported as SKIPPED without `FORK_URL`, never as passed. | Aave provider resolution, live reserve params, cbZEC B20 shape, the engine's index-getter shape, supply → borrow → repay → withdraw under a real account, open → close on the live engine |
+| **The engine's live end-of-list revert shape** | **Recorded 2026-09-10: empty `0x`**, and `positionsOf` redesigned for it the same day (slice A): gas under a measured stipend, canary / end / k + 1 shape agreement, liveness before and after, `positions(id).owner` per id — `EnumerationAmbiguous(fault, …)` otherwise, named by the keeper and the web (`RISKS.md` §12, Addendum 4; fork test green at block 51,127,409). **Still not verifiable on chain:** a getter-less implementation upgrade reads as an empty list for every account; the EIP-1967 slot (`0x359f…2d28`) is the only off-chain guard and is NOT compared by any shipped code — a product decision left open. An isolated failure at the last index is a list one shorter. | `positionsOf`, the dashboard's position list, the keeper's id discovery |
 | **Morpho Blue market ids** (cbBTC/USDC, WETH/USDC) | Discovered and chain-verified 2026-09-07, re-read at block 51,003,524 (`VERIFIED-BASE-FACTS.md`, Morpho addendum: both 86 % LLTV, ids recomputed from `idToMarketParams`). **In code**: `Deploy.s.sol` `MORPHO_MARKET_*` constants, shared `MORPHO_BLUE.marketIds`, and `MorphoBlueVenue` re-derives each at construction | venue deployed; registry still on Aave |
 | **cbZEC B20 policy** (blocklist, pause) | `owner()` / `paused()` revert on the precompile; `multiplier()` read once = 1e18 (2026-09-05). **No shipped code reads policy state; `web/lib/copy.ts:43` says it does** — open must-fix (`RISKS.md` §4) | cbZEC spot / LP users |
 | **CoW `vaultRelayer`** | `COW_PROTOCOL.vaultRelayer = null` in shared; the web reads `settlement.vaultRelayer()` live | spot approve target |

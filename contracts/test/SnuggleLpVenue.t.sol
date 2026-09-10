@@ -327,6 +327,23 @@ contract SnuggleLpVenueTest is Fixture {
         assertEq(lpVenue.positionsOf(address(acct)).length, 25, "real users hold 13-25 ids");
     }
 
+    /// The mock's default end-of-list is the shape MEASURED on the live engine (empty, 2026-09-10);
+    /// the Panic(0x32) variant a Solidity array read produces is kept, and both enumerate the same
+    /// list (slice A, `RISKS.md` §12).
+    function test_positionsOfUnderBothTerminalShapes() public {
+        uint256 a = _openUsdc(100e6);
+        uint256 b = _openUsdc(100e6);
+        assertTrue(engine.endShape() == MockSnuggleVault.EndShape.Empty, "default = the measured shape");
+        uint256[] memory ids = lpVenue.positionsOf(address(acct));
+        assertEq(ids.length, 2);
+        assertEq(ids[0] + ids[1], a + b);
+        engine.setEndShape(MockSnuggleVault.EndShape.Panic32);
+        ids = lpVenue.positionsOf(address(acct));
+        assertEq(ids.length, 2);
+        assertEq(ids[0] + ids[1], a + b);
+        assertEq(lpVenue.positionsOf(bob).length, 0);
+    }
+
     function test_closeNeverDependsOnEnumeration() public {
         uint256 id = _openUsdc(100e6);
         engine.setGlitch(address(acct), 0, true); // enumeration is broken…

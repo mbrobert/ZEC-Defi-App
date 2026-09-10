@@ -96,7 +96,7 @@ USDC → `0xf52d010c7d4ecbfda92c2509900593ce34535d86` (these are Aave's adapters
 - **Multicall3** `0xcA11bde05977b3631167028862bE2a173976CA11` — not read; the web uses viem's `base` chain definition with a per-call fallback; the keeper does one `eth_call` per read.
 - **Morpho Blue market ids** for cbBTC/USDC and WETH/USDC — ~~not discovered~~ **discovered and chain-verified 2026-09-07, re-read the same day at block 51,003,524 (see the Morpho addendum below)**; `MorphoBlueVenue` is built over them and re-derives each id from `idToMarketParams` at construction.
 - **CoW GPv2VaultRelayer** — not read; the web reads `settlement.vaultRelayer()` at runtime.
-- ~~**The engine's live end-of-list revert shape** for `userPositions(address,uint256)`~~ — **recorded 2026-09-10 at block 51,127,409 (Addendum 3): empty `0x`, at index 0 and at the canary index 2^256 − 1.** It is not `Panic(0x32)`, which is what `SnuggleLpVenue.positionsOf` pins, so the venue's enumeration fails closed against the live engine (`RISKS.md` §12).
+- ~~**The engine's live end-of-list revert shape** for `userPositions(address,uint256)`~~ — **recorded 2026-09-10 at block 51,127,409 (Addendum 3): empty `0x`, at index 0 and at the canary index 2^256 − 1.** It is not `Panic(0x32)`, which is what `SnuggleLpVenue.positionsOf` pinned until slice A (2026-09-10) redesigned it for the measured shape — Addendum 4 and `RISKS.md` §12.
 - **cbZEC B20 policy state** (blocklist, pause) — `owner()` / `paused()` revert on the precompile; only `multiplier()` was read (1e18).
 - **Gauge emissions** for the curated pools other than cbZEC/USDC — the yield model's inputs are the 2026-08-31 words (block 50675328), not this read.
 
@@ -426,8 +426,69 @@ The cbZEC/USDC pool `0x0Fc47C17AF86078d809358db1b4db2DeBC988566` answers `factor
 | cbZEC `totalSupply()` | 603.25 (09-05) | 1,107.68 | supply grew |
 | cbZEC/USDC tick / price | −24,509 / ≈ 1,159.74 (09-07) | −24,995 / ≈ 1,217.49 | price moved |
 | Engine implementation | `0x359f…2d28` (09-03) | same | no |
-| Engine end-of-list revert shape | never recorded | empty `0x` | **first measurement; contradicts the venue's `Panic(0x32)` pin** |
+| Engine end-of-list revert shape | never recorded | empty `0x` | **first measurement; contradicted the venue's `Panic(0x32)` pin — redesigned in slice A, Addendum 4** |
 | Engine `poolIdsCount()` | not recorded | 214 | first measurement |
 | Engine WETH/USDC entry the test lands on | assumed mintable | stub adapter, `NotImplemented()` | **first measurement** |
 | Aave aToken / debt rounding | not recorded | −1 / +1 unit | **first measurement** |
 | cbZEC/USDC pool `factory()` | assumed `0x5e7B…809A` | `0xf8f2…61Ef` | **first measurement; SwapRouter routing to this pool unverified** |
+
+## Addendum 4 — slice A, 2026-09-10: the engine's index getter, measured for the redesign
+
+Purpose: give `SnuggleLpVenue.positionsOf` the numbers its redesign depends on (`RISKS.md` §12
+"Design"). Method: the fork test `test_fork_engineIndexGetterShape`, re-run pinned at **block
+51,127,409** (Foundry 1.8.1, `FORK_URL=https://mainnet.base.org`, `FORK_BLOCK=51127409`,
+2026-09-10), meters each probe under the venue's own 200,000-gas stipend; `cast` reads against the
+same RPC at **block 51,143,322** (2026-09-10, later the same day); and the implementation's verified
+source on Blockscout. Nothing was signed or broadcast; `contracts/.env` was not written.
+
+### The implementation, as verified (Blockscout, read 2026-09-10)
+
+- Proxy `0x7D27…Fd55`: EIP-1967 implementation slot → `0x359f90ee4c2e21cbf6e32c5a062eeef306822d28`
+  (unchanged since 2026-09-03); admin slot → `0x7885d796eeb6862dc798afa69dce8a0b25f486cb`. The
+  source names `TransparentUpgradeableProxy` as the intended proxy.
+- Implementation `0x359F…2D28`: `SnuggleVaultUpgradeable`, solc **0.8.33**, via-IR, optimizer runs 1,
+  EVM cancun, linked library `SnuggleRebalanceLib` `0xf84b575E4E6D9fc07a3F2B863Cb6A23CC11DCDDc` (the
+  library Addendum 3 saw calling `getTWAPTick`); Sourcify partial match.
+- `mapping(address => uint256[]) public userPositions;` — the index getter IS the compiler-generated
+  one. `_removePosition` swap-and-pops the owner's list, `_replacePositionId` replaces in place, and
+  `positionIndexInUser[tokenId]` tracks each id's index, so every listed id is owned by the lister.
+  Also public: `allPositionIds(uint256)`, `positionIndexInUser(uint256)`, `maxPositionsPerUser()`,
+  `paused()`.
+
+### Live reads (`cast`, block 51,143,322)
+
+| Read | Answer |
+|---|---|
+| `maxPositionsPerUser()` | **500** (the venue's `MAX_ENUMERATION` = 512 sits above it) |
+| `paused()` | false (the getters carry no `whenNotPaused`; a pause does not change enumeration) |
+| `userPositions(0x…dEaD, 0)` under a 30,000 gas limit | `-32003 out of gas: gas required exceeds: 30000` — the end-of-list needs more than the ≈ 8.6k gas left after the intrinsic cost |
+| the same under 100,000 | `execution reverted`, no data — a `REVERT`, not an `INVALID` |
+| selector `0xdeadbeef` on the proxy | `execution reverted`, no data — the same shape as the end of a list |
+
+### Gas per probe, metered on the fork (block 51,127,409, cold, through the proxy)
+
+| Probe | Result | Gas used | Share of the 200,000 stipend |
+|---|---|---|---|
+| `userPositions(fresh, 0)` — end of an empty list | revert, `0x` | **12,660** | 1 / 15.8 |
+| `userPositions(fresh, 2^256 − 1)` — the canary | revert, `0x` | **12,660** | 1 / 15.8 |
+| `0xdeadbeef` — a selector the engine lacks | revert, `0x` | **11,127** | 1 / 18.0 |
+| `userPositions(holder, 0)` — a successful index read | ok, 32 bytes | **15,275** | 1 / 13.1 |
+| `positions(id)` — the 17-word struct | ok, 544 bytes | **24,463** | 1 / 8.2 |
+
+The live holder was found from `allPositionIds(0)` → `positions(id).owner` =
+`0xf4b4eF5bD7EcDC1d121604C14e43a6d369071b1f`, who held **42** ids at that block; the redesigned
+`positionsOf` returned all 42, each owner-corroborated, with the id the global list named among
+them, and an empty list for a fresh address. **What this settles:** the empty end-of-list is a cheap
+`REVERT` that hands its gas back, so a probe that consumes the whole stipend is an out-of-gas and
+nothing else; a selector miss (an implementation without the getter) costs within 1.6k gas of a real
+end and is NOT told apart by gas — `RISKS.md` §12 residual (b). `PROBE_GAS = 200_000` is ≥ 8× the
+dearest probe and must be re-measured on any change to the implementation slot.
+
+### Fork scorecard after slice A (block 51,127,409): 5 passed / 3 failed / 0 skipped
+
+`test_fork_engineIndexGetterShape` now PASSES (it also asserts the empty shape, the canary
+agreement and the gas bounds above). Still failing, unchanged, for slices B and C:
+`test_fork_lpOpenCloseOnLiveEngine` (`NotImplemented()` from the stub adapter at engine index 0),
+`test_fork_supplyBorrowRepayWithdrawUnderTheAccount` (`ERC20: transfer amount exceeds balance` at
+the repay — the +1 unit), and `test_fork_cbzecIsAB20WithLiveMultiplier` (harness limitation,
+`OpcodeNotFound`).

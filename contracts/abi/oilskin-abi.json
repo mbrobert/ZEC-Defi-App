@@ -2780,6 +2780,11 @@
           "stateMutability": "view",
           "outputs": "uint24"
         },
+        "PROBE_GAS()": {
+          "selector": "0x13b7cac4",
+          "stateMutability": "view",
+          "outputs": "uint256"
+        },
         "REWARD_TOKEN()": {
           "selector": "0x99248ea7",
           "stateMutability": "view",
@@ -2940,6 +2945,9 @@
         },
         "EngineUnreachable()": {
           "selector": "0xd148f8ee"
+        },
+        "EnumerationAmbiguous(uint8,uint256,bytes)": {
+          "selector": "0x52e93923"
         },
         "EnumerationFailed(bytes)": {
           "selector": "0xb1440723"
@@ -3118,6 +3126,19 @@
               "name": "",
               "type": "uint24",
               "internalType": "uint24"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "PROBE_GAS",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256",
+              "internalType": "uint256"
             }
           ],
           "stateMutability": "view"
@@ -3867,6 +3888,27 @@
           "type": "error",
           "name": "EngineUnreachable",
           "inputs": []
+        },
+        {
+          "type": "error",
+          "name": "EnumerationAmbiguous",
+          "inputs": [
+            {
+              "name": "fault",
+              "type": "uint8",
+              "internalType": "enum SnuggleLpVenue.EnumerationFault"
+            },
+            {
+              "name": "index",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "data",
+              "type": "bytes",
+              "internalType": "bytes"
+            }
+          ]
         },
         {
           "type": "error",

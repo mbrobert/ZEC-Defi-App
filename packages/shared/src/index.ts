@@ -9,3 +9,4 @@ export * from "./types.js";
 export * from "./pools.js";
 export * from "./claims.js";
 export * from "./chains.js";
+export * from "./lpEnumeration.js";

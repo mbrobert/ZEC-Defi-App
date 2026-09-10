@@ -5,6 +5,8 @@ import { decodeReserve, readAccount, readDeployment, readKeeperGrant, readMarket
 import { accountHf } from "../lib/math";
 import { DEMO_MARKET } from "../lib/demo";
 import { UNWIND_SELECTOR } from "../lib/plan";
+import { ContractFunctionRevertedError, encodeErrorResult } from "viem";
+import { LP_VENUE_ABI } from "../lib/abi/oilskin";
 
 /** Tuples exactly as Aave's PoolDataProvider returns them (VERIFIED-BASE-FACTS 2026-09-05). */
 const CFG = {
@@ -26,7 +28,7 @@ type Sym = keyof typeof CFG;
 const symOf = (addr: string): Sym => (Object.keys(BASE_TOKENS) as Sym[]).find((s) => BASE_TOKENS[s as keyof typeof BASE_TOKENS].address.toLowerCase() === addr.toLowerCase())!;
 
 /** A fake viem client that answers the same calls the real one would. */
-function fakeClient(opts: { multicallThrows?: boolean; deployed?: boolean; account?: string; positions?: bigint[]; log?: string[] } = {}): ReadClient {
+function fakeClient(opts: { multicallThrows?: boolean; deployed?: boolean; account?: string; positions?: bigint[]; positionsFault?: { code: number; index: bigint } | "plain"; log?: string[] } = {}): ReadClient {
   const answer = (c: { address: string; functionName: string; args?: readonly unknown[] }): unknown => {
     opts.log?.push(c.functionName);
     const asset = symOf(String(c.args?.[0] ?? ""));
@@ -50,6 +52,14 @@ function fakeClient(opts: { multicallThrows?: boolean; deployed?: boolean; accou
         return [0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, false];
       }
       case "positionsOf":
+        if (opts.positionsFault === "plain") throw new Error("rpc: connection reset");
+        if (opts.positionsFault) {
+          throw new ContractFunctionRevertedError({
+            abi: LP_VENUE_ABI,
+            functionName: "positionsOf",
+            data: encodeErrorResult({ abi: LP_VENUE_ABI, errorName: "EnumerationAmbiguous", args: [opts.positionsFault.code, opts.positionsFault.index, "0x"] }),
+          });
+        }
         return opts.positions ?? [7n, 9n];
       default:
         throw new Error(`unexpected ${c.functionName}`);
@@ -150,7 +160,34 @@ test("readAccount: deployed account → Aave data, holdings, USDC debt, LP ids",
   assert.ok(Math.abs(a.collateral[0].usd - 39_815.445) < 1e-6);
   assert.ok(Math.abs(a.debtUsdc - 15_926.178) < 1e-9);
   assert.deepEqual(a.lpPositionIds, [7n, 9n]);
+  assert.equal(a.lpUnreadable, null);
   assert.equal(a.walletBalances.cbBTC, 123_000_000n);
+});
+
+test("readAccount: a positionsOf the venue refuses is UNREADABLE with the fault named — never an empty list (slice A, RISKS §12)", async () => {
+  const market = await readMarket(fakeClient());
+  const opts = { factory: "0x3333333333333333333333333333333333333333" as const, lpVenue: "0x5555555555555555555555555555555555555555" as const };
+  const owner = "0x1111111111111111111111111111111111111111" as const;
+  const oog = await readAccount(fakeClient({ positionsFault: { code: 1, index: 3n } }), owner, market, opts);
+  assert.match(oog.lpUnreadable!, /^LP positions unreadable:/);
+  assert.match(oog.lpUnreadable!, /ProbeOutOfGas at index 3/);
+  assert.match(oog.lpUnreadable!, /not a statement that the account holds no positions/);
+  assert.deepEqual(oog.lpPositionIds, []);
+  assert.deepEqual(oog.lpPositions, []);
+  assert.ok(oog.aave, "the rest of the account still reads");
+
+  const owner2 = await readAccount(fakeClient({ positionsFault: { code: 7, index: 1n } }), owner, market, opts);
+  assert.match(owner2.lpUnreadable!, /OwnerMismatch at index 1/);
+
+  // Any other failure of the read is unreadable too, with what is known, not an empty list.
+  const plain = await readAccount(fakeClient({ positionsFault: "plain" }), owner, market, opts);
+  assert.match(plain.lpUnreadable!, /positionsOf failed \(rpc: connection reset\)/);
+  assert.deepEqual(plain.lpPositionIds, []);
+
+  // No LP venue configured: nothing to read, nothing unreadable.
+  const none = await readAccount(fakeClient(), owner, market, { factory: opts.factory });
+  assert.equal(none.lpUnreadable, null);
+  assert.deepEqual(none.lpPositionIds, []);
 });
 
 test("readAccount: no factory configured → wallet balances only; predicted-but-undeployed → address, no positions", async () => {

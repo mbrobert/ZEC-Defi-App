@@ -109,7 +109,10 @@ export default function DashboardPage() {
       hf: accountHf(account),
       venues: account?.venues ?? null,
       accountUsdc: account ? Number(account.accountUsdc) / 10 ** BASE_TOKENS.USDC.decimals : 0,
-      positions: mergePositions(account ? account.lpPositions : null, indexed),
+      // Slice A (RISKS §12): a refused `positionsOf` is UNREADABLE — cache rows may show, labelled
+      // as cache, and the page says why; it never says "No LP positions".
+      positions: mergePositions(account && !account.lpUnreadable ? account.lpPositions : null, indexed),
+      lpUnreadable: account?.lpUnreadable ?? null,
       activity: indexed?.activity ?? [],
       readAt: account?.readAt ?? "",
       dataSource: account ? ("chain" as const) : indexed ? ("cache" as const) : ("chain" as const),
@@ -388,9 +391,15 @@ export default function DashboardPage() {
 
               <div className="flex items-baseline justify-between">
                 <h2 className="text-[17px]">Positions</h2>
-                <span className="text-[11.5px] text-oil-ink3">{view.positions.length} engine position{view.positions.length === 1 ? "" : "s"}</span>
+                <span className="text-[11.5px] text-oil-ink3">{view.lpUnreadable ? "positions unreadable" : `${view.positions.length} engine position${view.positions.length === 1 ? "" : "s"}`}</span>
               </div>
-              {view.positions.length === 0 && <div className="card p-8 text-center text-[13.5px] text-oil-ink3">No LP positions under this account.</div>}
+              {view.lpUnreadable && (
+                <div className="card p-5 text-[13.5px]" role="alert">
+                  <div className="font-semibold">Positions could not be read.</div>
+                  <p className="mt-1 text-oil-ink3">{view.lpUnreadable}. The keeper reads the same list and does not act on it either. You can still close a position by its id from your account.</p>
+                </div>
+              )}
+              {view.positions.length === 0 && !view.lpUnreadable && <div className="card p-8 text-center text-[13.5px] text-oil-ink3">No LP positions under this account.</div>}
               {view.positions.map((p) => (
                 <PositionCard key={p.id} p={p} advanced={mode === "advanced"} onClaim={(pos) => setAction({ kind: "claim", position: pos })} onUnwind={(pos) => setAction({ kind: "unwind", position: pos })} busy={!!action} />
               ))}

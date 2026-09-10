@@ -115,21 +115,72 @@ contract BaseForkTest is Test {
         assertEq(abi.decode(ret, (uint256)), uint256(sqrtPriceX96));
     }
 
-    /// FACT 1 against the live engine: the array-returning getter does not exist; the index getter
-    /// reverts past the end; our canary-measured enumeration returns EMPTY for a fresh address
-    /// (not a revert, not garbage) — and records the live revert shape in the log.
+    /// FACT 1 against the live engine, measured (slice A, 2026-09-10): the array-returning getter
+    /// does not exist; the index getter reverts past the end with the EMPTY shape; that revert is a
+    /// cheap REVERT, not an all-gas INVALID, so a bounded stipend tells it from an out-of-gas; the
+    /// canary and the end of the list fail the same way; a selector the engine lacks fails the
+    /// same way too (the proxy-miss ambiguity `RISKS.md` §12 records); and the venue's enumeration
+    /// returns EMPTY for a fresh address and the real list for a live holder, every id corroborated
+    /// by `positions(id).owner`.
     function test_fork_engineIndexGetterShape() public onlyForked {
         address fresh = makeAddr("nobody");
         (bool okArray,) = BaseAddresses.SNUGGLE_ENGINE.staticcall(abi.encodeWithSelector(0x613cf420, fresh));
         assertFalse(okArray, "userPositions(address) must NOT exist (C-2)");
-        (bool okIdx, bytes memory shape) =
-            BaseAddresses.SNUGGLE_ENGINE.staticcall(abi.encodeCall(ISnuggleVault.userPositions, (fresh, 0)));
-        assertFalse(okIdx, "index 0 of an empty list must revert");
-        console2.log("live end-of-list revert shape (bytes):");
-        console2.logBytes(shape);
+
+        uint256 stipend = lpVenue.PROBE_GAS();
+        // The four shapes, each metered under the venue's own stipend (EIP-150 forwards exactly it).
+        (bool ok0, bytes memory shape0, uint256 used0) = _meter(abi.encodeCall(ISnuggleVault.userPositions, (fresh, 0)), stipend);
+        (bool okC, bytes memory shapeC, uint256 usedC) = _meter(abi.encodeCall(ISnuggleVault.userPositions, (fresh, type(uint256).max)), stipend);
+        (bool okM, bytes memory shapeM, uint256 usedM) = _meter(hex"deadbeef", stipend);
+        console2.log("end-of-list (index 0, fresh): ok / gas used", ok0, used0);
+        console2.logBytes(shape0);
+        console2.log("canary (2^256-1, fresh): ok / gas used", okC, usedC);
+        console2.logBytes(shapeC);
+        console2.log("selector the engine lacks (0xdeadbeef): ok / gas used", okM, usedM);
+        console2.logBytes(shapeM);
+        assertFalse(ok0, "index 0 of an empty list must revert");
+        assertFalse(okC, "the canary must revert");
+        assertEq(shape0.length, 0, "measured 2026-09-10: the live end-of-list revert is EMPTY");
+        assertEq(keccak256(shapeC), keccak256(shape0), "canary and end-of-list must fail the same way");
+        assertLt(used0 * 4, stipend, "the end-of-list revert must be cheap against the stipend, or OOG cannot be told apart");
+        assertLt(usedC * 4, stipend, "the canary revert must be cheap against the stipend");
+
+        // A live holder: the first id of the engine's global list, its owner, and that owner's list
+        // through the venue — the id must be in it (owner-corroborated), and a successful index
+        // read must also sit well inside the stipend.
+        (bool okAll, bytes memory allRet) = BaseAddresses.SNUGGLE_ENGINE.staticcall(abi.encodeWithSignature("allPositionIds(uint256)", 0));
+        assertTrue(okAll && allRet.length == 32, "allPositionIds(0) must answer");
+        uint256 liveId = abi.decode(allRet, (uint256));
+        (,, address liveOwner,,,,,,,,,,,,,,) = ISnuggleVault(BaseAddresses.SNUGGLE_ENGINE).positions(liveId);
+        assertTrue(liveOwner != address(0), "a live id has an owner");
+        (bool okL, bytes memory retL, uint256 usedL) = _meter(abi.encodeCall(ISnuggleVault.userPositions, (liveOwner, 0)), stipend);
+        console2.log("successful index read (live holder, index 0): ok / gas used", okL, usedL);
+        assertTrue(okL && retL.length == 32, "a live holder's index 0 answers");
+        assertLt(usedL * 8, stipend, "a successful read must sit well inside the stipend");
+        (bool okP, bytes memory retP, uint256 usedP) = _meter(abi.encodeCall(ISnuggleVault.positions, (liveId)), stipend);
+        console2.log("positions(id) read (live id): ok / gas used", okP, usedP);
+        assertTrue(okP && retP.length == 17 * 32, "positions(id) returns the 17-word struct");
+        assertLt(usedP * 8, stipend, "a positions(id) read must sit well inside the stipend");
+        assertLt(used0 * 8, stipend, "and the end-of-list revert is under one eighth of it");
+
         uint256[] memory ids = lpVenue.positionsOf(fresh);
-        assertEq(ids.length, 0);
+        assertEq(ids.length, 0, "a fresh address owns nothing, and the venue can now say so");
+        uint256[] memory liveIds = lpVenue.positionsOf(liveOwner);
+        console2.log("live holder", liveOwner, "ids", liveIds.length);
+        bool found;
+        for (uint256 i = 0; i < liveIds.length; i++) {
+            if (liveIds[i] == liveId) found = true;
+        }
+        assertTrue(found, "the live holder's list contains the id the global list names");
         assertGt(ISnuggleVault(BaseAddresses.SNUGGLE_ENGINE).poolIdsCount(), 0);
+    }
+
+    /// @dev One engine probe under a fixed stipend, with the gas it consumed (EIP-150: the callee
+    ///      receives exactly `stipend` when the caller holds more than 64/63 of it, which a test does).
+    function _meter(bytes memory data, uint256 stipend) internal view returns (bool ok, bytes memory ret, uint256 used) {
+        uint256 g0 = gasleft();
+        (ok, ret) = BaseAddresses.SNUGGLE_ENGINE.staticcall{gas: stipend}(data);
+        used = g0 - gasleft();
     }
 
     // -------------------------------------------------------------- flows

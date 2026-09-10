@@ -15,8 +15,8 @@
  * chain definition) and fall back to one eth_call per item if the batch
  * itself fails, so a missing/reverting multicall never blanks the page.
  */
-import type { Address, Hex } from "viem";
-import { COLLATERAL_SYMBOLS, isZeroAddress, type CollateralSymbol } from "@zyo/shared";
+import { BaseError, ContractFunctionRevertedError, type Address, type Hex } from "viem";
+import { COLLATERAL_SYMBOLS, describeLpEnumerationFault, isZeroAddress, type CollateralSymbol } from "@zyo/shared";
 import { AAVE_V3, BASE_TOKENS, COLLATERAL_ASSETS } from "./chain";
 import { AAVE_ORACLE_ABI, ERC20_ABI, POOL_ABI, POOL_DATA_PROVIDER_ABI } from "./abi/aave";
 import { AAVE_VENUE_ABI, ACCOUNT_ABI, AERODROME_CLPOOL_ABI, COLLATERAL_REGISTRY_ABI, COLLATERAL_VENUE_ABI, FACTORY_ABI, LP_VENUE_ABI, ROUTER_ABI, SNUGGLE_VAULT_ABI } from "./abi/oilskin";
@@ -202,10 +202,17 @@ export interface AccountRead {
   /** Collateral under the account: the Aave pool's rows, plus one row per non-Aave venue holding. */
   collateral: CollateralHolding[];
   debtUsdc: number;
-  /** Snuggle position ids owned by the account (via the LP venue). */
+  /** Snuggle position ids owned by the account (via the LP venue). Empty when `lpUnreadable` is set. */
   lpPositionIds: bigint[];
   /** Per-position detail from the engine (empty when the engine address is unknown). */
   lpPositions: LpPositionRead[];
+  /**
+   * Set when `positionsOf` refused to answer (slice A, `RISKS.md` §12: the venue names why —
+   * out-of-gas, an inconsistent end, an owner mismatch, …) or failed for any other reason. The
+   * dashboard then shows the positions as UNREADABLE with this sentence, never as "No positions";
+   * `lpPositionIds` and `lpPositions` are empty and mean nothing while it is set.
+   */
+  lpUnreadable: string | null;
   /** USDC held in the account (hold strategy / un-swept proceeds), base units. */
   accountUsdc: bigint;
   /** Native ETH in the wallet, wei — for the gas check. */
@@ -672,6 +679,7 @@ export async function readAccount(
     debtUsdc: 0,
     lpPositionIds: [],
     lpPositions: [],
+    lpUnreadable: null,
     accountUsdc: 0n,
     walletEth,
     walletBalances,
@@ -694,9 +702,25 @@ export async function readAccount(
     calls.push({ address: AAVE_V3.poolDataProvider, abi: POOL_DATA_PROVIDER_ABI, functionName: "getUserReserveData", args: [BASE_TOKENS[s].address, account] });
   }
   calls.push({ address: AAVE_V3.poolDataProvider, abi: POOL_DATA_PROVIDER_ABI, functionName: "getUserReserveData", args: [BASE_TOKENS.USDC.address, account] });
-  if (opts.lpVenue) calls.push({ address: opts.lpVenue, abi: LP_VENUE_ABI, functionName: "positionsOf", args: [account] });
   calls.push({ address: BASE_TOKENS.USDC.address, abi: ERC20_ABI, functionName: "balanceOf", args: [account] });
   const out = await safeMulticall(client, calls);
+  // `positionsOf` is read on its own, not through the multicall: a multicall row that fails loses
+  // its revert data, and the venue's refusal to enumerate carries the reason the page must show
+  // (slice A, RISKS §12). A failed read is UNREADABLE with that reason, never an empty list.
+  let lpPositionIds: bigint[] = [];
+  let lpUnreadable: string | null = null;
+  if (opts.lpVenue) {
+    try {
+      const ids = await client.readContract({ address: opts.lpVenue, abi: LP_VENUE_ABI, functionName: "positionsOf", args: [account] });
+      if (Array.isArray(ids)) lpPositionIds = ids as bigint[];
+      else lpUnreadable = "LP positions unreadable: positionsOf did not return a list — this is not a statement that the account holds no positions";
+    } catch (e) {
+      const rv = revertOf(e);
+      lpUnreadable =
+        describeLpEnumerationFault(rv?.name, rv?.args) ??
+        `LP positions unreadable: positionsOf failed (${rv?.name ?? (e instanceof Error ? e.message.split("\n")[0] : String(e))}) — this is not a statement that the account holds no positions`;
+    }
+  }
 
   const acct = out[0];
   const aave = Array.isArray(acct)
@@ -722,8 +746,6 @@ export async function readAccount(
   });
   const usdcRow = out[1 + COLLATERAL_SYMBOLS.length];
   const debtUsdc = Array.isArray(usdcRow) ? fromAtomic((usdcRow[2] as bigint) + (usdcRow[1] as bigint), BASE_TOKENS.USDC.decimals) : 0;
-  const lpRow = opts.lpVenue ? out[2 + COLLATERAL_SYMBOLS.length] : null;
-  const lpPositionIds = Array.isArray(lpRow) ? (lpRow as bigint[]) : [];
   const usdcBal = out[calls.length - 1];
   const accountUsdc = typeof usdcBal === "bigint" ? usdcBal : 0n;
   const lpPositions = opts.engine ? await readPositions(client, opts.engine, lpPositionIds) : [];
@@ -766,5 +788,13 @@ export async function readAccount(
     }
   }
 
-  return { ...base, account, deployed, aave, venues, collateral, debtUsdc, lpPositionIds, lpPositions, accountUsdc };
+  return { ...base, account, deployed, aave, venues, collateral, debtUsdc, lpPositionIds, lpPositions, lpUnreadable, accountUsdc };
+}
+
+/** The custom error a viem read rejected with, by name, or null when it was not a decoded revert. */
+function revertOf(e: unknown): { name: string; args: readonly unknown[] } | null {
+  if (!(e instanceof BaseError)) return null;
+  const r = e.walk((x) => x instanceof ContractFunctionRevertedError) as ContractFunctionRevertedError | null;
+  if (!r) return null;
+  return { name: r.data?.errorName ?? r.reason ?? (r.signature ? `revert ${r.signature}` : "revert"), args: r.data?.args ?? [] };
 }

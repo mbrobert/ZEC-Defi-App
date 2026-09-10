@@ -3,6 +3,55 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-10 — Slice A: `positionsOf` works on the engine as it is
+
+**Why.** The first fork run (Addendum 3) measured the live engine's end-of-list revert as EMPTY —
+the shape of a bare `revert()`, an out-of-gas and a proxy miss alike — and the venue pinned
+`Panic(0x32)`, so `positionsOf` reverted `EnumerationFailed(0x)` for every account on mainnet: no
+dashboard position list, no keeper id discovery. Accepting `0x` on shape alone would have made a
+transient failure read as a shorter list.
+
+**Venue.** `SnuggleLpVenue.positionsOf` accepts a terminating revert of either measured shape only
+when four checks agree (`RISKS.md` §12 "Design"): every engine probe runs under `PROBE_GAS` =
+200,000 (sized ≥ 8× the dearest probe metered on the fork — Addendum 4) and a probe that exhausts it
+is an out-of-gas, not an end (EIP-150; the venue refuses to probe below the 64/63 floor); the canary
+at 2^256 − 1 must fail with the same bytes as the end; index k + 1 must fail like k and
+`poolIdsCount()` must still answer, unchanged, afterwards; every id must read back as a full
+`positions(id)` owned by the account (a mismatch fails closed instead of being filtered). Every
+refusal is `EnumerationAmbiguous(fault, index, data)` with an 8-member `EnumerationFault` enum;
+`EnumerationFailed` (a mid-list revert of another shape) and `EngineUnreachable` stay. ABI bundle
+327 → **329** (the error and the `PROBE_GAS` view); no signature the web or the grant encodes moved.
+
+**Keeper and web.** `@zyo/shared` `describeLpEnumerationFault` names each fault in plain words with
+the caveat that a refusal is not an empty list. The keeper's `readLpState` carries it into the
+REFUSED reason (never plans as "no positions"; idle USDC is not spent on a refused read). The web
+reads `positionsOf` outside the multicall so the revert data survives, sets `AccountRead.lpUnreadable`
+with the sentence, and the dashboard shows "Positions could not be read" with it — never "No LP
+positions". The agent's ABI seam pins the enum's members against the Solidity source (72 → **75**
+checks).
+
+**Measured (Addendum 4).** Fork at block 51,127,409: end-of-list 12,660 gas, canary 12,660, a selector
+the engine lacks 11,127 (so a proxy miss is not told apart by gas — residual (b)), a successful
+index read 15,275, `positions(id)` 24,463; a live 42-id holder enumerates to 42, owner-corroborated.
+`cast` at block 51,143,322: implementation slot `0x359f…2d28`, admin `0x7885…86cb`,
+`maxPositionsPerUser()` = 500, `paused()` = false. The implementation's verified source (solc
+0.8.33 via-IR) shows the compiler-generated getter and swap-and-pop bookkeeping.
+
+**Tests.** Contracts 304 → **323** / 0 / 8 (23 suites): `EnumerationAmbiguity.t.sol` +18 (every
+fault, both shapes, the last-index residual asserted as such), `SnuggleLpVenue.t.sol` +1 (the mock's
+default end-of-list is now the measured empty shape, `setEndShape(Panic32)` kept), `LpVenueCliffs`
+B11 re-flipped. Fork at the pinned block 4 / 4 → **5 / 3** (`test_fork_engineIndexGetterShape`
+green, metering the probes). Keeper 233 → **234**, seam 75/75. Web 152 → **153** (151 / 2 skipped).
+Shared 59 → **62**.
+
+**Residuals, stated, not fixed.** An isolated failure at the LAST index is a list one shorter. A
+getter-less implementation upgrade is an empty list for every account; only the EIP-1967 slot,
+read off chain, can tell — comparing it would park id discovery on every engine upgrade until
+re-measured, a product decision left to the founder (`RISKS.md` §12).
+
+**Not done.** No `acceptVenue`, `Deploy.s.sol` untouched, nothing broadcast, `contracts/.env` not
+written.
+
 ## 2026-09-09 — `RISKS.md` §8 residual (a) closed: the repay reaches every book, the receipt says which
 
 **Router.** `StrategyRouter.unwind`'s repay leg no longer stops at the first venue holding anything

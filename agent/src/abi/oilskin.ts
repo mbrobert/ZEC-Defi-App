@@ -302,6 +302,11 @@ export const lpVenueAbi = [
   { type: "error", name: "BandRequired", inputs: [] },
   { type: "error", name: "BandTooWide", inputs: [{ name: "min", type: "uint160" }, { name: "max", type: "uint160" }, { name: "maxBps", type: "uint256" }] },
   { type: "error", name: "EnumerationFailed", inputs: [{ name: "reason", type: "bytes" }] },
+  // Slice A (2026-09-10, RISKS §12): `positionsOf` names why it refused. `fault` is the venue's
+  // EnumerationFault enum as a uint8 — named from @zyo/shared LP_ENUMERATION_FAULTS, whose order
+  // verify-abi pins against the Solidity source.
+  { type: "error", name: "EngineUnreachable", inputs: [] },
+  { type: "error", name: "EnumerationAmbiguous", inputs: [{ name: "fault", type: "uint8" }, { name: "index", type: "uint256" }, { name: "data", type: "bytes" }] },
   { type: "error", name: "PriceUnreadable", inputs: [{ name: "pool", type: "address" }] },
 ] as const;
 

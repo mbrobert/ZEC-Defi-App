@@ -741,6 +741,23 @@ describe("KeeperDispatcher — world check before acting (resume safety)", () =>
     assert.equal(r.oil.txFrom.length, 0);
   });
 
+  it("slice A: a positionsOf the venue refuses is REFUSED with the fault named — never planned as 'no positions'", async () => {
+    const r = await rig(1.3);
+    r.grantAll();
+    r.oil.setUsdc(ACCOUNT_A, 5_000_000_000n); // idle USDC a "no positions" plan WOULD spend (the test above)
+    r.oil.setPositionsFault(ACCOUNT_A, { code: 1, index: 3n }); // EnumerationFault.ProbeOutOfGas at index 3
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: await r.valuation() });
+    assert.equal(res.status, "REFUSED");
+    const reason = (res as { reason: string }).reason;
+    assert.match(reason, /cannot read LP state/);
+    assert.match(reason, /ProbeOutOfGas at index 3/);
+    assert.match(reason, /not a statement that the account holds no positions/);
+    assert.equal(r.oil.txFrom.length, 0, "nothing sent");
+    // With the venue answering again the same account is acted on.
+    r.oil.setPositionsFault(ACCOUNT_A, null);
+    assert.equal((await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: await r.valuation() })).status, "SENT");
+  });
+
   it("a price move outside the band between plan and simulation is FAILED (transient), not sent", async () => {
     const r = await rig(1.3);
     r.grantAll();

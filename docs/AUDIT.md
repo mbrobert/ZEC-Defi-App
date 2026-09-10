@@ -82,11 +82,13 @@ points). `TESTING.md` records how each count was obtained.
   required / out of range / **too wide** / `slot0` revert / short return /
   no-code pool; a degenerate `(X, X)` pool refused on the way in while a
   position that exists stays closable; the fee taken once per distinct token;
-  the C-2 enumeration with the terminating revert required to be exactly
-  `Panic(0x32)` and any other shape failing closed; a stale first id reported,
-  not fatal, on `closeMany`, `claim` and the router's `unwind`; duplicate ids
-  never paid twice; `claim` carrying a deadline (`SnuggleLpVenue.t.sol` 42,
-  `LpVenueCliffs.t.sol` 11; `invariant_feeNeverTouchesPrincipal`).
+  the C-2 enumeration accepting the measured empty end-of-list (or
+  `Panic(0x32)`) only when gas, shape, consistency and ownership agree and
+  naming every fault otherwise (slice A, 2026-09-10); a stale first id
+  reported, not fatal, on `closeMany`, `claim` and the router's `unwind`;
+  duplicate ids never paid twice; `claim` carrying a deadline
+  (`SnuggleLpVenue.t.sol` 43, `LpVenueCliffs.t.sol` 11,
+  `EnumerationAmbiguity.t.sol` 18; `invariant_feeNeverTouchesPrincipal`).
 - **Aave venue and registry.** Supply / borrow / repay(all) / withdraw(all)
   under the account; live LT / LTV / rate reads follow the venue; allowances
   reset; `maxOfferedLtvBps` derived from **both** venue parameters, so an
@@ -168,9 +170,12 @@ owner-free: see `RISKS.md` §16.
    500 bps. Find a same-block move, a controlled pool, or a dishonest quote
    that survives both the web's 3 % oracle cross-check and the keeper's
    pool-derived quote.
-5. **Enumeration.** A `Panic(0x32)` at index *k* from a cause other than the
-   end of the list is still indistinguishable from a *k*-element list. Can that
-   be induced on the live engine?
+5. **Enumeration.** An isolated failure at the LAST index of a list, with the
+   terminal shape, is still indistinguishable from a list one shorter (the
+   k + 1 probe lands on the true end); and an implementation upgrade that
+   drops the getter is an empty list for every account. Can either be induced
+   on the live engine, and what should the keeper do with the proxy's
+   implementation slot (`RISKS.md` §12 residual (b))?
 6. **Fee path.** `_takeFee` measures the gain per token as a balance delta
    around the claim; find a token / engine behaviour that inflates the delta (a
    rebase up mid-claim is the obvious one — `B20.t.sol` covers the downward

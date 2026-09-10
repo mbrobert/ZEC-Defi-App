@@ -194,5 +194,25 @@ for (const abi of [aavePoolAbi, aavePoolDataProviderAbi, aaveOracleAbi, chainlin
   }
 }
 
+// The LP venue's `EnumerationFault` enum travels as a uint8 (slice A, RISKS §12): the names the
+// keeper and the web print (@zyo/shared LP_ENUMERATION_FAULTS) must be the contract's members, in
+// order. The artifact carries no AST, so the Solidity source is the reference.
+{
+  checks += 1;
+  const { LP_ENUMERATION_FAULTS } = await import("@zyo/shared");
+  const venueSrc = readFileSync(resolve(agentRoot, "..", "contracts", "src", "venues", "SnuggleLpVenue.sol"), "utf8");
+  const m = venueSrc.match(/enum\s+EnumerationFault\s*\{([\s\S]*?)\}/);
+  const members = m
+    ? m[1]
+        .split("\n")
+        .map((l) => l.replace(/\/\/.*$/, "").trim().replace(/,$/, ""))
+        .filter(Boolean)
+    : [];
+  if (JSON.stringify(members) !== JSON.stringify([...LP_ENUMERATION_FAULTS])) {
+    failures += 1;
+    console.log(`verify-abi: FAIL SnuggleLpVenue.EnumerationFault members ${JSON.stringify(members)} ≠ shared LP_ENUMERATION_FAULTS ${JSON.stringify(LP_ENUMERATION_FAULTS)}`);
+  }
+}
+
 console.log(`verify-abi: ${checks - failures}/${checks} checks passed, ${skipped} contract(s) skipped${strict ? " (strict)" : ""}`);
 process.exit(failures ? 1 : 0);

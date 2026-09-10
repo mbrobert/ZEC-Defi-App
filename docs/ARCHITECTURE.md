@@ -241,15 +241,22 @@ proxy `0x7D27CDfBFcC878F7E7349e216d44204BFd2AFd55`:
   returns `uint256[] failed`, because every position is opened with
   `autoCompound = true` and a compounding harvest inside the engine can swap.
 - `positionsOf` enumerates the engine's `userPositions(address,uint256)` index
-  getter until the end-of-list revert, whose shape it *measures* with a canary
-  probe first — and the terminating revert must now be exactly `Panic(0x32)`,
-  the only shape an array-bounds read inside a generated getter produces. An
-  engine whose out-of-range read is a bare `revert()` (proxy miss, out-of-gas)
-  fails **closed** with `EnumerationFailed` instead of truncating the list into
-  "owns fewer" or "owns nothing" (`EngineUnreachable`, `TooManyPositions` at
-  512). Residual, stated: a `Panic(0x32)` at index *k* from some other cause is
-  still indistinguishable from the end of a *k*-element list — that is a
-  property of the engine's getter, not of this contract.
+  getter until the end-of-list revert. The live engine's is EMPTY (measured
+  2026-09-10, `VERIFIED-BASE-FACTS.md` Addenda 3–4) — by shape a bare
+  `revert()`, an out-of-gas and a proxy miss alike — so shape alone decides
+  nothing. A terminating revert (empty, or the `Panic(0x32)` a Solidity array
+  read produces) is accepted only when four checks agree (`RISKS.md` §12,
+  slice A): every probe runs under a 200,000-gas stipend and one that exhausts
+  it is an out-of-gas (EIP-150); the canary at 2^256 − 1 fails with the same
+  bytes as the end; index k + 1 fails like k and `poolIdsCount()` still answers
+  afterwards; every id reads back as a full `positions(id)` owned by the
+  account. Anything else is `EnumerationAmbiguous(fault, index, data)`,
+  `EnumerationFailed` or `EngineUnreachable` (`TooManyPositions` at 512, above
+  the engine's own `maxPositionsPerUser()` = 500), and the keeper and the web
+  name the fault instead of reading "owns nothing". Residuals, stated: an
+  isolated failure at the LAST index is a list one shorter; a getter-less
+  implementation upgrade is an empty list for everyone, visible only off chain
+  through the proxy's implementation slot.
 
 Engine facts the venue is built on (verified on Base 2026-09-03, recorded in
 `AUDIT-FINDINGS-2026-09-03.md` Part 1 and `src/interfaces/ISnuggleVault.sol`):

@@ -19,6 +19,7 @@ import {
   swapAdapterAbi,
   GRANT_SELECTORS,
 } from "../abi/oilskin.js";
+import { describeLpEnumerationFault } from "@zyo/shared";
 import type { LadderRung } from "../engine/ladder.js";
 import { WAD, type Valuation } from "../engine/valuation.js";
 import type { Logger } from "../log.js";
@@ -681,9 +682,19 @@ export class KeeperDispatcher implements Dispatcher {
     account: Address,
     signal?: AbortSignal
   ): Promise<{ positions: PlannedPosition[]; pools: Map<Hex, PoolInfo>; idleUsdc: bigint }> {
-    const ids = await this.call("positionsOf", signal, () =>
-      this.d.client.readContract({ address: this.d.lpVenue, abi: lpVenueAbi, functionName: "positionsOf", args: [account] })
-    );
+    let ids: readonly bigint[];
+    try {
+      ids = await this.call("positionsOf", signal, () =>
+        this.d.client.readContract({ address: this.d.lpVenue, abi: lpVenueAbi, functionName: "positionsOf", args: [account] })
+      );
+    } catch (e) {
+      // Slice A (RISKS §12): the venue refuses to enumerate when gas, shape, consistency or
+      // ownership disagree, and says why. Carry the fault's name into the REFUSED reason; the
+      // dispatch never proceeds as if the account held no positions.
+      const rv = revertName(e);
+      const named = describeLpEnumerationFault(rv?.name, rv?.args);
+      throw named ? new Error(`positionsOf refused — ${named}`) : e;
+    }
     const positions: PlannedPosition[] = [];
     for (const id of ids) {
       const [poolId] = await this.call(`poolOf(${id})`, signal, () =>
