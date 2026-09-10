@@ -131,7 +131,7 @@ export const CBZEC_V1_CAPABILITIES = {
   spot: { available: true, note: "Swap cbZEC ↔ USDC via CoW on Base." },
   lp: {
     available: false,
-    note: "The Aerodrome cbZEC/USDC gauge exists but has never received an emissions vote (rewardRate = 0). LP is offered once emissions are live and the gate clears.",
+    note: "The Aerodrome cbZEC/USDC gauge received its first emissions vote in the epoch that began 2026-09-10 (0.08% of the Voter; re-voted weekly). The LP engine lists no cbZEC pool and the swap router Oilskin verified cannot reach that pool, so cbZEC LP is not offered; the options are in docs/CBZEC-PATH-2026-09.md.",
   },
   collateral: {
     available: false,

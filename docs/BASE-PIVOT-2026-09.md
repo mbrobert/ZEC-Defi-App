@@ -39,7 +39,7 @@ cbZEC on 2 Sep, in three transparent t-addresses, with no attestation firm and n
 **Its state today (as of 2–4 Sep):** total supply ~604 tokens; one real venue, the Aerodrome Slipstream
 cbZEC/USDC pool at `0x0Fc47C17AF86078d809358db1b4db2DeBC988566` (0.2% fee, ~$0.68M liquidity, ~$635K
 day-one volume); a $51K Uniswap v4 pool; a cluster of counterfeit "ZEC" memecoins sharing the `0xb2000…`
-address prefix. **No gauge, no emissions, no lending market, no Chainlink ZEC/USD feed on Base.** Pyth has a
+address prefix. **No gauge, no emissions, no lending market, no Chainlink ZEC/USD feed on Base** (as of this plan; the gauge exists and carries one epoch's vote since 2026-09-10 — `CBZEC-PATH-2026-09.md`). Pyth has a
 live `Crypto.ZEC/USD` pull feed (id `be9b59d1…bb24`).
 
 ---

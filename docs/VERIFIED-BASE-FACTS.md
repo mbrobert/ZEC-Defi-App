@@ -62,8 +62,9 @@ USDC → `0xf52d010c7d4ecbfda92c2509900593ce34535d86` (these are Aave's adapters
   token0 = USDC, token1 = cbZEC, fee 2000 (0.2%), tickSpacing 200, slot0 tick −23228 → **≈ 1,020 USDC per cbZEC**
   (within 1.5% of Pyth's stale $1,035 — peg holding at read time), active liquidity L = 15,382,171,343,960.
 - **Gauge for that pool EXISTS: `0x8779e34e5d38358b0cb957c553b40cc1208c81fb` — but `rewardRate() = 0` and
-  `periodFinish() = 0`.** The gauge has been created and has never received an emissions vote. **cbZEC LP earns
-  no AERO today.** (Emissions-only positions in this pool have zero yield until a vote lands.)
+  `periodFinish() = 0`** at this 2026-09-05 read: created, never voted, no AERO. **Superseded 2026-09-10
+  (Addendum 8): the first emissions vote landed in the epoch that began 2026-09-10 — `rewardRate()`
+  7,140,520,125,989,201 wei/s, `periodFinish()` 1,789,603,200, 0.083 % of the Voter's weight.**
 - The MaxFi/Snuggle engine facts (index-getter `userPositions(address,uint256)`, replace-on-rekey, total-span
   widths, `slot0()` on CL pools) are in `AUDIT-FINDINGS-2026-09-03.md` Part 1 and still hold.
 
@@ -82,7 +83,9 @@ USDC → `0xf52d010c7d4ecbfda92c2509900593ce34535d86` (these are Aave's adapters
 
 1. **v1 collateral = cbBTC and WETH on Aave v3**, with per-asset liquidation thresholds read from chain.
 2. **cbZEC collateral is v1.1**: no market anywhere, no Chainlink feed, Pyth stale by default, ~$0.7M DEX depth.
-3. **cbZEC LP has no emissions today** — offering it as a yield venue would be a lie until the gauge is voted.
+3. **cbZEC LP had no emissions at this read** — it has some since the epoch of 2026-09-10 (Addendum 8), one
+   vote's worth, re-voted weekly; the engine lists no cbZEC pool and the verified SwapRouter cannot reach the
+   pool, so nothing in the product can earn them (`docs/CBZEC-PATH-2026-09.md`).
 4. **Every contract path that touches cbZEC must survive a token whose `multiplier()` can change** (never cache
    balances; re-read after every external call).
 5. Price feeds for v1 are Chainlink (cbBTC, ETH, USDC); the Pyth adapter with in-tx pull + max-age is v1.1.
@@ -360,7 +363,7 @@ unchanged `Deploy.deploy()`, in the order the audit reviewed.
 |---|---|---|
 | cbZEC | `MockB20` | 8 dp, live `multiplier()`, blocklist, pause — the B20 semantics from the mainnet read |
 | cbBTC | Aave's **real** test WBTC reserve | a genuine Aave reserve; supply-only (not borrowable), which is how cbBTC is used anyway |
-| AERO | `MockERC20` (18 dp) | reward token only; nothing emits it on Sepolia, matching the mainnet gauge's `rewardRate() = 0` |
+| AERO | `MockERC20` (18 dp) | reward token only; nothing emits it on Sepolia (the mainnet cbZEC gauge read `rewardRate() = 0` when this was written; it has a vote since 2026-09-10, Addendum 8) |
 | Slipstream cbZEC/USDC pool | `MockCLPool` at tick −24,509 | verified token order (USDC = token0), spacing 200, fee 2000, `slot0()` + `observe()` |
 | MaxFi/Snuggle engine | `MockSnuggleVault` | the chain-verified semantics (index getter that reverts past the end, replace-on-rekey, single-sided mint, 60 s hold) |
 | Slipstream SwapRouter | `MockAerodromeSwapRouter` | priced from the same tick, zero fee (the real router charges 0.2 %, so the mock is only ever generous), funded with mock cbZEC and faucet USDC |
@@ -626,3 +629,50 @@ Gas price context, read at block 51,146,494 the same day: `eth_gasPrice` 6,000,0
 base fee 5,000,000 wei (0.005 gwei); Chainlink ETH/USD `latestRoundData` = 2,437.27 (updated
 1789082053); cbBTC/USD = 76,623.97. The L1 data fee Base charges per transaction is not in these
 figures and was not read.
+
+## Addendum 8 — slice E, 2026-09-10: the cbZEC path, probed read-only
+
+Purpose: the numbers behind `docs/CBZEC-PATH-2026-09.md` and the B20 probe (`RISKS.md` §4).
+Method: `cast call` / raw `eth_call` against `https://mainnet.base.org`, blocks **51,146,494 →
+51,146,674** (2026-09-10, 17:5x–18:1x UTC); `eth_call` state overrides (`--override-state`) on USDC
+for the routing test, with the storage slot verified first. Nothing signed or broadcast.
+
+### Does the verified SwapRouter route USDC → cbZEC?
+
+| Step | Result |
+|---|---|
+| USDC `balances` slot: `keccak256(abi.encode(pool 0x0Fc4…8566, 9))` read with `cast storage` | `0x9b1437fdde` = 666,059,144,670 = `balanceOf(pool)` at the same moment — **slot 9 is `balances`**; `allowed` is slot 10 (FiatTokenV2 layout) |
+| `exactInputSingle((USDC, cbZEC, tickSpacing 200, sender, deadline, 1,000e6, 0, 0))` on `0xBE6D…18a5`, `--from 0x1111…1111`, with that sender's USDC balance and allowance to the router overridden to 1,000e6 | **`execution reverted`, no data** |
+| the same at tickSpacing 100 | **`execution reverted`, no data** |
+| control: `exactInputSingle((WETH, USDC, 100, sender, deadline, 0.01e18, 0, 0))` with the sender's WETH balance (slot 3) and allowance (slot 4) overridden | **`0x1749615` = 24,417,813** = 24.417813 USDC for 0.01 WETH (≈ 2,441.78 USDC/WETH) — the method and the router both work; the router cannot reach a pool it did not create |
+
+### The second factory and its deployment
+
+| Read | Value | Block |
+|---|---|---|
+| `0xf8f2eB4940CFE7d13603DDDD87f123820Fc061Ef` `owner()` = `swapFeeManager()` = `unstakedFeeManager()` | `0xE6A41fE61E7a1996B59d508661e3f524d6A32075` | 51,146,581 |
+| `poolImplementation()` / `voter()` / `swapFeeModule()` / `factoryRegistry()` | `0xc770898522D2A9c8Da7A10D63989b6b58305B665` / `0x16613524e02ad97eDfeF371bC883F2F5d6C480A5` / `0x87D8f999BBa9343E8099552426775B51C338E8CB` / `0x5C3F18F06CC09CA1910767A34a20F771039E37C0` | 51,146,581 |
+| `allPoolsLength()` / `tickSpacings()` / `getPool(USDC, cbZEC, 200)` | **1,414** / [1, 50, 100, 200, 2000, 500, 10] / `0x0Fc47C17AF86078d809358db1b4db2DeBC988566` | 51,146,581 |
+| FactoryRegistry `poolFactories()` | `0x420DD381b31aEf6683db6B902084cB0FFECe40Da`, `0x5e7BB104d84c7CB9B682AaC2F3d509f5F406809A`, `0xaDe65c38CD4849aDBA595a4323a8C7DdfE89716a`, `0xf8f2eB4940CFE7d13603DDDD87f123820Fc061Ef` — both CL factories approved; `factoriesToPoolFactory(0xf8f2…)` = votingRewardsFactory `0x45cA74858C579E717ee29A86042E0d53B252B504`, gaugeFactory `0x385293CaE378C813F16f0C1334d774AdDDf56AbB` | 51,146,674 |
+| the pool's `nft()` | **`0xe1f8cd9AC4e4A65F54f38a5CdAfCA44f6dD68b53`** (49,087 B), `factory()` = `0xf8f2…61Ef` — the NPM that mints into this pool; the NPM recorded on 2026-09-06 (`0x8279…5b72`) has `factory()` = `0x5e7B…809A` | 51,146,674 |
+| The second factory names no router. | | |
+
+### Gauge, Voter, pool, prices
+
+| Read | Value | Block |
+|---|---|---|
+| gauge `0x8779…81FB` `rewardRate()` / `rewardRateByEpoch(1788998400)` | **7,140,520,125,989,201** wei AERO/s (both) ≈ 616.94 AERO/day | 51,146,581 |
+| gauge `periodFinish()` / `rewardToken()` / `pool()` / `isPool()` | 1,789,603,200 (2026-09-17 00:00 UTC) / AERO / the pool / true; `totalSupply()` and `stakedLiquidity()` revert on this gauge | 51,146,581 |
+| Voter `isAlive(gauge)` / `weights(pool)` / `totalWeight()` / `epochNext(now)` | true / 845,426,815,777,204,089,704,683 / 1,016,840,058,877,742,097,218,633,380 (**0.0831 %**) / 1,789,603,200 | 51,146,581 |
+| pool `slot0` / `liquidity()` / `stakedLiquidity()` | tick **−23,756**, sqrtPriceX96 24,158,478,068,572,882,064,475,621,010 (≈ **1,075.5 USDC/cbZEC**) / 21,276,159,996,193 / **18,217,498,697** (0.086 % of active liquidity is staked) | 51,146,581–674 |
+| pool balances | USDC **666,059,144,670** (666,059 USDC), cbZEC **20,606,032,105** (206.06) → TVL ≈ $887.7k | 51,146,581 |
+| Chainlink AERO / USD `0x4EC5970fC728C5f65ba413992CD5fF6FD70fcfF0` (`description()` = "AERO / USD") | **0.54485438**, updated 1789082529 | 51,146,674 |
+| base fee / `eth_gasPrice` / ETH / USD / cbBTC / USD | 0.005 gwei / 0.006 gwei / 2,437.27 / 76,623.97 | 51,146,494 |
+
+**What this settles.** (1) The SwapRouter this repo verified cannot route to the cbZEC/USDC pool;
+`AerodromeSwapAdapter` must never be pointed at that pair. (2) The pool lives on a second, sanctioned
+Slipstream deployment (factory `0xf8f2…61Ef`, NPM `0xe1f8…8b53`, gauge factory `0x3852…6AbB`) with its
+own fee manager `0xE6A4…2075`; a direct integration would bind to THOSE, not to the 2026-09-06
+addresses. (3) The gauge has one epoch's vote worth ≈ $336/day of AERO at the read, paid to
+almost nobody (0.086 % of the liquidity is staked) — a number that is re-voted on 2026-09-17 and
+must never be baked in. (4) Nothing in the product can earn it today.

@@ -3,6 +3,40 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-10 — Slice E: the cbZEC path with numbers (memo), and the B20 claim made true
+
+**Probes (read-only, blocks 51,146,494–51,146,674; Addendum 8).** The verified Slipstream SwapRouter
+`0xBE6D…18a5` cannot route USDC → cbZEC: `exactInputSingle` at tick spacing 200 and 100 reverts with
+no data under `eth_call` balance and allowance overrides (USDC slot 9 verified against `balanceOf`;
+the WETH → USDC control through the same router returns 24.417813 USDC for 0.01 WETH). The cbZEC
+pool sits on a second, FactoryRegistry-approved Slipstream CLFactory `0xf8f2…61Ef` (owner and fee
+manager `0xE6A4…2075`, 1,414 pools, its own NPM `0xe1f8…8b53`, gauge factory `0x3852…6AbB`), which
+names no router. **The cbZEC/USDC gauge has its first emissions vote**: `rewardRate()`
+7,140,520,125,989,201 wei AERO/s (≈ 617 AERO/day ≈ $336/day at the Chainlink AERO/USD 0.5449),
+`periodFinish` 2026-09-17, 0.083 % of the Voter, `isAlive`; 0.086 % of the pool's active liquidity
+is staked; pool ≈ 666k USDC + 206 cbZEC, tick −23,756 (≈ 1,075.5 USDC/cbZEC). The engine still
+lists no cbZEC pool.
+
+**Memo.** `docs/CBZEC-PATH-2026-09.md`: (1) direct Slipstream integration bypassing the engine
+(≈ 2,300 lines across ≈ 12 files, a second audit surface, binds to the second deployment's NPM and
+gauge, ≈ 137 % emissions APR on a $89k centred position while this epoch's vote and the range hold);
+(2) cbZEC LP out of v1, spot only (≈ 0 new lines, ≈ 60 removed, no cbZEC yield); (3) wait for an
+engine listing (0 lines, no lever, the engine's single-sided placement problem again). No choice made.
+
+**The must-fix.** `web/lib/copy.ts` claimed the app reads B20 policy state; nothing did. Now
+`web/lib/b20.ts` reads `multiplier()` and simulates a zero-amount `transfer(from, 0)` FROM the user's
+address (refused when blocked or paused, needs no balance), `@zyo/shared` `describeB20Probe` writes
+the sentence with what was NOT seen, the spot page shows it whenever cbZEC is on either side with a
+wallet connected (demo says it did not run), and the disclosure claims exactly that. `RISKS.md` §4,
+`AUDIT-SCOPE.md`. The stale "no emissions" claims (facts §Aerodrome and "what this settles", RISKS §6,
+the Sepolia substitute note, the onboarding note, the two dated plans) now point at the 2026-09-10 read.
+
+**Tests.** Shared 65 → **69**; web 154 → **156** (154 passed, 2 skipped); copy test green with the
+rewritten disclosure.
+
+**Not done.** No `acceptVenue`, `Deploy.s.sol` untouched, `AerodromeSwapAdapter` not pointed at cbZEC,
+nothing broadcast, `contracts/.env` not written.
+
 ## 2026-09-10 — Slice D: the two-book Close, measured and parked with a test waiting
 
 **What.** After a venue switch an account can hold collateral on both venues; the web's Close is one

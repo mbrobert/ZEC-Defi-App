@@ -85,12 +85,18 @@ down, blocked account, blocked treasury, paused reward token, blocked swap.
 `test_fork_cbzecIsAB20WithLiveMultiplier` re-reads it.
 
 **Does not.** A seized or paused balance is gone or frozen for the user
-regardless of what our contracts do. **The app's disclosure text still says
-"Whether any restrictive policy is configured is an on-chain read Oilskin
-performs before touching cbZEC" (`web/lib/copy.ts:43`) — no shipped code
-performs that read.** `grep -r "multiplier(" contracts/src web/lib agent/src`
-finds nothing outside the fork test and the mocks. Either the read ships or the
-sentence goes; it is still an open must-fix (`CHANGELOG.md`).
+regardless of what our contracts do. **The probe that now ships (slice E,
+2026-09-10; `web/lib/b20.ts`, words in `@zyo/shared` `describeB20Probe`) reads
+exactly two things and says so:** the live `multiplier()`, and whether an
+`eth_call` of `transfer(from, 0)` FROM the user's own address is refused — a
+zero-amount self-transfer needs no balance and fails when that address is
+blocked or the token is paused. It runs on the spot page whenever cbZEC is on
+either side of the order and a wallet is connected (demo mode says it did not
+run), and the disclosure (`web/lib/copy.ts` "b20") now claims that and nothing
+more. What it cannot see, and says: the issuer's policy itself (`owner()` and
+`paused()` revert on the precompile), the blocklist as a whole, and anything
+that changes after the read. Tests: `web/test/b20.test.ts`,
+`packages/shared/test/b20.test.ts`.
 
 ## 5 · cbZEC peg
 
@@ -122,7 +128,12 @@ of our hands.
 **Plan:** a liquidity study sets the depth gate and LLTV before any v1.1
 market (`BASE-PIVOT-2026-09.md` §3a).
 
-**Does not.** The cbZEC/USDC gauge has `rewardRate() = 0`; cbZEC LP earns
+**Does not.** The cbZEC/USDC gauge read `rewardRate() = 0` on 2026-09-05 and
+carries one epoch's vote since 2026-09-10 (0.083 % of the Voter, re-voted
+weekly, ≈ 617 AERO/day at the read; `VERIFIED-BASE-FACTS.md` Addendum 8) that
+nothing in the product can earn — the engine lists no cbZEC pool and the
+verified SwapRouter cannot reach the pool (`docs/CBZEC-PATH-2026-09.md`). At
+the 2026-09-05 read cbZEC LP earned
 nothing today (`services/yield`: `no_emissions`), so nothing in the product
 draws liquidity there either.
 

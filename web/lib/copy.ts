@@ -43,7 +43,7 @@ export const RISKS: readonly RiskItem[] = [
   {
     id: "b20",
     title: "cbZEC issuer powers (B20)",
-    body: "cbZEC is a Base B20 precompile, not a plain ERC-20. The issuer can block transfers, burn blocked balances (seize, not merely freeze), pause, and rebase every balance through a live multiplier. Whether any restrictive policy is configured is an on-chain read Oilskin performs before touching cbZEC; contracts never cache a cbZEC balance.",
+    body: "cbZEC is a Base B20 precompile, not a plain ERC-20. The issuer can block transfers, burn blocked balances (seize, not merely freeze), pause, and rebase every balance through a live multiplier. Before you touch cbZEC here, Oilskin reads the live multiplier and simulates a zero-amount transfer from your address to itself, which tells you whether your address is blocked or the token is paused at that moment and nothing more: the issuer's policy itself is not readable, and it can change after the read. Contracts never cache a cbZEC balance.",
     scope: ["onboard", "review", "spot"],
   },
   {

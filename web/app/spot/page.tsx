@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Address } from "viem";
 import { usePublicClient, useWalletClient, useWriteContract } from "wagmi";
-import { COW_PROTOCOL, classifyCbZecAddress } from "@zyo/shared";
+import { COW_PROTOCOL, classifyCbZecAddress, type B20ProbeVerdict } from "@zyo/shared";
+import { probeB20Policy } from "@/lib/b20";
 import { BASE_TOKENS, CBZEC_ADDRESS, CHAIN_ID } from "@/lib/chain";
 import { useAccountRead, useMarket, useSession } from "@/lib/hooks";
 import { useMode } from "@/lib/mode";
@@ -26,6 +27,9 @@ export default function SpotPage() {
   const { market, source } = useMarket();
   const { account } = useAccountRead(market);
   const publicClient = usePublicClient({ chainId: CHAIN_ID });
+  // Slice E (RISKS §4): before a user touches cbZEC here, read what the B20 precompile lets us see —
+  // the live multiplier and whether a zero-amount transfer from THEIR address is refused right now.
+  const [b20Probe, setB20Probe] = useState<B20ProbeVerdict | null>(null);
   const { data: walletClient } = useWalletClient({ chainId: CHAIN_ID });
   const { writeContractAsync } = useWriteContract();
 
@@ -106,6 +110,24 @@ export default function SpotPage() {
     const out = (a * px(sell)) / px(buy);
     return { sell, buy, sellAmount: a, expectedBuy: out, minBuy: out * 0.995, networkCostSell: 0.4 / px(sell), slippageBps: 50, validForSeconds: 1800 };
   }, [s.mode, amount, sell, buy, market]);
+
+  useEffect(() => {
+    if (!(sell === "cbZEC" || buy === "cbZEC")) return;
+    if (!publicClient || s.mode === "demo") {
+      setB20Probe(null);
+      return;
+    }
+    let cancelled = false;
+    setB20Probe(null);
+    probeB20Policy(publicClient as never, BASE_TOKENS.cbZEC.address, s.connected ? s.address : null)
+      .then((v) => {
+        if (!cancelled) setB20Probe(v);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [sell, buy, publicClient, s.mode, s.connected, s.address]);
 
   async function getQuote() {
     setError(null);
@@ -244,8 +266,24 @@ export default function SpotPage() {
           <div className="note note-brass mt-4 flex flex-wrap items-center gap-2">
             <TokenMark symbol="cbZEC" size={20} />
             <span>
-              cbZEC pinned at <code className="mono text-oil-ink">{CBZEC_ADDRESS}</code> — {classifyCbZecAddress(BASE_TOKENS.cbZEC.address) === "genuine" ? "genuine" : "mismatch"}. Depth is thin (~$0.7M); large orders move the price.
+              cbZEC pinned at <code className="mono text-oil-ink">{CBZEC_ADDRESS}</code> — {classifyCbZecAddress(BASE_TOKENS.cbZEC.address) === "genuine" ? "genuine" : "mismatch"}. Depth is thin (~$0.9M); large orders move the price.
             </span>
+            <p className="w-full text-[12.5px] text-oil-ink2" data-testid="b20-probe">
+              {s.mode === "demo" ? (
+                <>
+                  <Chip kind="mute">Demo</Chip> The B20 policy probe (live multiplier, a simulated zero-amount transfer from your address) runs only with a wallet connected.
+                </>
+              ) : b20Probe === null ? (
+                "Reading the B20 multiplier and simulating a zero-amount transfer from your address…"
+              ) : (
+                <>
+                  <Chip kind={b20Probe.status === "clear" ? "good" : b20Probe.status === "blocked" ? "crit" : "warn"}>
+                    {b20Probe.status === "clear" ? "Transfers from you not blocked now" : b20Probe.status === "blocked" ? "Transfer refused" : "Not checked"}
+                  </Chip>{" "}
+                  {b20Probe.sentence}
+                </>
+              )}
+            </p>
           </div>
         )}
 
