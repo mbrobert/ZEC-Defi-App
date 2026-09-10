@@ -96,7 +96,7 @@ USDC → `0xf52d010c7d4ecbfda92c2509900593ce34535d86` (these are Aave's adapters
 - **Multicall3** `0xcA11bde05977b3631167028862bE2a173976CA11` — not read; the web uses viem's `base` chain definition with a per-call fallback; the keeper does one `eth_call` per read.
 - **Morpho Blue market ids** for cbBTC/USDC and WETH/USDC — ~~not discovered~~ **discovered and chain-verified 2026-09-07, re-read the same day at block 51,003,524 (see the Morpho addendum below)**; `MorphoBlueVenue` is built over them and re-derives each id from `idToMarketParams` at construction.
 - **CoW GPv2VaultRelayer** — not read; the web reads `settlement.vaultRelayer()` at runtime.
-- **The engine's live end-of-list revert shape** for `userPositions(address,uint256)` — logged by `test_fork_engineIndexGetterShape` when the fork suite runs with `FORK_URL`; never recorded here.
+- ~~**The engine's live end-of-list revert shape** for `userPositions(address,uint256)`~~ — **recorded 2026-09-10 at block 51,127,409 (Addendum 3): empty `0x`, at index 0 and at the canary index 2^256 − 1.** It is not `Panic(0x32)`, which is what `SnuggleLpVenue.positionsOf` pins, so the venue's enumeration fails closed against the live engine (`RISKS.md` §12).
 - **cbZEC B20 policy state** (blocklist, pause) — `owner()` / `paused()` revert on the precompile; only `multiplier()` was read (1e18).
 - **Gauge emissions** for the curated pools other than cbZEC/USDC — the yield model's inputs are the 2026-08-31 words (block 50675328), not this read.
 
@@ -113,9 +113,9 @@ USDC → `0xf52d010c7d4ecbfda92c2509900593ce34535d86` (these are Aave's adapters
 **Negative result worth recording:** `0x6Cb442acF35158D5eDa88fe602Ef9Cf89694fFEa`, which circulates as an
 Aerodrome "UniversalRouter", returns **`0x` — no code on Base**. Do not use it.
 
-Still unverified and still gated: the CoW vault relayer, the live
-engine's out-of-range revert *shape* (the enumeration canary measures it at runtime precisely because it is
-unknown), and cbZEC's B20 policy state (`owner()`/`paused()` revert; only `multiplier()` reads, currently 1e18).
+Still unverified and still gated: the CoW vault relayer, and cbZEC's B20 policy state (`owner()`/`paused()`
+revert; only `multiplier()` reads — still 1e18 on 2026-09-10). The live engine's out-of-range revert *shape*
+was measured on 2026-09-10 (Addendum 3): empty `0x`.
 
 ## Addendum — Morpho Blue markets on Base, read 2026-09-07 (block 50,977,561)
 
@@ -260,8 +260,8 @@ deployment. **Consequence for the testnet plan:** `SnuggleLpVenue` and `Aerodrom
 exercised on Sepolia against the real engine. **Done in `contracts/script/DeploySepolia.s.sol`**
 (2026-09-07): stand-ins behind the same interfaces so the account → factory → registry → `AaveV3Venue`
 → router path runs end to end; see Addendum 2 below for the substitute table and `docs/DEPLOY-SEPOLIA.md`
-for the runbook. The LP venue's real-engine behaviour would be covered by the 8 mainnet fork tests
-when `FORK_URL` is set; they have not been run from any container yet (`RISKS.md` §11).
+for the runbook. The LP venue's real-engine behaviour is the job of the 8 mainnet fork tests
+when `FORK_URL` is set; first run 2026-09-10 at block 51,127,409, Addendum 3 (`RISKS.md` §11–§12).
 
 
 ## Addendum 2 — Base Sepolia deploy dependencies, re-read 2026-09-07 15:11–15:15 UTC (block 46,512,825)
@@ -372,3 +372,62 @@ job of the 8 mainnet fork tests. The mocks keep their public test switches (`set
 `setGlitch`, `setMultiplier`, …), which **anyone on the testnet can call** — acceptable for a
 testnet the founder alone exercises, and one more reason none of these addresses may ever be
 referenced by a mainnet artefact.
+
+## Addendum 3 — Base mainnet fork suite, first run, 2026-09-10 (block 51,127,409)
+
+Purpose: run `contracts/test/fork/BaseFork.t.sol` against Base mainnet for the first time from this
+tree, record what the chain answered, and reconcile this file with it. Method: Foundry 1.8.1 on the
+founder's Mac, `FORK_URL=https://mainnet.base.org` (public RPC, no key), `forge test --match-path
+test/fork/BaseFork.t.sol -vvv`, 12:42:43–12:43:02 UTC, every test forked at **block 51,127,409**
+(chain id 8453); the Aave flow was re-run pinned with `FORK_BLOCK=51127409` after the one assertion
+edit below. Every number here that the suite did not print was read with `cast call` / raw
+`eth_call` against the same RPC between 12:42 and 12:58 UTC (blocks 51,127,412 → ≈ 51,127,9xx).
+Nothing was signed or broadcast; `contracts/.env` was not written. The founder's own run on
+2026-09-07 at block 51,001,138 produced the same 4 passes and the same 4 failures.
+
+### Scorecard (4 passed / 4 failed / 0 skipped)
+
+| Test | 2026-09-10 @ 51,127,409 | 2026-09-07 @ 51,001,138 | What the chain said |
+|---|---|---|---|
+| `test_fork_aaveProviderResolvesToVerifiedAddresses` | **PASS** | pass | `getPool` / `getPoolDataProvider` / `getPriceOracle` still resolve to the addresses in the Aave section above |
+| `test_fork_reserveParamsAreLiveAndListed` | **PASS** | pass | cbBTC LT / LTV **7800 / 7300**, WETH **8300 / 8000** (unchanged since 2026-09-05); USDC variable borrow rate `46325731791087027683310557` ray = **4.633 % APR** (was 4.828 %); cbZEC LT = 0 (still not listed) |
+| `test_fork_cbzecUsdcPoolSlot0` | **PASS** | pass | token0 USDC, token1 cbZEC, tickSpacing 200; `sqrtPriceX96` = `22706376861671914261124686885`, tick **−24,995** → **≈ 1,217.49 USDC per cbZEC** (−24,509 / ≈ 1,159.74 on 2026-09-07 15:15 UTC; −23,228 / ≈ 1,020.30 on 2026-09-05); `liquidity()` = `21992736132521` (was 15,382,171,343,960 on 2026-09-05) |
+| `test_fork_permit2Present` | **PASS** | pass | Permit2, Morpho Blue and Pyth all hold code |
+| `test_fork_cbzecIsAB20WithLiveMultiplier` | **FAIL** — `EvmError: Revert`; the first external call, `cbZEC.decimals()`, dies with `OpcodeNotFound` | fail (same) | **A fork EVM cannot execute the B20 native contract.** `eth_getCode` returns the single byte `0xef`, which Base's node routes to a native implementation and which revm treats as an invalid opcode. Not chain drift: read live with `cast` at ≈ block 51,127,412 — `decimals()` 8, `symbol()` "cbZEC", `name()` "Coinbase Wrapped ZEC", `multiplier()` `0x…0de0b6b3a7640000` = **1e18 (unchanged)**, `totalSupply()` `110768465960` = **1,107.68 cbZEC** (603.25 on 2026-09-05). This test can only ever pass outside a fork; the harness limitation is recorded in `TESTING.md` |
+| `test_fork_engineIndexGetterShape` | **FAIL** — `EnumerationFailed(0x)` from `SnuggleLpVenue.positionsOf` | fail (same) | The three shape assertions passed: `userPositions(address)` (`0x613cf420`) reverts, `userPositions(fresh, 0)` reverts, `poolIdsCount()` = **214**. **The live end-of-list revert is EMPTY — `0x`, zero bytes of data** — at index 0 and at the venue's canary index 2^256 − 1, through the proxy and at the unchanged implementation `0x359F90EE4c2e21Cbf6e32c5a062Eeef306822D28` (EIP-1967 slot re-read). A raw `eth_call` at "latest" returns `{"code":3,"message":"execution reverted"}` with no `data` field for both indices. It is not `Panic(0x32)`, which `positionsOf` pins, so the venue's enumeration fails closed against the live engine for **every** account. See `RISKS.md` §12 for what that means; no constant was changed |
+| `test_fork_lpOpenCloseOnLiveEngine` | **FAIL** — custom error `0xd6234725` = `NotImplemented()` | fail (same) | The test's "first active WETH/USDC pool" is engine index 0, poolId `0x0ab2ff805defbd1a92e572facf1308c26e6365fcd8af3270a492f482ac0e65e2` → pool `0xd0b53D9277642d899DF5C87A3966A349A798F224`, which is the **Uniswap v3** WETH/USDC pool (`factory()` = `0x33128a8fC17869897dcE68Ed026d694621f6FDfD`, `fee()` 500, `tickSpacing()` 10), registered with an engine fee field of **9999** and position adapter `0xCCBfBA207D424c4711708c260Eba9C87f02cCED2` (3,697 B). Inside `depositSingleSided` the engine's library `0xf84b575E4E6D9fc07a3F2B863Cb6A23CC11DCDDc` calls `adapter.getTWAPTick(pool, 300)`, which reverts `NotImplemented()`; reproduced live with `cast call` → "execution reverted: NotImplemented". The open never reached the mint, so nothing about our venue was proved or disproved; the test's pool selection is what landed here (details below) |
+| `test_fork_supplyBorrowRepayWithdrawUnderTheAccount` | **FAIL** — first `assertion failed: 99999999 != 100000000` at the collateral read; after the ±1 tolerance, `ERC20: transfer amount exceeds balance` inside `Pool.repay` | fail (`99999999 != 100000000`) | **Aave rounding dust, both directions.** Supply of 1e8 cbBTC → aToken `mint` scaled `99797385` at liquidityIndex `1002030255356308190911377929`, `Transfer` amount **99,999,999**; `PoolDataProvider.getUserReserveData(cbBTC, acct)` → currentATokenBalance **99,999,999**. Borrow of 10,000 USDC landed (balance `10000000000`), HF `6023489203404262689` wad = 6.02; `debt()` = **10,000,000,001** in the same block. `AaveV3Venue.repay(USDC, max)` approved 10,000,000,001 and Aave's `repay` pulled 10,000,000,001 from an account holding 10,000,000,000 → `ERC20: transfer amount exceeds balance`. The test fixture funds exactly the borrow; that fixture, and the `withdraw`/allowance assertions after it, were not reached and were left as written |
+
+**What was changed in the test, and only that.** `assertEq(collateral, 1e8)` → `assertApproxEqAbs(collateral, 1e8, 1)` with the call and block quoted in the comment. No venue, router, keeper or web code was touched to make any test green; the three remaining failures are recorded here and in `RISKS.md`, not patched.
+
+### The engine's registry, enumerated (`poolIdsCount()` = 214, read at "latest" 12:44–12:58 UTC)
+
+All 214 `poolIds(i)` and their `approvedPools(id)` tuples were read with `cast call` (the full table is not reproduced; the rows that matter to the product are). **All 214** entries are flagged `active`. Four position adapters appear: `0xca4cF963C71234a4F7D44a750B4D3847B4deBabd` (55 entries), `0x0AedeEd5Ad8d45D3D928Fb872161EFaA559794D1` (63), `0xCCBfBA207D424c4711708c260Eba9C87f02cCED2` (81), `0xaD35ec92507566FC19581ab43a8EC9C6Edbf0a71` (15).
+
+- **Eighty-one of the 214 entries name the same Uniswap v3 pool `0xd0b5…F224` under eighty-one different token pairs** (indices 0–16, 67–113 and eighteen more between 157 and 211: WETH/USDC, USDC/cbBTC, WETH/cbBTC, …), every one flagged active, with fee field 9999 and the `0xCCBf…CED2` adapter whose `getTWAPTick` reverts `NotImplemented()`. `depositSingleSided` into any of them reverts. Our `SnuggleLpVenue.poolTokens(poolId)` repeats whatever `approvedPools` says, so a user-typed id from this set would get the engine's `NotImplemented()` bubbled unchanged.
+- The WETH/USDC entries that can mint: index 17 (`0x12fc2fd0…`, the same Uniswap v3 pool, fee 500, adapter `0xca4c…`), index 18 (`0x022308ba…`, Uniswap v3 `0x6c561B44…` fee 3000 / spacing 60, adapter `0xca4c…`), **index 24 (`0x0ea72f44…`, Aerodrome Slipstream CL100 `0xb2cc224c…`, adapter `0x0Aed…94D1`, reward adapter `0xBB8ea00a…`)**, index 28 (`0x4e58a13c…`, `0x72AB388E…` spacing 1, adapter `0xaD35…`, reward adapter `0x346CB3db…`). The Aerodrome cbBTC/USDC CL100 pool `0x4e962BB3…` is index 25 (`0xb1830be2…`, adapter `0x0Aed…`).
+- **All twelve curated `enginePoolId`s in `packages/shared/src/pools.ts` are present in the registry** (indices 17, 18, 20, 22, 24, 25, 26, 27, 41, 62, 114, 179) **and every one points at a minting adapter** — `0xca4c…` for the four Uniswap v3 entries, `0x0Aed…94D1` (with the `0xBB8e…375a` reward adapter on the gauged ones) for the eight Aerodrome entries — none at the eighty-one stubs.
+- **No entry of the 214 names cbZEC as token0 or token1.** The engine does not list the cbZEC/USDC pool `0x0Fc4…8566` at all, so cbZEC LP through the engine is not possible today regardless of the gauge (which still has no emissions vote, section "Aerodrome" above).
+
+The fork test picks the first *active* entry whose tokens are WETH and USDC — index 0 — and so proves nothing about the Aerodrome path the product ships. Tightening that selection (to an entry whose pool's `factory()` is the Slipstream CLFactory, or whose adapter answers `getTWAPTick`) is a test-logic change and was not made in this pass; the proposal is in `TESTING.md`.
+
+### One more thing the probes turned up: two Slipstream factories
+
+The cbZEC/USDC pool `0x0Fc47C17AF86078d809358db1b4db2DeBC988566` answers `factory()` = **`0xf8f2eB4940CFE7d13603DDDD87f123820Fc061Ef`** (10,473 B of code; `voter()` = the Aerodrome Voter `0x1661…80A5`; `poolImplementation()` = `0xc770898522D2A9c8Da7A10D63989b6b58305B665`; `getPool(USDC, cbZEC, 200)` = the pool). The CLFactory this file derived on 2026-09-06, `0x5e7BB104d84c7CB9B682AaC2F3d509f5F406809A`, answers `getPool(USDC, cbZEC, 200)` = **`0x0`**, while the Slipstream SwapRouter `0xBE6D…18a5` and the WETH/USDC CL100 pool `0xb2cc…DC59` both still report `factory()` = `0x5e7B…809A`. `Voter.gauges(pool)` = `0x8779E34E5d38358B0cB957c553B40cC1208C81FB`, `isGauge` = true — the gauge linkage in the Aerodrome section above holds. So the cbZEC/USDC pool was created by a second CL factory that shares the Voter, not by the one the SwapRouter is bound to. **Unverified consequence, gated:** a Slipstream router derives pool addresses from *its* factory, so whether `0xBE6D…18a5` can route USDC ↔ cbZEC at tickSpacing 200 through this pool is not known and must be probed before `AerodromeSwapAdapter` is pointed at that pair. Added to the "Not verified" list in spirit; nothing in code depends on it today (v1 swaps are WETH ↔ USDC).
+
+### Drift summary against the earlier reads in this file
+
+| Fact | Earlier read | 2026-09-10 | Drifted? |
+|---|---|---|---|
+| Aave provider → pool / data provider / oracle | 2026-09-05 | same | no |
+| cbBTC / WETH LT & LTV | 7800/7300, 8300/8000 | same | no |
+| USDC variable borrow APR | 4.828 % (09-05) | 4.633 % | rate, as expected |
+| cbZEC `multiplier()` | 1e18 | 1e18 | no |
+| cbZEC `totalSupply()` | 603.25 (09-05) | 1,107.68 | supply grew |
+| cbZEC/USDC tick / price | −24,509 / ≈ 1,159.74 (09-07) | −24,995 / ≈ 1,217.49 | price moved |
+| Engine implementation | `0x359f…2d28` (09-03) | same | no |
+| Engine end-of-list revert shape | never recorded | empty `0x` | **first measurement; contradicts the venue's `Panic(0x32)` pin** |
+| Engine `poolIdsCount()` | not recorded | 214 | first measurement |
+| Engine WETH/USDC entry the test lands on | assumed mintable | stub adapter, `NotImplemented()` | **first measurement** |
+| Aave aToken / debt rounding | not recorded | −1 / +1 unit | **first measurement** |
+| cbZEC/USDC pool `factory()` | assumed `0x5e7B…809A` | `0xf8f2…61Ef` | **first measurement; SwapRouter routing to this pool unverified** |

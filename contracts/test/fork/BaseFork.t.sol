@@ -138,7 +138,11 @@ contract BaseForkTest is Test {
         deal(BaseAddresses.CBBTC, address(acct), 1e8);
         vm.startPrank(alice);
         acct.execWithCallback(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.supply, (BaseAddresses.CBBTC, 1e8)));
-        assertEq(aaveVenue.collateral(address(acct), BaseAddresses.CBBTC), 1e8);
+        // Aave v3 mints aTokens as a scaled balance (amount / liquidityIndex, then * index on read), so
+        // a 1e8 supply reads back 1 unit short. Live: `PoolDataProvider.getUserReserveData(cbBTC, acct)`
+        // → currentATokenBalance 99,999,999 with liquidityIndex 1.002030255356308190911377929e27 at
+        // block 51,127,409 (2026-09-10; the same 99999999 != 100000000 at block 51,001,138 on 2026-09-07).
+        assertApproxEqAbs(aaveVenue.collateral(address(acct), BaseAddresses.CBBTC), 1e8, 1, "aToken index rounding");
         uint256 borrow = 10_000e6;
         acct.execWithCallback(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.borrow, (BaseAddresses.USDC, borrow)));
         assertEq(IERC20(BaseAddresses.USDC).balanceOf(address(acct)), borrow, "borrowed USDC lands in the account");

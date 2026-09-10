@@ -81,7 +81,7 @@ until the gate flips. The gate is computed, never curated
 
 | Path | What | Verified state (2026-09-09, this tree) |
 |---|---|---|
-| `contracts/` | Foundry — `OilskinAccount` + factory, `StrategyRouter`, `AaveV3Venue`, `SnuggleLpVenue`, `CollateralRegistry`, `AerodromeSwapAdapter`, `MorphoBlueVenue` (built over the two verified Base markets; not the registry's venue until propose → timelock → accept), `PythOracleAdapter` (v1.1, unused) | 298 passed / 0 failed / 8 skipped (fork tests need `FORK_URL`), 22 suites |
+| `contracts/` | Foundry — `OilskinAccount` + factory, `StrategyRouter`, `AaveV3Venue`, `SnuggleLpVenue`, `CollateralRegistry`, `AerodromeSwapAdapter`, `MorphoBlueVenue` (built over the two verified Base markets; not the registry's venue until propose → timelock → accept), `PythOracleAdapter` (v1.1, unused) | 304 passed / 0 failed / 8 skipped (2026-09-10; the 8 fork tests need `FORK_URL` — run against Base that day: 4 pass / 4 fail, `docs/TESTING.md`), 22 suites |
 | `agent/` | Keeper daemon (viem) — discovers accounts, values health fail-closed across every venue the registry names (the Aave pool cross-checked by G1–G4, any other venue against the Chainlink feeds by V1–V4, the worst venue runs the ladder) with per-feed staleness, acts only via one root `StrategyRouter.unwind` inside the user's grant, and notifies | 215 tests / 44 suites; `verify-abi` 71/71 |
 | `services/yield/` | Live Aave rates, Aerodrome gauge emissions, the two-model yield gate, the LP model, empirical bands — HTTP API + backfill CLI | 131 tests |
 | `web/` | Next.js 14 — wallet connect, cbZEC onboarding, wizard, venue-aware chain-read dashboard with a keeper panel and a pending-venue banner, CoW spot; demo mode without a wallet | 144 unit tests (142 passed, 2 skipped); Playwright 12/12 |
@@ -97,8 +97,8 @@ until the gate flips. The gate is computed, never curated
 cd contracts
 git clone --depth 1 --branch v5.7.0 https://github.com/OpenZeppelin/openzeppelin-contracts lib/openzeppelin-contracts
 git clone --depth 1 --branch v1.16.2 https://github.com/foundry-rs/forge-std lib/forge-std
-forge test                                   # 298 pass, 0 fail, 8 fork tests SKIPPED without FORK_URL (isolation pinned in foundry.toml; --no-isolate is green too)
-FORK_URL=<Base RPC> forge test --match-path test/fork/BaseFork.t.sol -vv   # the 8 fork tests
+forge test                                   # 304 pass, 0 fail, 8 fork tests SKIPPED without FORK_URL (isolation pinned in foundry.toml; --no-isolate is green too)
+FORK_URL=<Base RPC> forge test --match-path test/fork/BaseFork.t.sol -vv   # the 8 fork tests — 2026-09-10 against Base: 4 pass / 4 fail (docs/TESTING.md says why)
 # (offline container with a pre-fetched solc: FOUNDRY_PROFILE=local forge test)
 
 # Root ABI seam — regenerates or diffs contracts/abi/oilskin-abi.json against contracts/out

@@ -245,6 +245,21 @@ whose oracle cannot be read has health factor 0 at the venue — a borrow or
 withdraw fails closed at the floor, a repay is never gated by any market's
 oracle (wave-2 M-MED-2), and the keeper reads that 0 as UNKNOWN, not as a rung.
 
+**Rounding dust, measured 2026-09-10 (fork at block 51,127,409).** Aave keeps
+balances scaled by an index and rounds on every read: a supply of exactly
+1.00000000 cbBTC read back as 0.99999999 (`getUserReserveData` →
+99,999,999 with liquidityIndex 1.002030…e27), and a borrow of exactly 10,000
+USDC read back as 10,000.000001 in the same block (`debt()` →
+10,000,000,001). The second one bites: `AaveV3Venue.repay(USDC, max)`
+approves, and Aave pulls, the full debt, so an account holding exactly what it
+borrowed cannot fully repay through the venue — Aave reverts `ERC20: transfer
+amount exceeds balance` (the fork test stops there). The router's unwind
+clamps each venue's repay to the USDC the account holds (`_repayAcross`,
+`min(owed, held)`), so it does not revert but leaves 1 unit of debt behind;
+any exact-equality reading of "fully repaid" in the keeper's `confirm` or on
+the dashboard would misread that unit. Nothing was changed for this; it is
+recorded so nobody types an exact-equality assumption into either.
+
 **Does not.** The floor binds only sequences that go through the Oilskin venue.
 A user who hand-writes `account.exec(aavePool, borrow(...))` can still open at
 Aave's full LTV — that is the same owner-only door the exit guarantee is made
@@ -341,16 +356,24 @@ storage; the router's balance of every token it touches is unchanged across
 every call; no standing allowances (`_approveCallReset`;
 `invariant_noStandingAllowances`); reentrancy lock in transient storage;
 peripheral rights opt-in per call and bounded in depth; revert data bubbled
-untouched; **244 unit / fuzz / invariant tests green** (plus 8 fork tests
-skipped), with 6 invariants including the user-can-always-exit and
+untouched; **304 unit / fuzz / invariant tests green** (2026-09-10; plus 8 fork
+tests skipped without `FORK_URL`), with 6 invariants including the user-can-always-exit and
 fee-never-touches-principal properties and the two new donation properties.
 The one owned contract is the registry, which cannot touch an account — but
 see §16 for what it *can* do.
 
 **Does not.** **No external audit has been done.** Wave 1 was an internal
 adversarial audit (four lenses), not an external one. The fork suite (8 tests)
-has not been run against Base from this container, so the engine's live
-end-of-list revert shape is still unrecorded. Slither / Aderyn / Halmos /
+was run against Base mainnet on 2026-09-10 at block 51,127,409: 4 passed,
+4 failed (`VERIFIED-BASE-FACTS.md` Addendum 3; the founder's 2026-09-07 run
+at block 51,001,138 had the same 4 + 4). The engine's live end-of-list revert
+shape is now recorded — it is empty `0x`, not `Panic(0x32)` — so `positionsOf`
+as built fails closed on every account against the live engine (§12); the
+Aave flow reached repay and stopped on a 1-unit rounding shortfall (§8); the
+open → close flow stopped on a stub adapter the engine lists first (§12); and
+the cbZEC B20 test cannot execute inside a fork EVM at all (its values were
+read live with `cast`). No product code was changed to turn any of these
+green. Slither / Aderyn / Halmos /
 Tenderly CI (`BASE-PIVOT-2026-09.md` item 20) is a **plan**. Peripheral-to-
 peripheral reentrancy is bounded at depth 8, not prevented: venue A → B → A is
 reachable, and today's venues are stateless, which is the only reason nothing
@@ -371,7 +394,7 @@ caching ids, so a re-key is picked up; the venue never depends on enumeration
 for an exit (`close` / `closeMany` take explicit ids); enumeration fails closed
 on any revert shape other than `Panic(0x32)`; the fork test
 `test_fork_lpOpenCloseOnLiveEngine` exercises the live engine when `FORK_URL`
-is set.
+is set (first run 2026-09-10 — see "Measured" below).
 
 **Does not.** The engine's own contract risk is the user's. Fees the engine
 keeps are not Oilskin's to refund. The 60-second hold (verified 2026-08,
@@ -380,6 +403,30 @@ a deposit reverts and is reported as a refused id. And a `Panic(0x32)` at index
 *k* from some cause other than the end of the list is still indistinguishable
 from the end of a *k*-element list — a property of the engine's generated
 getter that no amount of care in our venue removes.
+
+**Measured 2026-09-10 (fork at block 51,127,409; `VERIFIED-BASE-FACTS.md`
+Addendum 3).** The live engine's end-of-list revert is *empty*:
+`userPositions(account, 0)` for a fresh address and the canary at 2^256 − 1
+both revert with zero bytes of data, through the proxy and at the unchanged
+implementation `0x359F…2D28`. That is not `Panic(0x32)`, so `positionsOf`
+reverts `EnumerationFailed(0x)` for every account on the live engine: the
+dashboard's position list and the keeper's id discovery cannot work on
+mainnet as built, while exits (`close` / `closeMany` by explicit id) do not
+depend on it and still can. The empty shape is also exactly the shape of a
+bare `revert()`, an out-of-gas or a proxy miss, so the ambiguity the pin was
+written to remove cannot be removed by shape on this engine. Whether to accept
+`0x` as end-of-list, and how to bound the silent-truncation risk that comes
+with it, is a product decision and not a constant to flip; this document does
+not make it. Second measurement: the engine's registry entry at index 0
+(poolId `0x0ab2…65e2`) is one of 81 entries — of 214, all flagged active —
+that name the Uniswap v3 WETH/USDC pool `0xd0b5…F224` under 81 different
+token pairs, with a fee field of 9999 and a position adapter `0xCCBf…CED2`
+whose `getTWAPTick` reverts `NotImplemented()`; `depositSingleSided` into any
+of them reverts, and the venue bubbles that error unchanged. None of the
+twelve curated `enginePoolId`s in `packages/shared/src/pools.ts` is one of
+those 81 (all twelve sit on minting adapters), but a user-typed id could be,
+and the fork test's "first active WETH/USDC pool" selection is. The engine
+lists no cbZEC pool at all.
 
 ## 13 · Price-band and swap floors (MEV)
 
