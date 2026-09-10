@@ -8,7 +8,9 @@ import { privateKeyToAccount } from "viem/accounts";
 import { base } from "viem/chains";
 import { HF_LADDER } from "@zyo/shared";
 import { GRANT_SELECTORS, accountCreatedEvent } from "../src/abi/oilskin.js";
-import { KeeperDispatcher } from "../src/dispatch/keeperDispatcher.js";
+import { KeeperDispatcher, usdcNeededFor } from "../src/dispatch/keeperDispatcher.js";
+import { valuationForWithdraw } from "../src/engine/venueValuation.js";
+import type { KeeperEvent } from "../src/notify/notifier.js";
 import type { DispatchIntent, DispatchResult, Dispatcher } from "../src/dispatch/types.js";
 import { Logger, memorySink } from "../src/log.js";
 import { HealthMonitor, type MonitorConfig } from "../src/monitors/healthMonitor.js";
@@ -32,7 +34,9 @@ import { AAVE_VENUE_ADDR, DEAD_VENUE_ADDR, MORPHO_VENUE_ADDR, MockOilskin } from
  *   • the Aave path is unchanged (NO_DEBT / OK exactly as before, now with a venue cross-check);
  *   • a Morpho venue position is read through ICollateralVenue, is NOT NO_DEBT, and rungs fire;
  *   • the venue's health factor is accepted only when the keeper's own Chainlink feeds agree —
- *     a disagreement beyond ORACLE_DEVIATION_BPS is UNKNOWN, never OK;
+ *     a PRICE disagreement beyond ORACLE_DEVIATION_BPS is acted on at the PESSIMISTIC health and
+ *     never trusted at the optimist's figure; a withdraw treats it as UNKNOWN (RISKS §8 residual (b),
+ *     policy 2026-09-10);
  *   • Aave debt behind a Morpho pointer (previousVenues, the M-HIGH-1 class) is still seen;
  *   • anything unreadable fails closed.
  */
@@ -179,24 +183,52 @@ describe("M-HIGH-2 — a Morpho venue position is read through ICollateralVenue"
   });
 });
 
-describe("disagreement between the venue and the keeper's feeds fails closed", () => {
-  it("V4: the venue's oracle says HF 1.72 while the keeper's cbBTC/USD feed implies 1.08 → UNKNOWN, never OK", async () => {
+describe("disagreement between the venue and the keeper's feeds — residual (b) policy (2026-09-10)", () => {
+  /** 1.72 at the venue's 79,600 becomes this at the feed's 50,000: the pessimistic figure both directions land on. */
+  const PESSIMISTIC = 1.72 * (50_000 / 79_600);
+  const REPAY_DISARM = HF_LADDER.find((r) => r.id === "repay")!.disarmHf;
+
+  it("V4: the venue's oracle says HF 1.72 while the keeper's cbBTC/USD feed implies 1.08 → OK at the PESSIMISTIC 1.08, flagged venue-optimistic; a withdraw is UNKNOWN", async () => {
     const w = morphoWorld(1.72, (_, chain) => {
       // Morpho's cbBTC market prices with BTC/USD; the keeper's independent view is cbBTC/USD. Here
       // they split by far more than ORACLE_DEVIATION_BPS — a depeg the venue cannot see (RISKS.md §8).
       chain.reserves.get(CBBTC.toLowerCase())!.chainlink!.answer = 50_000_00000000n;
     });
     const av = await w.value();
-    assert.equal(av.valuation.kind, "UNKNOWN");
-    assert.notEqual(av.valuation.kind, "OK");
-    if (av.valuation.kind === "UNKNOWN") assert.match(av.valuation.reasons.join("\n"), /V4 venue .* above the feed-implied ceiling/);
+    assert.equal(av.valuation.kind, "OK", av.valuation.kind === "UNKNOWN" ? av.valuation.reasons.join("; ") : "");
+    if (av.valuation.kind !== "OK") return;
+    assert.ok(Math.abs(av.valuation.hf - PESSIMISTIC) < 0.01, `pessimistic HF expected ≈ ${PESSIMISTIC.toFixed(3)}, got ${av.valuation.hf}`);
+    assert.equal(av.valuation.oracleDisagreement?.direction, "venue-optimistic");
+    assert.match(av.valuation.oracleDisagreement!.reasons.join("\n"), /V4 venue .* above the feed-implied ceiling/);
+    assert.equal(av.oracleDisagreements.length, 1);
+    // Sized against the pessimistic health: at the venue's own 1.72 nothing would be needed to reach the repay rung's disarm.
+    const needed = usdcNeededFor(av.valuation, REPAY_DISARM, USDC);
+    assert.ok(needed !== null && needed > 0n, `a real repay is sized, got ${needed}`);
+    // Anything that would withdraw collateral sees UNKNOWN.
+    const forWithdraw = valuationForWithdraw(av);
+    assert.equal(forWithdraw.kind, "UNKNOWN");
+    if (forWithdraw.kind === "UNKNOWN") assert.match(forWithdraw.reasons.join("\n"), /withdraw refused/);
   });
 
-  it("V4: the venue's oracle is the pessimist (HF 1.08) while the feed implies 1.72 → UNKNOWN too; the keeper never guesses which is right", async () => {
+  it("V4: the venue's oracle is the pessimist (HF 1.08) while the feed implies 1.72 → OK at the venue's own 1.08, flagged venue-pessimistic; a withdraw is UNKNOWN", async () => {
     const w = morphoWorld(1.72, (oil) => oil.setMorphoPrice(CBBTC, 50_000_00000000n));
     const av = await w.value();
-    assert.equal(av.valuation.kind, "UNKNOWN");
-    if (av.valuation.kind === "UNKNOWN") assert.match(av.valuation.reasons.join("\n"), /V4 venue .* below the feed-implied floor/);
+    assert.equal(av.valuation.kind, "OK", av.valuation.kind === "UNKNOWN" ? av.valuation.reasons.join("; ") : "");
+    if (av.valuation.kind !== "OK") return;
+    assert.ok(Math.abs(av.valuation.hf - PESSIMISTIC) < 0.01, `the venue's own HF, got ${av.valuation.hf}`);
+    assert.equal(av.valuation.oracleDisagreement?.direction, "venue-pessimistic");
+    assert.match(av.valuation.oracleDisagreement!.reasons.join("\n"), /V4 venue .* below the feed-implied floor/);
+    const needed = usdcNeededFor(av.valuation, REPAY_DISARM, USDC);
+    assert.ok(needed !== null && needed > 0n, `a real repay is sized, got ${needed}`);
+    assert.equal(valuationForWithdraw(av).kind, "UNKNOWN");
+  });
+
+  it("no disagreement: valuationForWithdraw is the plain verdict, and nothing is flagged", async () => {
+    const av = await morphoWorld(1.72).value();
+    assert.equal(av.valuation.kind, "OK");
+    if (av.valuation.kind === "OK") assert.equal(av.valuation.oracleDisagreement, undefined);
+    assert.equal(av.oracleDisagreements.length, 0);
+    assert.equal(valuationForWithdraw(av), av.valuation);
   });
 
   it("a small basis between the venue's oracle and the feed (cbBTC/USD vs BTC/USD) is inside the bound and accepted", async () => {
@@ -339,6 +371,7 @@ async function monitorRig(w: ReturnType<typeof world>) {
   const sink = memorySink();
   const dispatcher = new FakeDispatcher();
   const escalations: { account: Address; reasons: string[] }[] = [];
+  const events: KeeperEvent[] = [];
   const monitor = new HealthMonitor({
     reader: w.reader,
     venues: w.venues,
@@ -350,10 +383,18 @@ async function monitorRig(w: ReturnType<typeof world>) {
     config: MONITOR_CONFIG,
     now: () => new Date(Number(w.chain.nowS) * 1000),
     onEscalate: (e) => escalations.push(e),
-    notifier: { failures: 0, channels: ["test"], hasPersonChannel: true, deliver: async () => ({ personReached: true }) },
+    notifier: {
+      failures: 0,
+      channels: ["test"],
+      hasPersonChannel: true,
+      deliver: async (e) => {
+        events.push(e);
+        return { personReached: true };
+      },
+    },
   });
   const watchdog = new ProgressWatchdog({ stallMs: 10_000, backoff: { initialMs: 10, maxMs: 100, factor: 2 } });
-  return { store, sink, dispatcher, monitor, escalations, tick: () => monitor.tick(watchdog.beginTick()) };
+  return { store, sink, dispatcher, monitor, escalations, events, tick: () => monitor.tick(watchdog.beginTick()) };
 }
 
 describe("rungs fire on a Morpho position", () => {
@@ -384,19 +425,38 @@ describe("rungs fire on a Morpho position", () => {
     await r.store.close();
   });
 
-  it("monitor: a venue/feed disagreement is UNKNOWN on the tick — no rung, an escalation after the streak, never 'healthy'", async () => {
+  it("monitor, venue pessimistic: the feed says 2.6 but the venue says 1.1 → `derisk` fires on the venue's 1.1, the owner is told once, no UNKNOWN escalation", async () => {
     const w = morphoWorld(1.1, (_, chain) => {
       chain.reserves.get(CBBTC.toLowerCase())!.chainlink!.answer = 120_000_00000000n; // the feed says the position is fine; the venue says 1.1
     });
     w.chain.emitAccountCreated(OWNER_A, ACCOUNT_A, 1n);
     const r = await monitorRig(w);
     const rep1 = await r.tick();
-    assert.equal(rep1.outcomes[0].valuation, "UNKNOWN");
-    assert.equal(rep1.outcomes[0].fired, null);
-    assert.equal(r.dispatcher.calls.length, 0);
+    assert.equal(rep1.outcomes[0].valuation, "OK");
+    assert.ok(Math.abs((rep1.outcomes[0].hf ?? 0) - 1.1) < 0.01, `pessimistic = the venue's own 1.1, got ${rep1.outcomes[0].hf}`);
+    assert.equal(rep1.outcomes[0].fired, "derisk", "1.1 is below the derisk rung and above emergency");
+    assert.equal(r.dispatcher.calls.length, 1);
+    assert.equal(r.dispatcher.calls[0].valuation?.oracleDisagreement?.direction, "venue-pessimistic", "the dispatcher is handed the flagged verdict");
+    assert.equal(r.events.filter((e) => e.kind === "oracle-disagreement").length, 1, "the owner is told");
     await r.tick();
-    assert.equal(r.escalations.length, 1, "UNKNOWN twice running escalates (streak 2)");
-    assert.match(r.escalations[0].reasons.join("\n"), /V4 venue/);
+    assert.equal(r.escalations.length, 0, "never UNKNOWN, so no UNKNOWN-streak escalation");
+    assert.equal(r.events.filter((e) => e.kind === "oracle-disagreement").length, 1, "told once per episode, not every tick");
+    await r.store.close();
+  });
+
+  it("monitor, venue optimistic: the venue says 1.72 but the feed implies 1.08 → `derisk` fires on the feed's 1.08 (the keeper acts early instead of waiting UNKNOWN)", async () => {
+    const w = morphoWorld(1.72, (_, chain) => {
+      chain.reserves.get(CBBTC.toLowerCase())!.chainlink!.answer = 50_000_00000000n; // a cbBTC depeg the venue's BTC/USD oracle cannot see
+    });
+    w.chain.emitAccountCreated(OWNER_A, ACCOUNT_A, 1n);
+    const r = await monitorRig(w);
+    const rep = await r.tick();
+    assert.equal(rep.outcomes[0].valuation, "OK");
+    assert.ok(Math.abs((rep.outcomes[0].hf ?? 0) - 1.72 * (50_000 / 79_600)) < 0.01, `got ${rep.outcomes[0].hf}`);
+    assert.equal(rep.outcomes[0].fired, "derisk");
+    assert.equal(r.dispatcher.calls[0].valuation?.oracleDisagreement?.direction, "venue-optimistic");
+    assert.equal(r.events.filter((e) => e.kind === "oracle-disagreement").length, 1);
+    assert.equal(r.escalations.length, 0);
     await r.store.close();
   });
 
@@ -463,5 +523,26 @@ describe("rungs fire on a Morpho position", () => {
     const av = await w.value();
     assert.equal(av.valuation.kind, "OK");
     if (av.valuation.kind === "OK") assert.ok(av.valuation.hf >= 1.4 - 1e-6, `HF after repay ${av.valuation.hf}`);
+  });
+
+  it("dispatcher end to end under a venue-optimistic disagreement: `repay` is SENT and sized against the PESSIMISTIC health, so the feed-implied HF ends ≥ the disarm (residual (b))", async () => {
+    const w = morphoWorld(1.72, (oil, chain) => {
+      chain.reserves.get(CBBTC.toLowerCase())!.chainlink!.answer = 50_000_00000000n; // the venue's oracle still says 79,600
+      oil.grant(KEEPER, ROUTER, GRANT_SELECTORS["StrategyRouter.unwind"]);
+      oil.setUsdc(ACCOUNT_A, 30_000_000_000n);
+    });
+    const before = w.oil.morphoPosition(ACCOUNT_A, CBBTC).debt;
+    const d = keeperDispatcher(w);
+    const res = await d.dispatch({ record: record("repay", "repay", 1.08), valuation: null });
+    assert.equal(res.status, "SENT", JSON.stringify(res));
+    const after = w.oil.morphoPosition(ACCOUNT_A, CBBTC).debt;
+    assert.ok(after < before, `Morpho debt ${before} → ${after}`);
+    const av = await w.value();
+    assert.equal(av.valuation.kind, "OK");
+    if (av.valuation.kind === "OK") {
+      assert.ok(av.valuation.hf >= 1.4 - 1e-6, `pessimistic HF after repay ${av.valuation.hf}`);
+      assert.equal(av.valuation.oracleDisagreement?.direction, "venue-optimistic", "the prices still disagree; the account is protected anyway");
+    }
+    assert.equal(valuationForWithdraw(av).kind, "UNKNOWN", "and a withdrawal would still be refused");
   });
 });

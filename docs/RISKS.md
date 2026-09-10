@@ -230,11 +230,31 @@ the handler now opens on the registry's current venue, so the fuzz reaches
 accounts owing USDC on both Aave and Morpho, and after an owner
 `unwind(repay max)` with USDC to cover, no venue the registry names for the
 asset may still owe (or the call reverted with a named error) — the two-book
-state the 2026-09-07 audit's M-INFO-1 said no invariant could see. Residual (b)
-stands: because the cbBTC market's oracle is BTC/USD while the keeper's feed
-is cbBTC/USD, a cbBTC depeg beyond the bound makes the Morpho position UNKNOWN
-rather than acted on early — the owner is told; the keeper does not guess
-which price is right. Morpho has ONE threshold: a
+state the 2026-09-07 audit's M-INFO-1 said no invariant could see.
+**Residual (b), policy set 2026-09-10.** The cbBTC market's oracle is BTC/USD
+while the keeper's feed is cbBTC/USD, so a cbBTC depeg beyond
+`ORACLE_DEVIATION_BPS` is a disagreement the venue cannot see. It no longer
+leaves the account UNKNOWN with a keeper that never acts. The rule
+(`agent/src/engine/venueValuation.ts`): (1) a *protective* repay, derisk or
+emergency is sized and fired against the PESSIMISTIC of the two implied
+healths — the venue's own health factor when its oracle is the pessimist, the
+floor the keeper's feeds imply when the venue is the optimist — so the ladder
+runs early and never at the optimist's figure; (2) anything that would
+WITHDRAW collateral treats the verdict as UNKNOWN (`valuationForWithdraw`; the
+keeper has no withdraw path, and the web's Close, which withdraws, is refused
+with the reason for as long as the disagreement lasts — the owner's raw exec
+stays open, as for every refusal); (3) the dashboard shows the account as
+unreadable with the reason, never as healthy (`web/lib/reads.ts` applies the
+same 3 % bound against the Aave-oracle prices the page already reads); (4) the
+owner is told once per episode (`oracle-disagreement` keeper event) and every
+tick it persists is logged. Tests in both directions:
+`agent/test/venueReader.test.ts` (verdict and direction, repay sizing, the
+withdraw gate, monitor rung + notice, dispatcher end to end) and
+`web/test/reads.test.ts` / `web/test/plan.test.ts`. What it does not do: it
+does not decide which price is right. A venue-optimistic disagreement makes
+the keeper repay more than the venue's own oracle would require — the price of
+protection — and a venue-pessimistic one is acted on at the venue's figure
+because that is the price it liquidates at. Morpho has ONE threshold: a
 borrow is allowed up to the 86 % LLTV and liquidated below it, with no gap
 between "max LTV" and "liquidation threshold" as on Aave, so the registry's
 derived offer is min(86 / 1.55 = 55.5 %, 86 %, 50 % cap) = 50 %, and a position

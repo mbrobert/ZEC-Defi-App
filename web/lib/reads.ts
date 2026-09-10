@@ -91,6 +91,57 @@ export interface VenueHealthRead {
   collateral: { symbol: CollateralSymbol; amountAtomic: bigint; amount: number; liquidationThresholdBps: number | null }[];
   /** Every word above decoded. A venue that is not readable makes the whole account unreadable. */
   readable: boolean;
+  /**
+   * Set when the venue's own health factor disagrees, beyond VENUE_PRICE_DISAGREEMENT_TOLERANCE,
+   * with the one the prices this app reads imply from the venue's collateral, debt and thresholds
+   * (RISKS §8 residual (b), policy 2026-09-10). The account is then unreadable — never healthy —
+   * and a Close that would withdraw collateral is refused with this reason.
+   */
+  priceDisagreement: string | null;
+}
+
+/**
+ * The keeper's ORACLE_DEVIATION_BPS default is 300 (agent/src/config.ts, 3 %): the bound inside
+ * which a venue's own health factor must agree with the one the keeper's Chainlink feeds imply.
+ * The page applies the same bound with the Aave-oracle prices it already reads — for cbBTC that is
+ * the cbBTC/USD feed the keeper uses, while Morpho's cbBTC market prices with BTC/USD, so a cbBTC
+ * depeg is exactly what this catches. A single collateral asset makes the implied band a point; a
+ * multi-market venue may sit anywhere between its worst market and the aggregate.
+ */
+export const VENUE_PRICE_DISAGREEMENT_TOLERANCE = 0.03;
+
+/** Prices the page cross-checks a venue's health factor against: USD per unit, from the Aave oracle. */
+export interface VenuePrices {
+  collateral: Partial<Record<CollateralSymbol, number>>;
+  usdc: number;
+}
+
+function priceDisagreementOf(v: VenueHealthRead, prices: VenuePrices): string | null {
+  if (v.kind !== "other" || !v.readable || v.healthFactor === null || v.debtUsdc === null || !(v.debtUsdc > 0)) return null;
+  const tag = `venue ${v.venue.slice(0, 6)}…${v.venue.slice(-4)}`;
+  const debtUsd = v.debtUsdc * prices.usdc;
+  if (!Number.isFinite(debtUsd) || !(debtUsd > 0)) return `${tag}: no USDC price to cross-check its health factor against`;
+  let sum = 0;
+  let min = Number.POSITIVE_INFINITY;
+  for (const c of v.collateral) {
+    if (c.amountAtomic === 0n || c.liquidationThresholdBps === null) continue;
+    const price = prices.collateral[c.symbol];
+    if (typeof price !== "number" || !Number.isFinite(price) || !(price > 0)) return `${tag}: no ${c.symbol} price to cross-check its health factor against`;
+    const a = c.amount * price * (c.liquidationThresholdBps / 10_000);
+    sum += a;
+    min = Math.min(min, a);
+  }
+  if (!(sum > 0)) return null; // debt with no valued collateral: nothing to compare here (the keeper escalates it)
+  const ceiling = sum / debtUsd;
+  const floor = min / debtUsd;
+  const hf = v.healthFactor;
+  if (hf > ceiling * (1 + VENUE_PRICE_DISAGREEMENT_TOLERANCE)) {
+    return `${tag} reports HF ${hf.toFixed(2)} but the prices this app reads imply at most ${ceiling.toFixed(2)} — its oracle values the collateral higher; unreadable, and a Close that withdraws collateral is refused until they agree`;
+  }
+  if (hf < floor * (1 - VENUE_PRICE_DISAGREEMENT_TOLERANCE)) {
+    return `${tag} reports HF ${hf.toFixed(2)} but the prices this app reads imply at least ${floor.toFixed(2)} — its oracle values the collateral lower; unreadable, and a Close that withdraws collateral is refused until they agree`;
+  }
+  return null;
 }
 
 export interface VenueHealth {
@@ -351,7 +402,7 @@ function hfAgree(a: number, b: number): boolean {
  * whose `healthFactor`, `debt` or a collateral/threshold pair did not decode is `readable: false`,
  * and the combined health factor is then `null`.
  */
-export async function readVenueHealth(client: ReadClient, registry: Address, account: Address): Promise<VenueHealth> {
+export async function readVenueHealth(client: ReadClient, registry: Address, account: Address, prices?: VenuePrices): Promise<VenueHealth> {
   const regRows = await safeMulticall(
     client,
     COLLATERAL_SYMBOLS.flatMap((s) => [
@@ -429,17 +480,26 @@ export async function readVenueHealth(client: ReadClient, registry: Address, acc
       debtUsdc: typeof debtRaw === "bigint" ? fromAtomic(debtRaw, BASE_TOKENS.USDC.decimals) : null,
       collateral,
       readable,
+      priceDisagreement: null,
     };
   });
-  const bad = venues.filter((v) => !v.readable);
-  const healthFactor = bad.length ? null : venues.reduce((worst, v) => Math.min(worst, v.healthFactor ?? Number.POSITIVE_INFINITY), Number.POSITIVE_INFINITY);
-  const otherDebtUsdc = venues.filter((v) => v.kind === "other").reduce((a, v) => a + (v.debtUsdc ?? 0), 0);
+  // Residual (b): a non-Aave venue's health factor is only shown when the prices this app reads
+  // agree with it. Without prices (a caller that has none) nothing is cross-checked.
+  const checked: VenueHealthRead[] = prices ? venues.map((v) => ({ ...v, priceDisagreement: priceDisagreementOf(v, prices) })) : venues;
+  const bad = checked.filter((v) => !v.readable);
+  const disputed = checked.filter((v) => v.priceDisagreement !== null);
+  const healthFactor = bad.length || disputed.length ? null : checked.reduce((worst, v) => Math.min(worst, v.healthFactor ?? Number.POSITIVE_INFINITY), Number.POSITIVE_INFINITY);
+  const otherDebtUsdc = checked.filter((v) => v.kind === "other").reduce((a, v) => a + (v.debtUsdc ?? 0), 0);
   return {
     registry,
-    venues,
+    venues: checked,
     healthFactor,
     otherDebtUsdc,
-    unreadableReason: bad.length ? `venue ${bad.map((v) => `${v.venue.slice(0, 6)}…${v.venue.slice(-4)}`).join(", ")} did not answer` : null,
+    unreadableReason: bad.length
+      ? `venue ${bad.map((v) => `${v.venue.slice(0, 6)}…${v.venue.slice(-4)}`).join(", ")} did not answer`
+      : disputed.length
+        ? disputed.map((v) => v.priceDisagreement).join("; ")
+        : null,
   };
 }
 
@@ -670,7 +730,10 @@ export async function readAccount(
   // ---- venue-aware health (audit wave 2, M-HIGH-2) ------------------------------------------
   let venues: VenueHealth | null = null;
   if (opts.registry) {
-    venues = await readVenueHealth(client, opts.registry, account);
+    venues = await readVenueHealth(client, opts.registry, account, {
+      collateral: Object.fromEntries(COLLATERAL_SYMBOLS.map((s) => [s, market.reserves[s]?.priceUsd])) as Partial<Record<CollateralSymbol, number>>,
+      usdc: market.reserves.USDC?.priceUsd ?? NaN,
+    });
     // The Aave venue reads the same pool as the `aave` leg above. The two must agree, or the page
     // cannot tell which to believe — and a failed pool leg with a readable venue is still "unreadable",
     // never a number pulled from one source when the other is silent.

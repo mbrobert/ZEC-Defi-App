@@ -474,12 +474,20 @@ export interface UnwindPlanInput {
   /** The swap quote for the non-USDC leg. null = not quoted yet; the plan is NOT signable until it is. */
   quote: QuotedSwap | null;
   poolLabel?: string;
+  /**
+   * Set when a venue's health factor disagrees with the prices this app reads (RISKS §8 residual
+   * (b), policy 2026-09-10; `VenueHealthRead.priceDisagreement`). A Close withdraws collateral, and
+   * collateral does not leave a venue whose price is disputed: the plan is not signable and says
+   * why. The owner's raw exec to the venue stays open, as it does for every other refusal.
+   */
+  withdrawRefusedReason?: string | null;
 }
 
 export function buildUnwindPlan(i: UnwindPlanInput): PlannedCall[] {
   const asset = COLLATERAL_ASSETS[i.collateral];
   const d = i.deployment;
-  const abiOk = ABI_STATUS === "verified" && !!d && !d.demo;
+  const refused = i.withdrawRefusedReason ?? null;
+  const abiOk = ABI_STATUS === "verified" && !!d && !d.demo && !refused;
   const q = i.quote;
   const quoteOk = !!q && validateSwapQuote(q).length === 0;
   const quoteText = q
@@ -502,7 +510,12 @@ export function buildUnwindPlan(i: UnwindPlanInput): PlannedCall[] {
         { name: "swap quote", value: quoteText },
         { name: "swap route", value: q ? `Aerodrome Slipstream, tick spacing ${q.tickSpacing}` : "pool tick spacing read at sign time" },
         { name: "repayAmount", value: "max (all of your debt, or all the USDC that comes back if less)" },
-        { name: "withdrawAmount", value: "max (all collateral; refused if debt would remain with the health factor below the floor)" },
+        {
+          name: "withdrawAmount",
+          value: refused
+            ? `refused — ${refused}`
+            : "max (all collateral; refused if debt would remain with the health factor below the floor)",
+        },
         { name: "deadline", value: utc(i.deadline) },
       ],
       note:
@@ -517,6 +530,7 @@ export function buildUnwindPlan(i: UnwindPlanInput): PlannedCall[] {
 export function encodeUnwindWrite(i: UnwindPlanInput, band: PriceBand): WriteSpec {
   const d = i.deployment;
   if (!d || d.demo || !i.account) throw new Error("no deployment / account");
+  if (i.withdrawRefusedReason) throw new Error(`withdraw refused — ${i.withdrawRefusedReason}`);
   if (!i.quote) throw new Error("the swap must be quoted before an unwind can be encoded");
   const errs = validateSwapQuote(i.quote);
   if (errs.length) throw new Error(errs.join(" "));

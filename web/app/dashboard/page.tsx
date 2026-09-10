@@ -169,8 +169,11 @@ export default function DashboardPage() {
       // is NOT signable. There is no fallback minimum.
       quote: lastQuote,
       poolLabel: label,
+      // RISKS §8 residual (b): a venue whose price is disputed keeps its collateral — the Close
+      // that would withdraw it is refused, with the reason, until the prices agree.
+      withdrawRefusedReason: view.venues?.venues.map((v) => v.priceDisagreement).filter((r): r is string => typeof r === "string").join("; ") || null,
     });
-  }, [action, view.accountAddr, deployment, primary, lastQuote]);
+  }, [action, view.accountAddr, view.venues, deployment, primary, lastQuote]);
 
   const ctx = (): RunContext | null =>
     publicClient

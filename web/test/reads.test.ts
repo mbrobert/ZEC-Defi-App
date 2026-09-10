@@ -414,7 +414,9 @@ test("worst venue wins: Aave at 1.95 and Morpho at 1.72 → 1.72; Morpho at 5.0 
   const market = await readMarket(fakeClient());
   const low = await readAccount(venueClient({ [AAVE_VENUE.toLowerCase()]: aaveVenueMirror(), [MORPHO_VENUE]: morphoVenue() }, registryCbbtcOnMorpho), OWNER, market, readOpts);
   assert.ok(Math.abs((accountHf(low) ?? 0) - 1.72) < 1e-9);
-  const high = await readAccount(venueClient({ [AAVE_VENUE.toLowerCase()]: aaveVenueMirror(), [MORPHO_VENUE]: morphoVenue(5n * WAD) }, registryCbbtcOnMorpho), OWNER, market, readOpts);
+  // A venue at 5.0 must OWE a debt that implies 5.0 at the app's prices (79,630.89 × 0.86 / 5 ≈ 13,696.51 USDC);
+  // at the 39,796 USDC that implies 1.72, a claimed 5.0 is a price disagreement and unreadable (residual (b), below).
+  const high = await readAccount(venueClient({ [AAVE_VENUE.toLowerCase()]: aaveVenueMirror(), [MORPHO_VENUE]: morphoVenue(5n * WAD, 13_696_513_000n) }, registryCbbtcOnMorpho), OWNER, market, readOpts);
   assert.ok(Math.abs((accountHf(high) ?? 0) - 1.95) < 1e-9);
 });
 
@@ -442,6 +444,37 @@ test("the Aave venue must agree with the pool: a venue reporting HF 5.0 against 
   const b = await readAccount(broken, OWNER, market, readOpts);
   assert.equal(accountHf(b), null);
   assert.match(b.venues!.unreadableReason ?? "", /registry unreadable/);
+});
+
+test("residual (b), venue optimistic: a Morpho venue claiming HF 2.50 where the app's prices imply 1.72 is unreadable — never healthy, and the reason names the gap", async () => {
+  const market = await readMarket(fakeClient());
+  // 1 cbBTC against 39,796 USDC at LLTV 86 % implies 1.72 at the cbBTC/USD price the page reads; the venue's BTC/USD oracle says 2.50.
+  const a = await readAccount(venueClient({ [AAVE_VENUE.toLowerCase()]: aaveVenueMirror(), [MORPHO_VENUE]: morphoVenue(2_500_000_000_000_000_000n) }, registryCbbtcOnMorpho), OWNER, market, readOpts);
+  assert.equal(accountHf(a), null, "unreadable, not 2.50 and not the pool's 1.95");
+  const morpho = a.venues!.venues.find((v) => v.kind === "other")!;
+  assert.match(morpho.priceDisagreement ?? "", /reports HF 2.50 but the prices this app reads imply at most 1.72 — its oracle values the collateral higher/);
+  assert.match(a.venues!.unreadableReason ?? "", /Close that withdraws collateral is refused/);
+  const aave = a.venues!.venues.find((v) => v.kind === "aave")!;
+  assert.equal(aave.priceDisagreement, null, "the Aave venue is cross-checked against the pool, not against prices");
+});
+
+test("residual (b), venue pessimistic: a Morpho venue claiming HF 1.10 where the app's prices imply 1.72 is unreadable the other way round", async () => {
+  const market = await readMarket(fakeClient());
+  const a = await readAccount(venueClient({ [AAVE_VENUE.toLowerCase()]: aaveVenueMirror(), [MORPHO_VENUE]: morphoVenue(1_100_000_000_000_000_000n) }, registryCbbtcOnMorpho), OWNER, market, readOpts);
+  assert.equal(accountHf(a), null);
+  const morpho = a.venues!.venues.find((v) => v.kind === "other")!;
+  assert.match(morpho.priceDisagreement ?? "", /reports HF 1.10 but the prices this app reads imply at least 1.72 — its oracle values the collateral lower/);
+});
+
+test("residual (b): inside the 3 % bound the venue's own number stands (the cbBTC/USD vs BTC/USD basis), and without prices nothing is cross-checked", async () => {
+  const market = await readMarket(fakeClient());
+  const a = await readAccount(venueClient({ [AAVE_VENUE.toLowerCase()]: aaveVenueMirror(), [MORPHO_VENUE]: morphoVenue(1_700_000_000_000_000_000n) }, registryCbbtcOnMorpho), OWNER, market, readOpts);
+  assert.ok(Math.abs((accountHf(a) ?? 0) - 1.7) < 1e-9, "1.70 against an implied 1.72 is inside the bound; it is also the worst venue");
+  assert.equal(a.venues!.venues.find((v) => v.kind === "other")!.priceDisagreement, null);
+  // readVenueHealth without prices: the venue's word is reported as read, the cross-check is the caller's to ask for.
+  const raw = await readVenueHealth(venueClient({ [AAVE_VENUE.toLowerCase()]: aaveVenueMirror(), [MORPHO_VENUE]: morphoVenue(2_500_000_000_000_000_000n) }, registryCbbtcOnMorpho), REGISTRY, ACCOUNT);
+  assert.equal(raw.venues.find((v) => v.kind === "other")!.priceDisagreement, null);
+  assert.ok(Math.abs((raw.healthFactor ?? 0) - 1.95) < 1e-9);
 });
 
 test("readVenueHealth alone: no registry pointer for an asset is not an error; a zero-debt venue reads ∞", async () => {

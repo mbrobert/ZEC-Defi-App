@@ -211,6 +211,11 @@ export async function runUnwind(
     emit({ type: "blocked", step: 1, reason: "No live deployment configured." });
     return null;
   }
+  if (input.withdrawRefusedReason) {
+    // RISKS §8 residual (b): a Close withdraws collateral, and a venue whose price is disputed keeps it.
+    emit({ type: "blocked", step: 1, reason: `Close is refused while a lending venue's price is disputed — nothing was signed: ${input.withdrawRefusedReason}` });
+    return null;
+  }
   let quote: QuotedSwap;
   try {
     quote = await quoteUnwindSwap({ read: ctx.read, deployment: d, poolAddress: position.poolAddress, maxSlippageBps: input.bandToleranceBps });

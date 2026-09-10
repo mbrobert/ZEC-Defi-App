@@ -138,6 +138,25 @@ export interface DebtShare {
   valueBase: bigint;
 }
 
+/**
+ * The venue's own oracle and the keeper's Chainlink feed disagree about the collateral's price by
+ * more than ORACLE_DEVIATION_BPS (RISKS.md §8 residual (b); policy set 2026-09-10). The verdict
+ * that carries this is OK at the PESSIMISTIC of the two implied health factors — enough for a
+ * protective repay to be sized and fired — and any path that would WITHDRAW collateral must treat
+ * it as UNKNOWN (`valuationForWithdraw` in venueValuation.ts). Never a reason to call the account
+ * healthy: the dashboard shows it as unreadable.
+ */
+export interface OracleDisagreement {
+  /** The venue's own `healthFactor(account)`, wad. */
+  venueHfWad: bigint;
+  /** The band the keeper's feeds imply from the venue's collateral, debt and thresholds, wad. */
+  impliedFloorWad: bigint;
+  impliedCeilingWad: bigint;
+  /** "venue-optimistic": the venue's oracle values the collateral HIGHER than the feed; "venue-pessimistic": lower. */
+  direction: "venue-optimistic" | "venue-pessimistic";
+  reasons: string[];
+}
+
 export type Valuation =
   | { kind: "NO_DEBT"; collateralBase: bigint }
   | {
@@ -145,6 +164,8 @@ export type Valuation =
       /** Recomputed health factor as a JS number (for the ladder). */
       hf: number;
       hfWad: bigint;
+      /** Present when the venue's oracle and the keeper's feed disagree — `hf` is then the pessimistic one. */
+      oracleDisagreement?: OracleDisagreement;
       debtBase: bigint;
       collateralBase: bigint;
       /** Collateral reserves ordered by value, largest first. */

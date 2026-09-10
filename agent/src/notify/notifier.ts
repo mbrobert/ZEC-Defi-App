@@ -36,7 +36,9 @@ export type KeeperEventKind =
   | "grant-misconfigured"
   | "untracked-collateral"
   | "store-failure"
-  | "feed-policy";
+  | "feed-policy"
+  /** A venue's oracle and the keeper's feed disagree: acting on the pessimistic health, withdrawals refused (RISKS §8 residual (b)). */
+  | "oracle-disagreement";
 
 export type Severity = "info" | "warn" | "critical";
 

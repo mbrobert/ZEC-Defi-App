@@ -3,6 +3,7 @@ import { stepLadder, validateLadder, type LadderRung, type LadderState } from ".
 import { UNTRACKED_COLLATERAL, type Valuation } from "../engine/valuation.js";
 import type { Logger } from "../log.js";
 import { eventNow, type KeeperEvent, type Notifier } from "../notify/notifier.js";
+import type { AccountValuation } from "../engine/venueValuation.js";
 import { readTickContexts, valueAccount, type TickContexts } from "../services/accountValuer.js";
 import type { AaveReader } from "../services/chain.js";
 import type { AccountDiscovery } from "../services/discovery.js";
@@ -118,6 +119,8 @@ export class HealthMonitor {
   private headFailures = 0;
   /** Dispatch keys this tick already acted on — never re-armed in the same pass. */
   private handledThisTick = new Set<string>();
+  /** Accounts already told about a live venue/feed price disagreement; cleared on a tick that reads none. */
+  private readonly disagreementTold = new Set<string>();
 
   constructor(private readonly d: MonitorDeps) {
     validateLadder(d.ladder);
@@ -137,6 +140,24 @@ export class HealthMonitor {
     } catch {
       // MultiNotifier already logged it at error. Delivery must never break a tick.
     }
+  }
+
+  /**
+   * RISKS.md §8 residual (b), policy set 2026-09-10. A venue whose oracle disagrees with the keeper's
+   * feed is valued at the PESSIMISTIC health (so the ladder below still runs) and the owner is told
+   * once per episode, at warn level; every tick it persists is logged. Nothing here gates an action.
+   */
+  private async noteDisagreements(account: Address, av: AccountValuation, l: Logger): Promise<void> {
+    const key = account.toLowerCase();
+    if (av.oracleDisagreements.length === 0) {
+      this.disagreementTold.delete(key);
+      return;
+    }
+    const reasons = av.oracleDisagreements.flatMap((d) => d.disagreement.reasons);
+    l.warn("venue/feed price disagreement — protecting at the pessimistic health; a withdrawal would be refused", { reasons });
+    if (this.disagreementTold.has(key)) return;
+    this.disagreementTold.add(key);
+    await this.emit({ kind: "oracle-disagreement", severity: "warn", account, reasons, detail: { venues: av.oracleDisagreements.map((d) => d.venue) } });
   }
 
   private async escalate(account: Address, reasons: string[], streak: number, kind: KeeperEvent["kind"] = "escalation"): Promise<void> {
@@ -499,6 +520,7 @@ export class HealthMonitor {
           combined: valuation.kind,
         });
       }
+      await this.noteDisagreements(rec.account, av, l);
     } catch (e) {
       if (e instanceof AbortedError || handle.signal.aborted) throw e;
       valuation = { kind: "UNKNOWN", reasons: [`read failed: ${errMsg(e)}`] };

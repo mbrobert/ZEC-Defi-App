@@ -11,6 +11,7 @@ import {
   withinBps,
   type AccountSnapshot,
   type CollateralShare,
+  type OracleDisagreement,
   type Valuation,
   type ValuationParams,
 } from "./valuation.js";
@@ -50,6 +51,15 @@ import {
  *                      collateral (Morpho's "my oracle is unreadable" answer, M-MED-2) and an HF above
  *                      the sanity bound are absurd.
  *
+ * A PRICE disagreement (V4's band, and only that) is not UNKNOWN — RISKS.md §8 residual (b), policy
+ * set 2026-09-10. The verdict is OK at the PESSIMISTIC of the two views: the venue's own HF when its
+ * oracle is the pessimist, the feed-implied floor when the venue is the optimist. A protective
+ * repay / derisk / emergency is then sized and fired against that figure instead of the account
+ * sitting UNKNOWN through a depeg the venue's oracle cannot see. The verdict carries
+ * `oracleDisagreement`; `valuationForWithdraw` turns it back into UNKNOWN for any path that would
+ * withdraw collateral (the keeper has none; the owner's Close does), and the dashboard shows the
+ * account as unreadable, never as healthy.
+ *
  * The combined verdict is the WORST venue: UNKNOWN if any venue is UNKNOWN (fail closed — an
  * unreadable previous venue may hold the debt), NO_DEBT only if every venue says so, else OK with
  * the lowest health factor and THAT venue's shares, so the dispatcher sizes a repay against the
@@ -76,6 +86,26 @@ export interface AccountValuation {
   aave: Valuation;
   /** Per-venue verdicts; null when the keeper runs without a registry (no router configured). */
   venues: VenueVerdict[] | null;
+  /**
+   * Every venue whose oracle disagrees with the keeper's feed this tick (residual (b)). Empty is the
+   * normal case. Non-empty: `valuation` is pessimistic, the owner is told, and
+   * `valuationForWithdraw` is UNKNOWN.
+   */
+  oracleDisagreements: { venue: Address; disagreement: OracleDisagreement }[];
+}
+
+/**
+ * The verdict a path that WITHDRAWS collateral must use. A venue whose price is disputed may be
+ * about to liquidate at a price the keeper cannot see, or may be undervaluing what it holds; either
+ * way collateral does not leave it on a guess. The keeper never withdraws (`policy.ts`,
+ * `withdrawAmount: 0`); this is the rule the owner's Close and any future path must apply.
+ */
+export function valuationForWithdraw(av: AccountValuation): Valuation {
+  if (av.oracleDisagreements.length === 0) return av.valuation;
+  return {
+    kind: "UNKNOWN",
+    reasons: av.oracleDisagreements.flatMap((d) => d.disagreement.reasons.map((r) => `withdraw refused — ${r}`)),
+  };
 }
 
 export interface VenueValuationInput {
@@ -164,31 +194,48 @@ function evaluateOtherVenue(read: VenueAccountRead, spec: VenueContext["venues"]
   const upper = (sumA * WAD) / (debtBase * BPS);
   const lower = (minA * WAD) / (debtBase * BPS);
   const hf = read.healthFactorWad;
+  const disagreement: string[] = [];
+  let direction: OracleDisagreement["direction"] | null = null;
   if (hf > upper && !withinBps(hf, upper, p.oracleDeviationBps)) {
-    reasons.push(
-      `V4 ${tag}: venue HF ${hf} above the feed-implied ceiling ${upper} by more than ${p.oracleDeviationBps} bps — the venue's oracle values the collateral higher than the keeper's Chainlink feed does; refusing to trust the venue's health`
+    direction = "venue-optimistic";
+    disagreement.push(
+      `V4 ${tag}: venue HF ${hf} above the feed-implied ceiling ${upper} by more than ${p.oracleDeviationBps} bps — the venue's oracle values the collateral higher than the keeper's Chainlink feed does; protecting at the feed-implied floor ${lower}, refusing any withdrawal`
     );
   }
   if (hf < lower && !withinBps(hf, lower, p.oracleDeviationBps)) {
-    reasons.push(
-      `V4 ${tag}: venue HF ${hf} below the feed-implied floor ${lower} by more than ${p.oracleDeviationBps} bps — the venue's oracle values the collateral lower than the keeper's Chainlink feed does; refusing to guess which is right`
+    direction = "venue-pessimistic";
+    disagreement.push(
+      `V4 ${tag}: venue HF ${hf} below the feed-implied floor ${lower} by more than ${p.oracleDeviationBps} bps — the venue's oracle values the collateral lower than the keeper's Chainlink feed does; protecting at the venue's own ${hf}, refusing any withdrawal`
     );
   }
-  if (reasons.length) return { kind: "UNKNOWN", reasons };
+
+  // Residual (b) policy (2026-09-10): a price disagreement is acted on at the PESSIMISTIC of the
+  // two views — the venue's own HF when its oracle is the pessimist, the feed-implied floor when
+  // the venue is the optimist — never left UNKNOWN, never trusted at the optimist's figure. The
+  // shares are re-scaled so Σ(value × LT) / D reproduces that figure: a repay sized from this
+  // verdict lifts the PESSIMISTIC health to the rung's disarm.
+  const pessimisticWad = direction === null ? hf : hf < lower ? hf : lower;
+  if (direction !== null && upper > 0n) {
+    for (const s of shares) s.valueBase = (s.valueBase * pessimisticWad) / upper;
+    collateralBase = shares.reduce((acc, s) => acc + s.valueBase, 0n);
+  }
 
   shares.sort((a, b) => (b.valueBase > a.valueBase ? 1 : b.valueBase < a.valueBase ? -1 : 0));
-  const hfNumber = hfToNumber(hf);
+  const hfNumber = hfToNumber(pessimisticWad);
   if (!Number.isFinite(hfNumber) || hfNumber <= 0) return { kind: "UNKNOWN", reasons: [`V4 ${tag}: HF not a finite positive number`] };
   return {
     kind: "OK",
     hf: hfNumber,
-    hfWad: hf,
+    hfWad: pessimisticWad,
     debtBase,
     collateralBase,
     collateral: shares,
     // The venue's own debt, priced at the keeper's USDC feed — what a repay is sized against.
     debt: [{ asset: input.usdc.asset, symbol: "USDC", decimals: input.usdc.decimals, amount: read.debtUsdc, price8: usdcPrice8, valueBase: debtBase }],
     dominantCollateral: shares[0],
+    ...(direction !== null
+      ? { oracleDisagreement: { venueHfWad: hf, impliedFloorWad: lower, impliedCeilingWad: upper, direction, reasons: disagreement } }
+      : {}),
   };
 }
 
@@ -248,14 +295,17 @@ export function evaluateVenues(input: VenueValuationInput, p: ValuationParams): 
   const parts: Valuation[] = [input.aave, ...verdicts.filter((v) => v.kind !== "aave").map((v) => v.valuation)];
   for (const v of verdicts) if (v.kind === "aave" && v.valuation.kind === "UNKNOWN") parts.push(v.valuation);
   for (const v of parts) if (v.kind === "UNKNOWN") reasons.push(...v.reasons);
-  if (reasons.length) return { valuation: { kind: "UNKNOWN", reasons: [...new Set(reasons)] }, aave: input.aave, venues: verdicts };
+  const oracleDisagreements = verdicts.flatMap((v) =>
+    v.valuation.kind === "OK" && v.valuation.oracleDisagreement ? [{ venue: v.venue, disagreement: v.valuation.oracleDisagreement }] : []
+  );
+  if (reasons.length) return { valuation: { kind: "UNKNOWN", reasons: [...new Set(reasons)] }, aave: input.aave, venues: verdicts, oracleDisagreements };
 
   const oks = parts.filter((v): v is Extract<Valuation, { kind: "OK" }> => v.kind === "OK");
   if (oks.length === 0) {
     const collateralBase = parts.reduce((acc, v) => acc + (v.kind === "NO_DEBT" ? v.collateralBase : 0n), 0n);
-    return { valuation: { kind: "NO_DEBT", collateralBase }, aave: input.aave, venues: verdicts };
+    return { valuation: { kind: "NO_DEBT", collateralBase }, aave: input.aave, venues: verdicts, oracleDisagreements };
   }
   let worst = oks[0];
   for (const v of oks) if (v.hfWad < worst.hfWad) worst = v;
-  return { valuation: worst, aave: input.aave, venues: verdicts };
+  return { valuation: worst, aave: input.aave, venues: verdicts, oracleDisagreements };
 }

@@ -58,16 +58,16 @@ export async function readTickContexts(v: Valuer, signal?: AbortSignal): Promise
 export async function valueAccount(v: Valuer, account: Address, ctx: TickContexts, head: bigint, params: ValuationParams, signal?: AbortSignal): Promise<AccountValuation> {
   const snap = await v.reader.readAccount(account, ctx.reserves, head, signal);
   const aave = evaluateSnapshot(snap, params);
-  if (!v.venues) return { valuation: aave, aave, venues: null };
+  if (!v.venues) return { valuation: aave, aave, venues: null, oracleDisagreements: [] };
   if (ctx.venueError !== null || !ctx.venues) {
-    return { valuation: { kind: "UNKNOWN", reasons: [`V1 registry: venue context unreadable this tick (${ctx.venueError ?? "no context"}) — cannot tell where this account's collateral sits`] }, aave, venues: [] };
+    return { valuation: { kind: "UNKNOWN", reasons: [`V1 registry: venue context unreadable this tick (${ctx.venueError ?? "no context"}) — cannot tell where this account's collateral sits`] }, aave, venues: [], oracleDisagreements: [] };
   }
   let venueSnap;
   try {
     venueSnap = await v.venues.readAccount(account, ctx.venues, signal);
   } catch (e) {
     if (e instanceof AbortedError || signal?.aborted) throw e;
-    return { valuation: { kind: "UNKNOWN", reasons: [`V1 venue reads failed: ${errMsg(e)}`] }, aave, venues: [] };
+    return { valuation: { kind: "UNKNOWN", reasons: [`V1 venue reads failed: ${errMsg(e)}`] }, aave, venues: [], oracleDisagreements: [] };
   }
   const usdcSpec = v.reader.reserveSpecs.find((s) => s.asset.toLowerCase() === v.venues!.usdc.toLowerCase());
   return evaluateVenues(

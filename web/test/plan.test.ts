@@ -232,6 +232,17 @@ test("unwind: not signable without a REAL quote; encode = execWithCallback(route
   assert.equal(p.withdrawAmount, 2n ** 256n - 1n);
 });
 
+test("residual (b): a Close that would withdraw collateral is refused while a venue's price is disputed — not signable, says why, and encode throws by name", () => {
+  const reason = "venue 0xdddd…dddd reports HF 2.50 but the prices this app reads imply at most 1.72 — its oracle values the collateral higher";
+  const quoted = { account: ACCOUNT, positionIds: [42n], collateral: "WETH" as const, deployment: LIVE, deadline: 1_800_000_000, bandToleranceBps: 100, quote: QUOTE };
+  const plan = buildUnwindPlan({ ...quoted, withdrawRefusedReason: reason });
+  assert.equal(plan[0].encodable, false);
+  assert.ok(plan[0].args.some((a) => a.name === "withdrawAmount" && a.value.startsWith("refused — ") && a.value.includes("imply at most 1.72")), JSON.stringify(plan[0].args));
+  assert.throws(() => encodeUnwindWrite({ ...quoted, withdrawRefusedReason: reason }, BAND), /withdraw refused — venue 0xdddd/);
+  // …and with no dispute the same plan is signable, as before.
+  assert.equal(buildUnwindPlan({ ...quoted, withdrawRefusedReason: null })[0].encodable, true);
+});
+
 test("a swap quote that means 'accept anything' cannot be built or encoded", () => {
   const bad = { account: ACCOUNT, positionIds: [42n], collateral: "WETH" as const, deployment: LIVE, deadline: 1_800_000_000, bandToleranceBps: 100 };
   // quotedOut 0 / quotedIn 0 — the shapes the old `: 1n` fallback degraded into.
