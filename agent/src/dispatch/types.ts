@@ -1,5 +1,5 @@
 import type { Valuation } from "../engine/valuation.js";
-import type { DispatchRecord } from "../store/keeperStore.js";
+import type { DispatchRecord, VenueBook } from "../store/keeperStore.js";
 
 export type OkValuation = Extract<Valuation, { kind: "OK" }>;
 
@@ -21,7 +21,7 @@ export interface DispatchIntent {
    * to replay the action and close a further slice of the user's LP
    * (audit C-MED-1). Rejecting here fails the dispatch closed.
    */
-  persistBeforeSend?: (info: { nonce?: number; closeIds: bigint[] }) => Promise<void>;
+  persistBeforeSend?: (info: { nonce?: number; closeIds: bigint[]; venueBooks?: VenueBook[] }) => Promise<void>;
   /** Surface the on-chain grant (expiry included) to the caller for the store. */
   onGrantRead?: (g: GrantSnapshot) => void;
 }
@@ -35,7 +35,11 @@ export type DispatchResult =
    */
   | { status: "LOGGED_ONLY"; reason: string }
   | { status: "SENT"; txHash: `0x${string}` }
-  | { status: "CONFIRMED"; txHash: `0x${string}` }
+  /**
+   * `note` is set when the receipt is an honest SHORTFALL (slice 5): the worse book was paid, the
+   * account's USDC ran out, a book it owed at dispatch was left for the retry. Confirmed, but said.
+   */
+  | { status: "CONFIRMED"; txHash: `0x${string}`; note?: string }
   /**
    * `permanent` marks a refusal only the USER can clear — no grant, a grant
    * without `allowCallback`, a budget spent. Retrying it is noise; the monitor

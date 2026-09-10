@@ -215,11 +215,21 @@ the router already knew every venue and read each one's debt; the same
 worst-first rule already governs `MorphoBlueVenue.repay` across its markets;
 the signed grant's `unwind` selector does not move; the web's Close needs no
 venue picker a Simple-mode user would have to understand; and the owner's
-Close now clears both books in one transaction. What it costs: a two-book
-account whose USDC runs out on the worse book leaves the healthier one
-untouched, and that receipt is FAILED (the message says the account ran dry);
-the retry re-values the account and is SUPERSEDED once the worse book sits
-above the rung's disarm — one warn-level event, no second transaction. A repay
+Close now clears both books in one transaction. What it costs, and how it is
+told apart (slice 5, 2026-09-10): the dispatcher persists every book the
+account has — venue, USDC owed, health factor — right before the broadcast
+(`DispatchRecord.venueBooks`), and `confirm()` judges an untouched venue
+against that snapshot (`judgeUntouched`). A two-book account whose USDC runs
+out on the worse book leaves the healthier one untouched: with the snapshot
+proving that book was the worse one and the USDC gone, the receipt is
+CONFIRMED with a shortfall note, and the retry's world check re-values the
+account — SUPERSEDED once the worse book sits above the rung's disarm, one
+warn-level event, no second transaction. A book owed at dispatch and skipped
+while USDC remained, USDC that reached a book the keeper never sized, debt on
+a venue that owed nothing at dispatch, or a balance that cannot be re-read
+after the receipt are FAILED; `repaid == 0`, "no event" and venues that
+cannot be re-read stay FAILED; a record without a snapshot keeps the stricter
+2026-09-09 rule (an untouched venue is never confirmed). A repay
 is only ever as wide as the asset the rung named: a venue that the dominant
 collateral's registry history does not name is out of that call's reach, and
 the same rule reports it FAILED rather than CONFIRMED. Tests:

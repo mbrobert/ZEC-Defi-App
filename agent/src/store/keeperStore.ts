@@ -174,8 +174,24 @@ export interface DispatchRecord {
   sentNonce?: number;
   /** Ids the plan intended to close, persisted with the key. */
   closeIds?: string[];
+  /**
+   * Every venue the registry names for the account, with what the account owed there and its
+   * health factor there, read right before the broadcast (slice 5, 2026-09-10). `confirm()` judges
+   * a venue the receipt left untouched against THIS: owed here at dispatch, USDC exhausted and every
+   * book that was paid no healthier than it → an honest shortfall (CONFIRMED with a note); owed
+   * here and skipped with USDC left, or owing now but not here → FAILED. Absent on a record from
+   * before this build or a dispatch without a venue reader, when the older, stricter rule applies.
+   */
+  venueBooks?: VenueBook[];
   /** Times this record wedged a tick. Quarantined at the cap. */
   stalls?: number;
+}
+
+/** One venue's book for the account at dispatch time; bigints as decimal strings (JSON). */
+export interface VenueBook {
+  venue: Address;
+  debtUsdc: string;
+  hfWad: string;
 }
 
 export interface StoreState {
@@ -319,6 +335,15 @@ export function validateState(doc: unknown): StoreState {
     if (!isNonNegInt(d.attempts)) throw new StoreError(`dispatch ${d.key}: attempts malformed`);
     if (d.txHash !== undefined && !(typeof d.txHash === "string" && /^0x[0-9a-fA-F]{64}$/.test(d.txHash))) {
       throw new StoreError(`dispatch ${d.key}: txHash malformed`);
+    }
+    if (d.venueBooks !== undefined) {
+      if (!Array.isArray(d.venueBooks)) throw new StoreError(`dispatch ${d.key}: venueBooks malformed`);
+      for (const b of d.venueBooks as unknown[]) {
+        const digits = (x: unknown) => typeof x === "string" && /^\d+$/.test(x);
+        if (!isRecord(b) || typeof b.venue !== "string" || !isAddress(b.venue) || !digits(b.debtUsdc) || !digits(b.hfWad)) {
+          throw new StoreError(`dispatch ${d.key}: venueBooks entry malformed`);
+        }
+      }
     }
   }
   return doc as unknown as StoreState;
@@ -906,7 +931,7 @@ export class KeeperStore {
 
   updateDispatch(
     key: string,
-    patch: Partial<Pick<DispatchRecord, "status" | "txHash" | "attempts" | "error" | "sentNonce" | "closeIds" | "stalls">>,
+    patch: Partial<Pick<DispatchRecord, "status" | "txHash" | "attempts" | "error" | "sentNonce" | "closeIds" | "venueBooks" | "stalls">>,
     now: Date
   ): Promise<DispatchRecord> {
     return this.mutate((s) => {

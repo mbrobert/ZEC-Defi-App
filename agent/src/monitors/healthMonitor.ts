@@ -10,6 +10,7 @@ import type { AccountDiscovery } from "../services/discovery.js";
 import { AbortedError, DeadlineError, mapBounded, withDeadline } from "../services/deadline.js";
 import type { VenueReader } from "../services/venues.js";
 import { DuplicateIdError, isFatalStoreError, KeeperStore, type AccountRecord, type DispatchRecord } from "../store/keeperStore.js";
+import type { VenueBook } from "../store/keeperStore.js";
 import type { Address } from "../types/evm.js";
 import type { TickHandle } from "../watchdog.js";
 
@@ -432,11 +433,11 @@ export class HealthMonitor {
     await this.escalate(rec.account, [`dispatch ${rec.key} quarantined after ${stalls} stalls — rung ${rec.rung} re-armed`], stalls);
   }
 
-  private preSend(rec: DispatchRecord): (info: { nonce?: number; closeIds: bigint[] }) => Promise<void> {
+  private preSend(rec: DispatchRecord): (info: { nonce?: number; closeIds: bigint[]; venueBooks?: VenueBook[] }) => Promise<void> {
     return async (info) => {
       await this.d.store.updateDispatch(
         rec.key,
-        { sentNonce: info.nonce, closeIds: info.closeIds.map(String) },
+        { sentNonce: info.nonce, closeIds: info.closeIds.map(String), ...(info.venueBooks ? { venueBooks: info.venueBooks } : {}) },
         this.now()
       );
     };
@@ -775,6 +776,7 @@ export class HealthMonitor {
       case "CONFIRMED":
         patch.status = "CONFIRMED";
         patch.txHash = result.txHash;
+        if (result.note) l.warn("dispatch confirmed with a shortfall — the retry's world check follows up", { key: record.key, note: result.note });
         break;
       case "REFUSED":
         patch.status = "REFUSED";
@@ -803,7 +805,7 @@ export class HealthMonitor {
         key: record.key,
         status: result.status,
         txHash: "txHash" in result ? result.txHash : undefined,
-        reasons: "reason" in result ? [result.reason] : "error" in result ? [result.error] : undefined,
+        reasons: "reason" in result ? [result.reason] : "error" in result ? [result.error] : "note" in result && result.note ? [result.note] : undefined,
       });
     }
     if (result.status === "REFUSED" && result.permanent) {

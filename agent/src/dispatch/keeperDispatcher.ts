@@ -27,7 +27,7 @@ import { readTickContexts, valueAccount } from "../services/accountValuer.js";
 import type { AaveReader } from "../services/chain.js";
 import { withDeadline } from "../services/deadline.js";
 import type { VenueReader } from "../services/venues.js";
-import type { DispatchRecord } from "../store/keeperStore.js";
+import type { DispatchRecord, VenueBook } from "../store/keeperStore.js";
 import type { Address } from "../types/evm.js";
 import { planAction, type KeeperCall, type PlannedPosition, type PoolInfo } from "./policy.js";
 import { quoteForPool, NO_SWAP, type SwapQuote } from "./quote.js";
@@ -173,6 +173,66 @@ export function summarizeUnwinds(
     out.byVenue.set(k, (out.byVenue.get(k) ?? 0n) + (a.repaid ?? 0n));
   }
   return out;
+}
+
+/**
+ * The rule confirm() applies to a venue the receipt left untouched (slice 5, 2026-09-10). Pure, so
+ * it is testable on its own. With a dispatch-time snapshot of every book:
+ *   • a venue owing now that owed nothing then (or was not in the snapshot) → not this receipt's
+ *     to confirm; a venue paid that was not in the snapshot → the keeper acted on a book it never
+ *     sized; the USDC balance unreadable → cannot tell a shortfall from a skip. All FAILED.
+ *   • USDC left in the account → a book owed at dispatch was skipped → FAILED (wrong book).
+ *   • USDC exhausted and every book paid no healthier at dispatch than every book left →
+ *     an honest shortfall: CONFIRMED, with a note the retry's world check follows up on.
+ * Without a snapshot the older rule stands: an untouched venue is never confirmed.
+ */
+export function judgeUntouched(
+  books: readonly VenueBook[] | undefined,
+  byVenue: ReadonlyMap<string, bigint>,
+  untouched: readonly { venue: Address; debtUsdc: bigint }[],
+  heldAfter: bigint | null
+): { honest: true; note: string } | { honest: false; why: string } {
+  const left = untouched.map((u) => `${u.venue} (${u.debtUsdc} USDC still owed)`).join(", ");
+  if (!books) {
+    return {
+      honest: false,
+      why:
+        heldAfter === 0n
+          ? "the account's USDC ran out on the worse book, but this dispatch carries no per-venue snapshot to prove that book was the worse one — not confirmed; the retry re-values the account and continues"
+          : "the repay reached another book than the one this account still owes — not a protection of that debt",
+    };
+  }
+  const snap = new Map(books.map((b) => [b.venue.toLowerCase(), { debt: BigInt(b.debtUsdc), hf: BigInt(b.hfWad) }]));
+  for (const u of untouched) {
+    const at = snap.get(u.venue.toLowerCase());
+    if (!at || at.debt === 0n) {
+      return { honest: false, why: `USDC debt on ${u.venue} that owed nothing when this dispatch was sized (${at ? "0" : "not in the snapshot"}) — not this receipt's to confirm` };
+    }
+  }
+  for (const [v, amt] of byVenue) {
+    if (amt > 0n && !snap.has(v.toLowerCase())) return { honest: false, why: `the repay reached ${v}, a venue that was not in the dispatch-time snapshot — a book the keeper never sized took USDC` };
+  }
+  if (heldAfter === null) return { honest: false, why: "the account's USDC balance could not be read after the receipt, so a shortfall cannot be told from a skipped book" };
+  if (heldAfter > 0n) {
+    return { honest: false, why: `the repay reached another book than the one this account still owes while ${heldAfter} USDC remained in the account — a book owed at dispatch was skipped, not a protection of that debt` };
+  }
+  let worstLeft: { venue: Address; hf: bigint } | null = null;
+  for (const u of untouched) {
+    const hf = snap.get(u.venue.toLowerCase())!.hf;
+    if (!worstLeft || hf < worstLeft.hf) worstLeft = { venue: u.venue, hf };
+  }
+  for (const [v, amt] of byVenue) {
+    if (amt === 0n) continue;
+    const hf = snap.get(v.toLowerCase())!.hf;
+    if (worstLeft && hf > worstLeft.hf) {
+      return {
+        honest: false,
+        why: `the repay went to ${v} (HF ${hf} at dispatch) before ${worstLeft.venue} (HF ${worstLeft.hf} at dispatch), the book in more trouble — the wrong book, not a shortfall`,
+      };
+    }
+  }
+  const paid = [...byVenue].filter(([, amt]) => amt > 0n).map(([v, amt]) => `${v} ${amt}`).join(", ");
+  return { honest: true, note: `USDC ran out on the worse book (${paid}); ${left} was owed at dispatch and is left for the retry — an honest shortfall, not a wrong book` };
 }
 
 export interface GrantState {
@@ -376,7 +436,10 @@ export class KeeperDispatcher implements Dispatcher {
       return { status: "FAILED", error: `simulation failed: ${rv ? `${rv.name}(${rv.args.join(",")})` : errMsg(e)}` };
     }
 
-    // 6. Persist what we are about to broadcast BEFORE broadcasting it.
+    // 6. Persist what we are about to broadcast BEFORE broadcasting it — the nonce, the ids, and
+    //    every book the account has right now (slice 5), which is what confirm() judges an
+    //    untouched venue against. A snapshot that cannot be read is a dispatch that cannot be
+    //    judged: fail closed before the send, not after.
     let nonce: number | undefined;
     try {
       nonce = await this.call("getTransactionCount", signal, () =>
@@ -385,9 +448,15 @@ export class KeeperDispatcher implements Dispatcher {
     } catch {
       nonce = undefined;
     }
+    let venueBooks: VenueBook[] | undefined;
+    try {
+      venueBooks = (await this.readBooks(account, signal)) ?? undefined;
+    } catch (e) {
+      return { status: "REFUSED", reason: `cannot snapshot the account's books before sending (fail closed): ${errMsg(e)}` };
+    }
     if (intent.persistBeforeSend) {
       try {
-        await intent.persistBeforeSend({ nonce, closeIds: plan.closeIds });
+        await intent.persistBeforeSend({ nonce, closeIds: plan.closeIds, venueBooks });
       } catch (e) {
         // Without the pre-send record a crash could replay the action: fail closed.
         return { status: "REFUSED", reason: `could not persist pre-send state (fail closed): ${errMsg(e)}` };
@@ -483,15 +552,19 @@ export class KeeperDispatcher implements Dispatcher {
         };
       }
       if (where.untouched.length) {
+        // Slice 5: judged against the books persisted at dispatch. An honest shortfall (the worse
+        // book paid, USDC exhausted, a book owed then left for the retry) is CONFIRMED and said;
+        // a skipped book, or debt on a venue that owed nothing at dispatch, is FAILED.
         const reached = [...moved.byVenue].map(([v, amt]) => `${v} ${amt}`).join(", ") || "no venue named";
         const left = where.untouched.map((u) => `${u.venue} (${u.debtUsdc} USDC still owed)`).join(", ");
-        const why = where.heldAfter === 0n
-          ? "the account's USDC ran out on the worse book, so this receipt is not a protection of that debt; the retry re-values the account and continues"
-          : "the repay reached another book than the one this account still owes — not a protection of that debt";
-        return {
-          status: "FAILED",
-          error: `transaction ${record.txHash} succeeded and repaid ${moved.repaid} (${reached}) but left USDC debt untouched on ${left}: ${why}`,
-        };
+        const verdict = judgeUntouched(record.venueBooks, moved.byVenue, where.untouched, where.heldAfter);
+        if (!verdict.honest) {
+          return {
+            status: "FAILED",
+            error: `transaction ${record.txHash} succeeded and repaid ${moved.repaid} (${reached}) but left USDC debt untouched on ${left}: ${verdict.why}`,
+          };
+        }
+        return { status: "CONFIRMED", txHash: record.txHash, note: verdict.note };
       }
       return { status: "CONFIRMED", txHash: record.txHash };
     }
@@ -571,6 +644,24 @@ export class KeeperDispatcher implements Dispatcher {
       }
     }
     return { unreadable: null, untouched, heldAfter };
+  }
+
+  /**
+   * Every venue the registry names for the account, with the USDC it owes there and its health
+   * factor there — the dispatch-time snapshot `confirm()` judges an untouched venue against.
+   * `null` without a venue reader (the Aave-only shape has no registry to ask); throws when the
+   * registry or a venue cannot be read, and the dispatch fails closed on that.
+   */
+  private async readBooks(account: Address, signal?: AbortSignal): Promise<VenueBook[] | null> {
+    if (!this.d.venues) return null;
+    const ctx = await this.d.venues.readContext(signal);
+    const snap = await this.d.venues.readAccount(account, ctx, signal);
+    const problems = [
+      ...ctx.unreadableAssets.map((u) => `registry ${u.symbol}: ${u.reason}`),
+      ...snap.unreadable.map((u) => `venue ${u.venue}: ${u.reason}`),
+    ];
+    if (problems.length) throw new Error(problems.join("; "));
+    return snap.venues.map((v) => ({ venue: v.venue, debtUsdc: v.debtUsdc.toString(), hfWad: v.healthFactorWad.toString() }));
   }
 
   async readGrant(account: Address, target: Address, selector: Hex, signal?: AbortSignal): Promise<GrantState> {

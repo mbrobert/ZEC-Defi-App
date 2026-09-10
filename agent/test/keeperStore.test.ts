@@ -289,4 +289,29 @@ describe("keeper store — counters and episodes", () => {
     assert.equal(s.listDispatches({ account: ACCOUNT_B }).length, 0);
     await s.close();
   });
+
+  it("slice 5: the per-venue snapshot persists on the dispatch record, survives reopen, and a malformed entry is refused on load", async () => {
+    const path = fresh();
+    const s = new KeeperStore(path);
+    await s.open();
+    await s.registerAccount({ account: ACCOUNT_A, owner: OWNER_A, discoveredAtBlock: 1n }, NOW);
+    const ep = await s.beginEpisode(ACCOUNT_A);
+    const d = await s.createDispatch({ account: ACCOUNT_A, episode: ep, action: "repay", rung: "repay", hf: 1.3 }, NOW);
+    const books = [
+      { venue: ACCOUNT_B, debtUsdc: "47760000000", hfWad: "1300000000000000000" },
+      { venue: OWNER_B, debtUsdc: "0", hfWad: "115792089237316195423570985008687907853269984665640564039457584007913129639935" },
+    ];
+    await s.updateDispatch(d.key, { sentNonce: 7, closeIds: ["1"], venueBooks: books }, NOW);
+    await s.close();
+    const again = new KeeperStore(path);
+    await again.open();
+    assert.deepEqual(again.getDispatch(d.key)?.venueBooks, books, "read back exactly as written");
+    await again.close();
+    // A snapshot entry that is not {address, digits, digits} is a corrupt store, not a default.
+    const doc = JSON.parse(await readFile(path, "utf8"));
+    doc.dispatches[0].venueBooks = [{ venue: ACCOUNT_B, debtUsdc: "12.5", hfWad: "1" }];
+    assert.throws(() => validateState(doc), /venueBooks entry malformed/);
+    doc.dispatches[0].venueBooks = "nope";
+    assert.throws(() => validateState(doc), /venueBooks malformed/);
+  });
 });

@@ -18,7 +18,7 @@ MC = Monte Carlo.
 | Contracts, fork | `FORK_URL=<Base RPC> forge test --match-path test/fork/BaseFork.t.sol -vv` | 8 tests; **skipped without `FORK_URL`** (`vm.skip`), reported as skipped, never as passed. **Run against Base mainnet on 2026-09-10 at block 51,127,409 (public RPC, founder's Mac, Foundry 1.8.1): 4 passed / 4 failed / 0 skipped** — the same 4 + 4 as the founder's 2026-09-07 run at block 51,001,138. What each failure means is in `VERIFIED-BASE-FACTS.md` Addendum 3 and `RISKS.md` §8, §11, §12: cbZEC's B20 native contract cannot execute inside a fork EVM (`OpcodeNotFound` on code `0xef`, harness limitation); the live engine's end-of-list revert is empty `0x`, so `positionsOf` reverts `EnumerationFailed(0x)` against the live engine; the engine's first active WETH/USDC entry is a stub whose position adapter reverts `NotImplemented()` (`0xd6234725`); Aave's scaled-balance rounding reads 1 unit under on the aToken and 1 unit over on the debt (the collateral assertion was widened to ±1; the repay then fails on the +1 because the fixture funds exactly the borrow). No product code was changed to make any of them green |
 | Root ABI seam | `node scripts/verify-abi.mjs` | **327** selectors / topics / errors across 17 contracts match `contracts/abi/oilskin-abi.json`; `--write` regenerates; exit 1 on drift |
 | Shared | `npm test -w @zyo/shared` | **53** (7 files: evm, base, health, collateral, fees, width, pools) |
-| Keeper | `npm test -w @zyo/agent` | tsc + its own `verify-abi` **72/72** (pins `CollateralRegistry`, `AaveV3Venue`, the `ICollateralVenue` fragments against the interface and `MorphoBlueVenue`, and since 2026-09-09 `StrategyRouter.VenueRepaid`) + **224 tests / 45 suites** (2026-09-10 slice 4, residual (b): +3 in `venueReader.test.ts`) (~30 s; 2026-09-09: +6 `dispatcher.test.ts` "RISKS §8 residual (a)" on top of the venue-aware reader's +23 `venueReader.test.ts`, `venueGuard.test.ts` 6 → 8) |
+| Keeper | `npm test -w @zyo/agent` | tsc + its own `verify-abi` **72/72** (pins `CollateralRegistry`, `AaveV3Venue`, the `ICollateralVenue` fragments against the interface and `MorphoBlueVenue`, and since 2026-09-09 `StrategyRouter.VenueRepaid`) + **230 tests / 45 suites** (2026-09-10: slice 4 residual (b) +3 in `venueReader.test.ts`; slice 5 per-venue snapshot +5 in `dispatcher.test.ts`, +1 in `keeperStore.test.ts`) (~30 s; 2026-09-09: +6 `dispatcher.test.ts` "RISKS §8 residual (a)" on top of the venue-aware reader's +23 `venueReader.test.ts`, `venueGuard.test.ts` 6 → 8) |
 | Yield | `npm test -w @zyo/yield` | tsc + **131 tests** (17 files; RPC mocked at the JSON-RPC boundary with recorded chain words) |
 | Web, unit | `npm test -w @zyo/web` | **148 tests, 146 passed, 2 skipped** (15 files; the two skips predate the wave-2 round; 2026-09-09: +6 venue-aware `reads` tests; 2026-09-10 slice 4: +3 residual (b) `reads` tests and +1 `plan` test — a venue whose price is disputed is unreadable and its Close is refused); the ABI-drift test and both model-number pins *ran* |
 | Web, e2e | `cd web && PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npx playwright test` | **12 passed / 0 failed** (6 scenarios × desktop-1360 / phone-390), zero console errors asserted |
@@ -109,10 +109,15 @@ only when a channel accepted it), `fixC9-crash-replay` (a replay after a lost
 transaction closes *less*, not more).
 
 `RISKS.md` §8 residual (a) is the `dispatcher.test.ts` block "RISKS §8 residual
-(a)" (6): the 2026-09-08 router's receipt — the healthy Morpho book repaid, the
+(a)" (11): the 2026-09-08 router's receipt — the healthy Morpho book repaid, the
 Aave debt riding — is FAILED naming the Aave venue; the fixed router's receipt
 carries one `VenueRepaid` per book, worst first, and is CONFIRMED; USDC running
-out on the worse book is FAILED ("ran dry") and the retry is SUPERSEDED; the
+out on the worse book is CONFIRMED with a shortfall note when the dispatch-time
+per-venue snapshot (`DispatchRecord.venueBooks`, slice 5, 2026-09-10) proves the
+worse book was paid, and the retry is SUPERSEDED — FAILED without a snapshot, FAILED
+as the wrong book when a book owed at dispatch was skipped with USDC left or paid
+before the book in more trouble, FAILED for debt on a venue that owed nothing at
+dispatch (`judgeUntouched`, also pinned pure); the
 Aave-only shape with the reader on is CONFIRMED; a receipt naming no venue, and
 venues unreadable at confirm time, are FAILED. The mock router models the fixed
 rule, with `repayFirstHoldingVenueOnly` for the old one.

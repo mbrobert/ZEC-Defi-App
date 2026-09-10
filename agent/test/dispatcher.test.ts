@@ -6,7 +6,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { base } from "viem/chains";
 import { HF_LADDER } from "@zyo/shared";
 import { GRANT_SELECTORS, strategyRouterAbi } from "../src/abi/oilskin.js";
-import { KeeperDispatcher, summarizeUnwinds } from "../src/dispatch/keeperDispatcher.js";
+import { KeeperDispatcher, summarizeUnwinds, judgeUntouched } from "../src/dispatch/keeperDispatcher.js";
 import { CLOSE_FRACTION, bandFor, closeCount, isqrt, planAction, selectIds, type PoolInfo } from "../src/dispatch/policy.js";
 import { NO_SWAP, quoteForPool, minOutFor } from "../src/dispatch/quote.js";
 import { evaluateSnapshot } from "../src/engine/valuation.js";
@@ -14,6 +14,7 @@ import { Logger, memorySink } from "../src/log.js";
 import { AaveReader, aaveAddressesFromShared, reserveSpecsFromShared } from "../src/services/chain.js";
 import { VenueReader } from "../src/services/venues.js";
 import type { DispatchRecord } from "../src/store/keeperStore.js";
+import type { VenueBook } from "../src/store/keeperStore.js";
 import type { Address } from "../src/types/evm.js";
 import { ACCOUNT_A, CBBTC, USDC, WETH as WETH_T, cbBtcPosition, debtForHf, newMockChain } from "./fixtures.js";
 import { AAVE_VENUE_ADDR, MORPHO_VENUE_ADDR, MockOilskin } from "./mockOilskin.js";
@@ -508,6 +509,16 @@ describe("RISKS §8 residual (a) — a receipt that leaves a venue the account s
     r.grantAll();
     return r;
   }
+  /** Captures what the dispatcher persists before the send — the per-venue snapshot confirm() judges by (slice 5). */
+  function snapshotting() {
+    let books: VenueBook[] | undefined;
+    return {
+      persistBeforeSend: async (info: { nonce?: number; closeIds: bigint[]; venueBooks?: VenueBook[] }) => {
+        books = info.venueBooks;
+      },
+      books: () => books,
+    };
+  }
 
   it("the 2026-09-08 router: the repay landed on the healthy Morpho book (the first venue holding anything) while the Aave debt rides → FAILED, naming the Aave venue", async () => {
     const r = await twoBooks(20_000_000_000n);
@@ -523,6 +534,35 @@ describe("RISKS §8 residual (a) — a receipt that leaves a venue the account s
     assert.match(err, /untouched/i);
     assert.ok(err.toLowerCase().includes(AAVE_VENUE_ADDR.toLowerCase()), `names the untouched venue: ${err}`);
     assert.match(err, /another book/i, "the account still held USDC: the router skipped the book, it did not run dry");
+  });
+
+  it("slice 5, wrong book WITH the snapshot: the healthy Morpho book took the repay while 19,000 USDC remained → FAILED, naming the skipped book and the USDC left", async () => {
+    const r = await twoBooks(20_000_000_000n);
+    r.oil.repayFirstHoldingVenueOnly = true;
+    const snap = snapshotting();
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: null, persistBeforeSend: snap.persistBeforeSend });
+    assert.equal(res.status, "SENT", JSON.stringify(res));
+    const books = snap.books()!;
+    assert.equal(books.length, 2, "both books were snapshotted before the send");
+    assert.equal(books.find((b) => b.venue.toLowerCase() === MORPHO_VENUE_ADDR.toLowerCase())!.debtUsdc, SMALL.toString());
+    const c = await r.dispatcher.confirm(record("repay", "repay", 1.3, { status: "SENT", txHash: sent(res), venueBooks: books }));
+    assert.equal(c.status, "FAILED", JSON.stringify(c));
+    const err = (c as { error: string }).error;
+    assert.match(err, /another book/i);
+    assert.match(err, /USDC remained/i);
+    assert.ok(err.toLowerCase().includes(AAVE_VENUE_ADDR.toLowerCase()));
+  });
+
+  it("slice 5, wrong book with USDC exhausted: the healthy book took the whole balance (1,000) while the Aave debt rode → FAILED as the wrong book, not a shortfall", async () => {
+    const r = await twoBooks(SMALL); // exactly the healthy book's debt: after the wrong repay nothing is left
+    r.oil.repayFirstHoldingVenueOnly = true;
+    const snap = snapshotting();
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: null, persistBeforeSend: snap.persistBeforeSend });
+    assert.equal(res.status, "SENT", JSON.stringify(res));
+    assert.equal(r.oil.usdcBalances.get(ACCOUNT_A.toLowerCase()), 0n, "USDC ran out — but on the wrong book");
+    const c = await r.dispatcher.confirm(record("repay", "repay", 1.3, { status: "SENT", txHash: sent(res), venueBooks: snap.books() }));
+    assert.equal(c.status, "FAILED", JSON.stringify(c));
+    assert.match((c as { error: string }).error, /the book in more trouble/i, "the snapshot's health factors say Morpho (≈68) was paid before Aave (1.3)");
   });
 
   it("the router since 2026-09-09: worst book first, then the rest with what is left — both books repaid → CONFIRMED", async () => {
@@ -542,18 +582,66 @@ describe("RISKS §8 residual (a) — a receipt that leaves a venue the account s
     assert.equal(c.status, "CONFIRMED", JSON.stringify(c));
   });
 
-  it("USDC runs out on the worst book: the healthy book is untouched → FAILED (the message says the account ran dry), and the retry's world check SUPERSEDES it", async () => {
+  it("slice 5, honest shortfall: USDC runs out on the worst book, the healthy book is untouched → CONFIRMED with a shortfall note (the snapshot proves the worse book was paid), and the retry's world check SUPERSEDES", async () => {
     const r = await twoBooks(20_000_000_000n); // less than the Aave debt
-    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: null });
+    const snap = snapshotting();
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: null, persistBeforeSend: snap.persistBeforeSend });
     assert.equal(res.status, "SENT", JSON.stringify(res));
     assert.equal(r.oil.usdcBalances.get(ACCOUNT_A.toLowerCase()), 0n, "everything went to the worst book");
     assert.equal(r.oil.morphoPosition(ACCOUNT_A, CBBTC).debt, SMALL, "the healthy book was not reached");
-    const c = await r.dispatcher.confirm(record("repay", "repay", 1.3, { status: "SENT", txHash: sent(res) }));
-    assert.equal(c.status, "FAILED", JSON.stringify(c));
-    assert.match((c as { error: string }).error, /ran out/i);
+    const c = await r.dispatcher.confirm(record("repay", "repay", 1.3, { status: "SENT", txHash: sent(res), venueBooks: snap.books() }));
+    assert.equal(c.status, "CONFIRMED", JSON.stringify(c));
+    const note = (c as { note?: string }).note ?? "";
+    assert.match(note, /ran out on the worse book/i);
+    assert.match(note, /honest shortfall/i);
+    assert.ok(note.toLowerCase().includes(MORPHO_VENUE_ADDR.toLowerCase()), `names the book left for the retry: ${note}`);
     // Aave is now at ~2.24, above the rung's disarm, and the Morpho book is healthy: the retry sends nothing.
     const again = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3, { attempts: 1 }), valuation: null });
     assert.equal(again.status, "SUPERSEDED", JSON.stringify(again));
+  });
+
+  it("the same shortfall WITHOUT a snapshot (a record from before slice 5, or a dispatch without a venue reader) stays FAILED — unprovable, so not confirmed", async () => {
+    const r = await twoBooks(20_000_000_000n);
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: null });
+    assert.equal(res.status, "SENT", JSON.stringify(res));
+    const c = await r.dispatcher.confirm(record("repay", "repay", 1.3, { status: "SENT", txHash: sent(res) }));
+    assert.equal(c.status, "FAILED", JSON.stringify(c));
+    assert.match((c as { error: string }).error, /ran out/i);
+    assert.match((c as { error: string }).error, /no per-venue snapshot/i);
+  });
+
+  it("slice 5: debt on a venue that owed nothing when the dispatch was sized → FAILED, not this receipt's to confirm", async () => {
+    const r = await rig(1.3, { venues: true });
+    r.oil.setUsdc(ACCOUNT_A, 20_000_000_000n);
+    r.grantAll();
+    const snap = snapshotting();
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: null, persistBeforeSend: snap.persistBeforeSend });
+    assert.equal(res.status, "SENT", JSON.stringify(res));
+    const books = snap.books()!;
+    assert.deepEqual(books.map((b) => b.venue.toLowerCase()), [AAVE_VENUE_ADDR.toLowerCase()], "only the Aave book existed at dispatch");
+    // Between the send and the receipt the registry moved cbBTC to Morpho and a Morpho debt appeared.
+    r.oil.setVenue(CBBTC, MORPHO_VENUE_ADDR);
+    r.oil.setMorphoPosition(ACCOUNT_A, CBBTC, { collateral: ONE_BTC, debt: SMALL });
+    const c = await r.dispatcher.confirm(record("repay", "repay", 1.3, { status: "SENT", txHash: sent(res), venueBooks: books }));
+    assert.equal(c.status, "FAILED", JSON.stringify(c));
+    assert.match((c as { error: string }).error, /owed nothing when this dispatch was sized/i);
+  });
+
+  it("judgeUntouched, pure: a USDC balance that cannot be re-read is never an honest shortfall; a paid venue outside the snapshot is not either", () => {
+    const aave = AAVE_VENUE_ADDR;
+    const morpho = MORPHO_VENUE_ADDR;
+    const books: VenueBook[] = [
+      { venue: aave, debtUsdc: "47760000000", hfWad: "1300000000000000000" },
+      { venue: morpho, debtUsdc: SMALL.toString(), hfWad: "68000000000000000000" },
+    ];
+    const paidAave = new Map([[aave.toLowerCase(), 20_000_000_000n]]);
+    const left = [{ venue: morpho, debtUsdc: SMALL }];
+    assert.equal(judgeUntouched(books, paidAave, left, 0n).honest, true);
+    assert.equal(judgeUntouched(books, paidAave, left, null).honest, false);
+    assert.equal(judgeUntouched(books, paidAave, left, 1n).honest, false);
+    const stranger = ("0x" + "77".repeat(20)) as Address;
+    assert.equal(judgeUntouched(books, new Map([[stranger.toLowerCase(), 5n]]), left, 0n).honest, false);
+    assert.equal(judgeUntouched(undefined, paidAave, left, 0n).honest, false, "no snapshot: the stricter rule");
   });
 
   it("today's production shape — Aave only, the venue reader on: one VenueRepaid on the Aave venue → CONFIRMED, as without the reader", async () => {
