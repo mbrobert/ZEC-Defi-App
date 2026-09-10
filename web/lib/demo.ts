@@ -15,7 +15,7 @@ import type { Address } from "viem";
 import type { KeeperGrantRead } from "./keeper";
 import type { PendingVenueRead } from "./reads";
 import type { MarketRead } from "./reads";
-import { BASE_TOKENS } from "@zyo/shared";
+import { BASE_TOKENS } from "./chain";
 import { DEMO_DEPLOYMENT, UNWIND_SELECTOR } from "./plan";
 import { normalizeGate, type GateView } from "./gate";
 import DEMO_GATE_RAW from "./demo-gate.json";

@@ -8,3 +8,4 @@ export * from "./width.js";
 export * from "./types.js";
 export * from "./pools.js";
 export * from "./claims.js";
+export * from "./chains.js";

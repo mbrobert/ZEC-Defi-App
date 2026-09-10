@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { BASE_CHAIN, CBZEC_ADDRESS, COUNTERFEIT_PREFIX, classifyCbZecAddress } from "@zyo/shared";
+import { COUNTERFEIT_PREFIX, classifyCbZecAddress } from "@zyo/shared";
+import { BASE_CHAIN, CBZEC_ADDRESS } from "@/lib/chain";
 import Chip from "./Chip";
 
 /**

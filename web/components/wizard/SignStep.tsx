@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Address, Hex } from "viem";
-import { BASE_CHAIN, shortAddress } from "@zyo/shared";
+import { shortAddress } from "@zyo/shared";
+import { BASE_CHAIN } from "@/lib/chain";
 import type { Emit, StepEvent } from "@/lib/execute";
 import type { QuotedSwap } from "@/lib/plan";
 import type { GasAssessment } from "@/lib/gas";

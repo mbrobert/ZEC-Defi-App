@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { AAVE_V3, BASE_TOKENS, CHAINS } from "@zyo/shared";
 import { CONFIG_DEFAULTS, ConfigError, describeConfig, loadConfig } from "../src/config.js";
 
 const KEY = "0x" + "ab".repeat(32);
@@ -20,10 +21,50 @@ describe("config — validation", () => {
     assert.equal(c.chainId, 8453);
   });
 
-  it("S-MED-1: an unsupported CHAIN_ID is refused by name — the shared address table is Base mainnet only", () => {
-    assert.throws(() => loadConfig({ ...BASE_ENV, CHAIN_ID: "84532" }), /CHAIN_ID: unsupported chain 84532.*packages\/shared.*8453/);
-    assert.throws(() => loadConfig({ ...BASE_ENV, CHAIN_ID: "1" }), /CHAIN_ID: unsupported chain 1/);
+  it("S-MED-1: a CHAIN_ID without an address table is refused by name — 8453 and 84532 are the only tables", () => {
+    assert.throws(() => loadConfig({ ...BASE_ENV, CHAIN_ID: "1" }), /CHAIN_ID: unsupported chain 1.*address tables for 8453, 84532 only/);
+    assert.throws(() => loadConfig({ ...BASE_ENV, CHAIN_ID: "10" }), /CHAIN_ID: unsupported chain 10/);
     assert.equal(loadConfig({ ...BASE_ENV, CHAIN_ID: "8453" }).chainId, 8453);
+  });
+
+  it("slice 6: CHAIN_ID=8453 is unchanged — the mainnet table, the mainnet tokens, and an override for a pinned token is refused by name", () => {
+    const c = loadConfig({ ...BASE_ENV });
+    assert.equal(c.chain.id, 8453);
+    assert.equal(c.chain, CHAINS[8453]);
+    assert.equal(c.chain.aave.pool, AAVE_V3.pool);
+    assert.equal(c.tokens.USDC.address, BASE_TOKENS.USDC.address);
+    assert.equal(c.tokens.cbZEC.address, BASE_TOKENS.cbZEC.address);
+    assert.throws(
+      () => loadConfig({ ...BASE_ENV, CBZEC_ADDRESS: "0x1111111111111111111111111111111111111111" }),
+      (e: unknown) => e instanceof ConfigError && /CBZEC_ADDRESS: CBZEC_ADDRESS is set, but cbZEC on chain 8453 is pinned/.test((e as Error).message)
+    );
+    assert.equal(describeConfig(c).chain, "Base");
+  });
+
+  it("slice 6: CHAIN_ID=84532 resolves the Base Sepolia table — Aave, feeds, WBTC under the cbBTC role — and never a mainnet address", () => {
+    const c = loadConfig({ ...BASE_ENV, CHAIN_ID: "84532", CBZEC_ADDRESS: "0x1111111111111111111111111111111111111111", AERO_ADDRESS: "0x2222222222222222222222222222222222222222" });
+    assert.equal(c.chainId, 84532);
+    assert.equal(c.chain, CHAINS[84532]);
+    assert.equal(c.chain.aave.pool, "0x8bAB6d1b75f19e9eD9fCe8b9BD338844fF79aE27");
+    assert.notEqual(c.chain.aave.pool, AAVE_V3.pool);
+    assert.equal(c.tokens.USDC.address, "0xba50Cd2A20f6DA35D788639E581bca8d0B5d4D5f");
+    assert.equal(c.tokens.cbBTC.address, "0x54114591963CF60EF3aA63bEfD6eC263D98145a4");
+    assert.equal(c.tokens.cbZEC.address, "0x1111111111111111111111111111111111111111");
+    assert.equal(c.tokens.AERO.address, "0x2222222222222222222222222222222222222222");
+    assert.equal(c.chain.feeds.cbBTC_USD, null);
+    assert.equal(describeConfig(c).chain, "Base Sepolia");
+  });
+
+  it("slice 6: on 84532 a token the table does not pin must come from env, by name — cbZEC and AERO are deploy-time doubles", () => {
+    assert.throws(
+      () => loadConfig({ ...BASE_ENV, CHAIN_ID: "84532" }),
+      (e: unknown) => e instanceof ConfigError && /CBZEC_ADDRESS: no cbZEC address for chain 84532/.test((e as Error).message) && /DEPLOY-SEPOLIA/.test((e as Error).message)
+    );
+    assert.throws(
+      () => loadConfig({ ...BASE_ENV, CHAIN_ID: "84532", CBZEC_ADDRESS: "0x1111111111111111111111111111111111111111" }),
+      (e: unknown) => e instanceof ConfigError && /AERO_ADDRESS: no AERO address for chain 84532/.test((e as Error).message)
+    );
+    assert.throws(() => loadConfig({ ...BASE_ENV, CHAIN_ID: "84532", CBZEC_ADDRESS: "nope", AERO_ADDRESS: "0x2222222222222222222222222222222222222222" }), ConfigError);
   });
 
   it("N-MED-1: NOTIFY_ALLOW_LOG_ONLY is off by default and only \"1\" turns it on", () => {

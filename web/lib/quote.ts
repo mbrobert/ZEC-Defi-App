@@ -27,7 +27,7 @@
  * Every failure here is a refusal with a sentence, never a smaller number.
  */
 import type { Address } from "viem";
-import { AAVE_V3, BASE_TOKENS } from "@zyo/shared";
+import { AAVE_V3, BASE_TOKENS } from "./chain";
 import { AAVE_ORACLE_ABI, ERC20_ABI } from "./abi/aave";
 import { AERODROME_CLPOOL_ABI, SWAP_ADAPTER_ABI } from "./abi/oilskin";
 import { encodeRouteData, MAX_SWAP_SLIPPAGE_BPS, type Deployment, type QuotedSwap } from "./plan";

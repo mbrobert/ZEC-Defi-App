@@ -1,7 +1,7 @@
 "use client";
 
 import { useSwitchChain } from "wagmi";
-import { CHAIN_ID } from "@zyo/shared";
+import { CHAIN_ID } from "@/lib/chain";
 import { useSession } from "@/lib/hooks";
 import { DEMO_SNAPSHOT_AT, DEMO_SNAPSHOT_SOURCE } from "@/lib/demo";
 

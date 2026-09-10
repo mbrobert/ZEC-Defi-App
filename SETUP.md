@@ -68,7 +68,7 @@ Required env: `BASE_RPC_URL` (http/https), `ACCOUNT_FACTORY_ADDRESS`,
 `STRATEGY_ROUTER_ADDRESS` to act; without a key the keeper runs observe-only
 (rungs recorded, every on-chain action `REFUSED`, never silent —
 `agent/src/dispatch/observeOnly.ts`). Optional knobs (`agent/src/config.ts`,
-every one strictly parsed, floors > 0): `CHAIN_ID` (8453), `HEALTH_POLL_MS`,
+every one strictly parsed, floors > 0): `CHAIN_ID` (8453; or 84532 for a Base Sepolia rehearsal, which also needs `CBZEC_ADDRESS` and `AERO_ADDRESS` — the deploy-time doubles `DeploySepolia` printed — and refuses any other chain, or a missing double, by name; slice 6, 2026-09-10), `HEALTH_POLL_MS`,
 `RPC_DEADLINE_MS`, `WATCHDOG_STALL_MS` (must exceed the RPC deadline),
 `BACKOFF_MAX_MS`, `CONCURRENCY`, `DISCOVERY_CHUNK_BLOCKS`, `PRICE_MAX_AGE_S`,
 `ORACLE_DEVIATION_BPS`, `HF_TOLERANCE_BPS`, `BAND_TOLERANCE_BPS`,
@@ -125,8 +125,11 @@ npm run backfill -- all           # engine history → empirical bands (resumabl
 
 ### Web (`web/`)
 
-All configuration is public (`web/lib/env.ts`): `NEXT_PUBLIC_BASE_RPC_URL`
-(default `https://mainnet.base.org`), `NEXT_PUBLIC_YIELD_URL` (default
+All configuration is public (`web/lib/env.ts`): `NEXT_PUBLIC_CHAIN_ID` (8453, or 84532 for a
+Base Sepolia rehearsal — then `NEXT_PUBLIC_CBZEC_ADDRESS` and `NEXT_PUBLIC_AERO_ADDRESS` must name
+the deploy-time doubles, and the build fails at load, by name, for any other chain or a missing
+double; `web/lib/chain.ts`, slice 6), `NEXT_PUBLIC_BASE_RPC_URL` (default: the chain's public
+endpoint), `NEXT_PUBLIC_YIELD_URL` (default
 `http://localhost:8787`), `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` (WalletConnect
 wallets only; Coinbase Wallet and injected wallets work without it),
 `NEXT_PUBLIC_OILSKIN_FACTORY`, `NEXT_PUBLIC_OILSKIN_ROUTER` (registry, venues and

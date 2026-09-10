@@ -18,7 +18,8 @@
 import type { Address, Hex } from "viem";
 import { LP_VENUE_ABI } from "./abi/oilskin";
 import { ERC20_ABI } from "./abi/aave";
-import { BASE_TOKENS, CHAIN_ID, PERMIT2, type TokenSymbol } from "@zyo/shared";
+import { type TokenSymbol } from "@zyo/shared";
+import { BASE_TOKENS, CHAIN_ID, PERMIT2 } from "./chain";
 import { assessGas, shortenRevert, type GasAssessment, type GasClient } from "./gas";
 import {
   encodeClaimWrite,

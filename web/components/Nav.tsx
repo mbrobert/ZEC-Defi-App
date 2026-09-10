@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSwitchChain } from "wagmi";
-import { CHAIN_ID } from "@zyo/shared";
+import { CHAIN_ID } from "@/lib/chain";
 import { useMarket, useSession } from "@/lib/hooks";
 import { fmtUsd0 } from "@/lib/format";
 import Chip from "./Chip";

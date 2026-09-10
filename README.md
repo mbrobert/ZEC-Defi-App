@@ -79,13 +79,13 @@ until the gate flips. The gate is computed, never curated
 
 ## Repo layout
 
-| Path | What | Verified state (2026-09-09, this tree) |
+| Path | What | Verified state (2026-09-10, this tree) |
 |---|---|---|
 | `contracts/` | Foundry — `OilskinAccount` + factory, `StrategyRouter`, `AaveV3Venue`, `SnuggleLpVenue`, `CollateralRegistry`, `AerodromeSwapAdapter`, `MorphoBlueVenue` (built over the two verified Base markets; not the registry's venue until propose → timelock → accept), `PythOracleAdapter` (v1.1, unused) | 304 passed / 0 failed / 8 skipped (2026-09-10; the 8 fork tests need `FORK_URL` — run against Base that day: 4 pass / 4 fail, `docs/TESTING.md`), 22 suites |
-| `agent/` | Keeper daemon (viem) — discovers accounts, values health fail-closed across every venue the registry names (the Aave pool cross-checked by G1–G4, any other venue against the Chainlink feeds by V1–V4, the worst venue runs the ladder) with per-feed staleness, acts only via one root `StrategyRouter.unwind` inside the user's grant, and notifies | 230 tests / 45 suites; `verify-abi` 72/72 |
+| `agent/` | Keeper daemon (viem) — discovers accounts, values health fail-closed across every venue the registry names (the Aave pool cross-checked by G1–G4, any other venue against the Chainlink feeds by V1–V4, the worst venue runs the ladder) with per-feed staleness, acts only via one root `StrategyRouter.unwind` inside the user's grant, and notifies | 233 tests / 45 suites; `verify-abi` 72/72 |
 | `services/yield/` | Live Aave rates, Aerodrome gauge emissions, the two-model yield gate, the LP model, empirical bands — HTTP API + backfill CLI | 131 tests |
-| `web/` | Next.js 14 — wallet connect, cbZEC onboarding, wizard, venue-aware chain-read dashboard with a keeper panel and a pending-venue banner, CoW spot; demo mode without a wallet | 148 unit tests (146 passed, 2 skipped); Playwright 12/12 |
-| `packages/shared/` | The one source for addresses, fees, the health-factor ladder, LTV presets, widths, pools | 53 tests |
+| `web/` | Next.js 14 — wallet connect, cbZEC onboarding, wizard, venue-aware chain-read dashboard with a keeper panel and a pending-venue banner, CoW spot; demo mode without a wallet | 152 unit tests (150 passed, 2 skipped); Playwright 12/12 |
+| `packages/shared/` | The one source for addresses, fees, the health-factor ladder, LTV presets, widths, pools | 59 tests |
 | `prototype/` | `simple.html` and `index.html` — dependency-free walkthroughs pinned to the same facts and model numbers | 289 checks (118 + 109 + 56) + 6 fuzz |
 | `scripts/verify-abi.mjs` | Generates / diffs `contracts/abi/oilskin-abi.json` from `contracts/out` | 327/327 |
 | `docs/` | `ARCHITECTURE` · `FLOWS` · `DEPOSIT-FLOW` · `RISKS` · `AUDIT` · `AUDIT-SCOPE` · `AUDIT-2026-09-06` · `TESTING` · `PRIVACY` · `CONTRACT-ABI` · `VERIFIED-BASE-FACTS` · `BASE-PIVOT-2026-09` · `BUILD-SPEC-2026-09` · `YIELD-SERVICE` · `MODEL-NUMBERS-2026-09-05` · `CHANGELOG` | this build |

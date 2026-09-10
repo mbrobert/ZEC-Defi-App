@@ -261,14 +261,36 @@ backlog, not yet written) will be the reference for the call sequence.
 1. Record the deployed addresses, the chain id, the block and the date in a new
    `docs/DEPLOYMENTS.md` — a testnet deployment is a fact like any other, and nothing may quote an
    address that is not written down with its date.
-2. **The keeper and the web app cannot be pointed at Sepolia yet.** Every Aave, token and
-   Chainlink address they read comes from `packages/shared` and is Base mainnet only; there is
-   no per-chain address table. The keeper refuses `CHAIN_ID=84532` by name
-   (`ConfigError: CHAIN_ID: unsupported chain 84532`, wave-2 S-MED-1) rather than running mainnet
-   addresses against the wrong chain, and the web reads the mainnet Aave pool wherever its RPC
-   points. A Sepolia deployment therefore proves the contracts through `cast` and `forge script`
-   (§5) — not an end-to-end keeper or dashboard rehearsal. That needs a `CHAINS[84532]` table in
-   `packages/shared` first.
+2. **Pointing the keeper and the web app at Sepolia (slice 6, 2026-09-10).** `packages/shared`
+   now carries `CHAINS[8453 | 84532]` (`src/chains.ts`): the Sepolia table is this document's
+   addendum in `VERIFIED-BASE-FACTS.md` — Aave's provider / pool / data provider / oracle, its
+   test USDC and test WBTC (which stands in under the **cbBTC** role), WETH, the Chainlink
+   BTC / ETH / USDC feeds, Pyth, Permit2, Multicall3, Morpho Blue. Both consumers select by chain
+   id and **never fall back to a mainnet address**:
+   - keeper: `CHAIN_ID=84532 BASE_RPC_URL=https://sepolia.base.org ACCOUNT_FACTORY_ADDRESS=<factory>
+     STRATEGY_ROUTER_ADDRESS=<router> CBZEC_ADDRESS=<MockB20> AERO_ADDRESS=<mock AERO>` — the two
+     doubles are what `deploySubstitutes` printed (§3/§4); a missing one is
+     `ConfigError: CBZEC_ADDRESS: no cbZEC address for chain 84532 …`, any other chain is
+     `ConfigError: CHAIN_ID: unsupported chain …`, and an override for a token the table pins
+     (any `*_ADDRESS` on 8453) is refused. Observe-only (no `KEEPER_PRIVATE_KEY`) is the only
+     mode to run from here. At start the keeper logs `NOT BASE MAINNET` with what the run proves.
+   - web: `NEXT_PUBLIC_CHAIN_ID=84532 NEXT_PUBLIC_OILSKIN_FACTORY=… NEXT_PUBLIC_OILSKIN_ROUTER=…
+     NEXT_PUBLIC_CBZEC_ADDRESS=… NEXT_PUBLIC_AERO_ADDRESS=…`; the RPC defaults to the chain's
+     public endpoint; a missing double or an unknown chain fails the build at load, by name
+     (`web/lib/chain.ts`). Wallets are asked for Base Sepolia; explorer links go to
+     sepolia.basescan.org; the CoW spot page says it is Base mainnet only.
+
+   **What a Sepolia keeper / web run proves, and what it cannot.** It proves the account →
+   factory → registry → `AaveV3Venue` → router path against **real** Aave v3, real Chainlink
+   feeds (1,200 s heartbeats there, not mainnet's — the keeper's per-feed policy measures them),
+   real Permit2; the keeper's G1–G4 valuation, ladder, dispatch, `confirm()` and per-venue
+   snapshot; the dashboard's venue-aware read. It proves **nothing** about the live
+   MaxFi/Snuggle engine, the live Aerodrome Slipstream router, cbBTC, cbZEC or AERO: the engine,
+   the router, cbZEC and AERO are the mocks of §1, and "cbBTC" is Aave's test WBTC priced by the
+   BTC/USD feed (there is no cbBTC/USD feed on Sepolia, so the residual (b) cross-check has
+   nothing to disagree with there). `MorphoBlueVenue` deploys with no markets. Yields, gauges and
+   the CoW spot are mainnet-only. The 8 mainnet fork tests remain the only evidence about the
+   live engine (`VERIFIED-BASE-FACTS.md` Addendum 3).
 3. `MorphoBlueVenue` on Sepolia has no markets (the Morpho API does not index chain 84532 and no
    cbBTC/WETH–USDC market is known there), so it reports `enabled() == false` and the registry will
    refuse to point an asset at it. On Base mainnet the venue is built over the two verified markets

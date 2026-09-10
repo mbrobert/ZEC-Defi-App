@@ -1,7 +1,7 @@
 import { createPublicClient, createWalletClient, http, type Account, type Chain, type PublicClient, type Transport, type WalletClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { base } from "viem/chains";
-import { AAVE_V3_RESERVES, BORROW_ASSET, COLLATERAL_ASSETS, HF_LADDER } from "@zyo/shared";
+import { base, baseSepolia } from "viem/chains";
+import { BORROW_ASSET, HF_LADDER, collateralAssetsFor, type CollateralSymbol } from "@zyo/shared";
 import { accountCreatedEvent, strategyRouterAbi } from "./abi/oilskin.js";
 import { ConfigError, describeConfig, loadConfig, type KeeperConfig } from "./config.js";
 import { KeeperDispatcher } from "./dispatch/keeperDispatcher.js";
@@ -12,7 +12,7 @@ import { Logger, stdoutSink, type LogSink } from "./log.js";
 import { logChannel, MultiNotifier, webhookChannel, type Channel, type KeeperEvent, type Notifier } from "./notify/notifier.js";
 import { ownerHistoryChannel } from "./notify/ownerNotifier.js";
 import { HealthMonitor, type TickReport } from "./monitors/healthMonitor.js";
-import { AaveReader, aaveAddressesFromShared, reserveSpecsFromShared } from "./services/chain.js";
+import { AaveReader, aaveAddressesFor, reserveSpecsFor } from "./services/chain.js";
 import { sleep } from "./services/deadline.js";
 import { AccountDiscovery } from "./services/discovery.js";
 import { UnsupportedVenueError, VenueReader } from "./services/venues.js";
@@ -73,18 +73,26 @@ export async function runKeeper(env: NodeJS.ProcessEnv, opts: RunOptions = {}): 
   const config = loadConfig(env);
   const log = new Logger(opts.sink ?? stdoutSink, config.logLevel, { svc: "keeper", pid: process.pid });
   log.info("starting", describeConfig(config));
+  // Every address below comes from the chain's table (packages/shared CHAINS) — never from the
+  // mainnet constants when CHAIN_ID says otherwise (slice 6, 2026-09-10; audit wave 2 S-MED-1).
+  const viemChain = config.chainId === baseSepolia.id ? baseSepolia : base;
+  if (config.chainId !== base.id) {
+    log.warn("NOT BASE MAINNET — a rehearsal chain; what this run can and cannot prove:", { chain: config.chain.name, notes: config.chain.notes });
+  }
+  const reserveSpecs = reserveSpecsFor(config.chain, config.tokens);
+  const collateral = collateralAssetsFor(config.chain, config.tokens);
 
   const client =
     opts.makeClient?.(config) ??
     (createPublicClient({
-      chain: base,
+      chain: viemChain,
       transport: http(config.rpcUrl, { timeout: config.rpcDeadlineMs, retryCount: 1 }),
     }) as PublicClient);
 
   let currentHandle: TickHandle | null = null;
   const onProgress = () => currentHandle?.bump();
 
-  const reader = new AaveReader(client, aaveAddressesFromShared(), reserveSpecsFromShared(), {
+  const reader = new AaveReader(client, aaveAddressesFor(config.chain), reserveSpecs, {
     deadlineMs: config.rpcDeadlineMs,
     onProgress,
   });
@@ -104,7 +112,16 @@ export async function runKeeper(env: NodeJS.ProcessEnv, opts: RunOptions = {}): 
   // a venue that answers but is not the Aave venue over the pool the G1–G4 valuation reads.
   let venues: VenueReader | null = null;
   if (config.routerAddress) {
-    venues = new VenueReader(client, config.routerAddress, { deadlineMs: config.rpcDeadlineMs, onProgress });
+    venues = new VenueReader(client, config.routerAddress, {
+      deadlineMs: config.rpcDeadlineMs,
+      onProgress,
+      usdc: config.tokens.USDC.address,
+      aaveProvider: config.chain.aave.poolAddressesProvider,
+      assets: Object.fromEntries((Object.keys(collateral) as CollateralSymbol[]).map((s) => [s, { address: collateral[s].address, decimals: collateral[s].decimals }])) as Record<
+        CollateralSymbol,
+        { address: `0x${string}`; decimals: number }
+      >,
+    });
     try {
       const probe = await venues.probe();
       const describe = (v: { venue: string; kind: string; provider: string | null; assets: { symbol: string; role: string; enabled: boolean; liquidationThresholdBps: bigint | null }[] }) => ({
@@ -146,7 +163,7 @@ export async function runKeeper(env: NodeJS.ProcessEnv, opts: RunOptions = {}): 
   // for ever and protects nobody (audit C-HIGH-2).
   const feedPolicies: FeedPolicy[] = await buildFeedPolicies(
     reader,
-    reserveSpecsFromShared(),
+    reserveSpecs,
     (await reader.head()).timestamp,
     {
       fallbackMaxAgeS: config.priceMaxAgeS,
@@ -158,7 +175,7 @@ export async function runKeeper(env: NodeJS.ProcessEnv, opts: RunOptions = {}): 
   );
   logFeedPolicies(log, feedPolicies);
   const priceMaxAgeBySymbol = policyMap(feedPolicies);
-  const check = selfCheckFeeds(feedPolicies, BORROW_ASSET, Object.keys(COLLATERAL_ASSETS).filter((s) => AAVE_V3_RESERVES.includes(s as never)));
+  const check = selfCheckFeeds(feedPolicies, BORROW_ASSET, (Object.keys(collateral) as CollateralSymbol[]).filter((s) => config.chain.aaveReserves.includes(s)));
   if (check.fatal) {
     log.error("FEED SELF-CHECK FAILED — the configured staleness policy would make every account UNKNOWN", {
       reason: check.reason,
@@ -221,7 +238,7 @@ export async function runKeeper(env: NodeJS.ProcessEnv, opts: RunOptions = {}): 
     const account = privateKeyToAccount(config.keeperPrivateKey);
     const wallet =
       opts.makeWallet?.(config, account) ??
-      createWalletClient({ account, chain: base, transport: http(config.rpcUrl, { timeout: config.rpcDeadlineMs, retryCount: 1 }) });
+      createWalletClient({ account, chain: viemChain, transport: http(config.rpcUrl, { timeout: config.rpcDeadlineMs, retryCount: 1 }) });
     // Router wiring is read from the router itself so nothing here can drift from the deployment.
     const [usdc, lpVenue] = await Promise.all([
       client.readContract({ address: config.routerAddress, abi: strategyRouterAbi, functionName: "USDC" }),

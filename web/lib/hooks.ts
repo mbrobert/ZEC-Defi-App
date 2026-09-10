@@ -9,7 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import type { Address } from "viem";
 import { useAccount, usePublicClient } from "wagmi";
-import { CHAIN_ID } from "@zyo/shared";
+import { CHAIN_ID } from "./chain";
 import { DEMO_KEEPER_GRANT, DEMO_MARKET, DEMO_OWNER, DEMO_PENDING_VENUES, demoGate } from "./demo";
 import { ENV, contractsConfigured } from "./env";
 import { fetchGate, type GateView } from "./gate";

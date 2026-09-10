@@ -26,7 +26,8 @@
  * labelled. Nothing is signable until the addresses come from a deployment.
  */
 import { encodeAbiParameters, encodeFunctionData, maxUint256, type Address, type Hex } from "viem";
-import { BASE_TOKENS, COLLATERAL_ASSETS, PERMIT2, RANGE_WIDTH_BOUNDS, lpParamsToChain, type CollateralSymbol, type LpParams } from "@zyo/shared";
+import { RANGE_WIDTH_BOUNDS, lpParamsToChain, type CollateralSymbol, type LpParams } from "@zyo/shared";
+import { BASE_TOKENS, COLLATERAL_ASSETS, PERMIT2, CHAIN_ID } from "./chain";
 import { ERC20_ABI } from "./abi/aave";
 import { ABI_STATUS, ACCOUNT_ABI, FACTORY_ABI, LP_VENUE_ABI, ROUTER_ABI, SELECTORS } from "./abi/oilskin";
 import { toAtomic } from "./math";
@@ -370,7 +371,7 @@ function grantCall(
 /** Permit2 typed data the wallet signs (spender = the account). */
 export function permitTypedData(token: Address, amount: bigint, spender: Address, nonce: bigint, deadline: bigint) {
   return {
-    domain: { name: "Permit2", chainId: 8453, verifyingContract: PERMIT2 } as const,
+    domain: { name: "Permit2", chainId: CHAIN_ID, verifyingContract: PERMIT2 } as const,
     types: {
       PermitTransferFrom: [
         { name: "permitted", type: "TokenPermissions" },

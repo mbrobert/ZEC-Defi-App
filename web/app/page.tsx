@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { COLLATERAL_ASSETS, FEES, ltvPresets } from "@zyo/shared";
+import { FEES, ltvPresets } from "@zyo/shared";
+import { COLLATERAL_ASSETS } from "@/lib/chain";
 import { useMarket, useSession } from "@/lib/hooks";
 import { fmtPct } from "@/lib/format";
 import { TokenMark } from "@/components/TokenMark";

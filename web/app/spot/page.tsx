@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Address } from "viem";
 import { usePublicClient, useWalletClient, useWriteContract } from "wagmi";
-import { BASE_TOKENS, CBZEC_ADDRESS, CHAIN_ID, COW_PROTOCOL, classifyCbZecAddress } from "@zyo/shared";
+import { COW_PROTOCOL, classifyCbZecAddress } from "@zyo/shared";
+import { BASE_TOKENS, CBZEC_ADDRESS, CHAIN_ID } from "@/lib/chain";
 import { useAccountRead, useMarket, useSession } from "@/lib/hooks";
 import { useMode } from "@/lib/mode";
 import { fromAtomic } from "@/lib/math";
@@ -17,7 +18,7 @@ import { TokenMark } from "@/components/TokenMark";
 
 type Phase = "idle" | "quoting" | "quoted" | "approving" | "signing" | "posted" | "error";
 
-import { SLIPPAGE_MAX_BPS, SLIPPAGE_MIN_BPS, SLIPPAGE_WARN_BPS } from "@/lib/cow";
+import { COW_SUPPORTED, SLIPPAGE_MAX_BPS, SLIPPAGE_MIN_BPS, SLIPPAGE_WARN_BPS } from "@/lib/cow";
 
 export default function SpotPage() {
   const s = useSession();
@@ -41,7 +42,12 @@ export default function SpotPage() {
   const [error, setError] = useState<string | null>(null);
   const [slippageBps, setSlippageBps] = useState<number | null>(null); // null = CoW's suggestion
 
-  const sdk = useMemo(() => (s.mode === "live" && publicClient ? makeTradingSdk(publicClient, walletClient ?? undefined) : null), [s.mode, publicClient, walletClient]);
+  const sdk = useMemo(() => (s.mode === "live" && publicClient && COW_SUPPORTED ? makeTradingSdk(publicClient, walletClient ?? undefined) : null), [s.mode, publicClient, walletClient]);
+
+  // CoW Protocol settles on Base mainnet only: a rehearsal build says so instead of quoting nothing.
+  useEffect(() => {
+    if (!COW_SUPPORTED) setError(`Spot trading through CoW Protocol is available on Base mainnet only — this build is pointed at chain ${CHAIN_ID}.`);
+  }, []);
 
   // Read the vault relayer (the spender) from settlement — never typed.
   useEffect(() => {

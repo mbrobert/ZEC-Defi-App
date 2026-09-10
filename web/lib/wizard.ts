@@ -3,16 +3,8 @@
  * numeric on Review is produced by `deriveReview` from chain-read inputs and
  * the served gate verdict.
  */
-import {
-  COLLATERAL_ASSETS,
-  ltvPresets,
-  presetToLpParams,
-  validateLpParams,
-  type CollateralSymbol,
-  type LpParams,
-  type LtvPreset,
-  type LtvPresetId,
-} from "@zyo/shared";
+import { ltvPresets, presetToLpParams, validateLpParams, type CollateralSymbol, type LpParams, type LtvPreset, type LtvPresetId } from "@zyo/shared";
+import { COLLATERAL_ASSETS } from "./chain";
 import { findVerdict, type GateEntry, type GateView } from "./gate";
 import { planLoan, planYield, type LoanPlan, type YieldPlan } from "./math";
 import { DEFAULT_BAND_TOLERANCE_BPS, MAX_BAND_TOLERANCE_BPS } from "./plan";

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { BASE_TOKENS, COLLATERAL_ASSETS } from "@zyo/shared";
+import { BASE_TOKENS, COLLATERAL_ASSETS } from "@/lib/chain";
 import { CBZEC_V1_CAPABILITIES, COUNTRY_OPTIONS, EXCLUDED_REGIONS, ONBOARD_STEPS, US_STATES, cbZecEligibility } from "@/lib/onboarding";
 import CbzecAddressCard from "@/components/CbzecAddressCard";
 import WalletAddressCard from "@/components/WalletAddressCard";

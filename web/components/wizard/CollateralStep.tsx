@@ -1,6 +1,7 @@
 "use client";
 
-import { COLLATERAL_ASSETS, COLLATERAL_SYMBOLS, type CollateralSymbol } from "@zyo/shared";
+import { COLLATERAL_SYMBOLS, type CollateralSymbol } from "@zyo/shared";
+import { COLLATERAL_ASSETS } from "@/lib/chain";
 import type { MarketRead } from "@/lib/reads";
 import { fmtAmount, fmtPct, fmtUsd } from "@/lib/format";
 import { amountNumber } from "@/lib/wizard";

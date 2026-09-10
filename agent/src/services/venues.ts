@@ -120,8 +120,12 @@ export interface VenueReaderOptions {
   deadlineMs: number;
   /** Called after each completed RPC (feeds the progress watchdog). */
   onProgress?: () => void;
-  /** The loan token every venue is asked `debt(account, …)` for. Defaults to Base USDC. */
+  /** The loan token every venue is asked `debt(account, …)` for. Defaults to Base mainnet USDC. */
   usdc?: Address;
+  /** The Aave PoolAddressesProvider an "aave"-kind venue sits over. Defaults to Base mainnet's. */
+  aaveProvider?: Address;
+  /** The collateral assets by role — address and decimals for this chain. Defaults to Base mainnet's (slice 6). */
+  assets?: Readonly<Record<CollateralSymbol, { address: Address; decimals: number }>>;
 }
 
 function errMsg(e: unknown): string {
@@ -137,6 +141,8 @@ export function isZero(a: string | null | undefined): boolean {
 export class VenueReader {
   private registryAddress: Address | null = null;
   readonly usdc: Address;
+  readonly aaveProvider: Address;
+  readonly assets: Readonly<Record<CollateralSymbol, { address: Address; decimals: number }>>;
 
   constructor(
     private readonly client: PublicClient,
@@ -144,6 +150,13 @@ export class VenueReader {
     private readonly opts: VenueReaderOptions
   ) {
     this.usdc = opts.usdc ?? (BASE_TOKENS.USDC.address as Address);
+    this.aaveProvider = opts.aaveProvider ?? (AAVE_V3.poolAddressesProvider as Address);
+    this.assets =
+      opts.assets ??
+      (Object.fromEntries(COLLATERAL_SYMBOLS.map((s) => [s, { address: COLLATERAL_ASSETS[s].address as Address, decimals: COLLATERAL_ASSETS[s].decimals }])) as Record<
+        CollateralSymbol,
+        { address: Address; decimals: number }
+      >);
   }
 
   private async call<T>(label: string, signal: AbortSignal | undefined, work: () => Promise<T>): Promise<T> {
@@ -174,7 +187,7 @@ export class VenueReader {
 
     const perAsset = await Promise.all(
       COLLATERAL_SYMBOLS.map(async (symbol) => {
-        const asset = COLLATERAL_ASSETS[symbol].address as Address;
+        const asset = this.assets[symbol].address;
         try {
           const [current, previous, enabled] = await Promise.all([
             this.call(`registry.venueOf(${symbol})`, signal, () =>
@@ -197,7 +210,7 @@ export class VenueReader {
 
     for (const row of perAsset) {
       if (!row || isZero(row.current)) continue; // not registered: nothing can be opened there
-      const spec = COLLATERAL_ASSETS[row.symbol];
+      const spec = this.assets[row.symbol];
       const add = (venue: Address, role: "current" | "previous") => {
         const key = venue.toLowerCase();
         const v = byVenue.get(key) ?? { venue, kind: "other", provider: null, assets: [], problems: [] };
@@ -218,7 +231,7 @@ export class VenueReader {
             this.client.readContract({ address: v.venue, abi: aaveVenueAbi, functionName: "PROVIDER" })
           )) as Address;
           v.provider = provider;
-          v.kind = provider.toLowerCase() === AAVE_V3.poolAddressesProvider.toLowerCase() ? "aave" : "other";
+          v.kind = provider.toLowerCase() === this.aaveProvider.toLowerCase() ? "aave" : "other";
         } catch {
           v.provider = null;
           v.kind = "other";
@@ -307,7 +320,7 @@ export class VenueReader {
     const ctx = await this.readContext(signal);
     const problems: VenueProblem[] = [];
     for (const u of ctx.unreadableAssets) {
-      problems.push({ symbol: u.symbol, asset: COLLATERAL_ASSETS[u.symbol].address as Address, venue: null, reason: `registry unreadable: ${u.reason}` });
+      problems.push({ symbol: u.symbol, asset: this.assets[u.symbol].address, venue: null, reason: `registry unreadable: ${u.reason}` });
     }
     for (const v of ctx.venues) {
       const enabledAssets = v.assets.filter((a) => a.enabled);

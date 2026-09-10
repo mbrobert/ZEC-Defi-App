@@ -1,6 +1,6 @@
 import type { PublicClient } from "viem";
-import { AAVE_V3, AAVE_V3_RESERVES, BASE_TOKENS, BORROW_ASSET, CHAINLINK_FEEDS, COLLATERAL_ASSETS, isCollateralSymbol } from "@zyo/shared";
-import type { TokenSymbol } from "@zyo/shared";
+import { BASE_TOKENS, BORROW_ASSET, CHAINS } from "@zyo/shared";
+import type { ChainTable, TokenInfo, TokenSymbol } from "@zyo/shared";
 import { aaveOracleAbi, aavePoolAbi, aavePoolDataProviderAbi, chainlinkAggregatorAbi } from "../abi/aave.js";
 import type { AccountSnapshot, ChainlinkRead, ReserveRow } from "../engine/valuation.js";
 import type { Address } from "../types/evm.js";
@@ -33,23 +33,34 @@ export interface AaveAddresses {
   oracle: Address;
 }
 
-export function aaveAddressesFromShared(): AaveAddresses {
-  return { pool: AAVE_V3.pool, dataProvider: AAVE_V3.poolDataProvider, oracle: AAVE_V3.oracle };
+/** The Aave addresses of one chain's table (packages/shared `CHAINS`, slice 6). */
+export function aaveAddressesFor(chain: ChainTable): AaveAddresses {
+  return { pool: chain.aave.pool, dataProvider: chain.aave.poolDataProvider, oracle: chain.aave.oracle };
 }
 
-/** The reserves the keeper can value, with feed wiring from packages/shared. */
-export function reserveSpecsFromShared(): ReserveSpec[] {
-  return AAVE_V3_RESERVES.map((symbol) => {
-    const token = BASE_TOKENS[symbol];
+/**
+ * The reserves the keeper can value on one chain, with the feed each is priced by: the chain's
+ * collateral feeds for cbBTC / WETH (on Base Sepolia cbBTC is Aave's test WBTC priced by BTC/USD),
+ * the chain's USDC/USD feed for the borrow asset. `tokens` carries the resolved addresses.
+ */
+export function reserveSpecsFor(chain: ChainTable, tokens: Readonly<Record<TokenSymbol, TokenInfo>>): ReserveSpec[] {
+  return chain.aaveReserves.map((symbol) => {
+    const token = tokens[symbol];
     let feed: Address | null = null;
-    if (isCollateralSymbol(symbol)) {
-      const f = COLLATERAL_ASSETS[symbol].feed;
-      if (f.kind === "chainlink") feed = f.address;
-    } else if (symbol === BORROW_ASSET) {
-      feed = CHAINLINK_FEEDS.USDC_USD.address;
-    }
+    if (symbol === "cbBTC" || symbol === "WETH") feed = chain.collateralFeeds[symbol].address;
+    else if (symbol === BORROW_ASSET) feed = chain.feeds.USDC_USD.address;
     return { symbol, asset: token.address, decimals: token.decimals, feed };
   });
+}
+
+/** Base mainnet, as before slice 6 — what the tests and the mock chain are built on. */
+export function aaveAddressesFromShared(): AaveAddresses {
+  return aaveAddressesFor(CHAINS[8453]);
+}
+
+/** Base mainnet reserves, as before slice 6. */
+export function reserveSpecsFromShared(): ReserveSpec[] {
+  return reserveSpecsFor(CHAINS[8453], BASE_TOKENS);
 }
 
 export interface ReserveContext {

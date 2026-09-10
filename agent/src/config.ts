@@ -2,6 +2,7 @@ import { isAbsolute } from "node:path";
 import type { Address, Hex } from "./types/evm.js";
 import { isAddress } from "./types/evm.js";
 import { redactString } from "./log.js";
+import { MissingChainAddressError, PinnedChainAddressError, SUPPORTED_CHAIN_IDS, chainTable, isSupportedChainId, resolveTokens, type ChainTable, type TokenInfo, type TokenSymbol } from "@zyo/shared";
 
 /**
  * Env-driven keeper configuration with strict validation.
@@ -25,6 +26,18 @@ export interface KeeperConfig {
   rpcUrl: string;
   /** Chain id the RPC must report; anything else is fatal at startup. */
   chainId: number;
+  /**
+   * The address table for `chainId` (packages/shared `CHAINS`): Aave, feeds, Pyth, Permit2. Base
+   * mainnet is the product; Base Sepolia the rehearsal. A chain without a table is refused by name
+   * (slice 6, 2026-09-10; audit wave 2 S-MED-1).
+   */
+  chain: ChainTable;
+  /**
+   * Every token by role, resolved for `chainId`: the pinned ones from the table, the deploy-time
+   * doubles (Sepolia's cbZEC / AERO) from CBZEC_ADDRESS / AERO_ADDRESS — refused by name when
+   * missing, and refused when set for a token the table pins.
+   */
+  tokens: Readonly<Record<TokenSymbol, TokenInfo>>;
   /** Optional. Absent ⇒ observe-only: valuation + ladder run, dispatch is refused. */
   keeperPrivateKey?: Hex;
   /** OilskinAccountFactory — the source of `AccountCreated` discovery logs. */
@@ -279,16 +292,25 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): KeeperConfig {
     throw new ConfigError("DISPATCH_DEADLINE_MS", `must be ≥ RPC_DEADLINE_MS (${rpcDeadlineMs})`);
   }
 
-  // Every Aave, token and feed address this keeper reads comes from packages/shared and is Base
-  // mainnet only. Pointing CHAIN_ID anywhere else would run those mainnet addresses against the
-  // wrong chain — every account UNKNOWN, or a fatal feed self-check with a misleading reason — so
-  // an unsupported chain is refused by name here (audit wave 2, S-MED-1).
+  // Every Aave, token and feed address this keeper reads comes from the packages/shared table for
+  // CHAIN_ID — Base mainnet (8453, the product) or Base Sepolia (84532, the rehearsal). A chain
+  // without a table is refused by name rather than run against mainnet addresses (audit wave 2,
+  // S-MED-1; slice 6, 2026-09-10), and a token the table leaves to a deploy-time double must be
+  // named in env, or the keeper refuses by that variable's name — never a silent mainnet address.
   const chainId = num(env, "CHAIN_ID", CONFIG_DEFAULTS.chainId, { min: 1, integer: true });
-  if (chainId !== CONFIG_DEFAULTS.chainId) {
+  if (!isSupportedChainId(chainId)) {
     throw new ConfigError(
       "CHAIN_ID",
-      `unsupported chain ${chainId}: the Aave, token and Chainlink addresses in packages/shared are Base mainnet (${CONFIG_DEFAULTS.chainId}) only — there is no address table for another chain yet`
+      `unsupported chain ${chainId}: packages/shared has address tables for ${SUPPORTED_CHAIN_IDS.join(", ")} only — Base mainnet (8453) is the product, Base Sepolia (84532) the rehearsal; nothing else has verified addresses`
     );
+  }
+  const chain = chainTable(chainId);
+  let tokens: Readonly<Record<TokenSymbol, TokenInfo>>;
+  try {
+    tokens = resolveTokens(chain, { cbZEC: readRaw(env, "CBZEC_ADDRESS"), AERO: readRaw(env, "AERO_ADDRESS") }, (symbol) => `${symbol.toUpperCase()}_ADDRESS`);
+  } catch (e) {
+    if (e instanceof MissingChainAddressError || e instanceof PinnedChainAddressError) throw new ConfigError(e.variable, e.message);
+    throw new ConfigError("CHAIN_ID", e instanceof Error ? e.message : String(e));
   }
 
   const notifyWebhookUrl = readRaw(env, "NOTIFY_WEBHOOK_URL");
@@ -305,6 +327,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): KeeperConfig {
   return {
     rpcUrl,
     chainId,
+    chain,
+    tokens,
     keeperPrivateKey,
     factoryAddress,
     routerAddress,
@@ -368,6 +392,7 @@ export function describeConfig(c: KeeperConfig): Record<string, unknown> {
   return {
     rpcUrl: redactString(c.rpcUrl),
     chainId: c.chainId,
+    chain: c.chain.name,
     mode: c.keeperPrivateKey ? "keeper" : "observe-only",
     factoryAddress: c.factoryAddress,
     routerAddress: c.routerAddress ?? null,

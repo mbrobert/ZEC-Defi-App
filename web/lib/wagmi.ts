@@ -20,11 +20,13 @@ import { connectorsForWallets } from "@rainbow-me/rainbowkit";
 import { coinbaseWallet, injectedWallet, metaMaskWallet, rainbowWallet, walletConnectWallet } from "@rainbow-me/rainbowkit/wallets";
 import { createConfig, http } from "wagmi";
 import { mock } from "wagmi/connectors";
-import { base } from "wagmi/chains";
-import { CHAIN_ID } from "@zyo/shared";
+import { base, baseSepolia } from "wagmi/chains";
+import { CHAINS } from "@zyo/shared";
+import { CHAIN_ID, VIEM_CHAIN } from "./chain";
 import { ENV } from "./env";
 
-if (base.id !== CHAIN_ID) throw new Error("wagmi base chain id does not match @zyo/shared CHAIN_ID");
+// The chain follows NEXT_PUBLIC_CHAIN_ID through lib/chain.ts (slice 6): Base, or Base Sepolia for a rehearsal.
+if (VIEM_CHAIN.id !== CHAIN_ID) throw new Error("wagmi chain id does not match lib/chain CHAIN_ID");
 
 export const APP_NAME = "Oilskin";
 
@@ -62,16 +64,19 @@ export const E2E_MOCK_ACCOUNT = "0x2222222222222222222222222222222222222222" as 
 export const e2eMockConnector = mock({ accounts: [E2E_MOCK_ACCOUNT], features: { defaultConnected: false } });
 
 export const wagmiConfig = createConfig({
-  chains: [base],
+  chains: [VIEM_CHAIN],
   connectors: ENV.mockWallet ? [...connectors, e2eMockConnector] : connectors,
+  // One transport per table wagmi's types know about; only VIEM_CHAIN is in `chains`, so only its
+  // transport is ever used. The active chain gets ENV.baseRpcUrl, the other its public default.
   transports: {
-    [base.id]: http(ENV.baseRpcUrl, { batch: true, timeout: 8_000, retryCount: 1 }),
+    [base.id]: http(CHAIN_ID === base.id ? ENV.baseRpcUrl : CHAINS[8453].rpcDefault, { batch: true, timeout: 8_000, retryCount: 1 }),
+    [baseSepolia.id]: http(CHAIN_ID === baseSepolia.id ? ENV.baseRpcUrl : CHAINS[84532].rpcDefault, { batch: true, timeout: 8_000, retryCount: 1 }),
   },
   ssr: true,
   multiInjectedProviderDiscovery: true,
 });
 
-export const BASE_CHAIN = base;
+export const BASE_CHAIN = VIEM_CHAIN;
 
 declare module "wagmi" {
   interface Register {

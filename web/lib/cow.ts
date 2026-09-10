@@ -11,7 +11,8 @@
 import type { Address } from "viem";
 import { OrderKind, SupportedChainId, TradingSdk, type QuoteResults } from "@cowprotocol/cow-sdk";
 import { ViemAdapter } from "@cowprotocol/sdk-viem-adapter";
-import { BASE_TOKENS, CHAIN_ID, COW_PROTOCOL, type TokenSymbol } from "@zyo/shared";
+import { COW_PROTOCOL, type TokenSymbol } from "@zyo/shared";
+import { BASE_TOKENS, CHAIN_ID } from "./chain";
 import { COW_SETTLEMENT_ABI, ERC20_ABI } from "./abi/aave";
 import { fromAtomic } from "./math";
 import { ENV } from "./env";
@@ -20,7 +21,8 @@ import type { ReadClient } from "./reads";
 /** Structural client type so wagmi's chain-specialised clients pass to the CoW adapter without casts. */
 type AnyClient = object;
 
-if ((SupportedChainId.BASE as number) !== CHAIN_ID) throw new Error("CoW SupportedChainId.BASE != @zyo/shared CHAIN_ID");
+/** CoW Protocol's SDK and settlement are Base mainnet only; a Sepolia build shows spot as unavailable (lib/chain.ts, slice 6). */
+export const COW_SUPPORTED = (SupportedChainId.BASE as number) === CHAIN_ID;
 
 /** Slippage the user may set in Advanced mode, bps of price. Beyond MAX the page refuses to sign; Simple mode uses CoW's suggestion only. */
 export const SLIPPAGE_MIN_BPS = 10;
@@ -48,6 +50,7 @@ export interface SpotQuote {
 }
 
 export function makeTradingSdk(publicClient: AnyClient, walletClient?: AnyClient): TradingSdk {
+  if (!COW_SUPPORTED) throw new Error(`CoW Protocol spot is Base mainnet only — this build is on chain ${CHAIN_ID}`);
   const adapter = new ViemAdapter({ provider: publicClient as never, walletClient: walletClient as never });
   return new TradingSdk({ chainId: SupportedChainId.BASE, appCode: ENV.cowAppCode }, { enableLogging: false }, adapter);
 }

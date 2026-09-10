@@ -19,7 +19,8 @@
  * `describeGrant` is pure so the wording is testable.
  */
 import type { Address, Hex } from "viem";
-import { BASE_TOKENS, HF_LADDER, type HfRung } from "@zyo/shared";
+import { HF_LADDER, type HfRung } from "@zyo/shared";
+import { BASE_TOKENS } from "./chain";
 
 export interface KeeperTokenBudget {
   token: Address;

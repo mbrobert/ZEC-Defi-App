@@ -4,9 +4,26 @@
  * user's behalf — the wallet does.
  */
 
+import { chainTable, isSupportedChainId } from "@zyo/shared";
+
+const CHAIN_ID_RAW = process.env.NEXT_PUBLIC_CHAIN_ID ?? "8453";
+const CHAIN_ID_NUM = /^\d+$/.test(CHAIN_ID_RAW.trim()) ? Number(CHAIN_ID_RAW) : NaN;
+
 export const ENV = {
-  /** Base JSON-RPC used for reads. Public endpoint by default; override per deploy. */
-  baseRpcUrl: process.env.NEXT_PUBLIC_BASE_RPC_URL ?? "https://mainnet.base.org",
+  /**
+   * Chain this build reads and signs on: 8453 (Base, the product) or 84532 (Base Sepolia, the
+   * rehearsal). Anything else fails at load in lib/chain.ts, by name — never a mainnet address on
+   * the wrong chain (slice 6, 2026-09-10).
+   */
+  chainId: CHAIN_ID_NUM,
+  /** JSON-RPC used for reads: the chain's public endpoint by default; override per deploy. */
+  baseRpcUrl: process.env.NEXT_PUBLIC_BASE_RPC_URL ?? (isSupportedChainId(CHAIN_ID_NUM) ? chainTable(CHAIN_ID_NUM).rpcDefault : "https://mainnet.base.org"),
+  /**
+   * Base Sepolia's cbZEC and AERO are deploy-time doubles (DeploySepolia's MockB20 / MockERC20):
+   * required there, by name; refused on mainnet, where both are pinned.
+   */
+  cbzecAddress: process.env.NEXT_PUBLIC_CBZEC_ADDRESS ?? "",
+  aeroAddress: process.env.NEXT_PUBLIC_AERO_ADDRESS ?? "",
   /** Yield service (services/yield): /v1/gate, /v1/rates, /v1/pools. */
   yieldUrl: process.env.NEXT_PUBLIC_YIELD_URL ?? "http://localhost:8787",
   /** Indexer cache for the dashboard (the yield service's account view). Chain is the authority. */

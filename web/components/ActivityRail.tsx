@@ -1,4 +1,4 @@
-import { BASE_CHAIN } from "@zyo/shared";
+import { BASE_CHAIN } from "@/lib/chain";
 import { fmtAgo } from "@/lib/format";
 
 export interface ActivityItem {

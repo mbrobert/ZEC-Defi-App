@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useBalance, useDisconnect } from "wagmi";
-import { BASE_CHAIN, BASE_TOKENS, CHAIN_ID, shortAddress } from "@zyo/shared";
+import { shortAddress } from "@zyo/shared";
+import { BASE_CHAIN, BASE_TOKENS, CHAIN_ID } from "@/lib/chain";
 import { ENV } from "@/lib/env";
 import Chip from "./Chip";
 

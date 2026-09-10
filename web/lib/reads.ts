@@ -16,7 +16,8 @@
  * itself fails, so a missing/reverting multicall never blanks the page.
  */
 import type { Address, Hex } from "viem";
-import { AAVE_V3, BASE_TOKENS, COLLATERAL_ASSETS, COLLATERAL_SYMBOLS, isZeroAddress, type CollateralSymbol } from "@zyo/shared";
+import { COLLATERAL_SYMBOLS, isZeroAddress, type CollateralSymbol } from "@zyo/shared";
+import { AAVE_V3, BASE_TOKENS, COLLATERAL_ASSETS } from "./chain";
 import { AAVE_ORACLE_ABI, ERC20_ABI, POOL_ABI, POOL_DATA_PROVIDER_ABI } from "./abi/aave";
 import { AAVE_VENUE_ABI, ACCOUNT_ABI, AERODROME_CLPOOL_ABI, COLLATERAL_REGISTRY_ABI, COLLATERAL_VENUE_ABI, FACTORY_ABI, LP_VENUE_ABI, ROUTER_ABI, SNUGGLE_VAULT_ABI } from "./abi/oilskin";
 import { baseUnitsToUsd, fromAtomic, rayToAprPct, wadHealthFactor } from "./math";
