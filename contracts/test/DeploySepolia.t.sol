@@ -61,11 +61,16 @@ contract DeploySepoliaTest is Fixture {
         vm.etch(BaseSepoliaAddresses.AAVE_FAUCET, address(new FaucetDouble()).code);
     }
 
-    /// @dev `setUp` runs once and is snapshotted, so process env set there is not per-test state:
-    ///      every test that needs TREASURY / REGISTRY_OWNER sets them itself.
-    function _setRequiredEnv() internal {
-        vm.setEnv("TREASURY", vm.toString(treasury));
-        vm.setEnv("REGISTRY_OWNER", vm.toString(registryOwner));
+    /// @dev The config the guard sees, with TREASURY / REGISTRY_OWNER as struct fields. Process
+    ///      env is never written here: `vm.setEnv` is process-wide, and Foundry runs tests in
+    ///      parallel, so one test zeroing TREASURY to provoke `MissingEnv` raced every other test
+    ///      that read it into the same revert (slice 3, 2026-09-10). The guard checks nothing the
+    ///      substitutes provide, so none are deployed for it.
+    function _guardConfig() internal view returns (Deploy.Config memory c) {
+        DeploySepolia.Substitutes memory none;
+        c = script.sepoliaConfig(none, address(script));
+        c.treasury = treasury;
+        c.registryOwner = registryOwner;
     }
 
     /// @dev The script's config with the three dependencies that have no code in this VM pointed
@@ -96,36 +101,38 @@ contract DeploySepoliaTest is Fixture {
     }
 
     function test_guardRefusesEveryOtherChain() public {
-        _setRequiredEnv();
+        Deploy.Config memory c = _guardConfig();
         vm.expectRevert(abi.encodeWithSelector(DeploySepolia.NotBaseSepolia.selector, block.chainid));
-        script.guardSepolia();
+        script.guardSepolia(c);
         vm.chainId(8453);
         vm.expectRevert(abi.encodeWithSelector(DeploySepolia.NotBaseSepolia.selector, 8453));
-        script.guardSepolia();
+        script.guardSepolia(c);
     }
 
+    /// The two required addresses are checked on the CONFIG, in the same order as before; the
+    /// struct is built here, not exported to process env (see `_guardConfig`).
     function test_guardRequiresEnvThenCode() public {
-        _setRequiredEnv();
+        Deploy.Config memory c = _guardConfig();
         vm.chainId(84532);
-        vm.setEnv("TREASURY", vm.toString(address(0)));
+        c.treasury = address(0);
         vm.expectRevert(abi.encodeWithSelector(Deploy.MissingEnv.selector, "TREASURY"));
-        script.guardSepolia();
-        vm.setEnv("TREASURY", vm.toString(treasury));
-        vm.setEnv("REGISTRY_OWNER", vm.toString(address(0)));
+        script.guardSepolia(c);
+        c.treasury = treasury;
+        c.registryOwner = address(0);
         vm.expectRevert(abi.encodeWithSelector(Deploy.MissingEnv.selector, "REGISTRY_OWNER"));
-        script.guardSepolia();
-        vm.setEnv("REGISTRY_OWNER", vm.toString(registryOwner));
+        script.guardSepolia(c);
+        c.registryOwner = registryOwner;
         // Tokens are etched; the first dependency WITHOUT code in this VM is Aave's provider.
         vm.expectRevert(
             abi.encodeWithSelector(
                 Deploy.NoCode.selector, "Aave PoolAddressesProvider", BaseSepoliaAddresses.AAVE_POOL_ADDRESSES_PROVIDER
             )
         );
-        script.guardSepolia();
+        script.guardSepolia(c);
     }
 
     function test_guardCatchesAaveProviderDrift() public {
-        _setRequiredEnv();
+        Deploy.Config memory c = _guardConfig();
         vm.chainId(84532);
         // Give every real dependency code, and make the provider a MockAave (resolves to itself).
         address[7] memory presence = [
@@ -149,7 +156,7 @@ contract DeploySepoliaTest is Fixture {
                 BaseSepoliaAddresses.AAVE_POOL_ADDRESSES_PROVIDER
             )
         );
-        script.guardSepolia();
+        script.guardSepolia(c);
     }
 
     function test_substitutesAreOneFunctionOfTheTick() public {

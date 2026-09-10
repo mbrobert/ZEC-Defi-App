@@ -108,7 +108,10 @@ contract DeploySepolia is Deploy {
     uint256 internal constant Q192 = 2 ** 192;
 
     function run() external override returns (Deployed memory d) {
-        guardSepolia();
+        // The guard sees the config the script will deploy with. It checks nothing the
+        // substitutes provide (those are ours), so the pre-deploy config carries none of them.
+        Substitutes memory none;
+        guardSepolia(sepoliaConfig(none, msg.sender));
         vm.startBroadcast();
         Substitutes memory s = deploySubstitutes(_tick());
         Config memory c = sepoliaConfig(s, msg.sender);
@@ -126,10 +129,15 @@ contract DeploySepolia is Deploy {
     ///         reserves still have the shape the product needs (WETH and WBTC collateral-enabled,
     ///         USDC borrowable), and the faucet is still open. Any drift means the Sepolia section
     ///         of VERIFIED-BASE-FACTS must be re-read before deploying.
-    function guardSepolia() public view {
+    /// @dev A function of the chain and its argument only. TREASURY and REGISTRY_OWNER arrive in
+    ///      the config (`sepoliaConfig` reads them from env inside `run()`), so tests build the
+    ///      struct and never touch process-wide `vm.setEnv` — which Foundry's parallel tests raced
+    ///      into a `MissingEnv("TREASURY")` flake (slice 3, 2026-09-10). Same shape as
+    ///      `Deploy.guard(Config)`, whose mainnet semantics are untouched.
+    function guardSepolia(Config memory c) public view {
         if (block.chainid != BaseSepoliaAddresses.CHAIN_ID) revert NotBaseSepolia(block.chainid);
-        if (vm.envOr("TREASURY", address(0)) == address(0)) revert MissingEnv("TREASURY");
-        if (vm.envOr("REGISTRY_OWNER", address(0)) == address(0)) revert MissingEnv("REGISTRY_OWNER");
+        if (c.treasury == address(0)) revert MissingEnv("TREASURY");
+        if (c.registryOwner == address(0)) revert MissingEnv("REGISTRY_OWNER");
 
         _requireCode("WETH", BaseSepoliaAddresses.WETH);
         _requireCode("Aave test USDC", BaseSepoliaAddresses.USDC);
