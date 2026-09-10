@@ -332,6 +332,73 @@ borrow. Tests: `contracts/test/audit-regressions/LoanDust.t.sol`,
 `dispatcher.test.ts` (slice C cases), `web/test/reads.test.ts` (slice C),
 `packages/shared/test/dust.test.ts`.
 
+**Two-book Close — the options, measured (slice D, 2026-09-10; not implemented).**
+After a venue switch an account can hold collateral on BOTH venues (a book
+opened on Aave, another on Morpho once the pointer moved). The repay leg of
+`StrategyRouter.unwind` reaches every book (residual (a) above); the WITHDRAW
+leg goes to the first venue holding anything of the account's — the current
+pointer first — and stops. The web's Close is ONE `unwind(ids, repay max,
+withdraw max)` (`web/lib/plan.ts encodeUnwindWrite`), so on a two-book account
+it repays everything and returns only one venue's collateral; the other
+venue's collateral stays where it is, debt-free, until a second Close. Nothing
+is lost, but the Simple-mode promise "one transaction… returns your cbBTC" is
+false for that account. Proved and parked as a KNOWN FAILURE:
+`invariant_KNOWN_singleCloseStrandsCollateral` (`contracts/test/invariant/`)
+runs the web's exact call on every two-book state the fuzz reaches and asserts
+the strand happens every time; `test_handlerPathsAreLive` reaches that state.
+The day the fix lands that invariant goes red and is flipped to "stranded ==
+0". Numbers, from the fork at block 51,127,409 (`test_fork_twoBookWithdrawLegGas`,
+a `MorphoBlueVenue` over the two verified markets on the fork's own registry,
+cbBTC switched by propose → 2-day timelock → accept, a book on each venue,
+everything metered raw through the account; `VERIFIED-BASE-FACTS.md` Addendum
+7): the router's two views per venue (`debt` + `collateral`) cost **158,648**
+gas on Aave and **63,987** on Morpho; a `withdraw(max)` leg costs **203,462** on
+Aave and **125,152** on Morpho. At the base fee read at block 51,146,494
+(**0.005 gwei**, gas price 0.006 gwei; ETH/USD 2,437.27 from the Chainlink
+feed at the same read) one extra Aave leg is ≈ 362k gas ≈ 0.0000022 ETH ≈
+**$0.005** of L2 execution, one extra Morpho leg ≈ 189k gas ≈ **$0.003**; the L1
+data fee of the transaction is not in these figures and was not read.
+
+*Option (1) — the router's withdraw leg iterates every venue holding the
+account's collateral, each gated by that venue's own exit floor.* Shape:
+`withdrawAmount` keeps its meaning per venue (`max` = everything there); one
+`VenueWithdrawn(account, venue, withdrawn)` per venue reached, mirroring
+`VenueRepaid`; `LeveragedLpUnwound.withdrawn` sums. ABI change: **yes, one
+new event** (the `unwind` selector and `UnwindParams` do not move); grant
+shape: **unchanged** (same selector; the keeper never sets a withdraw, and
+`policy.ts` keeps `withdrawAmount = 0`). Gas: the current single Close plus,
+per extra venue, its views and its leg (≈ 362k Aave / ≈ 189k Morpho). Router
+code: the loop and the event, ≈ 25 lines in `StrategyRouter.sol`; the
+invariant flips; the keeper's `summarizeUnwinds` learns the event
+(≈ 15 lines) and the web's plan text names both venues. What it does not
+cover: a venue whose exit floor refuses (debt left on it below the floor)
+reverts the whole Close today and would still — the per-venue gate is the same
+rule applied twice, and a partial withdraw on one venue with a refusal on the
+other would need a "best effort" flag the calldata does not carry.
+
+*Option (2) — the web plans one Close per venue holding collateral; no
+contract change.* The venue-aware read already lists each venue's collateral;
+`buildUnwindPlan` emits N steps, each the same `unwind(withdraw max)`, and the
+router's routing rule (first venue holding anything, current pointer first,
+a rounding residual not counting — slice C) sends the second call to the
+second venue on its own. Simple-mode wording: "Your collateral sits in two
+places, because Oilskin changed the lending contract while your position was
+open. Closing takes two signatures, one per place; each returns that place's
+collateral, and nothing is lost between them." Gas: N transactions, each a
+full Close (the repay leg on the second is a no-op, the LP close and swap
+empty). ABI: **none**; grant: **unchanged**. What the keeper must never do:
+withdraw — the second Close is the owner's alone, and the keeper's grant must
+keep `withdrawAmount = 0` in the plan and in the simulation guard, or a
+"helpful" keeper would move collateral to the account, which is exactly the
+power the grant is documented not to carry. Cost: ≈ 40 lines in `plan.ts`
+plus the wording, and a plan test per venue count. What it does not cover: a
+user who signs the first Close and walks away is left with a debt-free book
+on the second venue — visible on the dashboard, but a state the product has
+to explain.
+
+Which of the two is a product decision; this document does not make it. The
+memo question for the founder is at the end of the session status.
+
 **Does not.** The floor binds only sequences that go through the Oilskin venue.
 A user who hand-writes `account.exec(aavePool, borrow(...))` can still open at
 Aave's full LTV — that is the same owner-only door the exit guarantee is made
@@ -428,18 +495,19 @@ storage; the router's balance of every token it touches is unchanged across
 every call; no standing allowances (`_approveCallReset`;
 `invariant_noStandingAllowances`); reentrancy lock in transient storage;
 peripheral rights opt-in per call and bounded in depth; revert data bubbled
-untouched; **329 unit / fuzz / invariant tests green** (2026-09-10, slice C;
-plus 9 fork tests skipped without `FORK_URL`), with 9 invariants including the user-can-always-exit (raw and via the
+untouched; **329 unit / fuzz / invariant tests green** (2026-09-10, slice D;
+plus 10 fork tests skipped without `FORK_URL`), with 10 invariants including the user-can-always-exit (raw and via the
 router), repay-reaches-every-book, fee-never-touches-principal and the two
 donation properties.
 The one owned contract is the registry, which cannot touch an account — but
 see §16 for what it *can* do.
 
 **Does not.** **No external audit has been done.** Wave 1 was an internal
-adversarial audit (four lenses), not an external one. The fork suite (9 tests
-since slice B) was run against Base mainnet on 2026-09-10 at block 51,127,409:
+adversarial audit (four lenses), not an external one. The fork suite (10 tests
+since slice D) was run against Base mainnet on 2026-09-10 at block 51,127,409:
 4 passed, 4 failed of 8 on the first run, 7 / 2 after slices A and B, 8 / 1
-after slice C (the cbZEC B20 harness limit is the one left) (`VERIFIED-BASE-FACTS.md` Addendum 3; the founder's 2026-09-07 run
+after slice C, 9 / 1 of 10 after slice D (the cbZEC B20 harness limit is the
+one left) (`VERIFIED-BASE-FACTS.md` Addendum 3; the founder's 2026-09-07 run
 at block 51,001,138 had the same 4 + 4). The engine's live end-of-list revert
 shape was recorded — empty `0x`, not `Panic(0x32)` — and `positionsOf` was
 redesigned for it the same day (slice A, §12, with the gas of every probe

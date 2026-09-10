@@ -604,3 +604,25 @@ venues do not forgive dust: Aave refuses to release the last of the collateral w
 never for the borrow, and the threshold governs only what the app says and which book the router
 and keeper act on. (3) One unit of cbBTC (≈ $0.0008 at this block) is lost to the aToken's
 rounding on a supply-then-withdraw; it is not recoverable and is now stated in `RISKS.md` §8.
+
+## Addendum 7 — slice D, 2026-09-10: the two-book withdraw leg, metered on the fork
+
+Purpose: put numbers on the two options for the two-book Close (`RISKS.md` §8). Pinned at **block
+51,127,409**; a `MorphoBlueVenue` deployed in the test over the two verified Morpho markets
+(`0x9103…1836`, `0x8793…1bda`) against the fork's own registry; cbBTC moved from the fork's
+`AaveV3Venue` to it by `proposeVenue` → `vm.warp(2 days)` → `acceptVenue` (the test contract is
+that registry's owner); a book on each venue (0.5 cbBTC + 5,000 USDC borrowed on Aave first, the
+same on Morpho after the switch); everything metered raw through `OilskinAccount.execWithCallback`.
+Nothing signed or broadcast.
+
+| Measured | Value |
+|---|---|
+| debt after the two-day warp, Aave / Morpho | 5,001,269,399 / 5,000,000,001 USDC units (Aave accrued ≈ 1.27 USDC of interest across the timelock; Morpho's read is the +1 `toAssetsUp`) |
+| the router's views per venue (`debt` + `collateral`), Aave / Morpho | **158,648** / **63,987** gas |
+| `withdraw(cbBTC, max)` through the account, Morpho / Aave | **125,152** / **203,462** gas |
+| cbBTC back after both legs | 100,000,037 (Morpho's 0.5 exactly; Aave's aToken balance grown by two days of supply interest, 37 units) |
+
+Gas price context, read at block 51,146,494 the same day: `eth_gasPrice` 6,000,000 wei (0.006 gwei),
+base fee 5,000,000 wei (0.005 gwei); Chainlink ETH/USD `latestRoundData` = 2,437.27 (updated
+1789082053); cbBTC/USD = 76,623.97. The L1 data fee Base charges per transaction is not in these
+figures and was not read.

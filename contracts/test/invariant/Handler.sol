@@ -78,6 +78,18 @@ contract Handler is Test {
     bytes4 public g_lastRepayAcrossSelector;
     /// Opens that landed on Morpho: reachable only after `switchVenue(true)`.
     uint256 public g_morphoOpens;
+    /// Slice D (2026-09-10, `RISKS.md` §8 "two-book Close"). The web's Close is ONE
+    /// `unwind(ids, repay max, withdraw max)`. On an account with collateral on BOTH venues the
+    /// withdraw leg goes to the first venue holding anything of the account's and the other venue's
+    /// collateral is left behind. Recorded as a KNOWN FAILURE with a test waiting for the fix:
+    /// `singleCloseProbe` counts the two-book runs and the runs that stranded collateral;
+    /// `invariant_KNOWN_singleCloseStrandsCollateral` asserts the two counts are EQUAL today and
+    /// must be flipped to "stranded == 0" when the fix lands. `g_singleCloseUnexpected` is set when
+    /// a two-book close reverted or stranded nothing — either means the model in RISKS §8 is off.
+    uint256 public g_singleCloseProbes;
+    uint256 public g_singleCloseTwoBook;
+    uint256 public g_singleCloseStranded;
+    bool public g_singleCloseUnexpected;
     uint256 public g_calls;
     /// Donations pushed at a peripheral — the invariant asserts they are INERT, not that they are
     /// impossible: anyone can transfer to any address, and a contract that treats that as fatal is
@@ -375,6 +387,19 @@ contract Handler is Test {
         vm.revertToState(snap);
     }
 
+    /// Slice D: the web's single Close on a two-book account, under a snapshot (see the ghosts).
+    function singleCloseProbe() external {
+        g_calls++;
+        g_singleCloseProbes++;
+        uint256 snap = vm.snapshotState();
+        (bool twoBook, bool ok, bool stranded) = _singleClose();
+        vm.revertToState(snap);
+        if (!twoBook) return;
+        g_singleCloseTwoBook++;
+        if (!ok || !stranded) g_singleCloseUnexpected = true;
+        if (ok && stranded) g_singleCloseStranded++;
+    }
+
     function rawExitProbe() external {
         g_calls++;
         g_exitProbes++;
@@ -461,6 +486,37 @@ contract Handler is Test {
         for (uint256 i = 0; i < venues.length; i++) {
             if (ICollateralVenue(venues[i]).debt(address(acct), address(usdc)) != 0) failed = true;
         }
+    }
+
+    /// Exactly what `web/lib/plan.ts encodeUnwindWrite` sends: ids, repay max, withdraw max, in one
+    /// call — funded with enough USDC to cover every book, as the dashboard asks the user to be.
+    function _singleClose() internal returns (bool twoBook, bool ok, bool stranded) {
+        uint256 onAave = aaveVenue.collateral(address(acct), address(cbbtc));
+        uint256 onMorpho = morphoVenue.collateral(address(acct), address(cbbtc));
+        twoBook = onAave != 0 && onMorpho != 0;
+        if (!twoBook) return (false, true, false);
+        uint256 debt = _totalDebt();
+        uint256 held = usdc.balanceOf(address(acct));
+        if (debt > held) usdc.mint(address(acct), debt - held);
+        StrategyRouter.UnwindParams memory u = StrategyRouter.UnwindParams({
+            collateralAsset: address(cbbtc),
+            positionIds: _ids(),
+            band: _band(),
+            swap: StrategyRouter.SwapQuote({
+                quotedIn: 1e18,
+                quotedOut: 2453_450000,
+                maxSlippageBps: 100,
+                routeData: abi.encode(int24(100))
+            }),
+            repayAmount: type(uint256).max,
+            withdrawAmount: type(uint256).max,
+            deadline: block.timestamp + 1
+        });
+        (ok,) = _exec(address(router), abi.encodeCall(StrategyRouter.unwind, (u)));
+        if (!ok) return (true, false, false);
+        // Debt cleared everywhere (the repay leg reaches every book) but collateral left on the
+        // venue the withdraw leg did not visit: that is the strand.
+        stranded = _totalDebt() == 0 && _totalCollateral() != 0;
     }
 
     function _routerExit() internal returns (bool) {

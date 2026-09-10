@@ -41,7 +41,7 @@ contract InvariantsTest is Fixture {
         handler.grantKeeper();
 
         targetContract(address(handler));
-        bytes4[] memory sel = new bytes4[](20);
+        bytes4[] memory sel = new bytes4[](21);
         sel[0] = Handler.supplyAndBorrow.selector;
         sel[1] = Handler.openLp.selector;
         sel[2] = Handler.accrueYield.selector;
@@ -62,6 +62,7 @@ contract InvariantsTest is Fixture {
         sel[17] = Handler.routerExitProbe.selector;
         sel[18] = Handler.supplyAndBorrowOnCurrentVenue.selector;
         sel[19] = Handler.repayAcrossProbe.selector;
+        sel[20] = Handler.singleCloseProbe.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: sel}));
     }
 
@@ -88,6 +89,24 @@ contract InvariantsTest is Fixture {
         assertFalse(
             handler.g_repayAcrossFailed(),
             "a venue still owed USDC after unwind(repay max) with USDC to cover, or the unwind reverted without a name"
+        );
+    }
+
+    /// Slice D (2026-09-10): a KNOWN FAILURE recorded as a test waiting for its fix (`RISKS.md` §8
+    /// "two-book Close"). The web's Close is ONE `unwind(ids, repay max, withdraw max)`; on an
+    /// account with collateral on both venues the withdraw leg visits the first venue holding
+    /// anything and the other venue's collateral is left behind. The probe reproduces that after any
+    /// sequence; this invariant asserts the strand happens EVERY time today, so the day the fix
+    /// lands it goes red and is flipped to `assertEq(handler.g_singleCloseStranded(), 0)`.
+    function invariant_KNOWN_singleCloseStrandsCollateral() public view {
+        assertFalse(
+            handler.g_singleCloseUnexpected(),
+            "a two-book single Close reverted or stranded nothing: the model in RISKS section 8 is off, re-measure before flipping anything"
+        );
+        assertEq(
+            handler.g_singleCloseStranded(),
+            handler.g_singleCloseTwoBook(),
+            "KNOWN FAILURE (RISKS section 8, two-book Close): one unwind(withdraw max) strands the second venue's collateral today; when the fix lands, flip this to stranded == 0"
         );
     }
 
@@ -217,6 +236,13 @@ contract InvariantsTest is Fixture {
         assertFalse(handler.g_repayAcrossFailed(), "unwind(repay max) must clear every book the registry names");
         assertEq(handler.g_repayAcrossNamedReverts(), 0, "nothing to refuse with USDC to cover");
         assertGt(morphoVenue.debt(address(acct), address(usdc)), 0, "probe state restored");
+        // Slice D: the web's single Close on this two-book account strands the second venue's
+        // collateral — reached here, so the KNOWN-FAILURE invariant is not vacuous.
+        handler.singleCloseProbe();
+        assertEq(handler.g_singleCloseTwoBook(), 1, "the probe saw collateral on both venues");
+        assertEq(handler.g_singleCloseStranded(), 1, "KNOWN FAILURE (RISKS section 8): one Close left collateral on the second venue");
+        assertFalse(handler.g_singleCloseUnexpected());
+        assertGt(morphoVenue.collateral(address(acct), address(cbbtc)), 0, "probe state restored");
         handler.routerExitProbe();
         assertFalse(handler.g_routerExitProbeFailed(), "the router exit clears two books and withdraws from both venues");
         handler.rawExitProbe();

@@ -3,6 +3,32 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-10 — Slice D: the two-book Close, measured and parked with a test waiting
+
+**What.** After a venue switch an account can hold collateral on both venues; the web's Close is one
+`unwind(ids, repay max, withdraw max)` and the router's withdraw leg stops at the first venue holding
+anything, so the second venue's collateral stays behind, debt-free. Not fixed here — `RISKS.md` §8
+now carries the two options with numbers: (1) the router's withdraw leg iterating every venue that
+holds the account's collateral, each gated by its own exit floor (one new `VenueWithdrawn` event,
+`unwind` selector and grant unchanged, ≈ 362k gas per extra Aave venue / ≈ 189k per extra Morpho
+venue at the fork's figures — ≈ $0.005 / $0.003 of L2 execution at the base fee read the same day);
+(2) the web planning one Close per venue (no ABI change, Simple-mode wording written, the keeper must
+keep `withdrawAmount = 0`). The choice is the founder's.
+
+**Proof waiting for the fix.** `Handler.singleCloseProbe` runs the web's exact call on every two-book
+state the fuzz reaches, funded with every book's `debt()`, and counts the runs that stranded
+collateral; `invariant_KNOWN_singleCloseStrandsCollateral` asserts the strand happens every time
+(and that no such run reverted or stranded nothing), with the flip written into its message;
+`test_handlerPathsAreLive` reaches the state. Invariants 9 → **10**; the group is still one test.
+
+**Measured.** `test_fork_twoBookWithdrawLegGas` (fork 10 tests, 9 / 1 at block 51,127,409): a
+`MorphoBlueVenue` over the two verified markets on the fork's own registry, cbBTC switched by
+propose → timelock → accept, a book on each venue; the router's two views per venue cost 158,648
+gas on Aave / 63,987 on Morpho, a `withdraw(max)` leg 203,462 / 125,152 (Addendum 7).
+
+**Not done.** No `acceptVenue` (the fork test switches ITS OWN registry, deployed in the test),
+`Deploy.s.sol` untouched, nothing broadcast.
+
 ## 2026-09-10 — Slice C: one dust threshold, applied wherever "fully repaid" or "holds nothing" is decided
 
 **Why.** Measured at block 51,127,409 (Addendum 3): Aave reads a same-block supply of 1e8 cbBTC as

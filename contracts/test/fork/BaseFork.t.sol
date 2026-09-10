@@ -9,6 +9,8 @@ import {BaseAddresses} from "../../script/Deploy.s.sol";
 import {OilskinAccount} from "../../src/account/OilskinAccount.sol";
 import {OilskinAccountFactory} from "../../src/account/OilskinAccountFactory.sol";
 import {AaveV3Venue} from "../../src/venues/AaveV3Venue.sol";
+import {MorphoBlueVenue} from "../../src/venues/MorphoBlueVenue.sol";
+import {IMorphoBlue} from "../../src/interfaces/IMorphoBlue.sol";
 import {SnuggleLpVenue} from "../../src/venues/SnuggleLpVenue.sol";
 import {ICollateralVenue} from "../../src/interfaces/ICollateralVenue.sol";
 import {ILpVenue, LpOpenParams, PriceBand} from "../../src/interfaces/ILpVenue.sol";
@@ -252,6 +254,78 @@ contract BaseForkTest is Test {
         assertEq(aaveVenue.collateral(address(acct), BaseAddresses.CBBTC), 0);
         assertEq(IERC20(BaseAddresses.CBBTC).allowance(address(acct), BaseAddresses.AAVE_POOL), 0);
         assertEq(IERC20(BaseAddresses.USDC).allowance(address(acct), BaseAddresses.AAVE_POOL), 0);
+    }
+
+    /// Slice D (2026-09-10, `RISKS.md` §8 "two-book Close"): the gas of a withdraw leg on each real
+    /// venue, for option (1) — the router's withdraw leg iterating every venue that holds the
+    /// account's collateral. A two-book account is built on the fork's own registry: a book on
+    /// Aave, then cbBTC moved to a `MorphoBlueVenue` over the two verified Morpho markets (propose →
+    /// 2-day timelock → accept, the test contract being the registry owner here) and a book opened
+    /// there. Metered raw through the account: each venue's `withdraw(asset, max)` and the two views
+    /// the router asks per venue (`debt`, `collateral`). Nothing is broadcast.
+    function test_fork_twoBookWithdrawLegGas() public onlyForked {
+        bytes32[] memory ids = new bytes32[](2);
+        ids[0] = BaseAddresses.MORPHO_MARKET_CBBTC_USDC;
+        ids[1] = BaseAddresses.MORPHO_MARKET_WETH_USDC;
+        MorphoBlueVenue morphoVenue = new MorphoBlueVenue(
+            IMorphoBlue(BaseAddresses.MORPHO_BLUE), ICollateralRegistry(address(registry)), BaseAddresses.USDC, ids
+        );
+        assertTrue(morphoVenue.enabled(), "both verified markets exist at this block");
+
+        // Book 1: Aave.
+        deal(BaseAddresses.CBBTC, address(acct), 1e8);
+        vm.startPrank(alice);
+        acct.execWithCallback(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.supply, (BaseAddresses.CBBTC, 5e7)));
+        acct.execWithCallback(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.borrow, (BaseAddresses.USDC, 5_000e6)));
+        vm.stopPrank();
+        // The switch: cbBTC → Morpho; Aave is remembered as a previous venue.
+        registry.proposeVenue(BaseAddresses.CBBTC, address(morphoVenue), address(0));
+        vm.warp(block.timestamp + 2 days);
+        registry.acceptVenue(BaseAddresses.CBBTC);
+        assertEq(registry.venueOf(BaseAddresses.CBBTC), address(morphoVenue));
+        // Book 2: Morpho.
+        vm.startPrank(alice);
+        acct.execWithCallback(address(morphoVenue), 0, abi.encodeCall(ICollateralVenue.supply, (BaseAddresses.CBBTC, 5e7)));
+        acct.execWithCallback(address(morphoVenue), 0, abi.encodeCall(ICollateralVenue.borrow, (BaseAddresses.USDC, 5_000e6)));
+        vm.stopPrank();
+        assertGt(aaveVenue.debt(address(acct), BaseAddresses.USDC), 0);
+        assertGt(morphoVenue.debt(address(acct), BaseAddresses.USDC), 0);
+        console2.log("two books: Aave debt / Morpho debt", aaveVenue.debt(address(acct), BaseAddresses.USDC), morphoVenue.debt(address(acct), BaseAddresses.USDC));
+
+        // The router's per-venue reads (what iterating one more venue costs before any withdraw).
+        uint256 g0 = gasleft();
+        aaveVenue.debt(address(acct), BaseAddresses.USDC);
+        aaveVenue.collateral(address(acct), BaseAddresses.CBBTC);
+        uint256 gAaveViews = g0 - gasleft();
+        g0 = gasleft();
+        morphoVenue.debt(address(acct), BaseAddresses.USDC);
+        morphoVenue.collateral(address(acct), BaseAddresses.CBBTC);
+        uint256 gMorphoViews = g0 - gasleft();
+        console2.log("router views per venue (debt + collateral): Aave / Morpho", gAaveViews, gMorphoViews);
+
+        // Repay both books fully (the debt read includes the rounding), then meter each withdraw leg.
+        uint256 owedAave = aaveVenue.debt(address(acct), BaseAddresses.USDC);
+        uint256 owedMorpho = morphoVenue.debt(address(acct), BaseAddresses.USDC);
+        deal(BaseAddresses.USDC, address(acct), owedAave + owedMorpho);
+        vm.startPrank(alice);
+        acct.execWithCallback(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.repay, (BaseAddresses.USDC, type(uint256).max)));
+        acct.execWithCallback(address(morphoVenue), 0, abi.encodeCall(ICollateralVenue.repay, (BaseAddresses.USDC, type(uint256).max)));
+        assertEq(aaveVenue.debt(address(acct), BaseAddresses.USDC), 0);
+        assertEq(morphoVenue.debt(address(acct), BaseAddresses.USDC), 0);
+        g0 = gasleft();
+        acct.execWithCallback(address(morphoVenue), 0, abi.encodeCall(ICollateralVenue.withdraw, (BaseAddresses.CBBTC, type(uint256).max)));
+        uint256 gMorphoWithdraw = g0 - gasleft();
+        g0 = gasleft();
+        acct.execWithCallback(address(aaveVenue), 0, abi.encodeCall(ICollateralVenue.withdraw, (BaseAddresses.CBBTC, type(uint256).max)));
+        uint256 gAaveWithdraw = g0 - gasleft();
+        vm.stopPrank();
+        console2.log("withdraw(max) leg through the account: Morpho / Aave", gMorphoWithdraw, gAaveWithdraw);
+        console2.log("cbBTC back in the account", IERC20(BaseAddresses.CBBTC).balanceOf(address(acct)));
+        // Both books' collateral is back: Morpho's exactly, Aave's aToken balance grown by two days of
+        // supply interest across the timelock warp (37 units at this block) and rounded.
+        assertGe(IERC20(BaseAddresses.CBBTC).balanceOf(address(acct)), 1e8 - 2, "both books' collateral back, rounding aside");
+        assertGt(gAaveWithdraw, 0);
+        assertGt(gMorphoWithdraw, 0);
     }
 
     // -------------------------------------------------------------- engine entries
