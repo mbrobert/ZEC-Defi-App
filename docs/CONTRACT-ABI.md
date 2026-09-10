@@ -284,7 +284,7 @@ LpOpenParams { bytes32 poolId; uint256 amount0; uint256 amount1; uint24 rangeWid
                bool autoCompound; PriceBand band; uint256 deadline }
 ```
 `amount0`/`amount1` are the engine pool's token0/token1 (see `poolTokens`); one may be zero
-(single-sided; the engine swaps to ratio); both non-zero = dual deposit, bounce folded.
+(single-sided; the engine does NOT swap — it mints a one-sided range on that token's side of the price, measured 2026-09-10, `ISnuggleVault` FACT 4); both non-zero = dual deposit at a centred range, bounce folded.
 
 | selector | function | notes |
 |---|---|---|

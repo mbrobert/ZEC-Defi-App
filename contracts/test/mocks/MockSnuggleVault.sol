@@ -20,22 +20,38 @@ import {MockCLPool} from "./MockCLPool.sol";
 ///                     balanced part at the pool price and BOUNCES the excess of the long leg to
 ///                     msg.sender; every deposit mints a NEW id; withdraw closes a whole id.
 ///           • deposits pull via transferFrom(msg.sender); withdraw / harvest / claimStakingRewards
-///             pay the OWNER by transfer; harvest reverts on staked ids, claimStakingRewards on
-///             unstaked ones; outOfRangeSince tracks range (0 = in range).
-///           • the 60 s flash-loan hold (settable; default 0 for terse unit tests).
-///         Plus switches that reproduce the engine failure modes the venue must survive: a
-///         glitching index, a paused engine, an un-closable id, an id that refuses both claims.
+///             pay the OWNER by transfer; outOfRangeSince tracks range (0 = in range).
+///           • REVERT SHAPES measured on the live engine 2026-09-10 at block 51,127,409 (slice B,
+///             `VERIFIED-BASE-FACTS.md` Addendum 5) and matched here selector for selector, all
+///             argument-less: `NotPositionOwner()` for a foreign AND a never-minted id on withdraw,
+///             harvest and claimStakingRewards; `MinimumHoldTimeNotMet()` on a withdraw inside the
+///             engine's 60 s `MIN_POSITION_HOLD_TIME` (settable here, default 0 for terse unit tests);
+///             `UseClaimStakingRewards()` for harvest on a staked id; `NoFeesToHarvest()` for harvest
+///             with nothing to collect; `NoRewardAdapter()` for claimStakingRewards on an un-gauged
+///             entry and `NotStaked()` on a gauged one that is not staked; `DeadlineExpired()`,
+///             `PoolNotApproved()` and `TokenNotInPool()` on deposits (from the verified source).
+///             Withdraw, harvest and claimStakingRewards carry no pause on the live engine; only
+///             deposits and rebalances do (`whenNotPaused`, OZ 4.x string "Pausable: paused").
+///         Plus switches that reproduce failure modes the venue must survive and the engine cannot
+///         be made to produce on demand: a glitching index, an unreachable engine (every call
+///         reverts `EngineUnreachable()` — a proxy or node failure, NOT the engine's pause), an
+///         un-closable id (`WithdrawRefused`), an id that refuses both claims (`ClaimRefused`).
 contract MockSnuggleVault is ISnuggleVault {
     using SafeERC20 for IERC20;
 
-    error PoolNotApproved(bytes32 poolId);
-    error NotOwner();
+    // The live engine's errors (verified source, `SnuggleVaultUpgradeable` at 0x359f…2d28): no args.
+    error PoolNotApproved();
+    error TokenNotInPool();
+    error NotPositionOwner();
     error UseClaimStakingRewards();
     error NotStaked();
+    error NoRewardAdapter();
+    error NoFeesToHarvest();
     error ZeroLiquidityMinted();
     error MinimumHoldTimeNotMet();
-    error EnginePaused();
-    error Expired();
+    error DeadlineExpired();
+    // Test-only switches, not engine shapes.
+    error EngineUnreachable();
     error WithdrawRefused(uint256 tokenId);
     error ClaimRefused(uint256 tokenId);
 
@@ -46,6 +62,9 @@ contract MockSnuggleVault is ISnuggleVault {
         uint24 fee;
         int24 tickSpacing;
         bool active;
+        /// @dev A gauged entry (the live Aerodrome entries carry a reward adapter; Uniswap ones do
+        ///      not). Without one, `claimStakingRewards` is `NoRewardAdapter()` as on the engine.
+        bool gauged;
     }
 
     struct Pos {
@@ -88,7 +107,10 @@ contract MockSnuggleVault is ISnuggleVault {
     uint256 public minHoldTime;
     uint256 public withdrawSlippageBps;
     uint256 public singleSidedResidualBps;
+    /// @dev The engine's own pause: deposits revert with OZ's string; exits and claims do not.
     bool public paused;
+    /// @dev Not the engine: a proxy / node failure where every call reverts `EngineUnreachable()`.
+    bool public unreachable;
     address public glitchUser;
     uint256 public glitchIndex;
     bool public glitchArmed;
@@ -101,8 +123,12 @@ contract MockSnuggleVault is ISnuggleVault {
         external
     {
         int24 spacing = poolAddr.code.length != 0 ? MockCLPool(poolAddr).tickSpacing() : int24(100);
-        pools[id] = Pool(poolAddr, token0, token1, fee, spacing, true);
+        pools[id] = Pool(poolAddr, token0, token1, fee, spacing, true, true);
         _poolIds.push(id);
+    }
+
+    function setPoolGauged(bytes32 id, bool gauged) external {
+        pools[id].gauged = gauged;
     }
 
     function setPoolActive(bytes32 id, bool active) external {
@@ -124,6 +150,10 @@ contract MockSnuggleVault is ISnuggleVault {
 
     function setPaused(bool p) external {
         paused = p;
+    }
+
+    function setUnreachable(bool u) external {
+        unreachable = u;
     }
 
     function setEndShape(EndShape s) external {
@@ -161,7 +191,8 @@ contract MockSnuggleVault is ISnuggleVault {
 
     /// @dev FACT 2 — keeper rebalance: the id is REPLACED. Old id gone from the list and zeroed.
     function rekey(uint256 tokenId) external returns (uint256 newId) {
-        Pos memory x = _mustPos(tokenId);
+        Pos memory x = pos[tokenId];
+        require(x.exists, "rekey: no such id");
         _prune(x.owner, tokenId);
         delete pos[tokenId];
         newId = _mint(x.poolId, x.owner, x.rangeWidthBps, x.rebalanceDelay, x.autoSnuggle, x.autoCompound, x.amount0, x.amount1);
@@ -189,7 +220,8 @@ contract MockSnuggleVault is ISnuggleVault {
         address
     ) external returns (uint256 tokenId) {
         _live();
-        if (deadline < block.timestamp) revert Expired();
+        _notPaused();
+        if (deadline < block.timestamp) revert DeadlineExpired();
         Pool storage p = _mustPool(poolId);
         if (amount0Desired == 0 || amount1Desired == 0) revert ZeroLiquidityMinted();
         IERC20(p.token0).safeTransferFrom(msg.sender, address(this), amount0Desired);
@@ -228,9 +260,12 @@ contract MockSnuggleVault is ISnuggleVault {
         address
     ) external returns (uint256 tokenId) {
         _live();
-        if (deadline < block.timestamp) revert Expired();
-        Pool storage p = _mustPool(poolId);
-        if (token != p.token0 && token != p.token1) revert PoolNotApproved(poolId);
+        _notPaused();
+        Pool storage p = pools[poolId];
+        // The engine checks the token against the (possibly empty) config before anything else.
+        if (token != p.token0 && token != p.token1) revert TokenNotInPool();
+        if (deadline < block.timestamp) revert DeadlineExpired();
+        _mustPool(poolId);
         if (amount == 0) revert ZeroLiquidityMinted();
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
         uint256 residual = (amount * singleSidedResidualBps) / 10_000;
@@ -243,10 +278,11 @@ contract MockSnuggleVault is ISnuggleVault {
         );
     }
 
+    /// @dev Measured: a foreign id and a never-minted id both revert `NotPositionOwner()`; inside the
+    ///      hold `MinimumHoldTimeNotMet()`. No pause on the exit.
     function withdraw(uint256 tokenId, bool) external {
         _live();
         Pos storage x = _mustPos(tokenId);
-        if (msg.sender != x.owner) revert NotOwner();
         if (withdrawRefused[tokenId]) revert WithdrawRefused(tokenId);
         if (block.timestamp < x.depositTimestamp + minHoldTime) revert MinimumHoldTimeNotMet();
         Pool storage p = pools[x.poolId];
@@ -260,15 +296,24 @@ contract MockSnuggleVault is ISnuggleVault {
         if (pay1 > 0) IERC20(p.token1).safeTransfer(owner, pay1);
     }
 
+    /// @dev Measured: `NotPositionOwner()` for a foreign / never-minted id; `UseClaimStakingRewards()`
+    ///      on a staked id; `NoFeesToHarvest()` when nothing is pending. No pause.
     function harvest(uint256 tokenId) external {
         _live();
+        _mustPos(tokenId);
         if (staked[tokenId]) revert UseClaimStakingRewards();
         if (claimRefused[tokenId]) revert ClaimRefused(tokenId);
+        if (_pending(tokenId) == 0) revert NoFeesToHarvest();
         _payout(tokenId);
     }
 
+    /// @dev Measured: `NotPositionOwner()` for a foreign / never-minted id; `NoRewardAdapter()` on an
+    ///      un-gauged entry; `NotStaked()` on a gauged one whose id is not staked. Pays whatever is
+    ///      pending, zero included (the engine does not revert on zero here). No pause.
     function claimStakingRewards(uint256 tokenId) external returns (uint256 earned) {
         _live();
+        Pos storage x = _mustPos(tokenId);
+        if (!pools[x.poolId].gauged) revert NoRewardAdapter();
         if (!staked[tokenId]) revert NotStaked();
         if (claimRefused[tokenId]) revert ClaimRefused(tokenId);
         earned = _payout(tokenId);
@@ -276,7 +321,6 @@ contract MockSnuggleVault is ISnuggleVault {
 
     function updateParameters(uint256 tokenId, uint256 d, uint24 w, bool s, bool c) external {
         Pos storage x = _mustPos(tokenId);
-        if (msg.sender != x.owner) revert NotOwner();
         (x.rebalanceDelay, x.rangeWidthBps, x.autoSnuggle, x.autoCompound) = (uint64(d), w, s, c);
     }
 
@@ -402,15 +446,28 @@ contract MockSnuggleVault is ISnuggleVault {
 
     function _mustPool(bytes32 poolId) internal view returns (Pool storage p) {
         p = pools[poolId];
-        if (!p.active) revert PoolNotApproved(poolId);
+        if (!p.active) revert PoolNotApproved();
     }
 
+    /// @dev The engine reads `positions[tokenId].owner` and compares it to msg.sender: a never-minted
+    ///      id (owner zero) and a foreign id fail the same way, `NotPositionOwner()`.
     function _mustPos(uint256 tokenId) internal view returns (Pos storage x) {
         x = pos[tokenId];
-        if (!x.exists) revert PoolNotApproved(bytes32(tokenId));
+        if (!x.exists || x.owner != msg.sender) revert NotPositionOwner();
     }
 
+    function _pending(uint256 tokenId) internal view returns (uint256 total) {
+        uint256[] memory as_ = feeAmounts[tokenId];
+        for (uint256 i = 0; i < as_.length; i++) total += as_[i];
+    }
+
+    /// @dev A proxy / node failure: nothing answers. Not the engine's pause.
     function _live() internal view {
-        if (paused) revert EnginePaused();
+        if (unreachable) revert EngineUnreachable();
+    }
+
+    /// @dev The engine's pause (OZ 4.x `whenNotPaused`), on deposits only.
+    function _notPaused() internal view {
+        if (paused) revert("Pausable: paused");
     }
 }

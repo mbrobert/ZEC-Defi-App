@@ -313,11 +313,32 @@ contract SnuggleLpVenueTest is Fixture {
         lpVenue.positionsOf(address(acct));
     }
 
-    function test_positionsOfFailsClosedWhenEnginePaused() public {
-        _openUsdc(100e6);
+    /// The live engine's pause stops deposits only (`whenNotPaused` on `deposit` and the rebalance
+    /// paths — verified source, slice B); views, exits and claims are untouched by it. What makes the
+    /// venue report `EngineUnreachable` is an engine that does not answer at all — a proxy or node
+    /// failure — which the mock's `setUnreachable` reproduces.
+    function test_positionsOfFailsClosedWhenEngineUnreachable() public {
+        uint256 id = _openUsdc(100e6);
         engine.setPaused(true);
+        assertEq(lpVenue.positionsOf(address(acct)).length, 1, "the engine's pause does not touch views");
+        engine.setPaused(false);
+        engine.setUnreachable(true);
         vm.expectRevert(SnuggleLpVenue.EngineUnreachable.selector);
         lpVenue.positionsOf(address(acct));
+        id;
+    }
+
+    /// …and a paused engine still lets the position CLOSE (the exit carries no pause on the live
+    /// engine), while a new open is refused with OZ's string.
+    function test_pausedEngineRefusesOpensButNotCloses() public {
+        uint256 id = _openUsdc(100e6);
+        engine.setPaused(true);
+        LpOpenParams memory p = _openParams(POOL_WETH_USDC, 0, 100e6, poolWethUsdc);
+        vm.prank(alice);
+        vm.expectRevert(bytes("Pausable: paused"));
+        acct.execWithCallback(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p)));
+        (, uint256 out1,) = _close(id);
+        assertEq(out1, 100e6, "the exit does not depend on the engine's pause");
     }
 
     function test_positionsOfEnumeratesManyIds() public {

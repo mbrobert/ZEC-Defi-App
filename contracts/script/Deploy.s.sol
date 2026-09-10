@@ -47,6 +47,11 @@ library BaseAddresses {
 
     address internal constant AERODROME_VOTER = 0x16613524e02ad97eDfeF371bC883F2F5d6C480A5;
     address internal constant AERODROME_CBZEC_USDC_POOL = 0x0Fc47C17AF86078d809358db1b4db2DeBC988566;
+    /// @dev The Slipstream CLFactory the SwapRouter `0xBE6D…18a5` is bound to: read as `factory()` from the
+    ///      router and the NonfungiblePositionManager 2026-09-06, and from the WETH/USDC CL100 pool
+    ///      `0xb2cc…DC59` 2026-09-10 at block 51,145,283 (VERIFIED-BASE-FACTS, the 2026-09-06 addendum and Addendum 5). The
+    ///      cbZEC/USDC pool was created by a DIFFERENT factory (`0xf8f2…61Ef`, Addendum 3).
+    address internal constant AERODROME_CL_FACTORY = 0x5e7BB104d84c7CB9B682AaC2F3d509f5F406809A;
 
     address internal constant MORPHO_BLUE = 0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb;
     /// @dev Morpho Blue markets, read from `idToMarketParams` 2026-09-07 at block 51,003,524

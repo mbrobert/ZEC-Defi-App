@@ -392,23 +392,25 @@ storage; the router's balance of every token it touches is unchanged across
 every call; no standing allowances (`_approveCallReset`;
 `invariant_noStandingAllowances`); reentrancy lock in transient storage;
 peripheral rights opt-in per call and bounded in depth; revert data bubbled
-untouched; **323 unit / fuzz / invariant tests green** (2026-09-10, slice A;
-plus 8 fork tests skipped without `FORK_URL`), with 9 invariants including the user-can-always-exit (raw and via the
+untouched; **324 unit / fuzz / invariant tests green** (2026-09-10, slice B;
+plus 9 fork tests skipped without `FORK_URL`), with 9 invariants including the user-can-always-exit (raw and via the
 router), repay-reaches-every-book, fee-never-touches-principal and the two
 donation properties.
 The one owned contract is the registry, which cannot touch an account — but
 see §16 for what it *can* do.
 
 **Does not.** **No external audit has been done.** Wave 1 was an internal
-adversarial audit (four lenses), not an external one. The fork suite (8 tests)
-was run against Base mainnet on 2026-09-10 at block 51,127,409: 4 passed,
-4 failed (`VERIFIED-BASE-FACTS.md` Addendum 3; the founder's 2026-09-07 run
+adversarial audit (four lenses), not an external one. The fork suite (9 tests
+since slice B) was run against Base mainnet on 2026-09-10 at block 51,127,409:
+4 passed, 4 failed of 8 on the first run, 7 / 2 of 9 after slices A and B (`VERIFIED-BASE-FACTS.md` Addendum 3; the founder's 2026-09-07 run
 at block 51,001,138 had the same 4 + 4). The engine's live end-of-list revert
 shape was recorded — empty `0x`, not `Panic(0x32)` — and `positionsOf` was
-redesigned for it the same day (slice A, §12: 5 / 3 at the same block after
-it, with the gas of every probe shape measured, Addendum 4); the
-Aave flow reached repay and stopped on a 1-unit rounding shortfall (§8); the
-open → close flow stopped on a stub adapter the engine lists first (§12); and
+redesigned for it the same day (slice A, §12, with the gas of every probe
+shape measured, Addendum 4); the Aave flow reached repay and stopped on a
+1-unit rounding shortfall (§8); the open → close flow stopped on a stub adapter
+the engine lists first and, re-pointed at the real Aerodrome entry (slice B,
+§12, Addendum 5), opened, was refused inside the hold, and closed — showing the
+single-sided deposit is a one-sided range, not a swap to ratio; and
 the cbZEC B20 test cannot execute inside a fork EVM at all (its values were
 read live with `cast`). No product code was changed to turn any of these
 green. Slither / Aderyn / Halmos /
@@ -528,6 +530,40 @@ closed. Tests: `contracts/test/audit-regressions/EnumerationAmbiguity.t.sol`
 failure before the end fails closed), `SnuggleLpVenue.t.sol` (both mock
 shapes), the fork test, `agent/test/dispatcher.test.ts` and
 `web/test/reads.test.ts` (fail closed, fault named).
+
+**Measured, slice B (2026-09-10, fork at block 51,127,409; `VERIFIED-BASE-FACTS.md`
+Addendum 5).** The open → close fork test now selects the engine's entries by
+property — active, WETH/USDC, a position adapter that answers `getTWAPTick`,
+the pool's `factory()` the Slipstream CLFactory, a reward adapter set — and
+lands on the Aerodrome CL100 WETH/USDC entry (index 24, pool `0xb2cc…DC59`,
+gauge `0xF33a…e0c8`). A 1,000 USDC single-sided open mints to the account, is
+auto-staked in the gauge, is seen by `positionsOf`, refuses a close inside the
+60 s hold with `MinimumHoldTimeNotMet()`, and closes two minutes later for
+**999.999999 USDC and 0 WETH**. That last number is the finding: **the engine
+does not swap a single-sided deposit to ratio.** Its verified mint library
+builds a one-sided "snuggle" range on the deposited token's side of the price
+(below it for USDC, from the lower of TWAP and spot), so every position the
+product opens — the router deposits the borrowed USDC single-sided — holds
+only USDC until the price falls into the range, and earns no trading fees and
+no gauge emissions while it waits (Slipstream gauges pay staked liquidity that
+is in range). `ISnuggleVault` FACT 4 said the opposite and is corrected; the
+yield model's in-range assumption (§9, §14) is not what the engine mints, and
+whether the product should open dual-sided (a centred range, which needs a
+swap of half the USDC on the way in), accept the limit-order shape, or price
+it differently is a product decision the slice E memo lays out — not made
+here. The engine's refusal shapes were measured raw from the account on an
+un-gauged entry and are now the mocks' shapes, selector for selector:
+`NotPositionOwner()` for a foreign and a never-minted id alike on `withdraw`,
+`harvest` and `claimStakingRewards`; `NoFeesToHarvest()` for a harvest with
+nothing to collect; `NoRewardAdapter()` for `claimStakingRewards` where there
+is no gauge; `UseClaimStakingRewards()` for a harvest on a staked id;
+`claimStakingRewards` on a fresh staked id returns 0 without reverting. The
+venue's `_claimOne` (claimStakingRewards, then harvest, then `ClaimSkipped`)
+already tolerated all of them; the mock used to pay a zero harvest silently and
+to pause its views and exits, which the live engine does not — only deposits
+and rebalances carry `whenNotPaused`. Tests: `SnuggleLpVenue.t.sol`
+(`test_positionsOfFailsClosedWhenEngineUnreachable`,
+`test_pausedEngineRefusesOpensButNotCloses`), the two fork tests.
 
 ## 13 · Price-band and swap floors (MEV)
 

@@ -3,6 +3,46 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-10 — Slice B: open → close on the engine's real Aerodrome entry; the mocks carry the measured revert shapes
+
+**Fork test.** `test_fork_lpOpenCloseOnLiveEngine` selects the engine's entry by PROPERTY (active,
+WETH/USDC, a position adapter that answers `getTWAPTick(pool, 300)`, the pool's `factory()` = the
+Slipstream CLFactory, a reward adapter set) instead of "first active WETH/USDC", which was the
+Uniswap stub at index 0. It lands on the Aerodrome CL100 WETH/USDC entry (index 24 logged, pool
+`0xb2cc…DC59`, gauge `0xF33a…e0c8`) and proves, at block 51,127,409: minted to the account and
+auto-staked; `positionsOf` sees the id (slice A); a close inside the 60 s hold is
+`MinimumHoldTimeNotMet()`; `closeMany` inside the hold reports every id; the close at +2 min pays
+the account 999.999999 USDC and 0 WETH (9,999 bps of 1,000 back; the test bounds it at 98 %); the
+venue holds nothing. `BaseAddresses.AERODROME_CL_FACTORY` added (chain-read). A new
+`test_fork_engineRefusalShapesOnUnstakedEntry` opens on an un-gauged Uniswap entry (index 17
+logged) and measures, raw from the account: `NotPositionOwner()` for a foreign AND a never-minted id
+on `withdraw` / `harvest` / `claimStakingRewards`, `NoFeesToHarvest()`, `NoRewardAdapter()`; the
+venue's `claim` on a foreign id reports it. Fork at the pinned block: 5 / 3 of 8 → **7 / 2 of 9**.
+
+**The finding.** The engine does NOT swap a single-sided deposit to ratio. Its verified mint library
+(`SnuggleRebalanceLib.executeMint`, Sourcify) builds a one-sided "snuggle" range on the deposited
+token's side of the price — below it for USDC, from the lower of TWAP and spot — so every position
+the product opens (borrowed USDC in single-sided) holds only USDC until the price falls into the
+range and earns no fees or emissions while it waits. `ISnuggleVault` FACT 4 and the router's header
+said the opposite and are corrected (FACT 5 added with the measured shapes); `CONTRACT-ABI.md` too.
+`RISKS.md` §12 carries it; whether to open dual-sided, accept the limit-order shape, or price it is
+for the founder (slice E memo).
+
+**Mocks.** `MockSnuggleVault` declares the engine's errors by name and arity (`NotPositionOwner()`,
+`PoolNotApproved()`, `TokenNotInPool()`, `DeadlineExpired()`, `NoFeesToHarvest()`,
+`NoRewardAdapter()`; `NotOwner` / `Expired` / `PoolNotApproved(bytes32)` gone), reverts them under the
+engine's conditions (a never-minted id is `NotPositionOwner()`, a zero harvest reverts, an un-gauged
+pool refuses `claimStakingRewards`), pauses deposits only with OZ's string, and separates
+`setUnreachable` (a proxy / node failure → `EngineUnreachable`) from `setPaused`. Test switches
+(`WithdrawRefused`, `ClaimRefused`) are labelled as switches. Header says what was measured and what
+is source-derived.
+
+**Tests.** Contracts 323 → **324** / 0 / 9 (`SnuggleLpVenue.t.sol` +1: the pause refuses opens, not
+closes or views; the unreachable test renamed to what it tests). Keeper unchanged at 234 (re-run).
+
+**Not done.** No `acceptVenue`, `Deploy.s.sol` addresses only (one factory constant), nothing
+broadcast, `contracts/.env` not written.
+
 ## 2026-09-10 — Slice A: `positionsOf` works on the engine as it is
 
 **Why.** The first fork run (Addendum 3) measured the live engine's end-of-list revert as EMPTY —

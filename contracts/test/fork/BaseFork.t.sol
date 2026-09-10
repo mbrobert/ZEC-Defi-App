@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {Test, console2} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {BaseAddresses} from "../../script/Deploy.s.sol";
 import {OilskinAccount} from "../../src/account/OilskinAccount.sol";
 import {OilskinAccountFactory} from "../../src/account/OilskinAccountFactory.sol";
@@ -210,61 +211,259 @@ contract BaseForkTest is Test {
         assertEq(IERC20(BaseAddresses.USDC).allowance(address(acct), BaseAddresses.AAVE_POOL), 0);
     }
 
-    /// Open → close on the live engine through the account, in the first active USDC pool the
-    /// engine lists. Proves the id is minted TO THE ACCOUNT, the band reads the live pool, the
-    /// enumeration sees the id, and the close pays the account.
-    function test_fork_lpOpenCloseOnLiveEngine() public onlyForked {
-        ISnuggleVault engine = ISnuggleVault(BaseAddresses.SNUGGLE_ENGINE);
+    // -------------------------------------------------------------- engine entries
+
+    /// @dev One engine registry entry, as `approvedPools` describes it plus its index.
+    struct Entry {
+        uint256 index;
         bytes32 poolId;
         address pool;
+        address token0;
+        address token1;
+        address adapter;
+        address rewardAdapter;
+    }
+
+    /// @dev The engine's WETH/USDC entries that can actually mint (slice B, 2026-09-10): active, both
+    ///      tokens ours, and a position adapter that answers `getTWAPTick(pool, 300)` — the call the
+    ///      engine's library makes inside every deposit, which the 81 stub entries revert
+    ///      `NotImplemented()` on (Addendum 3). `aero` is the first such entry whose pool was created by
+    ///      the Slipstream CLFactory and that carries a reward adapter (a gauged position); `unstaked`
+    ///      the first such entry with no reward adapter (a Uniswap v3 position the engine never
+    ///      stakes). Selection is by these properties, never by index: the index is only logged.
+    ///      The scan stops as soon as both are found, to spare the public RPC.
+    function _mintableWethUsdcEntries() internal view returns (Entry memory aero, Entry memory unstaked) {
+        ISnuggleVault engine = ISnuggleVault(BaseAddresses.SNUGGLE_ENGINE);
         uint256 n = engine.poolIdsCount();
-        for (uint256 i = 0; i < n; i++) {
+        for (uint256 i = 0; i < n && (aero.pool == address(0) || unstaked.pool == address(0)); i++) {
             bytes32 candidate = engine.poolIds(i);
-            (address cPool, address c0, address c1,,, bool active,,) = engine.approvedPools(candidate);
-            if (active && (c0 == BaseAddresses.USDC || c1 == BaseAddresses.USDC) && (c0 == BaseAddresses.WETH || c1 == BaseAddresses.WETH)) {
-                poolId = candidate;
-                pool = cPool;
-                break;
-            }
+            (address cPool, address c0, address c1,,, bool active, address adapter, address rewardAdapter) =
+                engine.approvedPools(candidate);
+            if (!active) continue;
+            bool pair = (c0 == BaseAddresses.WETH && c1 == BaseAddresses.USDC) || (c0 == BaseAddresses.USDC && c1 == BaseAddresses.WETH);
+            if (!pair) continue;
+            (bool twapOk, bytes memory twap) = adapter.staticcall(abi.encodeWithSignature("getTWAPTick(address,uint32)", cPool, uint32(300)));
+            if (!twapOk || twap.length != 32) continue;
+            (bool fOk, bytes memory fRet) = cPool.staticcall(abi.encodeWithSignature("factory()"));
+            address factory_ = fOk && fRet.length == 32 ? abi.decode(fRet, (address)) : address(0);
+            Entry memory e = Entry(i, candidate, cPool, c0, c1, adapter, rewardAdapter);
+            if (aero.pool == address(0) && factory_ == BaseAddresses.AERODROME_CL_FACTORY && rewardAdapter != address(0)) aero = e;
+            else if (unstaked.pool == address(0) && rewardAdapter == address(0)) unstaked = e;
         }
-        vm.skip(poolId == bytes32(0)); // no active WETH/USDC pool listed: nothing to prove
-        (address t0,,) = lpVenue.poolTokens(poolId);
-        uint256 amount = 1_000e6;
-        deal(BaseAddresses.USDC, address(acct), amount);
-        uint256 price = lpVenue.poolSqrtPriceX96(poolId);
-        LpOpenParams memory p = LpOpenParams({
-            poolId: poolId,
-            amount0: t0 == BaseAddresses.USDC ? amount : 0,
-            amount1: t0 == BaseAddresses.USDC ? 0 : amount,
+    }
+
+    function _logEntry(string memory tag, Entry memory e) internal pure {
+        console2.log(tag, "index", e.index);
+        console2.logBytes32(e.poolId);
+        console2.log("  pool / adapter / rewardAdapter", e.pool, e.adapter, e.rewardAdapter);
+    }
+
+    function _openParamsFor(Entry memory e, uint256 usdcAmount, uint256 price) internal view returns (LpOpenParams memory p) {
+        p = LpOpenParams({
+            poolId: e.poolId,
+            amount0: e.token0 == BaseAddresses.USDC ? usdcAmount : 0,
+            amount1: e.token0 == BaseAddresses.USDC ? 0 : usdcAmount,
             rangeWidthBps: 1500,
             rebalanceDelay: 12 hours,
             autoCompound: true,
             band: PriceBand(uint160((price * 90) / 100), uint160((price * 110) / 100)),
             deadline: block.timestamp + 15 minutes
         });
+    }
+
+    /// @dev What the account's raw call to the engine reverted with (empty = it did not revert).
+    function _engineRevert(bytes memory data) internal returns (bool reverted, bytes memory reason) {
+        vm.prank(alice);
+        try acct.exec(BaseAddresses.SNUGGLE_ENGINE, 0, data) {
+            return (false, "");
+        } catch (bytes memory r) {
+            return (true, r);
+        }
+    }
+
+    /// @dev Value of a WETH amount in USDC at the pool's sqrtPriceX96 (token0 = WETH, token1 = USDC on
+    ///      the CL100 pool): token1 = token0 × (sqrtP / 2^96)², in raw units on both sides.
+    function _wethInUsdc(uint256 weth, uint256 sqrtPriceX96) internal pure returns (uint256) {
+        uint256 v = Math.mulDiv(weth, sqrtPriceX96, 2 ** 96);
+        return Math.mulDiv(v, sqrtPriceX96, 2 ** 96);
+    }
+
+    /// Open → close on the live engine through the account, in the engine's Aerodrome Slipstream
+    /// WETH/USDC entry — the pool the product ships, not the stub the first run landed on (slice B,
+    /// 2026-09-10). Proves: the id is minted TO THE ACCOUNT, `positionsOf` (slice A) sees it, the
+    /// band reads the live pool, the engine's 60 s hold refuses an early close with the shape the mock
+    /// reproduces, the close pays the account in both pool tokens, the round-trip loss is bounded,
+    /// and the venue holds nothing. Every revert shape it meets is logged as bytes for the facts.
+    function test_fork_lpOpenCloseOnLiveEngine() public onlyForked {
+        (Entry memory e,) = _mintableWethUsdcEntries();
+        vm.skip(e.pool == address(0)); // no mintable Aerodrome WETH/USDC entry listed: nothing to prove
+        _logEntry("aerodrome WETH/USDC entry:", e);
+        assertEq(e.token0, BaseAddresses.WETH, "CL100 pool: token0 is WETH");
+        assertEq(e.token1, BaseAddresses.USDC, "CL100 pool: token1 is USDC");
+        (address t0, address t1, address pool) = lpVenue.poolTokens(e.poolId);
+        assertEq(t0, e.token0);
+        assertEq(t1, e.token1);
+        assertEq(pool, e.pool);
+
+        uint256 amount = 1_000e6;
+        deal(BaseAddresses.USDC, address(acct), amount);
+        uint256 price = lpVenue.poolSqrtPriceX96(e.poolId);
+        console2.log("pool sqrtPriceX96 at open", price);
+        LpOpenParams memory p = _openParamsFor(e, amount, price);
         vm.prank(alice);
         uint256 id = abi.decode(acct.execWithCallback(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p))), (uint256));
+        console2.log("minted id", id);
         (bytes32 pid, address owner) = lpVenue.poolOf(id);
-        assertEq(pid, poolId);
+        assertEq(pid, e.poolId);
         assertEq(owner, address(acct), "minted to the account");
         uint256[] memory ids = lpVenue.positionsOf(address(acct));
-        assertEq(ids.length, 1);
+        assertEq(ids.length, 1, "slice A: the account's list is readable on the live engine");
         assertEq(ids[0], id);
+        assertEq(IERC20(BaseAddresses.USDC).balanceOf(address(acct)) + IERC20(BaseAddresses.WETH).balanceOf(address(acct)), 0, "nothing bounced on a single-sided open");
 
-        // Engine flash-loan hold: one timestamp read, single warp (via-IR CSE note, AUDIT round 3).
+        // The engine auto-stakes a gauged entry on deposit (`_tryStakePosition`).
+        (bool sOk, bytes memory sRet) = e.rewardAdapter.staticcall(abi.encodeWithSignature("isStaked(uint256)", id));
+        bool staked = sOk && sRet.length == 32 && abi.decode(sRet, (bool));
+        console2.log("staked in the gauge after deposit", staked);
+        // Where the engine put the liquidity relative to the price: measured, because a single-sided
+        // deposit that is NOT swapped to ratio is a one-sided range, and a one-sided range below the
+        // price holds only token1 (USDC) and earns nothing until the price enters it.
+        {
+            (,,,, int24 lo, int24 hi,,,,,,,,,,,) = ISnuggleVault(BaseAddresses.SNUGGLE_ENGINE).positions(id);
+            (, int24 tick,,,,) = IAerodromeCLPool(e.pool).slot0();
+            console2.log("position tickLower", int256(lo));
+            console2.log("position tickUpper", int256(hi));
+            console2.log("pool tick at open", int256(tick));
+            console2.log("in range at open?", lo <= tick && tick < hi);
+        }
+
+        // (1) A close inside the engine's 60 s hold: the shape, bubbled untouched through the venue.
+        // (The band is ±10 %: the venue's MAX_BAND_BPS = 2500 refuses a window wider than 25 % of its
+        // lower bound — the first run of this test met BandTooWide at ±20 % before reaching the engine.)
+        PriceBand memory band = PriceBand(uint160((price * 90) / 100), uint160((price * 110) / 100));
+        vm.prank(alice);
+        try acct.execWithCallback(address(lpVenue), 0, abi.encodeCall(ILpVenue.close, (id, band))) {
+            fail("a close inside the 60 s hold must revert");
+        } catch (bytes memory r) {
+            console2.log("close inside the hold reverted with:");
+            console2.logBytes(r);
+            assertEq(bytes4(r), bytes4(keccak256("MinimumHoldTimeNotMet()")), "the engine's hold error");
+            assertEq(r.length, 4, "and nothing else");
+        }
+        // (2) The claim paths on a fresh staked id, raw from the account: what the venue swallows.
+        (bool hRev, bytes memory hReason) = _engineRevert(abi.encodeCall(ISnuggleVault.harvest, (id)));
+        console2.log("harvest on the fresh id reverted?", hRev);
+        console2.logBytes(hReason);
+        (bool cRev, bytes memory cReason) = _engineRevert(abi.encodeCall(ISnuggleVault.claimStakingRewards, (id)));
+        console2.log("claimStakingRewards on the fresh id reverted?", cRev);
+        console2.logBytes(cReason);
+        if (staked) assertEq(bytes4(hReason), bytes4(keccak256("UseClaimStakingRewards()")), "a staked id refuses harvest");
+        // (3) closeMany with the live id inside the hold plus two ids the engine refuses: reported, not fatal.
+        {
+            uint256[] memory many = new uint256[](3);
+            (many[0], many[1], many[2]) = (type(uint256).max - 7, id, 1); // never minted; ours; someone else's (or long gone)
+            vm.prank(alice);
+            bytes memory ret = acct.execWithCallback(address(lpVenue), 0, abi.encodeCall(ILpVenue.closeMany, (many, band)));
+            (,,, uint256[] memory failed) = abi.decode(ret, (uint256, uint256, uint256, uint256[]));
+            assertEq(failed.length, 3, "inside the hold every id is reported, none closed");
+            assertEq(lpVenue.positionsOf(address(acct)).length, 1, "and ours is untouched");
+        }
+
+        // (4) Past the hold: close pays the account in the pool tokens the engine holds for it.
         uint256 t = block.timestamp;
         vm.warp(t + 2 minutes);
-        PriceBand memory band = PriceBand(uint160((price * 80) / 100), uint160((price * 120) / 100));
         vm.prank(alice);
-        bytes memory ret = acct.execWithCallback(address(lpVenue), 0, abi.encodeCall(ILpVenue.close, (id, band)));
-        (uint256 out0, uint256 out1,) = abi.decode(ret, (uint256, uint256, uint256));
-        console2.log("closed: out0", out0, "out1", out1);
+        bytes memory closed = acct.execWithCallback(address(lpVenue), 0, abi.encodeCall(ILpVenue.close, (id, band)));
+        (uint256 out0, uint256 out1, uint256 rewards) = abi.decode(closed, (uint256, uint256, uint256));
+        console2.log("closed: out0 (WETH wei)", out0, "out1 (USDC)", out1);
+        console2.log("closed: rewards (AERO wei)", rewards);
+        assertGt(out0 + out1, 0);
+        assertEq(lpVenue.positionsOf(address(acct)).length, 0, "the list is empty again");
+        assertEq(IERC20(BaseAddresses.WETH).balanceOf(address(acct)), out0, "WETH leg paid to the account");
+        assertEq(IERC20(BaseAddresses.USDC).balanceOf(address(acct)), out1, "USDC leg paid to the account");
+        // Round-trip value in USDC at the pool price after the close. Measured 2026-09-10 at block
+        // 51,127,409 (Addendum 5); the bound is that measurement with a margin, not a wish.
+        uint256 priceAfter = lpVenue.poolSqrtPriceX96(e.poolId);
+        uint256 valueBack = out1 + _wethInUsdc(out0, priceAfter);
+        console2.log("value back in USDC (raw) / of 1,000e6 in bps", valueBack, (valueBack * 10_000) / amount);
+        assertGt(valueBack, (amount * 98) / 100, "round-trip loss above 2% on a 1,000 USDC single-sided open");
+        assertEq(IERC20(BaseAddresses.USDC).balanceOf(address(lpVenue)), 0, "venue holds no USDC");
+        assertEq(IERC20(BaseAddresses.WETH).balanceOf(address(lpVenue)), 0, "venue holds no WETH");
+        assertEq(IERC20(BaseAddresses.AERO).balanceOf(address(lpVenue)), 0, "venue holds no AERO");
+    }
+
+    /// The engine's refusal shapes on an UNSTAKED entry (no reward adapter — a Uniswap v3 position the
+    /// engine never stakes), raw from the account, for the mocks to reproduce (slice B): a foreign id
+    /// and a never-minted id on `withdraw`, `harvest` and `claimStakingRewards`; `harvest` on a fresh
+    /// id with nothing to collect; `claimStakingRewards` where there is no gauge.
+    function test_fork_engineRefusalShapesOnUnstakedEntry() public onlyForked {
+        (, Entry memory e) = _mintableWethUsdcEntries();
+        vm.skip(e.pool == address(0)); // no mintable un-gauged WETH/USDC entry: nothing to measure
+        _logEntry("unstaked WETH/USDC entry:", e);
+        uint256 amount = 500e6;
+        deal(BaseAddresses.USDC, address(acct), amount);
+        uint256 price = lpVenue.poolSqrtPriceX96(e.poolId);
+        LpOpenParams memory p = _openParamsFor(e, amount, price);
+        vm.prank(alice);
+        bytes memory ret;
+        try acct.execWithCallback(address(lpVenue), 0, abi.encodeCall(ILpVenue.open, (p))) returns (bytes memory r) {
+            ret = r;
+        } catch (bytes memory r) {
+            console2.log("open on the unstaked entry reverted with:");
+            console2.logBytes(r);
+            fail("the un-gauged entry did not mint: record the shape above and re-select");
+        }
+        uint256 id = abi.decode(ret, (uint256));
+        console2.log("minted id", id);
+        assertEq(lpVenue.positionsOf(address(acct)).length, 1);
+
+        bytes4 notOwner = bytes4(keccak256("NotPositionOwner()"));
+        // A live id owned by someone else: the engine's global list at index 0.
+        (bool okAll, bytes memory allRet) = BaseAddresses.SNUGGLE_ENGINE.staticcall(abi.encodeWithSignature("allPositionIds(uint256)", 0));
+        assertTrue(okAll && allRet.length == 32);
+        uint256 foreign = abi.decode(allRet, (uint256));
+        (,, address foreignOwner,,,,,,,,,,,,,,) = ISnuggleVault(BaseAddresses.SNUGGLE_ENGINE).positions(foreign);
+        assertTrue(foreignOwner != address(acct) && foreignOwner != address(0));
+        uint256 never = type(uint256).max - 7;
+
+        bytes[6] memory calls = [
+            abi.encodeCall(ISnuggleVault.withdraw, (foreign, false)),
+            abi.encodeCall(ISnuggleVault.withdraw, (never, false)),
+            abi.encodeCall(ISnuggleVault.harvest, (foreign)),
+            abi.encodeCall(ISnuggleVault.claimStakingRewards, (foreign)),
+            abi.encodeCall(ISnuggleVault.harvest, (id)),
+            abi.encodeCall(ISnuggleVault.claimStakingRewards, (id))
+        ];
+        string[6] memory names = ["withdraw(foreign)", "withdraw(never minted)", "harvest(foreign)", "claimStakingRewards(foreign)", "harvest(own, fresh)", "claimStakingRewards(own, no gauge)"];
+        bytes4[6] memory expected = [notOwner, notOwner, notOwner, notOwner, bytes4(keccak256("NoFeesToHarvest()")), bytes4(keccak256("NoRewardAdapter()"))];
+        for (uint256 i = 0; i < 6; i++) {
+            (bool rev, bytes memory reason) = _engineRevert(calls[i]);
+            console2.log(names[i], "reverted?", rev);
+            console2.logBytes(reason);
+            assertTrue(rev, names[i]);
+            assertEq(bytes4(reason), expected[i], names[i]);
+            assertEq(reason.length, 4, "no arguments on the engine's errors");
+        }
+        // The venue's `claim` on the foreign id reports it, never reverts, and the position stays.
+        {
+            uint256[] memory one = new uint256[](1);
+            one[0] = foreign;
+            PriceBand memory band = PriceBand(uint160((price * 90) / 100), uint160((price * 110) / 100));
+            vm.prank(alice);
+            bytes memory cret = acct.execWithCallback(address(lpVenue), 0, abi.encodeCall(ILpVenue.claim, (one, band, block.timestamp + 60)));
+            (,,, uint256[] memory failed) = abi.decode(cret, (uint256, uint256, uint256, uint256[]));
+            assertEq(failed.length, 1);
+            assertEq(failed[0], foreign);
+        }
+        // And the un-gauged position closes past the hold, both legs to the account.
+        vm.warp(block.timestamp + 2 minutes);
+        PriceBand memory closeBand = PriceBand(uint160((price * 90) / 100), uint160((price * 110) / 100));
+        vm.prank(alice);
+        bytes memory closed = acct.execWithCallback(address(lpVenue), 0, abi.encodeCall(ILpVenue.close, (id, closeBand)));
+        (uint256 out0, uint256 out1,) = abi.decode(closed, (uint256, uint256, uint256));
+        console2.log("closed (unstaked): out0", out0, "out1", out1);
         assertGt(out0 + out1, 0);
         assertEq(lpVenue.positionsOf(address(acct)).length, 0);
-        // Round-trip loss bounded to engine fees / swap impact on a small size.
-        uint256 usdcBack = IERC20(BaseAddresses.USDC).balanceOf(address(acct));
-        assertGt(usdcBack, 900e6, "excessive round-trip loss");
-        assertEq(IERC20(BaseAddresses.USDC).balanceOf(address(lpVenue)), 0);
     }
 
     function test_fork_permit2Present() public onlyForked {

@@ -15,9 +15,24 @@ pragma solidity ^0.8.24;
 ///   FACT 2  Re-key (keeper rebalance) REPLACES the id: the old id is removed from the list and
 ///           `positions(old)` reads back all-zero; the new id is in the list.
 ///   FACT 3  `rangeWidthBps` is the TOTAL tick span (1 bps = 1 tick). Deployed bounds [150, 5000].
-///   FACT 4  `depositSingleSided` swaps to ratio inside the engine, ≈ zero residual. Dual `deposit`
-///           mints the balanced part and bounces the excess of the long leg to msg.sender. There is
-///           NO increaseLiquidity: every deposit mints a NEW id; `withdraw(id)` closes a whole id.
+///   FACT 4  `depositSingleSided` does NOT swap (corrected 2026-09-10, slice B — measured on the fork at
+///           block 51,127,409 and read in the verified library `SnuggleRebalanceLib.executeMint`):
+///           it mints a ONE-SIDED "snuggle" range on the deposit token's side of the price — for a
+///           token1 (USDC) deposit, `selectConservativeTick` takes the LOWER of TWAP and spot and
+///           `calculateSnuggleRange` builds the range BELOW it — so the position holds only the
+///           deposited token, ≈ zero residual, and earns fees or emissions only once the price
+///           enters that range. A 1,000 USDC open closed 2 minutes later returned 999.999999 USDC and
+///           0 WETH. Dual `deposit` uses a CENTRED range (`calculateCenteredRange`), mints the
+///           balanced part and bounces the excess of the long leg to msg.sender. There is NO
+///           increaseLiquidity: every deposit mints a NEW id; `withdraw(id)` closes a whole id.
+///   FACT 5  Revert shapes, measured 2026-09-10 (VERIFIED-BASE-FACTS Addendum 5), all argument-less:
+///           `NotPositionOwner()` for a foreign and a never-minted id alike on withdraw / harvest /
+///           claimStakingRewards; `MinimumHoldTimeNotMet()` inside the 60 s `MIN_POSITION_HOLD_TIME`;
+///           `UseClaimStakingRewards()` for harvest on a staked id; `NoFeesToHarvest()` for harvest
+///           with nothing to collect; `NoRewardAdapter()` for claimStakingRewards on an un-gauged
+///           entry (`NotStaked()` on a gauged one that is not staked). `claimStakingRewards` on a
+///           fresh staked id returns 0 without reverting. Gauged entries are auto-staked on deposit.
+///           `withdraw`, `harvest` and `claimStakingRewards` carry no pause; deposits do.
 ///   Also:   poolId is a bytes32 registry key (`approvedPools`), not a pool address; harvest /
 ///           claimStakingRewards pay the owner by transfer (measure by balance diff), net of the
 ///           engine's own performance fee; `ref` is a referral address locked at first deposit.

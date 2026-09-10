@@ -492,3 +492,90 @@ agreement and the gas bounds above). Still failing, unchanged, for slices B and 
 `test_fork_supplyBorrowRepayWithdrawUnderTheAccount` (`ERC20: transfer amount exceeds balance` at
 the repay — the +1 unit), and `test_fork_cbzecIsAB20WithLiveMultiplier` (harness limitation,
 `OpcodeNotFound`).
+
+## Addendum 5 — slice B, 2026-09-10: open → close on the engine's real Aerodrome entry, and the shapes the mocks now reproduce
+
+Purpose: make `test_fork_lpOpenCloseOnLiveEngine` prove the product's path (the Aerodrome Slipstream
+entry, not the stub the first run landed on), and measure every engine revert the mocks model.
+Method: `contracts/test/fork/BaseFork.t.sol` pinned at **block 51,127,409** (Foundry 1.8.1,
+`FORK_URL=https://mainnet.base.org`, `FORK_BLOCK=51127409`, 2026-09-10); entries selected by
+PROPERTY (active, WETH/USDC, a position adapter that answers `getTWAPTick(pool, 300)`, then the pool's
+`factory()` and whether a reward adapter is set), never by index — the index is only logged; `cast`
+reads at block 51,145,283–51,145,333 for the live entry table; the verified sources of the
+implementation and of `SnuggleRebalanceLib` (Sourcify, 33 files) for the mechanism. Nothing signed
+or broadcast; `contracts/.env` not written.
+
+### The two entries the tests select (engine `poolIdsCount()` = 214)
+
+| | Aerodrome (gauged) — `test_fork_lpOpenCloseOnLiveEngine` | Un-gauged — `test_fork_engineRefusalShapesOnUnstakedEntry` |
+|---|---|---|
+| index (logged) | **24** | **17** |
+| poolId | `0x0ea72f44ccaf524e3fda5e4a6682fda7a79e42dc2858ee27be311e9337aa72a8` | `0x12fc2fd09d3d3bfeca3b2a731167f3740c3a543755afa8d0d93fd95889e41796` |
+| pool | `0xb2cc224c1c9feE385f8ad6a55b4d94E92359DC59` — `factory()` = **`0x5e7BB104d84c7CB9B682AaC2F3d509f5F406809A`** (the CLFactory the SwapRouter is bound to), token0 WETH, token1 USDC, `tickSpacing()` 100, `fee()` 803 (dynamic, 0.0803 %), `gauge()` `0xF33a96b5932D9E9B9A0eDA447AbD8C9d48d2e0c8` | `0xd0b53D9277642d899DF5C87A3966A349A798F224` — the Uniswap v3 WETH/USDC 0.05 % pool (Addendum 3) |
+| engine fee field / tickSpacing | 100 / 100 | 500 / 10 |
+| position adapter | `0x0AedeEd5Ad8d45D3D928Fb872161EFaA559794D1` — `getTWAPTick(address,uint32)(int24)` answers (**−198,283** at block 51,145,333); the `(address,uint256)` spelling reverts | `0xca4cF963C71234a4F7D44a750B4D3847B4deBabd` — answers |
+| reward adapter | `0xBB8ea00aEa2f9D0643E5c0f80C177aa4A264375a` — `isStaked(id)` = **true** right after the deposit (auto-staked) | none (`address(0)`) |
+| gauge (`cast`, block 51,145,333) | `rewardRate()` **395,705,710,963,192,131** wei AERO/s ≈ 0.3957 AERO/s ≈ 34,189 AERO/day across the pool's staked in-range liquidity; `periodFinish()` **1,789,603,200** (2026-09-17 00:00 UTC); `rewardToken()` AERO | — |
+| pool `slot0()` at block 51,145,283 | sqrtPriceX96 `3920167856124431975155485`, tick **−198,289**, cardinality 3010, `liquidity()` `10667942621563466123` | — |
+
+The stub adapter `0xCCBfBA207D424c4711708c260Eba9C87f02cCED2` still reverts `NotImplemented` on
+`getTWAPTick(0xd0b5…F224, 300)` (re-read with `cast`, block 51,145,333), so the property filter
+excludes all 81 stub entries without naming any of them.
+
+### What the open → close proved (Aerodrome entry, block 51,127,409)
+
+| Step | Measured |
+|---|---|
+| `open` — 1,000 USDC single-sided (amount1), width 1500, band ±10 % of `poolSqrtPriceX96` = `3911693647682676357029293` | id **76,585,495** minted to the account; `positionsOf(account)` = [76,585,495] (slice A on the live engine); account holds 0 USDC and 0 WETH after (nothing bounced) |
+| where the engine put it | `positions(id)` ticks **[−199,900, −198,400]** (a 1,500-tick span, the requested width) with the pool at tick **−198,333** at open: the whole range sits BELOW the price, 67 ticks under the upper bound — **out of range at open**, holding only USDC, as the verified library's `calculateSnuggleRange` builds it for a token1 deposit |
+| `close` inside the 60 s hold (bubbled untouched through the venue) | `0xb586467e` = **`MinimumHoldTimeNotMet()`**, 4 bytes |
+| raw `harvest(id)` on the fresh staked id | `0x59c0b75c` = **`UseClaimStakingRewards()`** |
+| raw `claimStakingRewards(id)` on the fresh staked id | **no revert**, `earned` = 0 (the venue's `_claimOne` first try succeeds with nothing to pay) |
+| `closeMany([never minted, ours, 1])` inside the hold | `failed` = all three (two the venue refuses as not ours, ours as the engine's hold), the position untouched |
+| `close` at hold + 2 min | **out0 (WETH) = 0, out1 (USDC) = 999,999,999, rewards = 0**; both paid to the account; `positionsOf` = []; the venue holds 0 USDC / 0 WETH / 0 AERO |
+| round trip | 999.999999 of 1,000 USDC back at the pool price after the close = **9,999 bps**; the test's bound is 98 % |
+
+**The single-sided deposit is NOT swapped to ratio** — the correction of FACT 4 in
+`ISnuggleVault.sol`. The verified `SnuggleRebalanceLib.executeMint` (linked library
+`0xf84b…DCDDc`) takes the `singleSided` branch: `SnuggleLogic.selectConservativeTick` picks, for a
+token1 (USDC) deposit, the LOWER of the adapter's TWAP tick and spot tick, and
+`TickMath.calculateSnuggleRange` → `_buildDirectionalRange` builds the range on that token's side
+of the price — BELOW it for USDC — with no swap; only the dual-token `deposit` uses
+`calculateCenteredRange`. The position therefore holds only USDC until the price falls into the
+range, earns no trading fees and no gauge emissions while it sits there (Slipstream gauges pay
+staked liquidity that is in range), and converts into WETH as the price descends through it. That
+is the mechanism the Snuggle name describes and the mock already modelled (a single-sided deposit
+is kept in the deposited token); it is NOT what the interface header claimed and NOT what the yield
+model's in-range assumption prices. `RISKS.md` §12 carries it; the memo (slice E) and the
+founder's questions carry the product consequence.
+
+### The engine's refusal shapes (un-gauged entry, block 51,127,409; id 5,967,878 minted for 500 USDC)
+
+Raw calls from the account, every reason exactly 4 bytes:
+
+| Call | Revert | Selector |
+|---|---|---|
+| `withdraw(foreign id, false)` (the global list's first id, owned by `0xf4b4…1b1f`) | `NotPositionOwner()` | `0x70d645e3` |
+| `withdraw(never-minted id, false)` | `NotPositionOwner()` | `0x70d645e3` |
+| `harvest(foreign id)` | `NotPositionOwner()` | `0x70d645e3` |
+| `claimStakingRewards(foreign id)` | `NotPositionOwner()` | `0x70d645e3` |
+| `harvest(own fresh id)` | `NoFeesToHarvest()` | `0xcee1c2c5` |
+| `claimStakingRewards(own id, entry without a reward adapter)` | `NoRewardAdapter()` | `0x6d21e668` |
+| the venue's `claim([foreign id])` | reported in `failed`, no revert, position untouched | — |
+| `close` at hold + 2 min | out0 = 0, out1 = **499,999,999** (one unit of CL rounding), list empty | — |
+
+From the verified source, not exercisable on demand here: `NotStaked()` `0x039f2e18`
+(`claimStakingRewards` on a gauged entry whose id is not staked), `DeadlineExpired()` `0x1ab7da6b`,
+`PoolNotApproved()` `0xdb30f2ac`, `TokenNotInPool()` `0x07326195`; the pause is OZ 4.x
+`whenNotPaused` on `deposit` / `depositSingleSided` / the rebalance paths only — `withdraw`,
+`harvest` and `claimStakingRewards` carry none. `MockSnuggleVault` now declares these errors by the
+engine's names and arities, reverts them under the same conditions, keeps its own test switches
+(`WithdrawRefused`, `ClaimRefused`, `setUnreachable`) labelled as such, and no longer pauses views
+or exits; the header says which is which.
+
+### Fork scorecard after slice B (block 51,127,409): 7 passed / 2 failed / 0 skipped of 9
+
+`test_fork_lpOpenCloseOnLiveEngine` and the new `test_fork_engineRefusalShapesOnUnstakedEntry` PASS.
+Still failing, unchanged, for slice C and the harness limit:
+`test_fork_supplyBorrowRepayWithdrawUnderTheAccount` (the +1 unit at the repay) and
+`test_fork_cbzecIsAB20WithLiveMultiplier` (`OpcodeNotFound`).

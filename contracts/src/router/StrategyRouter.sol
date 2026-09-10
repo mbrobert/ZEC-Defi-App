@@ -21,8 +21,9 @@ import {CollateralRegistry} from "../registry/CollateralRegistry.sol";
 ///         storage, no owner, no fee. Every hop carries a deadline and a floor: Permit2 deadline, the
 ///         pool price band on the LP deposit/close, a quote-derived slippage floor on each swap, and
 ///         the entry health-factor floor after any borrow (enforced by the venue itself, so no entry
-///         point can skip it). The LP pool must contain USDC in v1 (the engine's single-sided deposit
-///         swaps to ratio internally, so no swap is needed on open); a non-USDC pool token is swapped
+///         point can skip it). The LP pool must contain USDC in v1 (the borrowed USDC goes in
+///         single-sided, which the engine mints as a ONE-SIDED range below the price without swapping
+///         — measured 2026-09-10, `ISnuggleVault` FACT 4 — so no swap is needed on open); a non-USDC pool token is swapped
 ///         back to USDC on unwind.
 ///
 /// @dev **The non-holder property is a DELTA, not an absolute.** Anyone can send tokens to any
