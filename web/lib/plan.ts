@@ -506,7 +506,7 @@ export function buildUnwindPlan(i: UnwindPlanInput): PlannedCall[] {
         { name: "deadline", value: utc(i.deadline) },
       ],
       note:
-        "closeMany (ids that refuse are reported in failedCount, at index 0 like anywhere else — never a revert) → swap the non-USDC leg through AerodromeSwapAdapter, which enforces amountIn × quotedOut / quotedIn × (10000 − maxSlippageBps) / 10000 on the amount actually swapped → repay (a fixed repay against zero debt is a no-op, not a revert) → withdraw, gated on the GLOBAL health factor. " +
+        "closeMany (ids that refuse are reported in failedCount, at index 0 like anywhere else — never a revert) → swap the non-USDC leg through AerodromeSwapAdapter, which enforces amountIn × quotedOut / quotedIn × (10000 − maxSlippageBps) / 10000 on the amount actually swapped → repay on every lending venue you still owe, the one with the lowest health factor first (a fixed repay against zero debt is a no-op, not a revert) → withdraw from the venue holding the position, gated on that venue's GLOBAL health factor. " +
         "Works on a disabled ASSET; refuses through a disabled VENUE (VenueDisabled) — then the owner's raw exec to Aave is the escape. Fee only in SnuggleLpVenue.close, on rewards.",
       required: true,
       encodable: abiOk && !!i.account && i.positionIds.length > 0 && quoteOk,

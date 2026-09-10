@@ -108,7 +108,14 @@ export class MockOilskin {
    * repay leg finds no debt — so the receipt is a success whose `LeveragedLpUnwound.repaid` is 0.
    */
   strandRepay = false;
-  /** `LeveragedLpUnwound` logs emitted by the transaction being executed right now. */
+  /**
+   * The router as it stood on 2026-09-08 (RISKS §8 residual (a)): the repay went to the FIRST venue
+   * in `[venueOf, ...previousVenues]` holding anything of the account's — debt OR collateral — so
+   * dust or a small healthy debt on the registry's new pointer took it while the previous venue's
+   * debt rode. The default models the router since 2026-09-09: every owing venue, worst first.
+   */
+  repayFirstHoldingVenueOnly = false;
+  /** `LeveragedLpUnwound` / `VenueRepaid` logs emitted by the transaction being executed right now. */
   private pendingLogs: MockLog[] = [];
   /**
    * The registry as the venue reader reads it (audit wave 2, M-HIGH-2): which assets are enabled,
@@ -261,6 +268,25 @@ export class MockOilskin {
     let total = 0n;
     for (const pos of (this.morpho.positions.get(account.toLowerCase()) ?? new Map<string, MockMorphoPosition>()).values()) total += pos.debt;
     return total;
+  }
+  /** `[venueOf(asset), ...previousVenues(asset)]` as the router's `_exitVenues` reads them, no duplicates. */
+  exitVenues(asset: Address): Address[] {
+    const key = asset.toLowerCase();
+    const current = this.venueOf.get(key) ?? this.aaveVenue;
+    const list = [current];
+    for (const v of this.previousVenuesOf.get(key) ?? []) if (!list.some((x) => x.toLowerCase() === v.toLowerCase())) list.push(v);
+    return list;
+  }
+  /** One venue's book for the account: what it owes there, its health factor there, and the collateral it holds there. */
+  bookOf(venue: Address, account: Address, asset: Address): { venue: Address; kind: "aave" | "other"; owed: bigint; hf: bigint; collateral: bigint } {
+    const acct = account.toLowerCase();
+    if (this.isAaveKind(venue.toLowerCase())) {
+      const user = this.chain.users.get(acct)?.get(this.usdc.toLowerCase());
+      const held = this.chain.users.get(acct)?.get(asset.toLowerCase())?.aTokenBalance ?? 0n;
+      return { venue, kind: "aave", owed: user ? user.variableDebt + user.stableDebt : 0n, hf: this.chain.accountData(account)[5], collateral: held };
+    }
+    const pos = this.morphoPosition(account, asset);
+    return { venue, kind: "other", owed: pos.debt, hf: this.morphoHealthFactor(account), collateral: pos.collateral };
   }
   private isAaveKind(venue: string): boolean {
     const provider = this.venueProviders.has(venue) ? this.venueProviders.get(venue) : (AAVE_V3.poolAddressesProvider as Address);
@@ -516,21 +542,35 @@ export class MockOilskin {
 
     let repaid = 0n;
     if (p.repayAmount !== 0n && !this.strandRepay) {
-      // The router's exit path follows the position (audit wave 2, M-HIGH-1): the Aave debt when
-      // there is one, else the Morpho-style market of the collateral asset the call names.
-      const user = this.chain.users.get(acct)?.get(this.usdc.toLowerCase());
-      const aaveOwed = user ? user.variableDebt + user.stableDebt : 0n;
-      const morphoPos = aaveOwed === 0n ? this.morphoPosition(account as Address, p.collateralAsset) : null;
-      const owed = morphoPos ? morphoPos.debt : aaveOwed;
-      const held = this.usdcBalances.get(acct) ?? 0n;
-      let amount = p.repayAmount === MAX_UINT256 ? (owed < held ? owed : held) : p.repayAmount;
-      if (amount > held) throw revert("ERC20: transfer amount exceeds balance");
-      if (amount > owed) amount = owed;
-      if (amount !== 0n) {
-        if (morphoPos) this.setMorphoPosition(account as Address, p.collateralAsset, { ...morphoPos, debt: morphoPos.debt - amount });
-        else if (user) user.variableDebt -= amount;
+      // The router's repay leg follows the position across EVERY venue the registry names for the
+      // asset — `[venueOf, ...previousVenues]` (audit wave 2, M-HIGH-1) — repaying each one the
+      // account owes, worst health factor first, until the amount (max = everything held) is spent,
+      // and says which in one `VenueRepaid` per venue (RISKS §8 residual (a), closed 2026-09-09).
+      const books = this.exitVenues(p.collateralAsset).map((venue) => this.bookOf(venue, account as Address, p.collateralAsset));
+      let order = books.filter((b) => b.owed > 0n).sort((a, b) => (a.hf < b.hf ? -1 : a.hf > b.hf ? 1 : 0));
+      if (this.repayFirstHoldingVenueOnly) {
+        const first = books.find((b) => b.owed > 0n || b.collateral > 0n);
+        order = first && first.owed > 0n ? [first] : [];
+      }
+      let remaining = p.repayAmount;
+      for (const b of order) {
+        const held = this.usdcBalances.get(acct) ?? 0n;
+        if (held === 0n || remaining === 0n) break;
+        let amount = b.owed < held ? b.owed : held;
+        if (amount > remaining) amount = remaining;
+        if (b.kind === "aave") {
+          const user = this.chain.users.get(acct)?.get(this.usdc.toLowerCase());
+          if (user) user.variableDebt -= amount;
+        } else {
+          const pos = this.morphoPosition(account as Address, p.collateralAsset);
+          this.setMorphoPosition(account as Address, p.collateralAsset, { ...pos, debt: pos.debt - amount });
+        }
         this.usdcBalances.set(acct, held - amount);
-        repaid = amount;
+        repaid += amount;
+        remaining -= amount;
+        const vTopics = encodeEventTopics({ abi: strategyRouterAbi, eventName: "VenueRepaid", args: { account: account as Address, venue: b.venue } }) as Hex[];
+        const vData = encodeAbiParameters([{ type: "uint256" }], [amount]);
+        this.pendingLogs.push({ address: this.opts.router, topics: vTopics, data: vData, blockNumber: this.chain.blockNumber, logIndex: this.pendingLogs.length });
       }
     }
     const [, , , , , aaveHf] = this.chain.accountData(account as Address);

@@ -6,6 +6,7 @@ import {StrategyRouter} from "../../src/router/StrategyRouter.sol";
 import {CollateralRegistry} from "../../src/registry/CollateralRegistry.sol";
 import {MorphoBlueVenue} from "../../src/venues/MorphoBlueVenue.sol";
 import {Call} from "../../src/interfaces/IOilskinAccount.sol";
+import {ICollateralVenue} from "../../src/interfaces/ICollateralVenue.sol";
 
 /// @notice Audit wave 2, M-HIGH-1 (`docs/AUDIT-2026-09-07.md`): a registry venue switch used to
 ///         strand every open position on the previous venue. `StrategyRouter.unwind` resolved the
@@ -204,30 +205,160 @@ contract VenueSwitchRegressionTest is Fixture {
         assertEq(morphoVenue.debt(address(acct), address(usdc)), 0);
     }
 
-    /// Two positions, one per venue (opened before and after the switch): each unwind resolves
-    /// the venue that holds something. With the current venue holding a position it wins; once it
-    /// is empty the previous venue is found.
+    /// Two positions, one per venue (opened before and after the switch). The REPAY leg reaches
+    /// both books in one call, worst health factor first (2026-09-09; until then the first exit
+    /// repaid Morpho's 10k only and the Aave 30k waited for the second click). The WITHDRAW leg
+    /// resolves the venue holding the position: the current one first, and once it is empty the
+    /// previous venue is found — so two Closes still return both collaterals.
     function test_FIX_M1f_positionsOnBothVenuesAreEachReachable() public {
         _openOnAaveAndGrant(); // Aave: 1 cbBTC, 30k debt, 30k idle USDC
         _switchToMorpho(address(cbbtc));
         _ownerExec(address(router), abi.encodeCall(StrategyRouter.openBorrowOnly, (_borrowOnly(ONE_CBBTC, 10_000e6, 3))));
         assertEq(morphoVenue.debt(address(acct), address(usdc)), 10_000e6);
+        assertLt(aaveVenue.healthFactor(address(acct)), morphoVenue.healthFactor(address(acct)), "Aave is the worse book");
 
-        // First exit resolves the CURRENT venue (Morpho) and clears it.
+        // First exit: the repay clears Aave (worse) then Morpho; the withdraw resolves the CURRENT
+        // venue (Morpho) and clears it.
         StrategyRouter.UnwindParams memory u = _keeperUnwind(new uint256[](0));
         u.withdrawAmount = type(uint256).max;
         bytes memory ret = _ownerExec(address(router), abi.encodeCall(StrategyRouter.unwind, (u)));
         (, uint256 repaid, uint256 withdrawn,) = abi.decode(ret, (uint256, uint256, uint256, uint256));
-        assertEq(repaid, 10_000e6);
+        assertEq(repaid, BORROW + 10_000e6, "one unwind repaid both books");
         assertEq(withdrawn, ONE_CBBTC);
         assertEq(morphoVenue.collateral(address(acct), address(cbbtc)), 0);
+        assertEq(aaveVenue.debt(address(acct), address(usdc)), 0, "the previous venue's debt went in the same call");
+        assertEq(morphoVenue.debt(address(acct), address(usdc)), 0);
 
-        // Second exit now finds the Aave position through the registry's memory.
+        // Second exit now finds the Aave collateral through the registry's memory; nothing is owed.
         ret = _ownerExec(address(router), abi.encodeCall(StrategyRouter.unwind, (u)));
         (, repaid, withdrawn,) = abi.decode(ret, (uint256, uint256, uint256, uint256));
-        assertEq(repaid, BORROW);
+        assertEq(repaid, 0);
         assertEq(withdrawn, ONE_CBBTC);
-        assertEq(aaveVenue.debt(address(acct), address(usdc)), 0);
         assertEq(cbbtc.balanceOf(address(acct)), 2 * ONE_CBBTC);
+    }
+
+    // =====================================================================
+    // RISKS §8 residual (a), closed 2026-09-09: the repay leg must reach EVERY venue the account
+    // still owes, worst health factor first — not the first venue that happens to hold anything.
+    // Before this, a Morpho pointer with dust collateral (or a small, healthy Morpho debt) was
+    // "the first venue holding the asset", the keeper's repay landed there, and the Aave debt that
+    // fired the rung rode on — CONFIRMED when Morpho owed a little, silent when it owed nothing.
+    // =====================================================================
+
+    uint256 constant DUST = 1e4; // 0.0001 cbBTC of collateral on the current (Morpho) venue
+    uint256 constant SMALL = 1_000e6; // a healthy 1,000 USDC Morpho debt next to the 30,000 on Aave
+
+    /// The account holds dust collateral on the CURRENT venue and its whole debt on the previous one.
+    function _openOnAaveThenDustOnMorpho() internal {
+        _openOnAaveAndGrant();
+        _switchToMorpho(address(cbbtc));
+        cbbtc.mint(address(acct), DUST);
+        _ownerExec(address(morphoVenue), abi.encodeCall(ICollateralVenue.supply, (address(cbbtc), DUST)));
+        assertEq(morphoVenue.collateral(address(acct), address(cbbtc)), DUST, "dust sits on Morpho");
+        assertEq(morphoVenue.debt(address(acct), address(usdc)), 0, "nothing is owed on Morpho");
+        // cbBTC falls on Aave: 50,000 × 0.78 / 30,000 = HF 1.30, below the repay rung.
+        aave.setReserve(address(cbbtc), CBBTC_LTV, CBBTC_LT, 750, true, true, 50_000e8, RATE_CBBTC_RAY);
+        assertLt(aaveVenue.healthFactor(address(acct)), 1.35e18);
+    }
+
+    /// The account owes a lot on the previous venue (Aave, HF 1.30) and a little on the current one
+    /// (Morpho, 1 cbBTC against 1,000 USDC: HF ≈ 68). It holds 31,000 idle USDC — enough for both.
+    function _openOnAaveThenSmallDebtOnMorpho() internal {
+        _openOnAaveAndGrant();
+        _switchToMorpho(address(cbbtc));
+        _ownerExec(address(router), abi.encodeCall(StrategyRouter.openBorrowOnly, (_borrowOnly(ONE_CBBTC, SMALL, 2))));
+        assertEq(morphoVenue.debt(address(acct), address(usdc)), SMALL);
+        assertEq(usdc.balanceOf(address(acct)), BORROW + SMALL);
+        aave.setReserve(address(cbbtc), CBBTC_LTV, CBBTC_LT, 750, true, true, 50_000e8, RATE_CBBTC_RAY);
+        assertLt(aaveVenue.healthFactor(address(acct)), 1.35e18, "Aave is the book in trouble");
+        assertGt(morphoVenue.healthFactor(address(acct)), 10e18, "Morpho is the healthy book");
+    }
+
+    function _keeperRepay(uint256 repayAmount) internal returns (uint256 repaid) {
+        StrategyRouter.UnwindParams memory u = _keeperUnwind(new uint256[](0));
+        u.repayAmount = repayAmount;
+        vm.prank(keeper);
+        bytes[] memory res = acct.execAsKeeper(_one(_callP(address(router), abi.encodeCall(StrategyRouter.unwind, (u)))));
+        (, repaid,,) = abi.decode(res[0], (uint256, uint256, uint256, uint256));
+    }
+
+    /// Dust collateral on the current venue must not hide the debt on the previous one. Before the
+    /// fix this call SUCCEEDED with `repaid == 0` and the Aave debt untouched.
+    function test_FIX_M1g_keeperRepayReachesAaveDebtBehindMorphoDustCollateral() public {
+        _openOnAaveThenDustOnMorpho();
+        uint256 repaid = _keeperRepay(type(uint256).max);
+        assertEq(repaid, BORROW, "the keeper's repay must reach the debt, not the dust");
+        assertEq(aaveVenue.debt(address(acct), address(usdc)), 0, "the Aave debt was repaid, never a silent success");
+        assertEq(usdc.balanceOf(address(acct)), 0);
+        assertEq(morphoVenue.collateral(address(acct), address(cbbtc)), DUST, "the dust is untouched");
+    }
+
+    /// A small, healthy debt on the current venue must not absorb the repay meant for the book in
+    /// trouble. Before the fix this call repaid the 1,000 USDC on Morpho, returned `repaid > 0` — so
+    /// the keeper called it CONFIRMED — and left the 30,000 on Aave riding at HF 1.30.
+    function test_FIX_M1h_keeperRepayPaysTheWorstBookFirstNotTheHealthierOne() public {
+        _openOnAaveThenSmallDebtOnMorpho();
+        uint256 repaid = _keeperRepay(type(uint256).max);
+        assertEq(aaveVenue.debt(address(acct), address(usdc)), 0, "the Aave debt (the worst book) was repaid first");
+        assertEq(morphoVenue.debt(address(acct), address(usdc)), 0, "and the remainder cleared Morpho");
+        assertEq(repaid, BORROW + SMALL, "one unwind reached both books");
+        assertEq(usdc.balanceOf(address(acct)), 0);
+    }
+
+    /// A bounded repay (a partial rung) goes to the worst venue first and only spills over once
+    /// that venue is clear. Before the fix the 5,000 went to Morpho (1,000 repaid, the rest idle).
+    function test_FIX_M1i_aBoundedRepayGoesToTheWorstVenueFirst() public {
+        _openOnAaveThenSmallDebtOnMorpho();
+        uint256 repaid = _keeperRepay(5_000e6);
+        assertEq(repaid, 5_000e6);
+        assertEq(aaveVenue.debt(address(acct), address(usdc)), BORROW - 5_000e6, "every unit went to the worst book");
+        assertEq(morphoVenue.debt(address(acct), address(usdc)), SMALL, "the healthy book was not touched");
+        assertEq(usdc.balanceOf(address(acct)), BORROW + SMALL - 5_000e6);
+    }
+
+    /// Today's production shape — one asset, one venue, no switch ever — is exactly what it was,
+    /// plus one `VenueRepaid` naming the Aave venue for the keeper's receipt check.
+    function test_FIX_M1j_theAaveOnlyProductionShapeIsUnchanged() public {
+        _openOnAaveAndGrant();
+        assertEq(registry.previousVenues(address(cbbtc)).length, 0, "no switch has happened");
+        aave.setReserve(address(cbbtc), CBBTC_LTV, CBBTC_LT, 750, true, true, 50_000e8, RATE_CBBTC_RAY);
+        vm.expectEmit(true, true, false, true);
+        emit StrategyRouter.VenueRepaid(address(acct), address(aaveVenue), BORROW);
+        vm.expectEmit(true, true, false, true);
+        emit StrategyRouter.LeveragedLpUnwound(address(acct), address(cbbtc), 0, 0, 0, BORROW, 0, type(uint256).max);
+        uint256 repaid = _keeperRepay(type(uint256).max);
+        assertEq(repaid, BORROW);
+        assertEq(aaveVenue.debt(address(acct), address(usdc)), 0);
+        assertEq(usdc.balanceOf(address(acct)), 0);
+    }
+
+    /// The receipt says WHICH book was paid: one `VenueRepaid` per venue, worst first, and the
+    /// `LeveragedLpUnwound` total is their sum. This is what the keeper's `confirm()` reads.
+    function test_FIX_M1k_oneVenueRepaidPerVenueWorstFirstAndTheTotalIsTheirSum() public {
+        _openOnAaveThenSmallDebtOnMorpho();
+        vm.expectEmit(true, true, false, true);
+        emit StrategyRouter.VenueRepaid(address(acct), address(aaveVenue), BORROW);
+        vm.expectEmit(true, true, false, true);
+        emit StrategyRouter.VenueRepaid(address(acct), address(morphoVenue), SMALL);
+        vm.expectEmit(true, true, false, true);
+        emit StrategyRouter.LeveragedLpUnwound(address(acct), address(cbbtc), 0, 0, 0, BORROW + SMALL, 0, type(uint256).max);
+        uint256 repaid = _keeperRepay(type(uint256).max);
+        assertEq(repaid, BORROW + SMALL);
+    }
+
+    /// The reported health factor is the account's WORST across the venues named for the asset:
+    /// after a bounded repay Aave (25k left at the crashed price) is still the worse book, and that
+    /// is the number the event carries — not the healthy Morpho book's.
+    function test_FIX_M1l_theEventCarriesTheWorstHealthFactorAcrossVenues() public {
+        _openOnAaveThenSmallDebtOnMorpho();
+        StrategyRouter.UnwindParams memory u = _keeperUnwind(new uint256[](0));
+        u.repayAmount = 5_000e6;
+        vm.prank(keeper);
+        bytes[] memory res = acct.execAsKeeper(_one(_callP(address(router), abi.encodeCall(StrategyRouter.unwind, (u)))));
+        (,,, uint256 hf) = abi.decode(res[0], (uint256, uint256, uint256, uint256));
+        assertEq(hf, aaveVenue.healthFactor(address(acct)), "the worse book's factor");
+        assertLt(hf, morphoVenue.healthFactor(address(acct)));
+        // 50,000 x 0.78 / 25,000 = 1.56: the number the keeper's ladder sees, not Morpho's ~68.
+        assertApproxEqRel(hf, 1.56e18, 1e14);
     }
 }

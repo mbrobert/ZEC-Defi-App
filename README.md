@@ -87,7 +87,7 @@ until the gate flips. The gate is computed, never curated
 | `web/` | Next.js 14 — wallet connect, cbZEC onboarding, wizard, venue-aware chain-read dashboard with a keeper panel and a pending-venue banner, CoW spot; demo mode without a wallet | 144 unit tests (142 passed, 2 skipped); Playwright 12/12 |
 | `packages/shared/` | The one source for addresses, fees, the health-factor ladder, LTV presets, widths, pools | 53 tests |
 | `prototype/` | `simple.html` and `index.html` — dependency-free walkthroughs pinned to the same facts and model numbers | 289 checks (118 + 109 + 56) + 6 fuzz |
-| `scripts/verify-abi.mjs` | Generates / diffs `contracts/abi/oilskin-abi.json` from `contracts/out` | 326/326 |
+| `scripts/verify-abi.mjs` | Generates / diffs `contracts/abi/oilskin-abi.json` from `contracts/out` | 327/327 |
 | `docs/` | `ARCHITECTURE` · `FLOWS` · `DEPOSIT-FLOW` · `RISKS` · `AUDIT` · `AUDIT-SCOPE` · `AUDIT-2026-09-06` · `TESTING` · `PRIVACY` · `CONTRACT-ABI` · `VERIFIED-BASE-FACTS` · `BASE-PIVOT-2026-09` · `BUILD-SPEC-2026-09` · `YIELD-SERVICE` · `MODEL-NUMBERS-2026-09-05` · `CHANGELOG` | this build |
 
 ## Run every suite

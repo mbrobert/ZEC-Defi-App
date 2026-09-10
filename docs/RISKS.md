@@ -195,15 +195,40 @@ mainnet is still the registry owner's explicit, separate step** — `proposeVenu
 script performs it; `Deploy.s.sol` leaves cbBTC and WETH on `AaveV3Venue`. The
 switch itself no longer strands positions opened on Aave — the router's exit
 path follows the position through `CollateralRegistry.previousVenues` (wave-2
-M-HIGH-1). Two residuals: (a) the keeper's protective `unwind` is resolved by
-the router to the first venue holding the asset, so an account with positions
-on BOTH the Aave pool and the Morpho venue for the same asset may see the repay
-land on the healthier one; `confirm()` then sees a repay that did not lift the
-combined health factor and the re-arm bound escalates instead of retrying for
-ever (C-MED-2); (b) because the cbBTC market's oracle is BTC/USD while the
-keeper's feed is cbBTC/USD, a cbBTC depeg beyond the bound makes the Morpho
-position UNKNOWN rather than acted on early — the owner is told; the keeper
-does not guess which price is right. Morpho has ONE threshold: a
+M-HIGH-1). **Residual (a), fixed 2026-09-09.** Until then the keeper's
+protective `unwind` was resolved by the router to the FIRST venue holding
+anything of the account's, so dust collateral or a small, healthy debt on the
+registry's new pointer took the repay while the debt that fired the rung rode
+on — a CONFIRMED that protected nothing, or a silent `repaid 0`. Now the repay
+leg of `StrategyRouter.unwind` visits EVERY venue the registry names for the
+asset (`venueOf`, then `previousVenues`) that the account still owes USDC on,
+lowest health factor first, until the amount (max = all the USDC the account
+holds) is spent, and emits one `VenueRepaid(account, venue, repaid)` per venue
+reached; the withdraw leg and its health-factor gate stay on the venue holding
+the position. The keeper's `confirm()` reads those events and refuses (FAILED)
+any successful receipt that leaves a venue the account still owes without one,
+re-reading every venue through the same reader the world check uses and
+failing closed when it cannot; `repaid == 0` and "no event" stay FAILED as
+before. This is shape A of the two the brief allowed — the router iterates,
+the calldata is unchanged — not shape B (an explicit venue in `UnwindParams`):
+the router already knew every venue and read each one's debt; the same
+worst-first rule already governs `MorphoBlueVenue.repay` across its markets;
+the signed grant's `unwind` selector does not move; the web's Close needs no
+venue picker a Simple-mode user would have to understand; and the owner's
+Close now clears both books in one transaction. What it costs: a two-book
+account whose USDC runs out on the worse book leaves the healthier one
+untouched, and that receipt is FAILED (the message says the account ran dry);
+the retry re-values the account and is SUPERSEDED once the worse book sits
+above the rung's disarm — one warn-level event, no second transaction. A repay
+is only ever as wide as the asset the rung named: a venue that the dominant
+collateral's registry history does not name is out of that call's reach, and
+the same rule reports it FAILED rather than CONFIRMED. Tests:
+`contracts/test/audit-regressions/VenueSwitch.t.sol` (M1g–M1l),
+`agent/test/dispatcher.test.ts` ("RISKS §8 residual (a)"). Residual (b)
+stands: because the cbBTC market's oracle is BTC/USD while the keeper's feed
+is cbBTC/USD, a cbBTC depeg beyond the bound makes the Morpho position UNKNOWN
+rather than acted on early — the owner is told; the keeper does not guess
+which price is right. Morpho has ONE threshold: a
 borrow is allowed up to the 86 % LLTV and liquidated below it, with no gap
 between "max LTV" and "liquidation threshold" as on Aave, so the registry's
 derived offer is min(86 / 1.55 = 55.5 %, 86 %, 50 % cap) = 50 %, and a position

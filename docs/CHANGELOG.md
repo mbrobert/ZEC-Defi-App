@@ -3,6 +3,31 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-09 — `RISKS.md` §8 residual (a) closed: the repay reaches every book, the receipt says which
+
+**Router.** `StrategyRouter.unwind`'s repay leg no longer stops at the first venue holding anything
+of the account's: it repays EVERY venue the registry names for the asset (`venueOf`, then
+`previousVenues`) that the account still owes USDC on, lowest health factor first, until the amount
+(max = all the USDC held) is spent, and emits one `VenueRepaid(account, venue, repaid)` per venue
+reached. Dust collateral, or a small healthy debt, on the registry's new pointer used to absorb the
+keeper's repay while the Aave debt that fired the rung rode on. The withdraw leg and its floor gate
+stay on the venue holding the position; `LeveragedLpUnwound.healthFactor` is the worst across the
+venues. ABI bundle 326 → **327** (the event); the `unwind` selector and the grant shape are
+unchanged. Shape A of the brief (router iterates) over B (explicit venue in the calldata):
+`docs/RISKS.md` §8 says why.
+
+**Keeper.** `confirm()` reads the receipt's `VenueRepaid` events and, with the venue reader on,
+re-reads every venue: a successful receipt that leaves a venue the account still owes without a
+`VenueRepaid` is FAILED (naming the venue, and saying whether the account ran dry on the worse book
+or the router skipped it); unreadable venues at confirm time are FAILED too. `repaid == 0` and "no
+event" stay FAILED. `policy.ts` is unchanged. ABI seam 71 → **72** checks.
+
+**Tests.** `VenueSwitch.t.sol` 6 → 12 (M1g–M1l, three of them failing on `400c03f`; M1f now expects
+one Close to clear both books), `dispatcher.test.ts` +6. Contracts 304 / 0 / 8; keeper 221 / 45;
+web 144 / 142 / 2 unchanged with the regenerated ABI.
+
+**Not done.** No `acceptVenue`, `Deploy.s.sol` untouched, nothing broadcast.
+
 ## 2026-09-09 — M-HIGH-2's real fix: the keeper and the dashboard read every venue the registry names
 
 **Keeper.** `agent/src/services/venues.ts` `VenueReader` replaces the Aave-only startup guard: on

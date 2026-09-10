@@ -5453,6 +5453,14 @@
             true,
             false
           ]
+        },
+        "VenueRepaid(address,address,uint256)": {
+          "topic0": "0x327daf51fa6119d55d5168fd772dafa992834804e8190147c6f5af150ba75ddc",
+          "indexed": [
+            true,
+            true,
+            false
+          ]
         }
       },
       "errors": {
@@ -6038,6 +6046,31 @@
             },
             {
               "name": "amount",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "event",
+          "name": "VenueRepaid",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "venue",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "repaid",
               "type": "uint256",
               "indexed": false,
               "internalType": "uint256"

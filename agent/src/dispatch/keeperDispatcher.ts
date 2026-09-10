@@ -53,7 +53,12 @@ import type { DispatchIntent, DispatchResult, Dispatcher, OkValuation } from "./
  *   6. persists the keeper NONCE before broadcasting, so a crash between the
  *      send and the store write is visible on resume;
  *   7. broadcasts and returns SENT immediately so the monitor can persist the
- *      hash; `confirm` finishes the job on a later tick.
+ *      hash; `confirm` finishes the job on a later tick — and a successful
+ *      receipt is CONFIRMED only when the router's own events say the repay
+ *      reached every venue the account still owes: `LeveragedLpUnwound.repaid`
+ *      must be non-zero (M-HIGH-1) and, with a venue reader configured, every
+ *      venue where `debt(account, USDC)` is still non-zero must carry a
+ *      `VenueRepaid` in the receipt (RISKS §8 residual (a), closed 2026-09-09).
  *
  * The keeper's private key lives inside the viem account object only; this
  * class never reads or logs it.
@@ -115,12 +120,28 @@ function errMsg(e: unknown): string {
   return e instanceof Error ? `${e.name}: ${e.message.split("\n")[0]}` : String(e);
 }
 
-/** What every `LeveragedLpUnwound` in a receipt says the router did for `account`, summed. */
+export interface UnwindSummary {
+  events: number;
+  closed: bigint;
+  failed: bigint;
+  usdcFromLp: bigint;
+  repaid: bigint;
+  withdrawn: bigint;
+  /** `VenueRepaid` per venue (lower-cased address → USDC repaid there), summed across the receipt. */
+  byVenue: Map<string, bigint>;
+}
+
+/**
+ * What every `LeveragedLpUnwound` in a receipt says the router did for `account`, summed — and,
+ * from the router's `VenueRepaid` events, WHICH venue each repaid unit reached. The total alone
+ * was enough to catch a repay that moved nothing (M-HIGH-1); it could not catch a repay that moved
+ * the wrong book (RISKS §8 residual (a)).
+ */
 export function summarizeUnwinds(
   logs: readonly { address: `0x${string}`; data: `0x${string}`; topics: readonly `0x${string}`[] }[],
   account: Address
-): { events: number; closed: bigint; failed: bigint; usdcFromLp: bigint; repaid: bigint; withdrawn: bigint } {
-  const out = { events: 0, closed: 0n, failed: 0n, usdcFromLp: 0n, repaid: 0n, withdrawn: 0n };
+): UnwindSummary {
+  const out: UnwindSummary = { events: 0, closed: 0n, failed: 0n, usdcFromLp: 0n, repaid: 0n, withdrawn: 0n, byVenue: new Map() };
   type Unwound = { account?: string; closedCount?: bigint; failedCount?: bigint; usdcFromLp?: bigint; repaid?: bigint; withdrawn?: bigint };
   let parsed: { args: Unwound }[];
   try {
@@ -137,6 +158,19 @@ export function summarizeUnwinds(
     out.usdcFromLp += a.usdcFromLp ?? 0n;
     out.repaid += a.repaid ?? 0n;
     out.withdrawn += a.withdrawn ?? 0n;
+  }
+  type Repaid = { account?: string; venue?: string; repaid?: bigint };
+  let perVenue: { args: Repaid }[] = [];
+  try {
+    perVenue = parseEventLogs({ abi: strategyRouterAbi, logs: logs as never, eventName: "VenueRepaid" }) as unknown as { args: Repaid }[];
+  } catch {
+    perVenue = [];
+  }
+  for (const log of perVenue) {
+    const a = log.args;
+    if (!a.account || a.account.toLowerCase() !== account.toLowerCase() || !a.venue) continue;
+    const k = a.venue.toLowerCase();
+    out.byVenue.set(k, (out.byVenue.get(k) ?? 0n) + (a.repaid ?? 0n));
   }
   return out;
 }
@@ -430,7 +464,33 @@ export class KeeperDispatcher implements Dispatcher {
           status: "FAILED",
           error:
             `transaction ${record.txHash} succeeded but repaid nothing (closed ${moved.closed}, failed ${moved.failed}, usdcFromLp ${moved.usdcFromLp}) — ` +
-            "a repay rung that moves no debt is not protection; the venue the router resolved may not hold this position",
+            "a repay rung that moves no debt is not protection; no venue the registry names for this asset owed anything the account could pay",
+        };
+      }
+      // The total says something was repaid; the router's `VenueRepaid` events say WHERE. Every
+      // venue the account still owes USDC on must be among them, or the repay landed on another
+      // book than the one that fired the rung — dust collateral or a small healthy debt on the
+      // registry's new pointer used to take it while the Aave debt rode (RISKS §8 residual (a),
+      // closed 2026-09-09). Read the venues NOW, through the same reader the world check uses:
+      // a venue that cannot be read may be the one still owing, so that is not confirmed either.
+      const where = await this.untouchedVenues(record.account, moved.byVenue, signal);
+      if (where.unreadable !== null) {
+        return {
+          status: "FAILED",
+          error:
+            `transaction ${record.txHash} succeeded and repaid ${moved.repaid}, but the registry's venues could not be re-read to prove ` +
+            `no debt was left untouched (${where.unreadable}) — not confirming what cannot be verified`,
+        };
+      }
+      if (where.untouched.length) {
+        const reached = [...moved.byVenue].map(([v, amt]) => `${v} ${amt}`).join(", ") || "no venue named";
+        const left = where.untouched.map((u) => `${u.venue} (${u.debtUsdc} USDC still owed)`).join(", ");
+        const why = where.heldAfter === 0n
+          ? "the account's USDC ran out on the worse book, so this receipt is not a protection of that debt; the retry re-values the account and continues"
+          : "the repay reached another book than the one this account still owes — not a protection of that debt";
+        return {
+          status: "FAILED",
+          error: `transaction ${record.txHash} succeeded and repaid ${moved.repaid} (${reached}) but left USDC debt untouched on ${left}: ${why}`,
         };
       }
       return { status: "CONFIRMED", txHash: record.txHash };
@@ -469,6 +529,48 @@ export class KeeperDispatcher implements Dispatcher {
     // exit is exactly what breaks a 1 % band, and an exit at a worse price
     // beats no exit at all (audit C-MED-4).
     return Math.min(max, base * (Math.max(0, attempts) + 1));
+  }
+
+  /**
+   * Venues where the account STILL owes USDC that the receipt's `VenueRepaid` events do not name.
+   * Without a venue reader (no router configured: the Aave-only, observe-and-value shape) there is
+   * no registry to ask and the total is all there is — `[]`. Any read failure is `unreadable`:
+   * confirm() fails closed on it rather than confirming a receipt it cannot check.
+   */
+  private async untouchedVenues(
+    account: Address,
+    byVenue: ReadonlyMap<string, bigint>,
+    signal?: AbortSignal
+  ): Promise<{ unreadable: string | null; untouched: { venue: Address; debtUsdc: bigint }[]; heldAfter: bigint | null }> {
+    if (!this.d.venues) return { unreadable: null, untouched: [], heldAfter: null };
+    let ctx;
+    let snap;
+    try {
+      ctx = await this.d.venues.readContext(signal);
+      snap = await this.d.venues.readAccount(account, ctx, signal);
+    } catch (e) {
+      return { unreadable: errMsg(e), untouched: [], heldAfter: null };
+    }
+    const problems = [
+      ...ctx.unreadableAssets.map((u) => `registry ${u.symbol}: ${u.reason}`),
+      ...snap.unreadable.map((u) => `venue ${u.venue}: ${u.reason}`),
+    ];
+    if (problems.length) return { unreadable: problems.join("; "), untouched: [], heldAfter: null };
+    const untouched = snap.venues
+      .filter((v) => v.debtUsdc > 0n && (byVenue.get(v.venue.toLowerCase()) ?? 0n) === 0n)
+      .map((v) => ({ venue: v.venue, debtUsdc: v.debtUsdc }));
+    let heldAfter: bigint | null = null;
+    if (untouched.length) {
+      // Only for the message: did the router run dry on the worse book, or skip this one?
+      try {
+        heldAfter = await this.call("usdc.balanceOf", signal, () =>
+          this.d.client.readContract({ address: this.d.usdc, abi: erc20BalanceAbi, functionName: "balanceOf", args: [account] })
+        );
+      } catch {
+        heldAfter = null;
+      }
+    }
+    return { unreadable: null, untouched, heldAfter };
   }
 
   async readGrant(account: Address, target: Address, selector: Hex, signal?: AbortSignal): Promise<GrantState> {

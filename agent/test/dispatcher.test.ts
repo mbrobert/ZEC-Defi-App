@@ -1,21 +1,22 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fc from "fast-check";
-import { createWalletClient, decodeFunctionData, getAddress, type Hex } from "viem";
+import { createWalletClient, decodeFunctionData, encodeEventTopics, getAddress, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { base } from "viem/chains";
 import { HF_LADDER } from "@zyo/shared";
 import { GRANT_SELECTORS, strategyRouterAbi } from "../src/abi/oilskin.js";
-import { KeeperDispatcher } from "../src/dispatch/keeperDispatcher.js";
+import { KeeperDispatcher, summarizeUnwinds } from "../src/dispatch/keeperDispatcher.js";
 import { CLOSE_FRACTION, bandFor, closeCount, isqrt, planAction, selectIds, type PoolInfo } from "../src/dispatch/policy.js";
 import { NO_SWAP, quoteForPool, minOutFor } from "../src/dispatch/quote.js";
 import { evaluateSnapshot } from "../src/engine/valuation.js";
 import { Logger, memorySink } from "../src/log.js";
 import { AaveReader, aaveAddressesFromShared, reserveSpecsFromShared } from "../src/services/chain.js";
+import { VenueReader } from "../src/services/venues.js";
 import type { DispatchRecord } from "../src/store/keeperStore.js";
 import type { Address } from "../src/types/evm.js";
 import { ACCOUNT_A, CBBTC, USDC, WETH as WETH_T, cbBtcPosition, debtForHf, newMockChain } from "./fixtures.js";
-import { MockOilskin } from "./mockOilskin.js";
+import { AAVE_VENUE_ADDR, MORPHO_VENUE_ADDR, MockOilskin } from "./mockOilskin.js";
 
 const ROUTER = getAddress("0x2000000000000000000000000000000000000001") as Address;
 const LP_VENUE = getAddress("0x2000000000000000000000000000000000000002") as Address;
@@ -48,7 +49,7 @@ function record(action: string, rung: string, hf: number, over: Partial<Dispatch
   return { key: `${ACCOUNT_A.toLowerCase()}:1:1:${action}`, account: ACCOUNT_A.toLowerCase() as Address, episode: 1, seq: 1, action, rung, hf, status: "PENDING", attempts: 0, createdAt: now, updatedAt: now, ...over };
 }
 
-async function rig(hf = 1.3) {
+async function rig(hf = 1.3, opts: { venues?: boolean } = {}) {
   const chain = newMockChain();
   cbBtcPosition(chain, ACCOUNT_A, debtForHf(hf));
   const oil = new MockOilskin(chain, { router: ROUTER, lpVenue: LP_VENUE });
@@ -58,6 +59,9 @@ async function rig(hf = 1.3) {
   const client = chain.publicClient();
   const wallet = createWalletClient({ account: privateKeyToAccount(KEY), chain: base, transport: chain.transport() });
   const reader = new AaveReader(client, aaveAddressesFromShared(), reserveSpecsFromShared(), { deadlineMs: 500 });
+  // The venue-aware reader the production keeper always has next to a router (audit wave 2,
+  // M-HIGH-2). Off by default here so the older tests keep pinning the Aave-only receipt rules.
+  const venues = opts.venues ? new VenueReader(client, ROUTER, { deadlineMs: 500 }) : null;
   const sink = memorySink();
   const notified: { kind: string; account?: string }[] = [];
   const notifier = {
@@ -77,6 +81,7 @@ async function rig(hf = 1.3) {
     lpVenue: LP_VENUE,
     usdc: USDC,
     reader,
+    venues,
     ladder: HF_LADDER,
     log: new Logger(sink.sink, "debug"),
     config: CFG,
@@ -479,6 +484,115 @@ describe("KeeperDispatcher — acts only inside a readable grant", () => {
     const failed = await broken.dispatcher.dispatch({ record: record("notify", "warn", 1.45), valuation: await broken.valuation() });
     assert.equal(failed.status, "FAILED");
     assert.match((failed as { error: string }).error, /not delivered/);
+  });
+});
+
+describe("RISKS §8 residual (a) — a receipt that leaves a venue the account still owes untouched is FAILED", () => {
+  const ONE_BTC = 100_000_000n;
+  const SMALL = 1_000_000_000n; // 1,000 USDC: the healthy book
+  const aaveDebt = (r: Awaited<ReturnType<typeof rig>>) => {
+    const u = r.chain.users.get(ACCOUNT_A.toLowerCase())?.get(USDC.toLowerCase());
+    return u ? u.variableDebt + u.stableDebt : 0n;
+  };
+  const sent = (res: { status: string }) => (res as unknown as { txHash: Hex }).txHash;
+  /**
+   * Two books for one asset: Aave (now the PREVIOUS venue) owes ~47,760 USDC at HF 1.3 — the debt
+   * that fires the rung — and the registry's CURRENT pointer, Morpho, owes 1,000 against 1 cbBTC
+   * at HF ≈ 68. `idleUsdc` sits in the account for the repay-only rung.
+   */
+  async function twoBooks(idleUsdc: bigint) {
+    const r = await rig(1.3, { venues: true });
+    r.oil.setVenue(CBBTC, MORPHO_VENUE_ADDR); // Aave is remembered in previousVenues
+    r.oil.setMorphoPosition(ACCOUNT_A, CBBTC, { collateral: ONE_BTC, debt: SMALL });
+    r.oil.setUsdc(ACCOUNT_A, idleUsdc);
+    r.grantAll();
+    return r;
+  }
+
+  it("the 2026-09-08 router: the repay landed on the healthy Morpho book (the first venue holding anything) while the Aave debt rides → FAILED, naming the Aave venue", async () => {
+    const r = await twoBooks(20_000_000_000n);
+    r.oil.repayFirstHoldingVenueOnly = true;
+    const before = aaveDebt(r);
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: null });
+    assert.equal(res.status, "SENT", JSON.stringify(res));
+    assert.equal(r.oil.morphoPosition(ACCOUNT_A, CBBTC).debt, 0n, "the mock repaid the healthy book");
+    assert.equal(aaveDebt(r), before, "and left the Aave debt where it was");
+    const c = await r.dispatcher.confirm(record("repay", "repay", 1.3, { status: "SENT", txHash: sent(res) }));
+    assert.equal(c.status, "FAILED", `repaid > 0 on the wrong book must not be CONFIRMED: ${JSON.stringify(c)}`);
+    const err = (c as { error: string }).error;
+    assert.match(err, /untouched/i);
+    assert.ok(err.toLowerCase().includes(AAVE_VENUE_ADDR.toLowerCase()), `names the untouched venue: ${err}`);
+    assert.match(err, /another book/i, "the account still held USDC: the router skipped the book, it did not run dry");
+  });
+
+  it("the router since 2026-09-09: worst book first, then the rest with what is left — both books repaid → CONFIRMED", async () => {
+    const r = await twoBooks(60_000_000_000n); // enough for ~47,760 on Aave and 1,000 on Morpho
+    const before = aaveDebt(r);
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: null });
+    assert.equal(res.status, "SENT", JSON.stringify(res));
+    assert.equal(aaveDebt(r), 0n, `the worst book was cleared first (was ${before})`);
+    assert.equal(r.oil.morphoPosition(ACCOUNT_A, CBBTC).debt, 0n, "the healthy book was reached with what was left");
+    const rc = r.chain.receipts.get(sent(res).toLowerCase())!;
+    const moved = summarizeUnwinds(rc.logs as never, ACCOUNT_A);
+    assert.deepEqual([...moved.byVenue.keys()], [AAVE_VENUE_ADDR.toLowerCase(), MORPHO_VENUE_ADDR.toLowerCase()], "one VenueRepaid per book, worst first");
+    assert.equal(moved.byVenue.get(AAVE_VENUE_ADDR.toLowerCase()), before);
+    assert.equal(moved.byVenue.get(MORPHO_VENUE_ADDR.toLowerCase()), SMALL);
+    assert.equal(moved.repaid, before + SMALL, "the LeveragedLpUnwound total is their sum");
+    const c = await r.dispatcher.confirm(record("repay", "repay", 1.3, { status: "SENT", txHash: sent(res) }));
+    assert.equal(c.status, "CONFIRMED", JSON.stringify(c));
+  });
+
+  it("USDC runs out on the worst book: the healthy book is untouched → FAILED (the message says the account ran dry), and the retry's world check SUPERSEDES it", async () => {
+    const r = await twoBooks(20_000_000_000n); // less than the Aave debt
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: null });
+    assert.equal(res.status, "SENT", JSON.stringify(res));
+    assert.equal(r.oil.usdcBalances.get(ACCOUNT_A.toLowerCase()), 0n, "everything went to the worst book");
+    assert.equal(r.oil.morphoPosition(ACCOUNT_A, CBBTC).debt, SMALL, "the healthy book was not reached");
+    const c = await r.dispatcher.confirm(record("repay", "repay", 1.3, { status: "SENT", txHash: sent(res) }));
+    assert.equal(c.status, "FAILED", JSON.stringify(c));
+    assert.match((c as { error: string }).error, /ran out/i);
+    // Aave is now at ~2.24, above the rung's disarm, and the Morpho book is healthy: the retry sends nothing.
+    const again = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3, { attempts: 1 }), valuation: null });
+    assert.equal(again.status, "SUPERSEDED", JSON.stringify(again));
+  });
+
+  it("today's production shape — Aave only, the venue reader on: one VenueRepaid on the Aave venue → CONFIRMED, as without the reader", async () => {
+    const r = await rig(1.3, { venues: true });
+    r.oil.setUsdc(ACCOUNT_A, 20_000_000_000n); // a partial repay: Aave still owes afterwards, and that is fine — it was reached
+    r.grantAll();
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: null });
+    assert.equal(res.status, "SENT", JSON.stringify(res));
+    assert.ok(aaveDebt(r) > 0n, "still owes: a partial repay");
+    const rc = r.chain.receipts.get(sent(res).toLowerCase())!;
+    assert.deepEqual([...summarizeUnwinds(rc.logs as never, ACCOUNT_A).byVenue.keys()], [AAVE_VENUE_ADDR.toLowerCase()]);
+    const c = await r.dispatcher.confirm(record("repay", "repay", 1.3, { status: "SENT", txHash: sent(res) }));
+    assert.equal(c.status, "CONFIRMED", JSON.stringify(c));
+  });
+
+  it("a receipt whose total is > 0 but that names no venue, with the account still owing → FAILED (a router that does not say where is not trusted)", async () => {
+    const r = await rig(1.3, { venues: true });
+    r.oil.setUsdc(ACCOUNT_A, 20_000_000_000n);
+    r.grantAll();
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: null });
+    const tx = sent(res);
+    const rc = r.chain.receipts.get(tx.toLowerCase())!;
+    const unwound = encodeEventTopics({ abi: strategyRouterAbi, eventName: "LeveragedLpUnwound" })[0];
+    r.chain.receipts.set(tx.toLowerCase(), { ...rc, logs: rc.logs!.filter((l) => l.topics[0] === unwound) });
+    const c = await r.dispatcher.confirm(record("repay", "repay", 1.3, { status: "SENT", txHash: tx }));
+    assert.equal(c.status, "FAILED", JSON.stringify(c));
+    assert.match((c as { error: string }).error, /untouched/i);
+  });
+
+  it("the venues cannot be re-read at confirm time → FAILED, never CONFIRMED (nothing is confirmed that cannot be checked)", async () => {
+    const r = await rig(1.3, { venues: true });
+    r.oil.setUsdc(ACCOUNT_A, 20_000_000_000n);
+    r.grantAll();
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: null });
+    assert.equal(res.status, "SENT", JSON.stringify(res));
+    r.oil.failVenueCall(AAVE_VENUE_ADDR, "debt");
+    const c = await r.dispatcher.confirm(record("repay", "repay", 1.3, { status: "SENT", txHash: sent(res) }));
+    assert.equal(c.status, "FAILED", JSON.stringify(c));
+    assert.match((c as { error: string }).error, /could not be re-read/i);
   });
 });
 

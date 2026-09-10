@@ -139,10 +139,13 @@ foreign ids are reported in `failed` and skipped, **at index 0 like anywhere
 else** → `AerodromeSwapAdapter.swap(nonUsdcToken → USDC, amount, quotedIn,
 quotedOut, maxSlippageBps, deadline, routeData)`, which enforces
 `amountIn × quotedOut / quotedIn × (10000 − maxSlippageBps) / 10000` on the
-amount actually swapped → `AaveV3Venue.repay(USDC, min(debt, held))` — a fixed
-repay against zero debt is a **no-op, not a revert** → `AaveV3Venue.withdraw
-(asset, all)` → if a withdrawal happened and any debt remains, the **global**
-health factor must be ≥ the floor or `ExitHfTooLow`.
+amount actually swapped → `venue.repay(USDC, min(debt, held))` on **every**
+venue the registry names for the asset (`venueOf`, then `previousVenues`) that
+the account still owes, lowest health factor first, one `VenueRepaid` per venue
+reached — a fixed repay against zero debt is a **no-op, not a revert** →
+`venue.withdraw(asset, all)` from the venue holding the position → if a
+withdrawal happened and any debt remains there, that venue's **global** health
+factor must be ≥ the floor or `ExitHfTooLow`.
 
 Works on a **disabled asset**; refuses through a **disabled venue**
 (`VenueDisabled`) — then the owner's raw `exec` to Aave is the escape.
@@ -230,7 +233,11 @@ account.execAsKeeper([
 user signed. `unwind` closes the ids itself through the nested path, so no
 second grant is needed; the account takes `allowCallback` from the grant, not
 from the `callback: false` on the call. Only the last call repays, so one repay
-sweeps everything the earlier closes produced plus any idle USDC.
+sweeps everything the earlier closes produced plus any idle USDC; the router
+spreads it over every venue the account owes, worst health factor first, and
+`confirm()` reads the receipt's `VenueRepaid` events — a receipt that leaves a
+venue the account still owes untouched is FAILED, never CONFIRMED (`RISKS.md`
+§8).
 
 Which ids: **a fraction of the account's LP value**, not of the id count — ⅓ at
 `repay`, ⅔ at `derisk`, everything at `emergency-unwind` — each id priced by

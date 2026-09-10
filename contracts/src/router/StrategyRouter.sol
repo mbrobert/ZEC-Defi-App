@@ -126,6 +126,12 @@ contract StrategyRouter is Peripheral {
         uint256 withdrawn,
         uint256 healthFactor
     );
+    /// @notice The repay leg of `unwind` reached `venue`: `repaid` USDC of the calling account's
+    ///         debt there. One per venue repaid, worst health factor first. The keeper reads these
+    ///         from the receipt and refuses to confirm a protective unwind that left a venue the
+    ///         account still owes untouched — `LeveragedLpUnwound.repaid` is a total and cannot say
+    ///         WHICH book was paid (`RISKS.md` §8, 2026-09-09).
+    event VenueRepaid(address indexed account, address indexed venue, uint256 repaid);
     event Swept(address indexed account, address indexed token, address indexed to, uint256 amount);
 
     error ZeroAddress();
@@ -177,7 +183,7 @@ contract StrategyRouter is Peripheral {
     {
         if (p.deadline < block.timestamp) revert Expired(p.deadline);
         if (p.borrowAmount == 0) revert ZeroBorrow();
-        ICollateralVenue venue = _venueFor(p.collateralAsset, true);
+        ICollateralVenue venue = _entryVenueFor(p.collateralAsset);
         (address t0, address t1,) = LP_VENUE.poolTokens(p.poolId);
         if (t0 != USDC && t1 != USDC) revert PoolWithoutUsdc(p.poolId);
 
@@ -219,7 +225,7 @@ contract StrategyRouter is Peripheral {
     function openBorrowOnly(BorrowOnlyParams calldata p) external returns (uint256 healthFactor) {
         if (p.deadline < block.timestamp) revert Expired(p.deadline);
         if (p.borrowAmount == 0) revert ZeroBorrow();
-        ICollateralVenue venue = _venueFor(p.collateralAsset, true);
+        ICollateralVenue venue = _entryVenueFor(p.collateralAsset);
 
         address account = msg.sender;
         uint256 beforeCollateral = _balance(p.collateralAsset);
@@ -234,23 +240,30 @@ contract StrategyRouter is Peripheral {
 
     // ---------------------------------------------------------------- unwind
 
-    /// @notice The mirror: lpVenue.closeMany → swap non-USDC proceeds to USDC → venue.repay →
-    ///         venue.withdraw, all as the account. Works for DISABLED assets (exits are never gated
-    ///         on the asset flag) but not through a DISABLED venue, which is a different thing: a
-    ///         venue that reports itself off is code we will not delegate to, and the owner's raw
-    ///         `exec` to the protocol still works when it happens.
+    /// @notice The mirror: lpVenue.closeMany → swap non-USDC proceeds to USDC → venue.repay on
+    ///         EVERY venue the account still owes, worst health factor first → venue.withdraw from
+    ///         the venue holding the position, all as the account. Works for DISABLED assets (exits
+    ///         are never gated on the asset flag) but not through a DISABLED venue, which is a
+    ///         different thing: a venue that reports itself off is code we will not delegate to,
+    ///         and the owner's raw `exec` to the protocol still works when it happens.
     /// @dev Invariant: an un-closable id is skipped, never blocking — at index 0 like anywhere else;
-    ///      a swap of a non-USDC leg is bounded by the caller's quote and the adapter's cap; a fixed
-    ///      repay against zero debt is a no-op, not a revert; after a collateral withdraw with ANY
-    ///      debt outstanding the global health factor is ≥ the entry floor; the router's balance of
-    ///      every token it touched is unchanged.
+    ///      a swap of a non-USDC leg is bounded by the caller's quote and the adapter's cap; the
+    ///      repay reaches every venue named for the asset that the account owes USDC on, the book
+    ///      with the lowest health factor first, and a fixed repay against zero debt is a no-op,
+    ///      not a revert; after a collateral withdraw with ANY debt outstanding the withdrawn-from
+    ///      venue's global health factor is ≥ the entry floor; the router's balance of every token
+    ///      it touched is unchanged.
     function unwind(UnwindParams calldata p)
         external
         returns (uint256 usdcFromLp, uint256 repaid, uint256 withdrawn, uint256 healthFactor)
     {
         if (p.deadline < block.timestamp) revert Expired(p.deadline);
-        ICollateralVenue venue = _venueFor(p.collateralAsset, false);
         address account = msg.sender;
+        // Every venue the registry has ever named for this asset, current pointer first. The REPAY
+        // leg visits all of them (`_repayAcross`); the WITHDRAW leg, and the refusal through a
+        // venue that is off, go to the first one holding the account's position — as before.
+        address[] memory venues = _exitVenues(p.collateralAsset);
+        ICollateralVenue venue = _exitVenueFor(venues, p.collateralAsset, account);
 
         uint256 beforeCollateral = _balance(p.collateralAsset);
         uint256 beforeUsdc = _balance(USDC);
@@ -261,22 +274,7 @@ contract StrategyRouter is Peripheral {
             (usdcFromLp, closed, failedCount) = _closeAndSettle(p);
         }
 
-        if (p.repayAmount != 0) {
-            uint256 owed = venue.debt(account, USDC);
-            if (owed != 0) {
-                uint256 amount = p.repayAmount;
-                if (amount == type(uint256).max) {
-                    uint256 held = IERC20(USDC).balanceOf(account);
-                    amount = owed < held ? owed : held;
-                }
-                if (amount != 0) {
-                    repaid = abi.decode(
-                        _nested(address(venue), abi.encodeCall(ICollateralVenue.repay, (USDC, amount))),
-                        (uint256)
-                    );
-                }
-            }
-        }
+        if (p.repayAmount != 0) repaid = _repayAcross(venues, account, p.repayAmount);
 
         if (p.withdrawAmount != 0) {
             withdrawn = abi.decode(
@@ -286,15 +284,20 @@ contract StrategyRouter is Peripheral {
                 ),
                 (uint256)
             );
+            // The venue's health factor is GLOBAL across every reserve it holds; gate on that, not
+            // on the USDC debt alone, or a withdrawal with non-USDC debt outstanding sails past the
+            // floor. Only the venue withdrawn from moved, so only its factor is gated: a debt under
+            // the floor on ANOTHER venue must not trap collateral that was never behind it.
+            uint256 hfAfter = venue.healthFactor(account);
+            if (hfAfter != type(uint256).max) {
+                uint256 floor = REGISTRY.entryHfFloorWad();
+                if (hfAfter < floor) revert ExitHfTooLow(hfAfter, floor);
+            }
         }
 
-        healthFactor = venue.healthFactor(account);
-        // The venue's health factor is GLOBAL across every reserve; gate on that, not on the USDC
-        // debt alone, or a withdrawal with non-USDC debt outstanding sails past the floor.
-        if (p.withdrawAmount != 0 && healthFactor != type(uint256).max) {
-            uint256 floor = REGISTRY.entryHfFloorWad();
-            if (healthFactor < floor) revert ExitHfTooLow(healthFactor, floor);
-        }
+        // Reported: the account's WORST health factor across every venue named for the asset — the
+        // number the keeper's ladder runs on — not just the venue withdrawn from.
+        healthFactor = _worstHealthFactor(venues, account);
 
         _assertUnchanged(p.collateralAsset, beforeCollateral);
         _assertUnchanged(USDC, beforeUsdc);
@@ -453,36 +456,151 @@ contract StrategyRouter is Peripheral {
         }
     }
 
-    /// @dev Opens resolve the registry's CURRENT venue and require the asset flag. Exits follow the
-    ///      POSITION (audit wave 2, M-HIGH-1): the current venue if the calling account has debt or
-    ///      collateral there, else the first of the registry's `previousVenues` that does, else the
-    ///      current venue. A switch therefore never strands what was opened before it — the old
-    ///      `_venueFor` followed the pointer alone, found no debt on the new venue, repaid nothing
-    ///      and succeeded. The VENUE's own switch is honoured on every path, entry and exit: a venue
-    ///      that says it is off is not code the account should be handed to. Only the ASSET flag is
-    ///      bypassed on exit.
-    function _venueFor(address asset, bool requireEnabled) internal view returns (ICollateralVenue) {
+    /// @dev Opens resolve the registry's CURRENT venue and require both the venue's and the asset's
+    ///      flag. Exits follow the POSITION (audit wave 2, M-HIGH-1), see `_exitVenues`.
+    function _entryVenueFor(address asset) internal view returns (ICollateralVenue) {
         CollateralRegistry.AssetConfig memory cfg = REGISTRY.config(asset);
         if (cfg.venue == address(0)) revert AssetNotRegistered(asset);
-        if (requireEnabled) {
-            if (!ICollateralVenue(cfg.venue).enabled()) revert VenueDisabled(cfg.venue);
-            if (!cfg.enabled) revert AssetDisabled(asset, cfg.note);
-            return ICollateralVenue(cfg.venue);
-        }
-        return _exitVenueFor(asset, cfg.venue, msg.sender);
+        if (!ICollateralVenue(cfg.venue).enabled()) revert VenueDisabled(cfg.venue);
+        if (!cfg.enabled) revert AssetDisabled(asset, cfg.note);
+        return ICollateralVenue(cfg.venue);
     }
 
-    function _exitVenueFor(address asset, address current, address account)
+    /// @dev Every venue the registry names for `asset`: the current pointer first, then each entry
+    ///      of `previousVenues` (audit wave 2, M-HIGH-1: a switch must never strand what was opened
+    ///      before it). The registry keeps that list free of the current venue and of duplicates;
+    ///      both are skipped here regardless, so no venue is ever visited twice.
+    function _exitVenues(address asset) internal view returns (address[] memory list) {
+        CollateralRegistry.AssetConfig memory cfg = REGISTRY.config(asset);
+        if (cfg.venue == address(0)) revert AssetNotRegistered(asset);
+        address[] memory previous = REGISTRY.previousVenues(asset);
+        list = new address[](previous.length + 1);
+        list[0] = cfg.venue;
+        uint256 n = 1;
+        for (uint256 i = 0; i < previous.length; i++) {
+            address v = previous[i];
+            if (v == address(0)) continue;
+            bool seen;
+            for (uint256 j = 0; j < n; j++) {
+                if (list[j] == v) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (!seen) list[n++] = v;
+        }
+        assembly ("memory-safe") {
+            mstore(list, n)
+        }
+    }
+
+    /// @dev The venue a WITHDRAWAL goes to, and the venue an exit is refused through when it is off:
+    ///      the first of `venues` holding anything of the account's (debt or collateral), else the
+    ///      current pointer. The VENUE's own switch is honoured on every path, entry and exit: a
+    ///      venue that says it is off is not code the account should be handed to. Only the ASSET
+    ///      flag is bypassed on exit. The REPAY leg does not stop at this venue — `_repayAcross`.
+    function _exitVenueFor(address[] memory venues, address asset, address account)
         internal
         view
         returns (ICollateralVenue)
     {
-        if (_holdsPosition(current, asset, account)) return _requireVenueEnabled(current);
-        address[] memory previous = REGISTRY.previousVenues(asset);
-        for (uint256 i = 0; i < previous.length; i++) {
-            if (_holdsPosition(previous[i], asset, account)) return _requireVenueEnabled(previous[i]);
+        for (uint256 i = 0; i < venues.length; i++) {
+            if (_holdsPosition(venues[i], asset, account)) return _requireVenueEnabled(venues[i]);
         }
-        return _requireVenueEnabled(current);
+        return _requireVenueEnabled(venues[0]);
+    }
+
+    /// @dev The repay leg visits EVERY venue in `venues` that the account still owes USDC on, worst
+    ///      health factor first, until `repayAmount` (max = all the USDC the account holds) is
+    ///      spent — one `VenueRepaid` per venue reached. The exit used to stop at the first venue
+    ///      holding anything of the account's, so dust collateral, or a small healthy debt, on the
+    ///      registry's new pointer absorbed the keeper's repay while the debt that fired the rung
+    ///      rode on (`RISKS.md` §8 residual (a), closed 2026-09-09). Worst-first is the rule
+    ///      `MorphoBlueVenue.repay` already applies across its markets: with USDC to spare every
+    ///      book is cleared; with USDC short, the book in most trouble gets it. A venue that says
+    ///      it is off reverts `VenueDisabled` here as everywhere else, and a venue whose repay
+    ///      reverts reverts the whole call — never a silent skip, so the keeper's simulation names
+    ///      the reason instead of a receipt hiding it.
+    function _repayAcross(address[] memory venues, address account, uint256 repayAmount)
+        internal
+        returns (uint256 repaid)
+    {
+        (address[] memory owing, uint256[] memory owed, uint256 n) = _owingWorstFirst(venues, account);
+        uint256 remaining = repayAmount;
+        for (uint256 i = 0; i < n && remaining != 0; i++) {
+            uint256 held = IERC20(USDC).balanceOf(account);
+            if (held == 0) break;
+            uint256 amount = owed[i] < held ? owed[i] : held;
+            if (amount > remaining) amount = remaining;
+            _requireVenueEnabled(owing[i]);
+            uint256 got = abi.decode(
+                _nested(owing[i], abi.encodeCall(ICollateralVenue.repay, (USDC, amount))), (uint256)
+            );
+            repaid += got;
+            remaining = got >= remaining ? 0 : remaining - got;
+            emit VenueRepaid(account, owing[i], got);
+        }
+    }
+
+    /// @dev The venues where `account` owes USDC, ordered by health factor ascending — the book in
+    ///      most trouble first; equal factors keep registry order (insertion sort, the list is a
+    ///      handful of addresses). A venue whose `debt` view reverts is treated as owing nothing,
+    ///      exactly as `_holdsPosition` treats it; one whose `healthFactor` reverts sorts first.
+    function _owingWorstFirst(address[] memory venues, address account)
+        internal
+        view
+        returns (address[] memory owing, uint256[] memory owed, uint256 n)
+    {
+        owing = new address[](venues.length);
+        owed = new uint256[](venues.length);
+        uint256[] memory hfs = new uint256[](venues.length);
+        for (uint256 i = 0; i < venues.length; i++) {
+            uint256 debt_ = _debtOf(venues[i], account);
+            if (debt_ == 0) continue;
+            uint256 hf = _healthFactorOf(venues[i], account);
+            uint256 j = n;
+            while (j > 0 && hfs[j - 1] > hf) {
+                owing[j] = owing[j - 1];
+                owed[j] = owed[j - 1];
+                hfs[j] = hfs[j - 1];
+                j--;
+            }
+            owing[j] = venues[i];
+            owed[j] = debt_;
+            hfs[j] = hf;
+            n++;
+        }
+    }
+
+    /// @dev The lowest health factor the account has on any venue in `venues`; max when it owes
+    ///      nothing anywhere. A venue whose view reverts is skipped, as `_holdsPosition` skips it.
+    function _worstHealthFactor(address[] memory venues, address account)
+        internal
+        view
+        returns (uint256 worst)
+    {
+        worst = type(uint256).max;
+        for (uint256 i = 0; i < venues.length; i++) {
+            try ICollateralVenue(venues[i]).healthFactor(account) returns (uint256 hf) {
+                if (hf < worst) worst = hf;
+            } catch {}
+        }
+    }
+
+    function _debtOf(address venue, address account) internal view returns (uint256) {
+        try ICollateralVenue(venue).debt(account, USDC) returns (uint256 owed) {
+            return owed;
+        } catch {
+            return 0;
+        }
+    }
+
+    function _healthFactorOf(address venue, address account) internal view returns (uint256) {
+        try ICollateralVenue(venue).healthFactor(account) returns (uint256 hf) {
+            return hf;
+        } catch {
+            return 0;
+        }
     }
 
     /// @dev Whether `venue` holds anything of `account`'s for `asset`. A venue whose views revert

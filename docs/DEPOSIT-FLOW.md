@@ -1,7 +1,7 @@
 # How a deposit flows — Oilskin v1 (Base-first)
 
 Written 2026-09-07 against the ABI (application binary interface) bundle at
-`contracts/abi/oilskin-abi.json` (326 selectors / topics / errors as of 2026-09-08). **Every box below that names a
+`contracts/abi/oilskin-abi.json` (327 selectors / topics / errors as of 2026-09-09). **Every box below that names a
 function is a function in that bundle**; the web encodes exactly these calls
 (`web/lib/plan.ts`) and the keeper plans exactly one of them
 (`agent/src/dispatch/policy.ts`). Three diagrams: Simple mode, Advanced mode,
@@ -169,19 +169,19 @@ flowchart TD
     K2 --> X
 
     subgraph router ["Inside StrategyRouter.unwind"]
-        X["venue = the one holding the account's position:<br/>registry.venueOf(asset) first, then registry.previousVenues(asset)"] --> X1{"positionIds?"}
+        X["venues = registry.venueOf(asset), then registry.previousVenues(asset)<br/>withdraw venue = the first of them holding the account's position"] --> X1{"positionIds?"}
         X1 -- some --> X2["SnuggleLpVenue.closeMany(ids, band)<br/>per-id try/catch — one bad id does not block the rest<br/>engine.withdraw(id) → tokens to the account"]
         X2 --> X3{"non-USDC leg paid out?"}
         X3 -- yes --> X4["AerodromeSwapAdapter.swap(…, quotedIn, quotedOut, maxSlippageBps)<br/>quote must imply a price inside the close's band (QuoteOutsideBand)<br/>floor = quote − tolerance, hard cap 500 bps"]
         X3 -- no --> X5
         X4 --> X5
         X1 -- none --> X5
-        X5{"repayAmount?"} -- "&gt; 0" --> X6["AaveV3Venue.repay(USDC, min(owed, held))"]
+        X5{"repayAmount?"} -- "&gt; 0" --> X6["venue.repay(USDC, min(owed, held)) on EVERY venue the account owes,<br/>lowest health factor first, until the amount is spent<br/>one VenueRepaid(account, venue, repaid) each"]
         X5 -- 0 --> X7
         X6 --> X7{"withdrawAmount?"}
-        X7 -- "&gt; 0" --> X8["AaveV3Venue.withdraw(collateralAsset, amount)<br/>then HF must be ≥ 1.55 or revert ExitHfTooLow"]
+        X7 -- "&gt; 0" --> X8["withdraw venue.withdraw(collateralAsset, amount)<br/>then THAT venue's HF must be ≥ 1.55 or revert ExitHfTooLow"]
         X7 -- 0 --> X9
-        X8 --> X9["assert router balances unchanged<br/>emit LeveragedLpUnwound(closed, failed, usdcFromLp, repaid, withdrawn, HF)"]
+        X8 --> X9["assert router balances unchanged<br/>emit LeveragedLpUnwound(closed, failed, usdcFromLp, repaid, withdrawn, worst HF across the venues)"]
     end
 ```
 

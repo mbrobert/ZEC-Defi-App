@@ -219,6 +219,21 @@ export const strategyRouterAbi = [
       { name: "healthFactor", type: "uint256", indexed: false },
     ],
   },
+  /**
+   * WHICH book the repay reached: one per venue `unwind` repaid, worst health
+   * factor first. `confirm` refuses a receipt that leaves a venue the account
+   * still owes without one of these — `LeveragedLpUnwound.repaid` is a total
+   * and cannot say where it went (RISKS §8 residual (a), closed 2026-09-09).
+   */
+  {
+    type: "event",
+    name: "VenueRepaid",
+    inputs: [
+      { name: "account", type: "address", indexed: true },
+      { name: "venue", type: "address", indexed: true },
+      { name: "repaid", type: "uint256", indexed: false },
+    ],
+  },
   { type: "error", name: "Expired", inputs: [{ name: "deadline", type: "uint256" }] },
   { type: "error", name: "ExitHfTooLow", inputs: [{ name: "healthFactor", type: "uint256" }, { name: "floor", type: "uint256" }] },
   { type: "error", name: "AssetNotRegistered", inputs: [{ name: "asset", type: "address" }] },

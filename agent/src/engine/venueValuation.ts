@@ -53,10 +53,10 @@ import {
  * The combined verdict is the WORST venue: UNKNOWN if any venue is UNKNOWN (fail closed — an
  * unreadable previous venue may hold the debt), NO_DEBT only if every venue says so, else OK with
  * the lowest health factor and THAT venue's shares, so the dispatcher sizes a repay against the
- * venue it is actually protecting. When the account has positions on two venues the keeper's
- * `unwind` is resolved by the router to the first venue holding the asset (M-HIGH-1), which may
- * not be the worst one — `confirm()` then sees a repay that did not lift the combined HF and the
- * re-arm bound escalates (C-MED-2). That residual is documented in RISKS.md §8.
+ * venue it is actually protecting. When the account owes on two venues for one asset the router's
+ * `unwind` repays every one of them, worst health factor first, and says which in one `VenueRepaid`
+ * per venue; `confirm()` refuses a receipt that leaves a venue the account still owes untouched
+ * (RISKS.md §8 residual (a), closed 2026-09-09).
  */
 
 export interface VenueVerdict {
