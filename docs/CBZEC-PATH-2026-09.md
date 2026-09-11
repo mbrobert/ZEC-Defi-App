@@ -140,8 +140,14 @@ a third party's roadmap for the product's headline asset.
 - The SwapRouter this repo verified cannot swap into this pool; any cbZEC swap on Oilskin's side is
   either CoW (as today) or a pool-direct path that does not exist yet.
 
-## The question for the founder
+## The question for the founder — answered
 
 Whether a v1 that ships without cbZEC LP (option 2) is still the product — or whether option 1's
 ≈ 2,300 lines and its own audit surface are the price of the pitch, knowing the yield behind it is
 one epoch's vote.
+
+**Decided by the founder, 2026-09-10: option 1, direct Slipstream integration bypassing the
+engine.** To be built in its own session against the second deployment's addresses recorded in
+Addendum 8 (factory `0xf8f2…61Ef`, NPM `0xe1f8…8b53`, gauge `0x8779…81FB`, gauge factory
+`0x3852…6AbB`), with the swap path settled first (a pool-direct adapter, or a router bound to that
+factory that must be found and probed, never guessed). Nothing of it exists in this tree yet.

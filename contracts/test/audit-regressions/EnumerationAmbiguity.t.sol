@@ -37,7 +37,9 @@ contract AmbiguousEngine {
     function configure(address holder_, uint256[] calldata ids, Shape s) external {
         holder = holder_;
         delete list;
-        for (uint256 i = 0; i < ids.length; i++) list.push(ids[i]);
+        for (uint256 i = 0; i < ids.length; i++) {
+            list.push(ids[i]);
+        }
         endShape = s;
         canaryShapeSet = false;
     }
@@ -104,8 +106,23 @@ contract AmbiguousEngine {
         external
         view
         returns (
-            uint256, bytes32, address, uint24, int24, int24, bool, bool, uint64, uint64, uint32, uint32,
-            uint64, uint128, uint128, uint128, uint128
+            uint256,
+            bytes32,
+            address,
+            uint24,
+            int24,
+            int24,
+            bool,
+            bool,
+            uint64,
+            uint64,
+            uint32,
+            uint32,
+            uint64,
+            uint128,
+            uint128,
+            uint128,
+            uint128
         )
     {
         if (id != 0 && id == shortPositionsId) {
@@ -146,11 +163,17 @@ contract EnumerationAmbiguityRegressionTest is Fixture {
 
     function _ids(uint256 n) internal pure returns (uint256[] memory out) {
         out = new uint256[](n);
-        for (uint256 i = 0; i < n; i++) out[i] = 100 + i;
+        for (uint256 i = 0; i < n; i++) {
+            out[i] = 100 + i;
+        }
     }
 
-    function _expectFault(SnuggleLpVenue.EnumerationFault f, uint256 index, bytes memory data) internal {
-        vm.expectRevert(abi.encodeWithSelector(SnuggleLpVenue.EnumerationAmbiguous.selector, f, index, data));
+    function _expectFault(SnuggleLpVenue.EnumerationFault f, uint256 index, bytes memory data)
+        internal
+    {
+        vm.expectRevert(
+            abi.encodeWithSelector(SnuggleLpVenue.EnumerationAmbiguous.selector, f, index, data)
+        );
     }
 
     function _panic32() internal pure returns (bytes memory) {
@@ -163,7 +186,9 @@ contract EnumerationAmbiguityRegressionTest is Fixture {
         adv.configure(address(acct), _ids(5), AmbiguousEngine.Shape.Empty);
         uint256[] memory ids = v.positionsOf(address(acct));
         assertEq(ids.length, 5, "the live engine's shape is enumerable now");
-        for (uint256 i = 0; i < 5; i++) assertEq(ids[i], 100 + i);
+        for (uint256 i = 0; i < 5; i++) {
+            assertEq(ids[i], 100 + i);
+        }
         adv.configure(address(acct), _ids(0), AmbiguousEngine.Shape.Empty);
         assertEq(v.positionsOf(address(acct)).length, 0, "and an empty list is empty, not a fault");
     }
@@ -252,7 +277,9 @@ contract EnumerationAmbiguityRegressionTest is Fixture {
     function test_A8_aCanaryOfNeitherTerminalShapeFailsClosed() public {
         adv.configure(address(acct), _ids(2), AmbiguousEngine.Shape.ErrorString);
         _expectFault(
-            SnuggleLpVenue.EnumerationFault.TerminalShapeUnknown, CANARY, abi.encodeWithSignature("Error(string)", "engine says no")
+            SnuggleLpVenue.EnumerationFault.TerminalShapeUnknown,
+            CANARY,
+            abi.encodeWithSignature("Error(string)", "engine says no")
         );
         v.positionsOf(address(acct));
     }
@@ -261,12 +288,16 @@ contract EnumerationAmbiguityRegressionTest is Fixture {
         // canary empty, end Panic(0x32): the end is a different shape → the older EnumerationFailed
         adv.configure(address(acct), _ids(2), AmbiguousEngine.Shape.Panic32);
         adv.setCanaryShape(AmbiguousEngine.Shape.Empty);
-        vm.expectRevert(abi.encodeWithSelector(SnuggleLpVenue.EnumerationFailed.selector, _panic32()));
+        vm.expectRevert(
+            abi.encodeWithSelector(SnuggleLpVenue.EnumerationFailed.selector, _panic32())
+        );
         v.positionsOf(address(acct));
         // and the other way round
         adv.configure(address(acct), _ids(2), AmbiguousEngine.Shape.Empty);
         adv.setCanaryShape(AmbiguousEngine.Shape.Panic32);
-        vm.expectRevert(abi.encodeWithSelector(SnuggleLpVenue.EnumerationFailed.selector, bytes("")));
+        vm.expectRevert(
+            abi.encodeWithSelector(SnuggleLpVenue.EnumerationFailed.selector, bytes(""))
+        );
         v.positionsOf(address(acct));
     }
 
@@ -276,7 +307,10 @@ contract EnumerationAmbiguityRegressionTest is Fixture {
         adv.setCanaryShape(AmbiguousEngine.Shape.Empty);
         adv.setIsolatedBadIndex(1);
         vm.expectRevert(
-            abi.encodeWithSelector(SnuggleLpVenue.EnumerationFailed.selector, abi.encodeWithSignature("Error(string)", "engine says no"))
+            abi.encodeWithSelector(
+                SnuggleLpVenue.EnumerationFailed.selector,
+                abi.encodeWithSignature("Error(string)", "engine says no")
+            )
         );
         v.positionsOf(address(acct));
     }
@@ -286,25 +320,33 @@ contract EnumerationAmbiguityRegressionTest is Fixture {
     function test_A11_anIdOwnedBySomeoneElseFailsClosedInsteadOfBeingSkipped() public {
         adv.configure(address(acct), _ids(3), AmbiguousEngine.Shape.Empty);
         adv.setOwnerOverride(101, bob);
-        _expectFault(SnuggleLpVenue.EnumerationFault.OwnerMismatch, 1, abi.encode(uint256(101), bob));
+        _expectFault(
+            SnuggleLpVenue.EnumerationFault.OwnerMismatch, 1, abi.encode(uint256(101), bob)
+        );
         v.positionsOf(address(acct));
         // a stale slot reading address(0) is a mismatch too
         adv.setOwnerOverride(101, address(0));
         adv.setOwnerOverride(102, address(1));
-        _expectFault(SnuggleLpVenue.EnumerationFault.OwnerMismatch, 2, abi.encode(uint256(102), address(1)));
+        _expectFault(
+            SnuggleLpVenue.EnumerationFault.OwnerMismatch, 2, abi.encode(uint256(102), address(1))
+        );
         v.positionsOf(address(acct));
     }
 
     function test_A12_aPositionThatDoesNotReadAsTheFullStructFailsClosed() public {
         adv.configure(address(acct), _ids(3), AmbiguousEngine.Shape.Empty);
         adv.setShortPositions(102);
-        _expectFault(SnuggleLpVenue.EnumerationFault.PositionUnreadable, 2, abi.encode(uint256(102)));
+        _expectFault(
+            SnuggleLpVenue.EnumerationFault.PositionUnreadable, 2, abi.encode(uint256(102))
+        );
         v.positionsOf(address(acct));
 
         adv.setShortPositions(0);
         adv.setRevertPositions(100);
         _expectFault(
-            SnuggleLpVenue.EnumerationFault.PositionUnreadable, 0, abi.encodeWithSignature("Error(string)", "positions down")
+            SnuggleLpVenue.EnumerationFault.PositionUnreadable,
+            0,
+            abi.encodeWithSignature("Error(string)", "positions down")
         );
         v.positionsOf(address(acct));
 
@@ -338,10 +380,14 @@ contract EnumerationAmbiguityRegressionTest is Fixture {
     function test_A14_theFixtureEngineEnumeratesUnderBothShapes() public {
         usdc.mint(address(acct), 1_000e6);
         bytes memory ret = _ownerExec(
-            address(lpVenue), abi.encodeCall(ILpVenue.open, (_openParams(POOL_WETH_USDC, 0, 100e6, poolWethUsdc)))
+            address(lpVenue),
+            abi.encodeCall(ILpVenue.open, (_openParams(POOL_WETH_USDC, 0, 100e6, poolWethUsdc)))
         );
         uint256 id = abi.decode(ret, (uint256));
-        assertTrue(engine.endShape() == MockSnuggleVault.EndShape.Empty, "the mock defaults to the measured shape");
+        assertTrue(
+            engine.endShape() == MockSnuggleVault.EndShape.Empty,
+            "the mock defaults to the measured shape"
+        );
         uint256[] memory ids = lpVenue.positionsOf(address(acct));
         assertEq(ids.length, 1);
         assertEq(ids[0], id);

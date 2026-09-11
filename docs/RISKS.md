@@ -407,8 +407,11 @@ user who signs the first Close and walks away is left with a debt-free book
 on the second venue — visible on the dashboard, but a state the product has
 to explain.
 
-Which of the two is a product decision; this document does not make it. The
-memo question for the founder is at the end of the session status.
+**Decided by the founder, 2026-09-10: option (1)** — the router's withdraw leg
+iterates every venue holding the account's collateral, one `VenueWithdrawn`
+event per venue, selector and grant unchanged. To be implemented in its own
+session; until then the KNOWN-FAILURE invariant stands and this section is
+the specification it is built to.
 
 **Does not.** The floor binds only sequences that go through the Oilskin venue.
 A user who hand-writes `account.exec(aavePool, borrow(...))` can still open at
