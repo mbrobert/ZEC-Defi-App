@@ -114,8 +114,8 @@ until the gate flips. The gate is computed, never curated
 cd contracts
 git clone --depth 1 --branch v5.7.0 https://github.com/OpenZeppelin/openzeppelin-contracts lib/openzeppelin-contracts
 git clone --depth 1 --branch v1.16.2 https://github.com/foundry-rs/forge-std lib/forge-std
-forge test                                   # 304 pass, 0 fail, 8 fork tests SKIPPED without FORK_URL (isolation pinned in foundry.toml; --no-isolate is green too)
-FORK_URL=<Base RPC> forge test --match-path test/fork/BaseFork.t.sol -vv   # the 8 fork tests — 2026-09-10 against Base: 4 pass / 4 fail (docs/TESTING.md says why)
+forge test                                   # 380 pass, 0 fail, 11 fork tests SKIPPED without FORK_URL (2026-09-12) (isolation pinned in foundry.toml; --no-isolate is green too)
+FORK_URL=<Base RPC> forge test --match-path test/fork/BaseFork.t.sol -vv   # the 11 fork tests — 2026-09-12 against Base at block 51,222,568: 11 pass / 0 fail; cbZEC's B20 shape is scripts/check-cbzec-b20.sh (no fork EVM can run it)
 # (offline container with a pre-fetched solc: FOUNDRY_PROFILE=local forge test)
 
 # Root ABI seam — regenerates or diffs contracts/abi/oilskin-abi.json against contracts/out

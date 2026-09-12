@@ -396,7 +396,7 @@ Nothing was signed or broadcast; `contracts/.env` was not written. The founder's
 | `test_fork_reserveParamsAreLiveAndListed` | **PASS** | pass | cbBTC LT / LTV **7800 / 7300**, WETH **8300 / 8000** (unchanged since 2026-09-05); USDC variable borrow rate `46325731791087027683310557` ray = **4.633 % APR** (was 4.828 %); cbZEC LT = 0 (still not listed) |
 | `test_fork_cbzecUsdcPoolSlot0` | **PASS** | pass | token0 USDC, token1 cbZEC, tickSpacing 200; `sqrtPriceX96` = `22706376861671914261124686885`, tick **−24,995** → **≈ 1,217.49 USDC per cbZEC** (−24,509 / ≈ 1,159.74 on 2026-09-07 15:15 UTC; −23,228 / ≈ 1,020.30 on 2026-09-05); `liquidity()` = `21992736132521` (was 15,382,171,343,960 on 2026-09-05) |
 | `test_fork_permit2Present` | **PASS** | pass | Permit2, Morpho Blue and Pyth all hold code |
-| `test_fork_cbzecIsAB20WithLiveMultiplier` | **FAIL** — `EvmError: Revert`; the first external call, `cbZEC.decimals()`, dies with `OpcodeNotFound` | fail (same) | **A fork EVM cannot execute the B20 native contract.** `eth_getCode` returns the single byte `0xef`, which Base's node routes to a native implementation and which revm treats as an invalid opcode. Not chain drift: read live with `cast` at ≈ block 51,127,412 — `decimals()` 8, `symbol()` "cbZEC", `name()` "Coinbase Wrapped ZEC", `multiplier()` `0x…0de0b6b3a7640000` = **1e18 (unchanged)**, `totalSupply()` `110768465960` = **1,107.68 cbZEC** (603.25 on 2026-09-05). This test can only ever pass outside a fork; the harness limitation is recorded in `TESTING.md` |
+| `test_fork_cbzecIsAB20WithLiveMultiplier` | **FAIL** — `EvmError: Revert`; the first external call, `cbZEC.decimals()`, dies with `OpcodeNotFound` | fail (same) | **A fork EVM cannot execute the B20 native contract.** `eth_getCode` returns the single byte `0xef`, which Base's node routes to a native implementation and which revm treats as an invalid opcode. Not chain drift: read live with `cast` at ≈ block 51,127,412 — `decimals()` 8, `symbol()` "cbZEC", `name()` "Coinbase Wrapped ZEC", `multiplier()` `0x…0de0b6b3a7640000` = **1e18 (unchanged)**, `totalSupply()` `110768465960` = **1,107.68 cbZEC** (603.25 on 2026-09-05). This test can only ever pass outside a fork; the harness limitation is recorded in `TESTING.md`. **2026-09-12 (slice I): the test is retired; the same four assertions are `scripts/check-cbzec-b20.sh`, run with `cast` by the CI fork job at the suite's pinned block — OK at block 51,222,568, `multiplier()` still 1e18** |
 | `test_fork_engineIndexGetterShape` | **FAIL** — `EnumerationFailed(0x)` from `SnuggleLpVenue.positionsOf` | fail (same) | The three shape assertions passed: `userPositions(address)` (`0x613cf420`) reverts, `userPositions(fresh, 0)` reverts, `poolIdsCount()` = **214**. **The live end-of-list revert is EMPTY — `0x`, zero bytes of data** — at index 0 and at the venue's canary index 2^256 − 1, through the proxy and at the unchanged implementation `0x359F90EE4c2e21Cbf6e32c5a062Eeef306822D28` (EIP-1967 slot re-read). A raw `eth_call` at "latest" returns `{"code":3,"message":"execution reverted"}` with no `data` field for both indices. It is not `Panic(0x32)`, which `positionsOf` pins, so the venue's enumeration fails closed against the live engine for **every** account. See `RISKS.md` §12 for what that means; no constant was changed |
 | `test_fork_lpOpenCloseOnLiveEngine` | **FAIL** — custom error `0xd6234725` = `NotImplemented()` | fail (same) | The test's "first active WETH/USDC pool" is engine index 0, poolId `0x0ab2ff805defbd1a92e572facf1308c26e6365fcd8af3270a492f482ac0e65e2` → pool `0xd0b53D9277642d899DF5C87A3966A349A798F224`, which is the **Uniswap v3** WETH/USDC pool (`factory()` = `0x33128a8fC17869897dcE68Ed026d694621f6FDfD`, `fee()` 500, `tickSpacing()` 10), registered with an engine fee field of **9999** and position adapter `0xCCBfBA207D424c4711708c260Eba9C87f02cCED2` (3,697 B). Inside `depositSingleSided` the engine's library `0xf84b575E4E6D9fc07a3F2B863Cb6A23CC11DCDDc` calls `adapter.getTWAPTick(pool, 300)`, which reverts `NotImplemented()`; reproduced live with `cast call` → "execution reverted: NotImplemented". The open never reached the mint, so nothing about our venue was proved or disproved; the test's pool selection is what landed here (details below) |
 | `test_fork_supplyBorrowRepayWithdrawUnderTheAccount` | **FAIL** — first `assertion failed: 99999999 != 100000000` at the collateral read; after the ±1 tolerance, `ERC20: transfer amount exceeds balance` inside `Pool.repay` | fail (`99999999 != 100000000`) | **Aave rounding dust, both directions.** Supply of 1e8 cbBTC → aToken `mint` scaled `99797385` at liquidityIndex `1002030255356308190911377929`, `Transfer` amount **99,999,999**; `PoolDataProvider.getUserReserveData(cbBTC, acct)` → currentATokenBalance **99,999,999**. Borrow of 10,000 USDC landed (balance `10000000000`), HF `6023489203404262689` wad = 6.02; `debt()` = **10,000,000,001** in the same block. `AaveV3Venue.repay(USDC, max)` approved 10,000,000,001 and Aave's `repay` pulled 10,000,000,001 from an account holding 10,000,000,000 → `ERC20: transfer amount exceeds balance`. The test fixture funds exactly the borrow; that fixture, and the `withdraw`/allowance assertions after it, were not reached and were left as written |
@@ -494,7 +494,7 @@ agreement and the gas bounds above). Still failing, unchanged, for slices B and 
 `test_fork_lpOpenCloseOnLiveEngine` (`NotImplemented()` from the stub adapter at engine index 0),
 `test_fork_supplyBorrowRepayWithdrawUnderTheAccount` (`ERC20: transfer amount exceeds balance` at
 the repay — the +1 unit), and `test_fork_cbzecIsAB20WithLiveMultiplier` (harness limitation,
-`OpcodeNotFound`).
+`OpcodeNotFound`; retired on 2026-09-12 for `scripts/check-cbzec-b20.sh`, Addendum 10).
 
 ## Addendum 5 — slice B, 2026-09-10: open → close on the engine's real Aerodrome entry, and the shapes the mocks now reproduce
 
@@ -581,7 +581,8 @@ or exits; the header says which is which.
 `test_fork_lpOpenCloseOnLiveEngine` and the new `test_fork_engineRefusalShapesOnUnstakedEntry` PASS.
 Still failing, unchanged, for slice C and the harness limit:
 `test_fork_supplyBorrowRepayWithdrawUnderTheAccount` (the +1 unit at the repay) and
-`test_fork_cbzecIsAB20WithLiveMultiplier` (`OpcodeNotFound`).
+`test_fork_cbzecIsAB20WithLiveMultiplier` (`OpcodeNotFound`; retired on 2026-09-12 for
+`scripts/check-cbzec-b20.sh`, Addendum 10).
 
 ## Addendum 6 — slice C, 2026-09-10: the Aave round trip, funded as a user would be, and the dust it leaves
 
@@ -731,3 +732,48 @@ delta the pool reports. (4) Read 2026-09-11 at block **51,193,797** (W3-LOW-5): 
 to the minter when it is unstaked (`withdraw` or `getReward`) within ten seconds of its
 `deposit`, and nothing after that; `SlipstreamLpVenue.earlyWithdrawPenalty(id, account)` reads
 these live and the position card and the Close plan show the window while it is open.
+
+## Addendum 10 — slice I, 2026-09-12: the fork suite at block 51,222,568, all green, and the B20 read done with `cast`
+
+Purpose: the first all-green run of `contracts/test/fork/BaseFork.t.sol`, at a block CI now pins
+(`FORK_BLOCK` in `.github/workflows/ci.yml`), and the words the chain answered. Method: Foundry
+1.8.1 on the founder's Mac, `FORK_URL=https://mainnet.base.org` (public RPC, no key),
+`FORK_BLOCK=51222568` (the tip at 17:34:39 UTC), 17:35–17:41 UTC; `scripts/check-cbzec-b20.sh`
+at the same block with `cast`. Nothing was signed or broadcast. Every derived figure below is
+computed from the raw word beside it.
+
+### Scorecard: 11 passed / 0 failed / 0 skipped (12 → 11 tests)
+
+`test_fork_cbzecIsAB20WithLiveMultiplier` is retired — its first external call died
+`OpcodeNotFound` at every block it was ever run (Addendum 3) because cbZEC's code is the single B20
+byte `0xef` that no fork EVM executes — and its four assertions are `scripts/check-cbzec-b20.sh`:
+**OK at 51,222,568** — `eth_getCode` `0xef`, `decimals()` **8**, `symbol()` **cbZEC**,
+`multiplier()` `1000000000000000000` = **1e18, unchanged** since 2026-09-05.
+
+`test_fork_directVenueOpenCloseOnTheSecondDeployment` ran against Base for the first time. It
+failed `NotOwner()` on the first run: the close's `PriceBand` was computed inline *after*
+`vm.prank(alice)`, and `_forkBand`'s `slot0()` staticcall consumed the prank, so the close reached
+the account from the test contract. Harness defect; the band is now read before the prank; no
+product code changed. Everything else passed unchanged.
+
+### What the chain said (block 51,222,568 unless noted)
+
+| Read | Word | Derived / note |
+|---|---|---|
+| Aave cbBTC LT / LTV | 7800 / 7300 | unchanged since 2026-09-05 |
+| Aave WETH LT / LTV | 8300 / 8000 | unchanged |
+| Aave USDC variable borrow rate | `45204616058225984156951817` ray | **4.5205 % APR** (4.633 % on 2026-09-10 at 51,127,409; 4.828 % on 2026-09-05) |
+| cbZEC LT on Aave | 0 | still not listed |
+| cbZEC/USDC pool `slot0` | `sqrtPriceX96 23465594535294725364452820347`, tick **−24,338** | ≈ **1,140.07 USDC per cbZEC** (1.0001^tick, 6 vs 8 decimals); −24,995 / ≈ 1,217.49 on 2026-09-10 |
+| cbZEC/USDC pool `liquidity()` | `17633782327660` | 21,992,736,132,521 on 2026-09-10 |
+| cbZEC/USDC gauge `0x8779…81FB` `rewardRate()` / `periodFinish()` | `7140520125989201` / `1789603200` | **≈ 616.94 AERO / day, epoch ending 2026-09-17 00:00 UTC — the gauge now has an emissions vote** (it had none on 2026-09-10, Addendum 8; the yield sample of slice K reads it live); Voter `isAlive` true |
+| Engine `poolIds(i)` past the end / canary / unknown selector / live index / `positions(id)` | 12,660 / 12,660 / 11,127 / 15,275 / 24,463 gas | identical to Addendum 4; live holder `0xf4b4…1b1f` now enumerates **44** ids (42 on 2026-09-10) |
+| Aave round trip under the account | collateral read 99,999,999 after 1e8; HF 6.026 after 10,000 USDC; debt `10000000001`; `repay(max)` leaves 2 units; `withdraw(max)` refused `0x6679996d` while owed; +2 repaid; withdrawn 99,999,999 | Addendum 6's shape, unchanged |
+| Second-deployment WETH/USDC ts-10 pool `0x493E…aB43` | gauge **`0xBb43264000215f475EB6b456cF1Bbf0EF5a726FA`**, `isAlive` true, `rewardRate()` `621935145009867` (≈ 53.74 AERO / day), `fee()` 500 pips, tick **−197,891** (≈ 2,547.61 USDC per WETH) | first read of this gauge |
+| Direct venue open on that pool, 400 USDC single-sided, width 1500, through the account | **1,276,935 gas** (whole tx); left idle after open: 0 USDC, `15990198080511094` WETH (0.0160) | the to-ratio swap bought slightly more WETH than the mint used; the venue and the adapter hold nothing; no allowance survives |
+| Direct venue close after 1 h | **534,277 gas**; paid `62856322894720550` WETH (0.0629) + `199837790` USDC + 0 AERO (net) | round trip **400.724285 USDC-equivalent** back of 400 (WETH at the pool's own price) — within the 3 % the test allows, above par because of the fee tier and the price moving inside the hour; position burnt; `positionsOf` empty |
+| Permit2 / Morpho Blue / Pyth | code present | unchanged |
+
+Not verified here, still gated: everything Addendum 9 lists — the cbZEC/USDC pool's own mint has
+never executed anywhere (the B20 precompile), and the gauge factory's early-withdraw penalty for
+the cbZEC pool was not read.

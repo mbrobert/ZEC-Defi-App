@@ -24,7 +24,10 @@ check("parity: the block evaluates on its own (no hidden dependency on page code
 let shared = null;
 try { shared = await import(path.join(REPO, "packages/shared/dist/index.js")); } catch (e) { console.log("  (shared dist not importable: " + e.message + ")"); }
 if (shared) {
-  const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  // BigInt-safe: @zyo/shared carries bigint words (MORPHO_BLUE.markets[].lltvWad since 2026-09-07) and
+  // JSON.stringify throws on them — the whole suite died before its first shared check (2026-09-12).
+  const J = (v) => JSON.stringify(v, (_, x) => (typeof x === "bigint" ? x.toString() + "n" : x));
+  const eq = (a, b) => J(a) === J(b);
   const SHc = P.OIL_SHARED;
   check("shared: FEES byte-equal", eq(SHc.FEES, shared.FEES), JSON.stringify([SHc.FEES, shared.FEES]));
   check("shared: HF_LADDER, ENTRY_HF_FLOOR, HF_HYSTERESIS byte-equal", eq(SHc.HF_LADDER, shared.HF_LADDER) && SHc.ENTRY_HF_FLOOR === shared.ENTRY_HF_FLOOR && SHc.HF_HYSTERESIS === shared.HF_HYSTERESIS);

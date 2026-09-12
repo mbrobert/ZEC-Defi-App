@@ -1,0 +1,68 @@
+name: Nightly invariants
+
+# Slice I (2026-09-12): the invariant suite at the depth the fix rounds used — runs=1500,
+# depth=120 = 180,000 handler calls per invariant — every night, with Foundry's call summary
+# (calls / reverts / discards per handler selector, `[invariant] show_metrics`) uploaded as an
+# artifact and copied into the run summary. The push-time `contracts` job runs the same suite at
+# foundry.toml's 256 × 40; this is the deep pass. docs/TESTING.md records the local timing.
+on:
+  schedule:
+    - cron: "17 3 * * *" # 03:17 UTC daily
+  workflow_dispatch:
+
+env:
+  OZ_TAG: v5.7.0
+  FORGE_STD_TAG: v1.16.2
+
+jobs:
+  invariants-deep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    defaults:
+      run:
+        working-directory: contracts
+    env:
+      FOUNDRY_INVARIANT_RUNS: "1500"
+      FOUNDRY_INVARIANT_DEPTH: "120"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+      - name: Fetch libraries (not vendored in repo)
+        run: |
+          git clone --depth 1 --branch "$OZ_TAG" https://github.com/OpenZeppelin/openzeppelin-contracts lib/openzeppelin-contracts
+          git clone --depth 1 --branch "$FORGE_STD_TAG" https://github.com/foundry-rs/forge-std lib/forge-std
+      - name: Restore the compiler cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            contracts/cache
+            contracts/out
+          key: foundry-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'contracts/src/**/*.sol', 'contracts/test/**/*.sol', 'contracts/script/**/*.sol') }}
+          restore-keys: foundry-${{ runner.os }}-
+      - name: Invariants at runs=1500 × depth=120 (the metrics table is the call summary)
+        run: |
+          set -o pipefail
+          echo "invariant runs=$FOUNDRY_INVARIANT_RUNS depth=$FOUNDRY_INVARIANT_DEPTH ($(forge --version | head -1))" | tee invariants-nightly.log
+          forge test --match-path test/invariant/Invariants.t.sol -vv 2>&1 | tee -a invariants-nightly.log
+      - name: Call summary into the run summary
+        if: always()
+        run: |
+          {
+            echo "### Nightly invariants — runs=$FOUNDRY_INVARIANT_RUNS depth=$FOUNDRY_INVARIANT_DEPTH"
+            grep -E '^\[(PASS|FAIL)' invariants-nightly.log | sed 's/^/- /' || true
+            grep -E '^Ran [0-9]+ test suites? in' invariants-nightly.log | sed 's/^/- /' || true
+            echo
+            echo '```'
+            # The per-selector table Foundry prints under `show_metrics`: from the "invariants (runs: …)"
+            # header through the box's bottom edge.
+            awk '/invariants \(runs:/{p=1} p{print} /^╰/{if(p){p=0}}' invariants-nightly.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload the call summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: invariant-call-summary-${{ github.run_id }}
+          path: contracts/invariants-nightly.log
+          retention-days: 90
+          if-no-files-found: error

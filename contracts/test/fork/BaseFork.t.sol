@@ -98,14 +98,14 @@ contract BaseForkTest is Test {
         assertEq(aaveVenue.liquidationThresholdBps(BaseAddresses.CBZEC), 0, "cbZEC is NOT listed on Aave");
     }
 
-    function test_fork_cbzecIsAB20WithLiveMultiplier() public onlyForked {
-        assertEq(BaseAddresses.CBZEC.code.length, 1, "B20 precompile: code is a single 0xef byte");
-        assertEq(IERC20Metadata(BaseAddresses.CBZEC).decimals(), 8);
-        assertEq(IERC20Metadata(BaseAddresses.CBZEC).symbol(), "cbZEC");
-        (bool ok, bytes memory ret) = BaseAddresses.CBZEC.staticcall(abi.encodeWithSignature("multiplier()"));
-        assertTrue(ok && ret.length >= 32, "multiplier() must answer");
-        console2.log("cbZEC multiplier", abi.decode(ret, (uint256)));
-    }
+    /// cbZEC's B20 shape (code = the single byte 0xef, decimals 8, symbol "cbZEC", a live
+    /// `multiplier()`) is NOT a test here any more. cbZEC is a Base native contract: `eth_getCode`
+    /// returns 0xef, which the node routes to a native implementation and which every fork EVM
+    /// treats as an invalid opcode — the former `test_fork_cbzecIsAB20WithLiveMultiplier` died with
+    /// `OpcodeNotFound` on its first call at every block it was ever run (2026-09-07, 09-10, 09-12;
+    /// VERIFIED-BASE-FACTS.md Addendum 3). The same four assertions are made with `cast` against
+    /// the RPC by `scripts/check-cbzec-b20.sh`, which the CI `fork` job runs at this suite's pinned
+    /// block (slice I, 2026-09-12; TESTING.md "Contracts, fork").
 
     function test_fork_cbzecUsdcPoolSlot0() public onlyForked {
         IAerodromeCLPool pool = IAerodromeCLPool(BaseAddresses.AERODROME_CBZEC_USDC_POOL);
@@ -682,9 +682,15 @@ contract BaseForkTest is Test {
         assertEq(IERC20(BaseAddresses.USDC).allowance(address(acct), BaseAddresses.AERODROME_NPM_2), 0, "no allowance survives");
 
         vm.warp(block.timestamp + 1 hours);
+        // The band is read BEFORE the prank: `_forkBand` makes a `slot0()` staticcall, and a prank
+        // is spent by the next external call whatever it is — with the band computed inline after
+        // `vm.prank(alice)`, the close reached the account as the test contract and reverted
+        // `NotOwner()` (first run against Base, block 51,222,568, 2026-09-12 — a harness defect,
+        // not a product finding; the open above already computed its band before its prank).
+        PriceBand memory closeBand = _forkBand(pool, 1000);
         vm.prank(alice);
         g0 = gasleft();
-        ret = acct.execWithCallback(address(venue), 0, abi.encodeCall(ILpVenue.close, (id, _forkBand(pool, 1000))));
+        ret = acct.execWithCallback(address(venue), 0, abi.encodeCall(ILpVenue.close, (id, closeBand)));
         console2.log("direct close gas (whole tx, through the account)", g0 - gasleft());
         (uint256 out0, uint256 out1, uint256 rewards) = abi.decode(ret, (uint256, uint256, uint256));
         console2.log("close paid WETH / USDC / AERO(net)", out0, out1, rewards);

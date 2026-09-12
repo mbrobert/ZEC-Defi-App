@@ -37,7 +37,7 @@ that registry → assets registered → two-step ownership hand-off → swap ada
 **What a Sepolia run proves:** wallet → factory → account → registry → `AaveV3Venue` → supply →
 borrow → `StrategyRouter`, against real Aave, real Permit2 and real Chainlink.
 **What it does not prove:** anything about the live engine or the live Slipstream router. That stays
-the job of the 8 mainnet fork tests.
+the job of the 11 mainnet fork tests plus `scripts/check-cbzec-b20.sh`.
 
 **The mocks keep their public test switches** (`setPaused`, `setGlitch`, `setMultiplier`, …) and
 anyone on the testnet can call them. That is acceptable for a testnet the founder alone exercises,
@@ -289,7 +289,7 @@ backlog, not yet written) will be the reference for the call sequence.
    the router, cbZEC and AERO are the mocks of §1, and "cbBTC" is Aave's test WBTC priced by the
    BTC/USD feed (there is no cbBTC/USD feed on Sepolia, so the residual (b) cross-check has
    nothing to disagree with there). `MorphoBlueVenue` deploys with no markets. Yields, gauges and
-   the CoW spot are mainnet-only. The 8 mainnet fork tests remain the only evidence about the
+   the CoW spot are mainnet-only. The 11 mainnet fork tests (and `scripts/check-cbzec-b20.sh`) remain the only evidence about the
    live engine (`VERIFIED-BASE-FACTS.md` Addendum 3).
 3. `MorphoBlueVenue` on Sepolia has no markets (the Morpho API does not index chain 84532 and no
    cbBTC/WETH–USDC market is known there), so it reports `enabled() == false` and the registry will

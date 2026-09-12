@@ -81,8 +81,11 @@ blocked leg is skipped and reported, never bricking the rest of an exit
 (`closeMany` try/catch, `FeeSkipped`, `ClaimSkipped`).
 `contracts/test/B20.t.sol` (10 tests) drives `MockB20` through rebase up and
 down, blocked account, blocked treasury, paused reward token, blocked swap.
-`VERIFIED-BASE-FACTS.md` records the live `multiplier()` read and the fork test
-`test_fork_cbzecIsAB20WithLiveMultiplier` re-reads it.
+`VERIFIED-BASE-FACTS.md` records the live `multiplier()` read, and
+`scripts/check-cbzec-b20.sh` — run by the CI fork job at the suite's pinned block —
+re-reads it with `cast`, because no fork EVM can execute the B20 native contract
+(the fork test that tried, `test_fork_cbzecIsAB20WithLiveMultiplier`, was retired
+for it on 2026-09-12).
 
 **Does not.** A seized or paused balance is gone or frozen for the user
 regardless of what our contracts do. **The probe that now ships (slice E,

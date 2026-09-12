@@ -5,9 +5,25 @@ on:
     branches: [main]
   pull_request:
 
+# Slice I (2026-09-12): CI that proves what it claims. Every area has its own job; a job never runs
+# a suite without the inputs that suite needs (the keeper's ABI seam is STRICT here, so it can no
+# longer print SKIP and stay green); the fork job says "NOT VERIFIED" — and fails — when the RPC
+# secret is absent, instead of showing a green check over skipped tests. The nightly invariant run
+# lives in nightly-invariants.yml. Counts for every suite: docs/TESTING.md.
+env:
+  # The block EVERY fork read is pinned to — the forge fork suite and scripts/check-cbzec-b20.sh
+  # alike. Read on 2026-09-12 17:34 UTC from https://mainnet.base.org (docs/TESTING.md "Contracts,
+  # fork" records what passed there). Move it forward deliberately: re-run, then record the new
+  # block. An RPC that no longer serves state at this block fails the job with its own error.
+  FORK_BLOCK: "51222568"
+  # Library pins (not vendored in the repo — SETUP.md).
+  OZ_TAG: v5.7.0
+  FORGE_STD_TAG: v1.16.2
+
 jobs:
   contracts:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: contracts
@@ -16,15 +32,92 @@ jobs:
       - uses: foundry-rs/foundry-toolchain@v1
       - name: Fetch libraries (not vendored in repo)
         run: |
-          git clone --depth 1 --branch v5.7.0 https://github.com/OpenZeppelin/openzeppelin-contracts lib/openzeppelin-contracts
-          git clone --depth 1 --branch v1.16.2 https://github.com/foundry-rs/forge-std lib/forge-std
+          git clone --depth 1 --branch "$OZ_TAG" https://github.com/OpenZeppelin/openzeppelin-contracts lib/openzeppelin-contracts
+          git clone --depth 1 --branch "$FORGE_STD_TAG" https://github.com/foundry-rs/forge-std lib/forge-std
+      - name: Restore the compiler cache (keyed on every .sol and foundry.toml)
+        uses: actions/cache@v4
+        with:
+          path: |
+            contracts/cache
+            contracts/out
+          key: foundry-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'contracts/src/**/*.sol', 'contracts/test/**/*.sol', 'contracts/script/**/*.sol') }}
+          restore-keys: foundry-${{ runner.os }}-
       - name: Unit + scenario + invariant suites (isolation pinned in foundry.toml)
         run: forge test -vv
 
-  agent:
+  # One compile, shared with the seam jobs below: the keeper's and the root's ABI checks read
+  # contracts/out/, and a fresh runner has none (the keeper job printed "verify-abi: SKIP" on every
+  # run before 2026-09-12 — green, and proving nothing).
+  contracts-build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: contracts
     steps:
       - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+      - name: Fetch libraries (not vendored in repo)
+        run: |
+          git clone --depth 1 --branch "$OZ_TAG" https://github.com/OpenZeppelin/openzeppelin-contracts lib/openzeppelin-contracts
+          git clone --depth 1 --branch "$FORGE_STD_TAG" https://github.com/foundry-rs/forge-std lib/forge-std
+      - name: Restore the compiler cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            contracts/cache
+            contracts/out
+          key: foundry-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'contracts/src/**/*.sol', 'contracts/test/**/*.sol', 'contracts/script/**/*.sol') }}
+          restore-keys: foundry-${{ runner.os }}-
+      - name: forge build
+        run: forge build
+      - name: Upload the artifacts for the seam jobs
+        uses: actions/upload-artifact@v4
+        with:
+          name: contracts-out
+          path: contracts/out
+          retention-days: 1
+          if-no-files-found: error
+
+  # The machine-checked seam between contracts and every other area: contracts/abi/oilskin-abi.json
+  # must equal the compiled artifacts (exit 1 on drift), and the keeper's own seam must run against
+  # the same artifacts with nothing skipped.
+  abi-seam:
+    needs: contracts-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: contracts-out
+          path: contracts/out
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install (shared + agent workspaces — viem for the seam scripts)
+        run: npm install -w @zyo/shared -w @zyo/agent
+      - name: Root ABI seam — committed bundle equals the compiled artifacts
+        run: node scripts/verify-abi.mjs
+      - name: Build shared and the keeper (its seam imports agent/dist)
+        run: |
+          npm run build -w @zyo/shared
+          npm run build -w @zyo/agent
+      - name: Keeper ABI seam, STRICT — a missing artifact is a failure, never a skip
+        run: node agent/scripts/verify-abi.mjs
+        env:
+          VERIFY_ABI_STRICT: "1"
+
+  agent:
+    needs: contracts-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: contracts-out
+          path: contracts/out
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -35,10 +128,144 @@ jobs:
       # 2026-08-14 → 2026-08-27).
       - name: Build shared
         run: npm run build -w @zyo/shared
-      - name: Agent suite (tsc + node:test)
+      - name: Keeper suite (tsc + verify-abi STRICT + node:test)
         run: npm test -w @zyo/agent
+        env:
+          VERIFY_ABI_STRICT: "1"
       - name: Yield service suite (tsc + node:test, offline fixtures)
         run: npm test -w @zyo/yield
+
+  shared:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install shared
+        run: npm install -w @zyo/shared
+      - name: Shared suite (tsc build + node:test — the ladder, the tables, the per-chain rows, the Solana rows)
+        run: npm test -w @zyo/shared
+
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install (shared + web workspaces)
+        run: npm install -w @zyo/shared -w @zyo/web
+      - name: Build shared
+        run: npm run build -w @zyo/shared
+      - name: Typecheck (tsc --noEmit)
+        run: npm run typecheck -w @zyo/web
+      - name: Publish the model doc where the demo-gate pin looks for it (else that test skips)
+        run: |
+          mkdir -p /tmp/build
+          cp services/yield/samples/MODEL-NUMBERS.md /tmp/build/MODEL-NUMBERS.md
+      - name: Web unit suite (node:test; the ABI-drift test and both model-number pins must RUN)
+        run: npm test -w @zyo/web
+        env:
+          VERIFY_ABI_STRICT: "1"
+
+  # The two static prototypes, driven by Playwright's Chromium. verify-toggle deep-equals the pages'
+  # shared block against the BUILT @zyo/shared and pins OIL_MODEL to /tmp/build/MODEL-NUMBERS.md
+  # when that file exists — so the repo's copy is put there, and the pin runs instead of skipping.
+  prototypes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install (shared + web workspaces — Playwright comes with the web workspace)
+        run: npm install -w @zyo/shared -w @zyo/web
+      - name: Build shared
+        run: npm run build -w @zyo/shared
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Prototype suites (verify-simple, verify-advanced, verify-toggle, fuzz)
+        run: |
+          mkdir -p /tmp/build
+          cp services/yield/samples/MODEL-NUMBERS.md /tmp/build/MODEL-NUMBERS.md
+          CHROMIUM_PATH="$(node -e "console.log(require('playwright').chromium.executablePath())")" node prototype/test/run-all.mjs
+
+  # Base mainnet at the pinned block: the tests that can only be true against the chain. The RPC is
+  # `secrets.BASE_RPC_URL` (never printed; GitHub masks it in logs). Without it every test is
+  # `vm.skip`ped — and this job then FAILS with "<n> skipped = NOT VERIFIED" as its own summary line,
+  # because a green check over skipped fork tests would be a lie. With it, the job also runs the
+  # cbZEC B20 check that no fork EVM can execute (scripts/check-cbzec-b20.sh) at the same block.
+  fork:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: contracts
+    env:
+      FORK_URL: ${{ secrets.BASE_RPC_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+      - name: Fetch libraries (not vendored in repo)
+        run: |
+          git clone --depth 1 --branch "$OZ_TAG" https://github.com/OpenZeppelin/openzeppelin-contracts lib/openzeppelin-contracts
+          git clone --depth 1 --branch "$FORGE_STD_TAG" https://github.com/foundry-rs/forge-std lib/forge-std
+      - name: Restore the compiler cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            contracts/cache
+            contracts/out
+          key: foundry-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'contracts/src/**/*.sol', 'contracts/test/**/*.sol', 'contracts/script/**/*.sol') }}
+          restore-keys: foundry-${{ runner.os }}-
+      - name: Fork suite at FORK_BLOCK (fails, and says NOT VERIFIED, without the secret)
+        run: |
+          set -o pipefail
+          forge test --match-path test/fork/BaseFork.t.sol -vv 2>&1 | tee fork.log || true
+          # Foundry's closing line: "Ran 1 test suite in …: P tests passed, F failed, S skipped (T total tests)"
+          TOTALS=$(sed -n 's/^Ran [0-9]* test suites\{0,1\} in .*: \([0-9]*\) tests\{0,1\} passed, \([0-9]*\) failed, \([0-9]*\) skipped (\([0-9]*\) total tests\{0,1\}).*/\1 \2 \3 \4/p' fork.log | tail -1)
+          if [ -z "$TOTALS" ]; then
+            echo "::error::fork: forge printed no totals line — the suite did not run to the end (see fork.log)"
+            echo "### fork: NOT VERIFIED — the suite did not run to the end" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          read -r PASSED FAILED SKIPPED TOTAL <<< "$TOTALS"
+          if [ -z "$FORK_URL" ]; then
+            LINE="fork: ${SKIPPED} skipped = NOT VERIFIED (secrets.BASE_RPC_URL is not available to this run; nothing about Base mainnet was checked)"
+            echo "$LINE"
+            echo "### $LINE" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::$LINE"
+            exit 1
+          fi
+          TIP=$(cast block-number --rpc-url "$FORK_URL" || echo "unknown")
+          LINE="fork: ${PASSED} passed / ${FAILED} failed / ${SKIPPED} skipped of ${TOTAL} at block ${FORK_BLOCK} (chain tip at run time: ${TIP})"
+          echo "$LINE"
+          echo "### $LINE" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$FAILED" -ne 0 ]; then echo "::error::$LINE"; exit 1; fi
+          # With the secret present a skip means a live entry the suite looks for has vanished —
+          # reported, not hidden.
+          if [ "$SKIPPED" -ne 0 ]; then
+            echo "::warning::fork: ${SKIPPED} test(s) skipped WITH the RPC present — an entry the suite selects by property is gone; read fork.log"
+            echo "- ${SKIPPED} skipped with the RPC present: NOT fully verified — see fork.log" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+      - name: cbZEC B20 shape at FORK_BLOCK — the check no fork EVM can run (cast against the RPC)
+        run: |
+          ../scripts/check-cbzec-b20.sh "$FORK_URL" "$FORK_BLOCK" | tee cbzec-b20.log
+          echo "- $(head -1 cbzec-b20.log)" >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload the fork log (console output of every fork test, and the B20 read)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fork-at-${{ env.FORK_BLOCK }}
+          path: |
+            contracts/fork.log
+            contracts/cbzec-b20.log
+          if-no-files-found: ignore
 
   # Slice H (2026-09-11, BASE-PIVOT item 20): static analysis and symbolic execution on every push.
   # The job FAILS on a new High from Slither (`--fail-high`) or Aderyn (the report's high_issues), and
@@ -47,6 +274,7 @@ jobs:
   # rather than to fail (AUDIT-2026-09-11.md §Slice H).
   static-analysis:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: contracts
@@ -55,8 +283,16 @@ jobs:
       - uses: foundry-rs/foundry-toolchain@v1
       - name: Fetch libraries (not vendored in repo)
         run: |
-          git clone --depth 1 --branch v5.7.0 https://github.com/OpenZeppelin/openzeppelin-contracts lib/openzeppelin-contracts
-          git clone --depth 1 --branch v1.16.2 https://github.com/foundry-rs/forge-std lib/forge-std
+          git clone --depth 1 --branch "$OZ_TAG" https://github.com/OpenZeppelin/openzeppelin-contracts lib/openzeppelin-contracts
+          git clone --depth 1 --branch "$FORGE_STD_TAG" https://github.com/foundry-rs/forge-std lib/forge-std
+      - name: Restore the compiler cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            contracts/cache
+            contracts/out
+          key: foundry-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'contracts/src/**/*.sol', 'contracts/test/**/*.sol', 'contracts/script/**/*.sol') }}
+          restore-keys: foundry-${{ runner.os }}-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -92,6 +328,7 @@ jobs:
 
   solana-seam:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
