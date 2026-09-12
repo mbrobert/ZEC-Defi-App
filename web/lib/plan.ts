@@ -553,7 +553,7 @@ export function buildUnwindPlan(i: UnwindPlanInput): PlannedCall[] {
       kind: "unwind",
       wallet: "transaction",
       title: "Close the position, repay the loan, get your collateral back — one transaction",
-      plain: `One transaction that closes ${i.poolLabel ?? "the position"}, turns everything back into USDC at a price floor you can see below, repays your Aave loan in full and returns your ${asset.symbol} to your wallet; the performance fee is taken only on the rewards it collects.${twoPlaces}${penalty}`,
+      plain: `One transaction that closes ${i.poolLabel ?? "the position"}, turns everything back into USDC at a price floor you can see below (a leftover too small for that floor to price — a few wei of the other token — stays in your account instead of failing the close), repays your Aave loan in full and returns your ${asset.symbol} to your wallet; the performance fee is taken only on the rewards it collects.${twoPlaces}${penalty}`,
       to: i.account,
       toLabel: `your Oilskin account (${i.account ? short(i.account) : "…"})`,
       functionName: "execWithCallback → StrategyRouter.unwind",
@@ -579,7 +579,7 @@ export function buildUnwindPlan(i: UnwindPlanInput): PlannedCall[] {
       ],
       note:
         `closeMany on ${i.positionVenue === "direct" ? "SlipstreamLpVenue (unstake from the gauge, collect the AERO — fee on it — then decrease, collect and burn the NFT; a refused id is reported in failedCount and left where it is)" : "SnuggleLpVenue"} (ids that refuse are reported in failedCount, at index 0 like anywhere else — never a revert) → swap the non-USDC leg through ${i.positionVenue === "direct" ? "SlipstreamPoolSwapAdapter (the pool's own swap with the callback; a partial fill is refused by name)" : "AerodromeSwapAdapter"}, which enforces amountIn × quotedOut / quotedIn × (10000 − maxSlippageBps) / 10000 on the amount actually received → repay on every lending venue you still owe, the one with the lowest health factor first (a fixed repay against zero debt is a no-op, not a revert; one VenueRepaid per venue) → withdraw from EVERY venue holding your collateral, the registry's current venue first, each gated on that venue's GLOBAL health factor (one VenueWithdrawn per venue; since 2026-09-11 — before, only the first venue was visited). ` +
-        "Works on a disabled ASSET; refuses through a disabled VENUE (VenueDisabled) — then the owner's raw exec to Aave is the escape. Fee only in SnuggleLpVenue.close, on rewards.",
+        "Works on a disabled ASSET; refuses through a disabled VENUE (VenueDisabled) — then the owner's raw exec to Aave is the escape. Fee only in SnuggleLpVenue.close, on rewards. A non-USDC leg the quote cannot price (the adapter's floor for it is zero) is kept in the account and reported as DustLegKept rather than reverting the unwind (NI-HIGH-1, 2026-09-12).",
       required: true,
       encodable: abiOk && !!i.account && i.positionIds.length > 0 && quoteOk,
     },

@@ -254,6 +254,21 @@ export const strategyRouterAbi = [
       { name: "withdrawn", type: "uint256", indexed: false },
     ],
   },
+  /**
+   * A non-USDC leg the LP close paid out that the caller's quote could not price (the adapter's
+   * floor for it is zero): left in the account, not swapped (NI-HIGH-1, 2026-09-12 — before, such a
+   * leg reverted the whole unwind as `ZeroQuote`, the keeper's included). `summarizeUnwinds` reads
+   * them so a CONFIRMED repay can say what it left behind; a kept leg changes no repay figure.
+   */
+  {
+    type: "event",
+    name: "DustLegKept",
+    inputs: [
+      { name: "account", type: "address", indexed: true },
+      { name: "token", type: "address", indexed: true },
+      { name: "amount", type: "uint256", indexed: false },
+    ],
+  },
   { type: "error", name: "Expired", inputs: [{ name: "deadline", type: "uint256" }] },
   { type: "error", name: "ExitHfTooLow", inputs: [{ name: "healthFactor", type: "uint256" }, { name: "floor", type: "uint256" }] },
   { type: "error", name: "UnknownPool", inputs: [{ name: "poolId", type: "bytes32" }] },

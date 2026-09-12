@@ -6,7 +6,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { base } from "viem/chains";
 import { HF_LADDER } from "@zyo/shared";
 import { GRANT_SELECTORS, strategyRouterAbi } from "../src/abi/oilskin.js";
-import { KeeperDispatcher, summarizeUnwinds, judgeUntouched } from "../src/dispatch/keeperDispatcher.js";
+import { KeeperDispatcher, summarizeUnwinds, judgeUntouched, dustKeptNote } from "../src/dispatch/keeperDispatcher.js";
 import { CLOSE_FRACTION, bandFor, closeCount, isqrt, planAction, selectIds, type PoolInfo } from "../src/dispatch/policy.js";
 import { NO_SWAP, quoteForPool, minOutFor } from "../src/dispatch/quote.js";
 import { evaluateSnapshot } from "../src/engine/valuation.js";
@@ -841,6 +841,31 @@ describe("keeper dispatcher — two LP venues (the direct Slipstream venue), and
     assert.equal(s.byVenue.size, 0, "no VenueRepaid in this receipt");
     const none = summarizeUnwinds([unwound], account);
     assert.equal(none.withdrawnByVenue.size, 0);
+  });
+
+  it("summarizeUnwinds reads DustLegKept into dustKept (token → amount, summed) and dustKeptNote names it; a receipt without one carries no note (NI-HIGH-1, 2026-09-12)", () => {
+    const account = ACCOUNT_A;
+    const WETH_ADDR = ("0x" + "42".repeat(20)) as Address;
+    const mk = (token: Address, amount: bigint) => ({
+      address: ROUTER,
+      topics: encTopics({ abi: routerAbiForLogs, eventName: "DustLegKept", args: { account, token } }) as Hex[],
+      data: encParams([{ type: "uint256" }], [amount]),
+    });
+    const unwound = {
+      address: ROUTER,
+      topics: encTopics({ abi: routerAbiForLogs, eventName: "LeveragedLpUnwound", args: { account, collateralAsset: CBBTC } }) as Hex[],
+      data: encParams(
+        [{ type: "uint256" }, { type: "uint256" }, { type: "uint256" }, { type: "uint256" }, { type: "uint256" }, { type: "uint256" }],
+        [1n, 0n, 31_757_002_505n, 10_000_000_000n, 0n, 2n ** 255n]
+      ),
+    };
+    const s = summarizeUnwinds([unwound, mk(WETH_ADDR, 6192n), mk(WETH_ADDR, 8n)], account);
+    assert.equal(s.repaid, 10_000_000_000n, "a kept leg changes no repay figure");
+    assert.deepEqual([...s.dustKept.entries()], [[WETH_ADDR.toLowerCase(), 6200n]]);
+    assert.equal(dustKeptNote(s), `left in the account, not swapped (below the quote's floor): 6200 base units of ${WETH_ADDR.toLowerCase()}`);
+    const other = summarizeUnwinds([unwound, { ...mk(WETH_ADDR, 5n), topics: encTopics({ abi: routerAbiForLogs, eventName: "DustLegKept", args: { account: ("0x" + "b0".repeat(20)) as Address, token: WETH_ADDR } }) as Hex[] }], account);
+    assert.equal(other.dustKept.size, 0, "another account's kept leg is not ours");
+    assert.equal(dustKeptNote(other), null);
   });
 
   it("reads BOTH venues' positionsOf, plans one unwind per pool, and the router closes the engine id and the direct id in one dispatch", async () => {

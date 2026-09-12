@@ -144,6 +144,19 @@ export interface UnwindSummary {
    * receipt that DID withdraw is visible for what it is (RISKS §8 "two-book Close", 2026-09-11).
    */
   withdrawnByVenue: Map<string, bigint>;
+  /**
+   * `DustLegKept` per token (lower-cased address → amount left in the account because the quote's
+   * floor for it was zero, NI-HIGH-1, 2026-09-12). Informational: the repay figures are unaffected;
+   * a CONFIRMED result names it so the owner knows a few wei of the other token stayed put.
+   */
+  dustKept: Map<string, bigint>;
+}
+
+/** The one-line note a confirmed receipt carries about legs it kept rather than swapped, or null. */
+export function dustKeptNote(s: Pick<UnwindSummary, "dustKept">): string | null {
+  if (s.dustKept.size === 0) return null;
+  const parts = [...s.dustKept.entries()].map(([token, amount]) => `${amount} base units of ${token}`);
+  return `left in the account, not swapped (below the quote's floor): ${parts.join("; ")}`;
 }
 
 /**
@@ -156,7 +169,7 @@ export function summarizeUnwinds(
   logs: readonly { address: `0x${string}`; data: `0x${string}`; topics: readonly `0x${string}`[] }[],
   account: Address
 ): UnwindSummary {
-  const out: UnwindSummary = { events: 0, closed: 0n, failed: 0n, usdcFromLp: 0n, repaid: 0n, withdrawn: 0n, byVenue: new Map(), withdrawnByVenue: new Map() };
+  const out: UnwindSummary = { events: 0, closed: 0n, failed: 0n, usdcFromLp: 0n, repaid: 0n, withdrawn: 0n, byVenue: new Map(), withdrawnByVenue: new Map(), dustKept: new Map() };
   type Unwound = { account?: string; closedCount?: bigint; failedCount?: bigint; usdcFromLp?: bigint; repaid?: bigint; withdrawn?: bigint };
   let parsed: { args: Unwound }[];
   try {
@@ -199,6 +212,19 @@ export function summarizeUnwinds(
     if (!a.account || a.account.toLowerCase() !== account.toLowerCase() || !a.venue) continue;
     const k = a.venue.toLowerCase();
     out.withdrawnByVenue.set(k, (out.withdrawnByVenue.get(k) ?? 0n) + (a.withdrawn ?? 0n));
+  }
+  type Dust = { account?: string; token?: string; amount?: bigint };
+  let dust: { args: Dust }[] = [];
+  try {
+    dust = parseEventLogs({ abi: strategyRouterAbi, logs: logs as never, eventName: "DustLegKept" }) as unknown as { args: Dust }[];
+  } catch {
+    dust = [];
+  }
+  for (const log of dust) {
+    const a = log.args;
+    if (!a.account || a.account.toLowerCase() !== account.toLowerCase() || !a.token) continue;
+    const k = a.token.toLowerCase();
+    out.dustKept.set(k, (out.dustKept.get(k) ?? 0n) + (a.amount ?? 0n));
   }
   return out;
 }
@@ -592,9 +618,10 @@ export class KeeperDispatcher implements Dispatcher {
             error: `transaction ${record.txHash} succeeded and repaid ${moved.repaid} (${reached}) but left USDC debt untouched on ${left}: ${verdict.why}`,
           };
         }
-        return { status: "CONFIRMED", txHash: record.txHash, note: verdict.note };
+        return { status: "CONFIRMED", txHash: record.txHash, note: [verdict.note, dustKeptNote(moved)].filter((n): n is string => !!n).join(" · ") || undefined };
       }
-      return { status: "CONFIRMED", txHash: record.txHash };
+      const kept = dustKeptNote(moved);
+      return kept ? { status: "CONFIRMED", txHash: record.txHash, note: kept } : { status: "CONFIRMED", txHash: record.txHash };
     }
 
     // A revert on chain after a clean simulation is usually the grant or a

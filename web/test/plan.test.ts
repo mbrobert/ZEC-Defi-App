@@ -210,6 +210,10 @@ test("unwind: not signable without a REAL quote; encode = execWithCallback(route
   const unquoted = buildUnwindPlan({ account: ACCOUNT, positionIds: [42n], collateral: "WETH", deployment: LIVE, deadline: 1_800_000_000, bandToleranceBps: 100, quote: null, poolLabel: "WETH/USDC" });
   assert.equal(unquoted[0].encodable, false);
   assert.ok(unquoted[0].plain.includes("repays your Aave loan"));
+  // NI-HIGH-1 (2026-09-12): the plain sentence says a leg too small for the floor to price is kept, and
+  // the technical note names the event — copy that used to be silent about it.
+  assert.ok(unquoted[0].plain.includes("stays in your account instead of failing the close"), unquoted[0].plain);
+  assert.ok(unquoted[0].note?.includes("DustLegKept"), unquoted[0].note);
   const quoted = { account: ACCOUNT, positionIds: [42n], collateral: "WETH" as const, deployment: LIVE, deadline: 1_800_000_000, bandToleranceBps: 100, quote: QUOTE };
   const plan = buildUnwindPlan(quoted);
   assert.equal(plan[0].encodable, true);

@@ -42,6 +42,15 @@ liquidity provision; EIP = Ethereum Improvement Proposal.
   1.407), the funded sale at HF 1.16 landing inside the cap with the released ZEC collected to the unit,
   observe-only refusing by name. Not deployed; no keeper runs anywhere.
 
+## 2026-09-12 — NI-HIGH-1 follow-ups closed: the keeper reads `DustLegKept`, the Close plan says a dust leg is kept
+
+- `agent/src/abi/oilskin.ts` gains the `DustLegKept` fragment (seam 110 → 111); `summarizeUnwinds`
+  sums kept legs per token and a CONFIRMED repay's note names them ("left in the account, not
+  swapped (below the quote's floor): …"); `dispatcher.test.ts` +1. `web/lib/plan.ts`: the Close
+  plan's plain sentence and technical note now say a leftover too small for the floor to price stays
+  in the account instead of failing the close (`plan.test.ts` asserts both). Keeper 243 / 47
+  committed (264 / 51 in a tree carrying the other session's 21 uncommitted Solana tests); web 171.
+
 ## 2026-09-12 — CI, first real runs: the fork job says NOT VERIFIED (no secret exists yet), Slither's Highs triaged, the nightly invariants green on the runner
 
 - Eight of ten `ci.yml` jobs green on the first push. `fork`: `11 skipped = NOT VERIFIED` — the
