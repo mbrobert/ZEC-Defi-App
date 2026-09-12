@@ -642,10 +642,11 @@ conservative; a live pool fee above the calibrated one is a computed haircut,
 not a refusal. Twenty gate reasons in all, each with plain-English text in the
 UI. `/v1/gate` emits `stale`, `emissionsSampledAt`, `engineFeeBps` and
 `mcCalibrationGeneratedAt`; `/healthz` returns 503 with a `degraded` array when
-a source is dead or the calibration is missing. The verdict at the 2026-09-05
-borrow read is in `MODEL-NUMBERS-2026-09-05.md`: **nothing clears**, and seven
-of the eight cells that the closed form alone would have offered at their own
-published break-even are now refused by the guard.
+a source is dead or the calibration is missing. The verdict at the 2026-09-12
+live read is in `MODEL-NUMBERS-2026-09-12.md`: **nothing clears** (nor would
+it at any borrow rate — every priced cell's LP slice is negative), and six of
+the seven cells that the closed form alone would have offered at their own
+published break-even are refused by the guard (`RISKS.md` §14).
 
 ## Shared (`packages/shared/`, 1,515 lines, zero deps)
 

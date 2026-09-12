@@ -458,8 +458,10 @@ Monte-Carlo-calibrated form `mcLpNet = net × inRangeEmissionsFactor + mcDragPct
 whose coefficients come from a full MC run per pool × setting
 (`services/yield/src/gate.ts`, `mc-calibration.ts`, `scripts/lp-sim.py`).
 Pools without a calibrated σ are refused (`no_volatility_input`), not guessed.
-**At the 2026-09-05 borrow read of 4.828 % nothing clears**, so no LP position
-can be recommended (`MODEL-NUMBERS-2026-09-05.md`).
+**At the live borrow reads of 4.828 % (2026-09-05) and 4.5174 % (2026-09-12)
+nothing clears** — every priced cell's LP slice is net negative before the
+borrow is even charged — so no LP position can be recommended
+(`MODEL-NUMBERS-2026-09-12.md`, §14).
 
 **Does not.** The model is emissions-only (trading fees excluded — they go to
 veAERO voters when staked in a gauge) and its emission inputs are the
@@ -824,9 +826,48 @@ slippage; solvers settle at or better than the limit or not at all.
 
 ## 14 · Yield verdict and rate drift
 
-**Risk.** The borrow rate (4.828 % on 2026-09-05; Compound v3 USDC was at
-90.05 % utilisation, above its kink) moves; a position that clears today may
-not tomorrow. Today nothing clears at all.
+**Risk.** The borrow rate moves (4.828 % on 2026-09-05, 4.5174 % on
+2026-09-12; Compound v3 USDC was at 90.05 % utilisation, above its kink, on
+2026-09-05) and so do the gauges; a position that clears today may not
+tomorrow. Today nothing clears at all — and not because of the borrow rate.
+
+**The verdict on the live read of 2026-09-12** (`MODEL-NUMBERS-2026-09-12.md`;
+gauge words and Aave rates read at block 51,226,072, 19:31 UTC,
+`VERIFIED-BASE-FACTS.md` Addendum 12; σ still the 2026-08-31 realized
+values). At the live USDC borrow of **4.5174 %** no pool × setting clears the
+gate, and the picture is worse than on 2026-09-05, not better: the AERO price
+rose 18 % but the gauges pay a marginal staker far less. The best cell,
+cbBTC/USDC at the sheltered width, nets **−10.92 %/yr** on the LP slice
+(−5.29 % before; gross emissions fell from 14.13 % to 6.15 %) and would need
+**4.56 ×** today's net emissions to clear (2.02 × before), or a realized σ of
+0.04 in place of 0.40 — which BTC/USD does not have. WETH/USDC at the
+sheltered width no longer even beats the borrow before impermanent loss
+(3.01 % net against 4.52 %) and is refused before pricing; its steady and
+working widths need 11.2 × and 10.9 ×. WETH/cbBTC needs 7.4 × at steady and
+7.1 × at working. **Every priced cell's LP net is negative, so no borrow
+rate — not even 0 % — would open the menu at today's emissions;** the only
+lever that flips a cell is the gauge vote, which is Aerodrome's voters', not
+ours. The cbZEC/USDC gauge received its first vote in the week (≈ 617 AERO a
+day to 2026-09-17, on about $1 M of pool liquidity): 1.06 / 3.34 / 16.99 %
+gross at the three widths, refused below the borrow at the two wider ones and
+for lack of a calibrated σ at the narrowest, where it would clear only if
+cbZEC's realized σ were under 0.08 — it is not. The boundary guard still
+does its work: at each priced cell's own break-even the closed form is 0.1 to
+**32.0 points** more optimistic than the Monte-Carlo form, and six of the
+seven cells the closed form alone would have offered there are refused
+`within_model_uncertainty`. New this read, and recorded rather than smoothed:
+at TODAY's emissions the closed form's published headline for WETH/cbBTC at
+the working width (−82.90 %) sits **5.46 points** above the Monte-Carlo form
+(−88.36 %), outside the tolerance the sim caps at 0.98 × the borrow rate; the
+gate still refuses that cell on both forms, so nothing is offered on it, but
+the published column is too optimistic there — pinned by name in
+`services/yield/test/model-pin.test.ts`, and whether the headline should
+become the Monte-Carlo number is the founder's call. For a product whose LP
+menu may be empty, this is what "may" means today: it is empty, it has been
+empty on every read since 2026-08-31, it stays empty at any borrow rate, and
+it opens only if AERO emissions on the majors' gauges rise roughly four- to
+eleven-fold or a pool with a calibrated σ well below today's arrives. Until
+then the product is hold-USDC and spot, and says so.
 
 **Mitigates (code).** `/v1/gate` recomputes on every serve with `stale` derived
 from `sampledAt`, and now actually **sends** `stale`, `emissionsSampledAt`

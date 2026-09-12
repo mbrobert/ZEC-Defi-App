@@ -30,6 +30,8 @@ check("static: risk list covers all ten items", ["Custodial entry","KYC and juri
 /* ── 1. constants & derived math against the verified facts ── */
 const page = await openPage(b, srv.url("simple.html"));
 const o = (fn, ...args) => page.evaluate(([f, a]) => { const oil = window.__oil; const g = f.split(".").reduce((x, k) => x[k], oil); return typeof g === "function" ? g(...a) : g; }, [fn, args]);
+/* The borrow rate the pinned model was generated at (OIL_MODEL.borrowPctAtGeneration): every check that reproduces a MODEL-NUMBERS row uses it, never a literal (slice K, 2026-09-12). */
+const B = await o("MODEL.borrowPctAtGeneration");
 check("boot: zero console errors", page.__errors.length === 0, page.__errors.join(" | "));
 check("facts: cbZEC pinned address and B20 kind", (await o("SHARED.BASE_TOKENS")).cbZEC.address === "0xB2000000000000000000008501b13360000cb2EC" && (await o("SHARED.BASE_TOKENS")).cbZEC.kind === "b20");
 check("facts: Aave pool / data provider / oracle from the ledger", JSON.stringify(await o("SHARED.AAVE_V3")).includes("0xA238Dd80C259a72e81d7e4664a9801593F98d1c5") && JSON.stringify(await o("SHARED.AAVE_V3")).includes("0x2Cc0Fc26eD4563A5ce5e8bdcfe1A2878676Ae156"));
@@ -48,24 +50,27 @@ check("fees: keep = (1−15%)(1−10%) = 0.765 on engine pools, 0.90 direct; per
   const served = await o("MODEL.served");
   let allMatch = true, reasons = true; const bad = [];
   for (const [id, w, net, reason] of served) {
-    const g = await page.evaluate(([id, w]) => { const oil = window.__oil; const r = oil.gate(oil.poolById(id), 4.828, w); return { ok: r.ok, reason: r.reason, net: r.net }; }, [id, w]);
+    const g = await page.evaluate(([id, w]) => { const oil = window.__oil; const r = oil.gate(oil.poolById(id), oil.MODEL.borrowPctAtGeneration, w); return { ok: r.ok, reason: r.reason, net: r.net }; }, [id, w]);
     if (g.reason !== reason) { reasons = false; bad.push(`${id}@${w}: ${g.reason}≠${reason}`); }
     if (net != null && !near(g.net, net, 0.005)) { allMatch = false; bad.push(`${id}@${w}: ${g.net}≠${net}`); }
-    if (g.ok) { allMatch = false; bad.push(`${id}@${w} offered`); }
+    if (g.ok !== (reason === "ok")) { allMatch = false; bad.push(`${id}@${w} ${g.ok ? "offered" : "refused"} against the doc`); }
   }
-  check("gate: all 27 served rows reproduce lpNet (to 0.005) and the reason; none offered at 4.828%", allMatch && reasons, bad.join("; "));
+  check(`gate: all 27 served rows reproduce lpNet (to 0.005) and the reason at the model's borrow ${B}%; offered exactly where the doc says ok`, allMatch && reasons, bad.join("; "));
   const closed = await page.evaluate(() => { const oil = window.__oil; return oil.MODEL.served.filter(r => r[2] != null).map(([id, w, net]) => [net, oil.lpNetPct(oil.poolById(id), w)]); });
   check("gate: closed form recomputes every pinned lpNet within 0.02 pt (no pinned-row shortcut needed)", closed.every(([a, c]) => near(a, c, 0.02)), JSON.stringify(closed));
-  const un = await page.evaluate(() => { const oil = window.__oil; return oil.MODEL.userNetPinned.map(([id, w, a, l, u]) => [u, oil.positionAprPct(a, l, oil.poolById(id), 4.828, w)]); });
-  check("gate: userNet = supply + LTV×(lpNet − borrow) matches the pinned table to 0.011", un.every(([a, c]) => near(a, c, 0.011)), JSON.stringify(un));
-  check("gate: cbZEC/USDC pool is tracked, has no emissions and is never offered", (await o("gate", await o("poolById", "aero-cbzec-usdc"), 0)).reason === "no_emissions");
+  const un = await page.evaluate(() => { const oil = window.__oil; const M = oil.MODEL; return M.userNetPinned.map(([id, w, a, l, u]) => [u, oil.positionAprPct(a, l, oil.poolById(id), M.borrowPctAtGeneration, w) + (M.supplyPctAtGeneration[a] - oil.CHAIN_READ.aaveReserves[a].supplyAprPct)]); });
+  check("gate: userNet = supply + LTV×(lpNet − borrow) matches the pinned table to 0.011 at the model's own borrow and supply (the chain-read supply is the dated pin; the difference is added back)", un.every(([a, c]) => near(a, c, 0.011)), JSON.stringify(un));
+  { const z = await o("gate", await o("poolById", "aero-cbzec-usdc"), 0); const zs = served.filter(s => s[0] === "aero-cbzec-usdc");
+    check(`gate: cbZEC/USDC pool is tracked and never offered — refused by name even at a 0 % borrow (${z.reason}; served: ${zs.map(s => s[3]).join(", ")})`, !z.ok && ["no_emissions", "emissions_below_borrow", "no_volatility_input"].includes(z.reason) && zs.every(s => s[3] !== "ok")); }
   check("gate: σ-less pool refused with no_volatility_input even if emissions beat borrow", (await o("gate", await o("poolById", "aero-weth-link"), 4.828, 4500)).reason === "no_volatility_input");
-  check("gate: re-parameterised — at 0.5% borrow cbBTC/USDC sheltered still fails (lpNet −5.29)", !(await o("gate", await o("poolById", "aero-cbbtc-usdc"), 0.5, 4500)).ok);
-  check("gate: what-if ×4 opens cbBTC/USDC (demo scenario, labelled), not WETH/USDC", (await o("gate", await o("poolById", "aero-cbbtc-usdc"), 4.828, 4500, 4)).ok && !(await o("gate", await o("poolById", "aero-usdc-weth-5"), 4.828, 4500, 4)).ok);
+  { const cb = served.find(s => s[0] === "aero-cbbtc-usdc" && s[1] === 4500); const g05 = await o("gate", await o("poolById", "aero-cbbtc-usdc"), 0.5, 4500); const mc05 = await page.evaluate(() => window.__oil.mcLpNetPct(window.__oil.poolById("aero-cbbtc-usdc"), 4500));
+    check(`gate: re-parameterised — at 0.5% borrow cbBTC/USDC sheltered (lpNet ${cb[2]}, mcLpNet ${mc05 === null ? "—" : mc05.toFixed(2)}) is offered exactly when both forms clear 0.5%`, g05.ok === (cb[2] > 0.5 && mc05 !== null && mc05 > 0.5), JSON.stringify(g05)); }
+  check("gate: what-if ×5 opens cbBTC/USDC (demo scenario, labelled), not WETH/USDC — the kit's lever is the smallest whole multiple above the pool's own break-even", (await o("gate", await o("poolById", "aero-cbbtc-usdc"), B, 4500, 5)).ok && !(await o("gate", await o("poolById", "aero-usdc-weth-5"), B, 4500, 5)).ok && !(await o("gate", await o("poolById", "aero-cbbtc-usdc"), B, 4500, 4)).ok);
   check("ui: empty menu is stated as the model's verdict and the CTA is blocked", (await page.textContent("#apyHeroLbl")).includes("no pool clears the gate") && (await page.textContent("#poolHint")).includes("menu is empty"));
   const gatedCount = await page.$$eval("#poolSeg .poolb.gated", els => els.length);
   check("ui: every pool card is rendered gated with its reason", gatedCount === 9 && (await page.$$eval("#poolSeg .why", e => e.length)) === 9);
-  check("ui: hero yield is negative and painted red at real numbers (sign discipline)", (await page.textContent("#apyHero")).startsWith("−") && await page.$eval("#apyHero", e => e.classList.contains("neg")));
+  { const heroState = await page.evaluate(() => { const o = window.__oil; const pool = o.poolById(o.S.sel.pool); const g = o.gate(pool, o.S.borrowPct, o.widthFor(pool), o.S.mult, o.gopt({ collateral: o.S.sel.asset })); const el = document.querySelector("#apyHero"); return { priced: Number.isFinite(g.net), reason: g.reason, text: el.textContent, neg: el.classList.contains("neg") }; });
+  check(`ui: hero yield at real numbers keeps sign discipline — a priced cell is negative and painted red, a cell refused before pricing (${heroState.reason}) shows a dash, never a number`, heroState.priced ? (heroState.text.startsWith("−") && heroState.neg) : (heroState.text === "—" && !heroState.neg), JSON.stringify(heroState)); }
 }
 
 /* ── 3. flow: connect → collateral → setting → pool → review → sign; idempotent credit ── */
@@ -81,7 +86,7 @@ await page.click('#riskSeg [data-ltv="50"]');
 check("setting: top preset selectable and reflected in the hint with the entry floor", /entry health factor 1\.56 \(floor 1\.55\)/.test(await page.textContent("#riskHint")));
 await page.click('#riskSeg [data-ltv="30"]');
 check("flow: at real numbers the CTA is blocked because no pool clears", await page.$eval("#startBtn", e => e.disabled) && /gate/.test(await page.textContent("#startBtn")));
-await page.evaluate(() => window.__oil.dispatch({ type: "setMult", mult: 4 }));
+await page.evaluate(() => window.__oil.dispatch({ type: "setMult", mult: 5 }));
 check("what-if: banner shows and the first offered pool is auto-selected", await page.$eval("#whatifBanner", e => e.style.display !== "none") && (await o("S")).sel.pool === "aero-cbbtc-usdc");
 check("amount: below minimum blocks with the minimum stated", (await page.evaluate(() => { window.__oil.dispatch({ type: "setAmount", amount: 0.0001 }); return window.__oil.depositDecision(window.__oil.S); })).ok === false);
 check("amount: negative / NaN / Infinity / 1e308 / over-balance never reach the review", (await page.evaluate(() => { const o = window.__oil; return [-1, NaN, Infinity, 1e308, 0.6].map(v => { o.dispatch({ type: "setAmount", amount: v }); return o.depositDecision(o.S).ok; }); })).every(x => x === false));
@@ -110,8 +115,8 @@ check("position: entry HF shown 2.60 and the ladder fully armed", (await page.te
 {
   const r = await page.evaluate(() => { const o = window.__oil; const p = JSON.parse(JSON.stringify(o.S.pos)); const d0 = p.debt; o.accrue(p, 1e12, o.S.borrowPct); return { d0, d1: p.debt, maxAllowed: d0 * (1 + o.S.borrowPct / 100 * o.MAX_TICK_S / (365 * 86400)) + 1e-9, finite: Number.isFinite(p.debt) && Number.isFinite(p.emis) && Number.isFinite(p.lp) }; });
   check("accrual: a 1e12-second tick is clamped to MAX_TICK_S — debt grows by at most one demo hour", r.finite && r.d1 <= r.maxAllowed && r.d1 > r.d0);
-  const r2 = await page.evaluate(() => { const o = window.__oil; o.dispatch({ type: "setMult", mult: 4 }); const p = JSON.parse(JSON.stringify(o.S.pos)); for (let i = 0; i < 24 * 30; i++) o.accrue(p, o.MAX_TICK_S, o.S.borrowPct); const apr = o.positionAprPct(p.asset, p.ltv, o.poolById(p.pool), o.S.borrowPct, o.widthFor(o.poolById(p.pool)), 4); return { emis: p.emis, lp: p.lp, lpBasis: p.lpBasis, interest: p.interest, net: o.netSoFar(p), apr }; });
-  check("accrual: 30 days under what-if ×4 — emissions ≥ 0, IL drag reduces lp below basis, interest > 0, net sign agrees with the model APR", r2.emis >= 0 && r2.lp < r2.lpBasis && r2.interest > 0 && Math.sign(r2.net) === Math.sign(r2.apr), JSON.stringify(r2));
+  const r2 = await page.evaluate(() => { const o = window.__oil; o.dispatch({ type: "setMult", mult: 5 }); const p = JSON.parse(JSON.stringify(o.S.pos)); for (let i = 0; i < 24 * 30; i++) o.accrue(p, o.MAX_TICK_S, o.S.borrowPct); const apr = o.positionAprPct(p.asset, p.ltv, o.poolById(p.pool), o.S.borrowPct, o.widthFor(o.poolById(p.pool)), 5); return { emis: p.emis, lp: p.lp, lpBasis: p.lpBasis, interest: p.interest, net: o.netSoFar(p), apr }; });
+  check("accrual: 30 days under what-if ×5 — emissions ≥ 0, IL drag reduces lp below basis, interest > 0, net sign agrees with the model APR", r2.emis >= 0 && r2.lp < r2.lpBasis && r2.interest > 0 && Math.sign(r2.net) === Math.sign(r2.apr), JSON.stringify(r2));
   await page.evaluate(() => { const o = window.__oil; o.dispatch({ type: "setMult", mult: 1 }); for (let i = 0; i < 24 * 30; i++) o.S = o.reduce(o.S, { type: "tick", dt: o.MAX_TICK_S }); o.renderAll(); });
   check("accrual: 30 days at today's numbers — the gated pool loses money and net so far is negative", (await page.evaluate(() => window.__oil.netSoFar(window.__oil.S.pos))) < 0);
   check("sign discipline: negative net so far is rendered with a leading minus and the .neg class", (await page.textContent("#pEarned")).startsWith("−") && await page.$eval("#pEarned", e => e.classList.contains("neg")));
@@ -151,7 +156,7 @@ check("position: entry HF shown 2.60 and the ladder fully armed", (await page.te
   await page.evaluate(() => window.__oil.dispatch({ type: "setMult", mult: 1 }));
   const d = await page.evaluate(() => window.__oil.depositDecision(window.__oil.S));
   check("top-up: blocked when the position's pool no longer clears the gate (no new borrow into a losing pool)", !d.ok && /gate/.test(d.why) && await page.$eval("#addBtn", e => e.disabled), JSON.stringify(d));
-  await page.evaluate(() => window.__oil.dispatch({ type: "setMult", mult: 4 }));
+  await page.evaluate(() => window.__oil.dispatch({ type: "setMult", mult: 5 }));
   check("top-up: allowed again once the pool clears; label reads 'Review & add'", (await page.evaluate(() => window.__oil.depositDecision(window.__oil.S))).label === "Review & add →");
   const ex = await page.evaluate(() => { const o = window.__oil; const before = JSON.stringify(o.S.pos); o.dispatch({ type: "loadExample" }); return { same: JSON.stringify(o.S.pos) === before, example: !!o.S.pos.example }; });
   check("example: 'see an example' never replaces a real position", ex.same && !ex.example);
@@ -181,7 +186,7 @@ check("position: entry HF shown 2.60 and the ladder fully armed", (await page.te
   check("store: a corrupted store resets to fresh state on load with a boot note and zero console errors", (await o("bootNote")) && /rejected/.test(await o("bootNote")) && (await o("S")).pos === null && page.__errors.length === 0, page.__errors.join(" | "));
   // two-tab: page A and page B share localStorage (same context)
   const pageB = await openPage(b, srv.url("simple.html"), { context: page.__ctx });
-  await page.evaluate(() => { const o = window.__oil; o.dispatch({ type: "connect", provider: "coinbase" }); o.dispatch({ type: "setMult", mult: 4 }); o.dispatch({ type: "beginDeposit" }); o.dispatch({ type: "flowAdvance", id: o.S.flow.id }); });
+  await page.evaluate(() => { const o = window.__oil; o.dispatch({ type: "connect", provider: "coinbase" }); o.dispatch({ type: "setMult", mult: 5 }); o.dispatch({ type: "beginDeposit" }); o.dispatch({ type: "flowAdvance", id: o.S.flow.id }); });
   await page.evaluate(() => { const o = window.__oil; const f = o.S.flow; for (let i = 0; i < 6; i++) o.dispatch({ type: "flowAdvance", id: f.id }); o.dispatch({ type: "flowComplete", id: f.id }); o.dispatch({ type: "flowDismiss" }); });
   await pageB.waitForTimeout(300);
   const bState = await pageB.evaluate(() => ({ pos: !!window.__oil.S.pos, seq: window.__oil.S.seq }));
@@ -205,13 +210,13 @@ check("position: entry HF shown 2.60 and the ladder fully armed", (await page.te
   await page.click("#tkBtn"); await page.waitForTimeout(80);
   const s3 = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
   check("390px: tester's kit modal fits", s3[0] <= s3[1]);
-  check("tester's kit: failure simulations present (reject, revert, refund, out-of-range, keeper, store corrupt, price crash, recover, what-if)", ["fail:reject","fail:revert","refund","range:out","range:in","keeper:off","keeper:on","store:corrupt","px:-55","px:+30","mult:4"].every(k => html.includes(`data-tk="${k}"`)));
+  check("tester's kit: failure simulations present (reject, revert, refund, out-of-range, keeper, store corrupt, price crash, recover, what-if)", ["fail:reject","fail:revert","refund","range:out","range:in","keeper:off","keeper:on","store:corrupt","px:-55","px:+30","mult:5"].every(k => html.includes(`data-tk="${k}"`)));
 }
 
 /* ── 8. failure simulations through the real reducer ── */
 {
   const p2 = await openPage(b, srv.url("simple.html"));
-  const r = await p2.evaluate(() => { const o = window.__oil; o.dispatch({ type: "connect", provider: "coinbase" }); o.dispatch({ type: "setMult", mult: 4 }); o.dispatch({ type: "sim", kind: "failNext", on: true, step: 3, why: "Router reverted at the borrow hop." }); o.dispatch({ type: "beginDeposit" }); const id = o.S.flow.id; for (let i = 0; i < 6; i++) o.dispatch({ type: "flowAdvance", id }); o.dispatch({ type: "flowComplete", id }); return { status: o.S.flow.status, pos: o.S.pos, credited: o.S.credited.length, log: o.S.activity[0] && o.S.activity[0].t }; });
+  const r = await p2.evaluate(() => { const o = window.__oil; o.dispatch({ type: "connect", provider: "coinbase" }); o.dispatch({ type: "setMult", mult: 5 }); o.dispatch({ type: "sim", kind: "failNext", on: true, step: 3, why: "Router reverted at the borrow hop." }); o.dispatch({ type: "beginDeposit" }); const id = o.S.flow.id; for (let i = 0; i < 6; i++) o.dispatch({ type: "flowAdvance", id }); o.dispatch({ type: "flowComplete", id }); return { status: o.S.flow.status, pos: o.S.pos, credited: o.S.credited.length, log: o.S.activity[0] && o.S.activity[0].t }; });
   check("sim: a mid-hop revert is atomic — flow failed, nothing credited, activity says nothing moved", r.status === "failed" && r.pos === null && r.credited === 0 && /Reverted/.test(r.log));
   const r2 = await p2.evaluate(() => { const o = window.__oil; o.dispatch({ type: "flowDismiss" }); o.dispatch({ type: "sim", kind: "refundNext", on: true }); o.dispatch({ type: "beginDeposit" }); const id = o.S.flow.id; for (let i = 0; i < 6; i++) o.dispatch({ type: "flowAdvance", id }); o.dispatch({ type: "flowComplete", id }); const p = o.S.pos; return { idle: p.idle, lp: p.lp, debt: p.debt, note: o.S.activity[0].d }; });
   check("sim: partial deposit refund is folded back single-sided; dust stays as idle and is disclosed", r2.idle > 0 && r2.idle <= 0.03 + 1e-9 && near(r2.lp + r2.idle, r2.debt, 1e-6) && /folded back/.test(r2.note));
@@ -232,25 +237,26 @@ check("position: entry HF shown 2.60 and the ladder fully armed", (await page.te
   check("custody: Docs and the FAQ both render what the owner can and cannot do, with the timelock delay named", own.can === 3 && own.cannot === 3 && own.faqCan === 3 && /2 days/.test(own.resid) && /announced|watcher/.test(own.resid), JSON.stringify(own).slice(0, 240));
 
   /* the boundary guard */
-  const bnd = await page.evaluate(() => { const oil = window.__oil; return oil.MODEL.boundary.map(([id, w, gb, cl, mc]) => { const pl = oil.poolById(id); const m = gb / pl.emissions[w]; const g0 = oil.gate(pl, 4.828, w, m);
+  const bnd = await page.evaluate(() => { const oil = window.__oil; const B = oil.MODEL.borrowPctAtGeneration; return oil.MODEL.boundary.map(([id, w, gb, cl, mc]) => { const pl = oil.poolById(id); const m = gb / pl.emissions[w]; const g0 = oil.gate(pl, B, w, m);
     // the exact multiple at which the CLOSED form crosses the borrow, from the page's own math
-    let lo = 0.01, hi = 500; for (let i = 0; i < 200; i++) { const mid = (lo + hi) / 2; (oil.lpNetPct(pl, w, mid) > 4.828) ? hi = mid : lo = mid; }
-    const g1 = oil.gate(pl, 4.828, w, hi * (1 + 1e-9));
+    let lo = 0.01, hi = 500; for (let i = 0; i < 200; i++) { const mid = (lo + hi) / 2; (oil.lpNetPct(pl, w, mid) > B) ? hi = mid : lo = mid; }
+    const g1 = oil.gate(pl, B, w, hi * (1 + 1e-9));
     return { id, w, cl, mc, gotCl: g0.net, gotMc: g0.mcNet, be: hi, docMult: m, reason: g1.reason, ok: g1.ok }; }); });
-  check("model: the 8 boundary cells reproduce both forms from the pinned coefficients (closed and Monte Carlo, to 0.02 pt)", bnd.length === 8 && bnd.every(r => near(r.gotCl, r.cl, 0.02) && near(r.gotMc, r.mc, 0.02)), JSON.stringify(bnd.filter(r => !near(r.gotCl, r.cl, 0.02) || !near(r.gotMc, r.mc, 0.02))));
-  check("gate: just above each published break-even, 7 of the 8 cells are refused within_model_uncertainty and only cbBTC/USDC sheltered — where the forms agree — is offered", bnd.every(r => near(r.be, r.docMult, 0.002)) && bnd.filter(r => r.reason === "within_model_uncertainty").length === 7 && bnd.filter(r => r.ok).length === 1 && bnd.find(r => r.ok).id === "aero-cbbtc-usdc" && bnd.find(r => r.ok).w === 4500, JSON.stringify(bnd.map(r => [r.id, r.w, r.reason])));
+  const nB = bnd.length, expRefused = bnd.filter(r => !(r.mc > B)).length, expOffered = nB - expRefused;
+  check(`model: the ${nB} boundary cells reproduce both forms from the pinned coefficients (closed and Monte Carlo, to 0.02 pt)`, nB >= 1 && bnd.every(r => near(r.gotCl, r.cl, 0.02) && near(r.gotMc, r.mc, 0.02)), JSON.stringify(bnd.filter(r => !near(r.gotCl, r.cl, 0.02) || !near(r.gotMc, r.mc, 0.02))));
+  check(`gate: just above each published break-even, the ${expRefused} cells whose Monte-Carlo form does not clear are refused within_model_uncertainty and the ${expOffered} where the forms agree are offered — decided by the pinned rows, not narrated`, bnd.every(r => near(r.be, r.docMult, 0.002)) && bnd.every(r => (r.mc > B) === r.ok && (r.mc > B || r.reason === "within_model_uncertainty")), JSON.stringify(bnd.map(r => [r.id, r.w, r.reason])));
   const worst = bnd.reduce((a, r) => Math.max(a, r.cl - r.mc), 0);
-  check("gate: the worst boundary optimism is ~32 pt — several times the borrow rate the verdict is compared against", near(worst, 32.02, 0.05) && worst > 4.828 * 6, String(worst));
+  check(`gate: the worst boundary optimism (${worst.toFixed(2)} pt) is wider than the ${B}% borrow rate the verdict is compared against`, worst > B, String(worst));
   const affine = await page.evaluate(() => { const oil = window.__oil; const pl = oil.poolById("aero-cbbtc-usdc"), w = 1500; const c = oil.MODEL.mc.cells.find(x => x[0] === "aero-cbbtc-usdc" && x[1] === w); const out = []; for (const m of [0.5, 1, 2, 3.7, 8, 40]) { const net = oil.grossEmissionsPct(pl, w, m) * oil.feeKeep(pl); out.push([oil.mcLpNetPct(pl, w, m), net * c[4] + c[5]]); } return out; });
   check("model: mcLpNet is exactly affine in the emissions rate — two pinned coefficients price the cell at every level", affine.every(([a, c]) => near(a, c, 1e-9)), JSON.stringify(affine));
-  const sweep = await page.evaluate(() => { const oil = window.__oil; const bad = []; for (const pl of oil.MODEL.pools) for (const w of [150, 300, 784, 1500, 2356, 4500]) for (let m = 1; m <= 60; m += 0.25) { const g = oil.gate(pl, 4.828, w, m); if (g.ok && !(g.mcNet > 4.828)) bad.push([pl.id, w, m, g.net, g.mcNet]); } return bad; });
+  const sweep = await page.evaluate(() => { const oil = window.__oil; const B = oil.MODEL.borrowPctAtGeneration; const bad = []; for (const pl of oil.MODEL.pools) for (const w of [150, 300, 784, 1500, 2356, 4500]) for (let m = 1; m <= 60; m += 0.25) { const g = oil.gate(pl, B, w, m); if (g.ok && !(g.mcNet > B)) bad.push([pl.id, w, m, g.net, g.mcNet]); } return bad; });
   check("gate: across 9 pools × 6 widths × 237 emissions multiples, the served gate is never more permissive than the Monte-Carlo form", sweep.length === 0, JSON.stringify(sweep.slice(0, 3)));
 
   /* the new refusals, driven through the tester's kit */
   const p4 = await openPage(b, srv.url("simple.html"));
   await p4.evaluate(() => { const oil = window.__oil; oil.dispatch({ type: "connect", provider: "coinbase" }); });
-  const band = await p4.evaluate(() => { const oil = window.__oil; oil.dispatch({ type: "setMult", mult: 6.35 }); const pl = oil.poolById("aero-usdc-weth-5"); const g = oil.gate(pl, oil.S.borrowPct, oil.widthFor(pl), 6.35, oil.gopt({ collateral: "cbBTC" })); const card = [...document.querySelectorAll("#poolSeg .poolb")].map(e => e.textContent).find(x => /WETH\/USDC/.test(x)) || ""; return { reason: g.reason, net: g.net, mc: g.mcNet, why: g.why, card }; });
-  check("gate: WHAT-IF ×6.35 puts WETH/USDC inside the band the two models disagree about — refused within_model_uncertainty, with both numbers shown", band.reason === "within_model_uncertainty" && band.net > 4.828 && band.mc < 4.828 && /closed form/.test(band.why) && /Monte Carlo/.test(band.why) && /within_model_uncertainty|closed form/.test(band.card), JSON.stringify(band).slice(0, 300));
+  const band = await p4.evaluate(() => { const oil = window.__oil; oil.dispatch({ type: "setMult", mult: 12.33 }); const pl = oil.poolById("aero-usdc-weth-5"); const g = oil.gate(pl, oil.S.borrowPct, oil.widthFor(pl), 12.33, oil.gopt({ collateral: "cbBTC" })); const card = [...document.querySelectorAll("#poolSeg .poolb")].map(e => e.textContent).find(x => /WETH\/USDC/.test(x)) || ""; return { reason: g.reason, net: g.net, mc: g.mcNet, why: g.why, card, borrow: oil.S.borrowPct }; });
+  check(`gate: WHAT-IF ×12.33 puts WETH/USDC inside the band the two models disagree about at the page's ${band.borrow}% borrow — refused within_model_uncertainty, with both numbers shown`, band.reason === "within_model_uncertainty" && band.net > band.borrow && band.mc < band.borrow && /closed form/.test(band.why) && /Monte Carlo/.test(band.why) && /within_model_uncertainty|closed form/.test(band.card), JSON.stringify(band).slice(0, 300));
   const impl = await p4.evaluate(() => { const oil = window.__oil; oil.dispatch({ type: "setMult", mult: 1 }); oil.dispatch({ type: "sim", kind: "revote", on: true }); const pl = oil.poolById("aero-aero-weth"); const g = oil.gate(pl, oil.S.borrowPct, oil.widthFor(pl), 1, oil.gopt()); const off = oil.gate(pl, oil.S.borrowPct, oil.widthFor(pl), 1); oil.dispatch({ type: "sim", kind: "revote", on: false }); return { reason: g.reason, gross: g.gross, why: g.why, ceiling: oil.MODEL.bounds.maxEmissionsAprPct, lapsed: off.reason }; });
   check("gate: the AERO/WETH gauge's own recorded reading (≈5,460% at ±25%) is refused emissions_implausible above the 1,000% ceiling — and reads no_emissions while its epoch is lapsed", impl.reason === "emissions_implausible" && impl.gross > impl.ceiling && impl.lapsed === "no_emissions" && /plausibility ceiling/.test(impl.why), JSON.stringify(impl).slice(0, 240));
   const uncorr = await p4.evaluate(() => { const oil = window.__oil; oil.dispatch({ type: "sim", kind: "corroborated", on: false }); const rs = oil.MODEL.pools.map(pl => oil.gate(pl, oil.S.borrowPct, oil.widthFor(pl), 4, oil.gopt()).reason); oil.dispatch({ type: "sim", kind: "corroborated", on: true }); return rs; });
@@ -263,21 +269,23 @@ check("position: entry HF shown 2.60 and the ladder fully armed", (await page.te
   check("gate: a guardian pause on the collateral reserve refuses every pool with collateral_paused and blocks the CTA", paused.coll.every(r => r === "collateral_paused") && paused.cta === true);
   check("gate: a guardian pause on USDC borrowing refuses every pool with borrow_paused and says the loan half cannot be opened", paused.bor.every(r => r === "borrow_paused") && /guardian has paused USDC borrowing/.test(paused.why), JSON.stringify(paused.bor.slice(0, 3)));
   const oob = await p4.evaluate(() => { const oil = window.__oil; const pl = oil.poolById("aero-cbbtc-usdc"), w = 4500;
-    const lifted = oil.gate(pl, 4.828, w, 400, { maxEmissionsAprPct: 1e9, maxAbsNetPct: 100 });
-    const shipped = oil.gate(pl, 4.828, w, 400);
-    let reachable = false; for (let m = 1; m <= 100; m += 0.5) for (const pool of oil.MODEL.pools) for (const ww of [150, 300, 784, 1500, 2356, 4500]) if (oil.gate(pool, 4.828, ww, m).reason === "net_out_of_bounds") reachable = true;
+    const B = oil.MODEL.borrowPctAtGeneration;
+    const lifted = oil.gate(pl, B, w, 400, { maxEmissionsAprPct: 1e9, maxAbsNetPct: 100 });
+    const shipped = oil.gate(pl, B, w, 400);
+    let reachable = false; for (let m = 1; m <= 100; m += 0.5) for (const pool of oil.MODEL.pools) for (const ww of [150, 300, 784, 1500, 2356, 4500]) if (oil.gate(pool, B, ww, m).reason === "net_out_of_bounds") reachable = true;
     return { lifted: lifted.reason, shipped: shipped.reason, reachable, why: oil.GATE_WHY.net_out_of_bounds };
   });
   check("gate: net_out_of_bounds is a real refusal branch (fires when the arithmetic leaves the bound) and the emissions ceiling makes it unreachable on any live input", oob.lifted === "net_out_of_bounds" && oob.shipped === "emissions_implausible" && oob.reachable === false && /broken input, not a yield/.test(oob.why), JSON.stringify(oob).slice(0, 200));
   const cat = await p4.evaluate(() => { const rows = [...document.querySelectorAll("#docReasons tr")].slice(1).map(r => [r.children[0].textContent, r.children[1].textContent]); return rows; });
   check("docs: every gate refusal is catalogued with a plain-English sentence (13 reasons, none shorter than a sentence)", cat.length === 13 && cat.every(([k, v]) => k.length > 5 && v.length > 40) && cat.some(([k]) => k === "within_model_uncertainty") && cat.some(([k]) => k === "net_out_of_bounds"), JSON.stringify(cat.map(c => c[0])));
   const bt = await p4.evaluate(() => ({ rows: [...document.querySelectorAll("#docBoundary tr")].length, note: document.querySelector("#docBoundaryNote").textContent }));
-  check("docs: the boundary table renders all 8 cells and states the worst optimism and the calibration provenance", bt.rows === 9 && /32\.02 points/.test(bt.note) && /6000 paths/.test(bt.note) && /2026-09-06/.test(bt.note), JSON.stringify(bt).slice(0, 240));
+  const mcGen = await o("MODEL.mc.generatedAt"), mcPaths = await o("MODEL.mc.paths");
+  check(`docs: the boundary table renders all ${nB} cells and states the worst optimism (${worst.toFixed(2)} points), the paths and the generation date`, bt.rows === nB + 1 && new RegExp(worst.toFixed(2).replace(".", "\\.") + " points").test(bt.note) && new RegExp(`${mcPaths} paths`).test(bt.note) && bt.note.includes(String(mcGen).slice(0, 10)), JSON.stringify(bt).slice(0, 240));
   const btv = await p4.evaluate(() => [...document.querySelectorAll("#docBoundary tr")].slice(1).map(r => r.lastElementChild.textContent.trim()));
-  check("docs: the boundary table's own served-gate column shows 7 refusals and the single cell where the two forms agree — the table is evaluated, not narrated", btv.filter(x => /within_model_uncertainty/.test(x)).length === 7 && btv.filter(x => /offered/.test(x)).length === 1 && /one that remains is where the two forms genuinely agree/.test(bt.note), JSON.stringify(btv));
+  check(`docs: the boundary table's own served-gate column shows ${expRefused} refusals and ${expOffered} offered — the table is evaluated, not narrated`, btv.filter(x => /within_model_uncertainty/.test(x)).length === expRefused && btv.filter(x => /offered/.test(x)).length === expOffered, JSON.stringify(btv));
 
   /* the entry health floor: the pre-fix raw batch is refused at the venue */
-  const raw = await p4.evaluate(() => { const oil = window.__oil; oil.dispatch({ type: "setMult", mult: 4 }); oil.dispatch({ type: "setAmount", amount: 0.05 });
+  const raw = await p4.evaluate(() => { const oil = window.__oil; oil.dispatch({ type: "setMult", mult: 5 }); oil.dispatch({ type: "setAmount", amount: 0.05 });
     document.querySelector("#tkBtn").click(); document.querySelector('[data-tk="rawbatch"]').click();
     const why = oil.S.sim.failNext.why;
     oil.dispatch({ type: "beginDeposit" }); const id = oil.S.flow.id; for (let i = 0; i < 6; i++) oil.dispatch({ type: "flowAdvance", id }); oil.dispatch({ type: "flowComplete", id });
@@ -321,7 +329,7 @@ check("position: entry HF shown 2.60 and the ladder fully armed", (await page.te
   await p4.setViewportSize({ width: 390, height: 800 }); await p4.waitForTimeout(150);
   const sw2 = await p4.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
   check("390px: the position view with the keeper-permission card still has no horizontal overflow", sw2[0] <= sw2[1], sw2.join("/"));
-  check("tester's kit: the new levers are all present (pauses, corroboration, gauge re-vote, raw batch, sandwich, grant revoke/renew/expire, the disagreement band)", ["pause:collateral","pause:borrow","pause:off","corr:off","corr:on","revote:on","revote:off","rawbatch","sandwich:on","sandwich:off","grant:revoke","grant:renew","grant:expire","mult:6.35"].every(k => html.includes(`data-tk="${k}"`)));
+  check("tester's kit: the new levers are all present (pauses, corroboration, gauge re-vote, raw batch, sandwich, grant revoke/renew/expire, the disagreement band)", ["pause:collateral","pause:borrow","pause:off","corr:off","corr:on","revote:on","revote:off","rawbatch","sandwich:on","sandwich:off","grant:revoke","grant:renew","grant:expire","mult:12.33"].every(k => html.includes(`data-tk="${k}"`)));
   check("sim: zero console errors across every new simulation", p4.__errors.length === 0, p4.__errors.join(" | "));
   await p4.close();
 }

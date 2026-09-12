@@ -20,7 +20,8 @@ every one refusing to invent data:
    `slot0()`, `stakedLiquidity()`, `fee()`. Converted to the marginal
    in-range APR at every shared range preset (`APR(bps)`, see the model).
    `epochActive` requires `rewardRate > 0 AND periodFinish > now`; a
-   never-voted gauge (cbZEC/USDC today) is `epochActive:false, emissions:0`.
+   never-voted gauge (cbZEC/USDC until 2026-09-10) or a lapsed one (AERO/WETH
+   since 2026-05-28) is `epochActive:false, emissions:0`.
    A `stakedLiquidity` reading more than 5× away from the pool's FIRST
    reading is flagged `outlier` and kept out of the rolling average.
 3. **The gate** (`src/gate.ts`, `src/model.ts`).
@@ -36,7 +37,7 @@ every one refusing to invent data:
    model everywhere in the UI.
 
 Zero runtime dependencies (the keeper in `agent/` uses viem; this service does not), plain `node:http`, TypeScript,
-105-test offline suite on recorded on-chain fixtures (RPC mocked at the
+131-test offline suite on recorded on-chain fixtures (RPC mocked at the
 JSON-RPC boundary with real chain words).
 
 ## The model (`src/model.ts` — one place; the Python sim and the web pin to it)
@@ -61,10 +62,12 @@ JSON-RPC boundary with real chain words).
   is correct algebra for a position that is ALWAYS in range: it ignores time
   out of range and the swap cost of every re-centre, so it is optimistic, and
   the error grows with the emissions level. That makes it smallest in today's
-  deeply-negative cells (+0.0 … +4.4 pt, which is all the committed validation
-  rows measure) and LARGEST at the boundary where the gate flips — +7.45 pt at
-  `aero-cbbtc-usdc/working` and **+32.02 pt** at `aero-weth-cbbtc/working`,
-  both wider than the 4.828 % borrow rate being tested. The gate therefore
+  deeply-negative cells (−1.1 … +5.5 pt on the 2026-09-12 words — the +5.46 pt
+  at `aero-weth-cbbtc/working` is outside the sim's own tolerance and is
+  recorded as a named breach, `RISKS.md` §14) and LARGEST at the boundary
+  where the gate flips — +8.85 pt at `aero-cbbtc-usdc/working` and
+  **+31.96 pt** at `aero-weth-cbbtc/working`, both wider than the 4.5174 %
+  borrow rate being tested (2026-09-05: +7.45 / +32.02 at 4.828 %). The gate therefore
   also prices every cell with a Monte-Carlo-calibrated form,
   **`mcLpNet = net × inRangeEmissionsFactor + mcDragPct`**, and offers only
   when BOTH clear the borrow; in between it refuses with
@@ -99,8 +102,11 @@ is a recording of the gate rather than a second implementation of it; `test/mode
 replays the same raw words through the TypeScript source + gate and fails
 if any served cell drifts from the generated numbers by > 0.01 pt, or if
 `samples/model-inputs.json` drifts from what `@zyo/shared` exports.
-**Verdict at the 2026-09-05 borrow (4.828 %): nothing clears** — see
-`samples/MODEL-NUMBERS.md`.
+**Verdict at the 2026-09-12 live borrow (4.5174 %): nothing clears, at any
+borrow rate** — see `samples/MODEL-NUMBERS.md` and `docs/RISKS.md` §14.
+`npm run model` takes every input from the sample file named in
+`package.json` (`scripts/run-model.mjs`: as-of, borrow, supply, LT); nothing
+is typed.
 
 ## Staleness contract (audit Lens F / round 3)
 
@@ -175,7 +181,7 @@ signature in the test suite. After any engine upgrade run
 set -a; . ./.env; set +a
 
 npm run backfill -- sample     # live gauge words + Aave rates → samples/gauge-emissions-<date>.json
-npm run model                  # re-run the sim + regenerate MODEL-NUMBERS.md (edit the borrow/supply/LT args to the live values)
+npm run model                  # re-run the sim + regenerate MODEL-NUMBERS.md from the sample package.json names (as-of, borrow, supply, LT are READ from that file by scripts/run-model.mjs — nothing typed)
 npm run backfill -- all        # scan → timestamps → receipts → cohorts (resumable)
 npm run yield                  # serve http://127.0.0.1:8787
 ```

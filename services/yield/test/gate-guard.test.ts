@@ -28,7 +28,7 @@ import { applyMcCalibration, calibrationIndex, calibrationKey, loadMcCalibration
 import { emissionsFixture, mcCalibrationFixture, NOW_S, ratesFixture, volatilityFixture } from "./fixtures/model.js";
 
 const read = (rel: string) => JSON.parse(readFileSync(new URL(rel, import.meta.url), "utf8"));
-const MODEL = read("../../samples/lp-model-2026-09-05.json") as {
+const MODEL = read("../../samples/lp-model-2026-09-12.json") as {
   inputs: { borrowAprPct: number };
   results: Record<string, Record<string, { emissionsGrossPct?: number; breakEvenEmissionsMultiple?: number | null; feeBpsLive: number }>>;
   boundaryGuard: {
@@ -36,11 +36,24 @@ const MODEL = read("../../samples/lp-model-2026-09-05.json") as {
     optimismPct: number; offeredByClosedFormAlone: boolean; offeredByServedGate: boolean;
   }[];
 };
-const SAMPLE = read("../../samples/gauge-emissions-2026-09-05-composite.json") as {
+const SAMPLE = read("../../samples/gauge-emissions-2026-09-12.json") as {
   pools: Record<string, { feeBpsLive: number }>;
 };
 
 const BORROW = MODEL.inputs.borrowAprPct;
+/** The rates the MODEL was generated with (borrow, supply, LT), on the fixture's shape — the fixture's own
+ *  words are the 2026-09-05 read and would compare every cell against the wrong borrow. */
+const MODEL_INPUTS = (read("../../samples/lp-model-2026-09-12.json") as { inputs: { collateral: Record<string, { supplyAprPct: number; liquidationThresholdBps: number }> } }).inputs;
+function ratesFromModel() {
+  const base = ratesFixture();
+  return {
+    ...base,
+    borrow: { ...base.borrow, variableBorrowAprPct: BORROW },
+    collateral: Object.fromEntries(
+      Object.entries(base.collateral).map(([sym, r]) => [sym, { ...r, supplyAprPct: MODEL_INPUTS.collateral[sym]?.supplyAprPct ?? r.supplyAprPct, liquidationThresholdBps: MODEL_INPUTS.collateral[sym]?.liquidationThresholdBps ?? r.liquidationThresholdBps }])
+    ),
+  };
+}
 const VOL = volatilityFixture();
 const MC = mcCalibrationFixture();
 const settingById = (id: string) => SETTINGS.find((s) => s.id === id)!;
@@ -60,7 +73,7 @@ function at(poolId: string, settingId: string, grossPct: number, over: Partial<G
     pool,
     setting,
     collateral: "cbBTC",
-    rates: { ...ratesFixture(), stale: false },
+    rates: { ...ratesFromModel(), stale: false },
     emissions: {
       ...emissionsFixture(poolId, table, { feePips: Math.round(SAMPLE.pools[poolId]!.feeBpsLive * 100) }),
       stale: false,
@@ -104,7 +117,7 @@ test("FIX D-HIGH-1: at MODEL-NUMBERS' own published break-even multiples the gat
   assert.ok(proven >= 5, `only ${proven} cells demonstrated the guard biting`);
 });
 
-test("FIX D-HIGH-1: the named case — aero-weth-cbbtc/steady at the published 11.86× is refused, and it used to be offered at +4.8 % LP net", () => {
+test("FIX D-HIGH-1: the named case — aero-weth-cbbtc/steady at its published break-even multiple is refused, and it used to be offered at an LP net just above the borrow", () => {
   const cell = MODEL.results["aero-weth-cbbtc"]!["steady"]!;
   const gross = cell.emissionsGrossPct! * cell.breakEvenEmissionsMultiple! * 1.0001;
   const v = evaluateGate(at("aero-weth-cbbtc", "steady", gross));

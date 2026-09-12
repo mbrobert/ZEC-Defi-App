@@ -375,7 +375,12 @@ for pid, s in SAMPLE["pools"].items():
         net = apr * keep
         cell.update({"emissionsGrossPct": apr, "emissionsNetPct": net})
         if not epoch_active:
+            # The marginal APR the same words would give if the gauge were voted again: never served
+            # (the epoch is lapsed) but kept for the prototypes' "re-vote" lever, which shows the
+            # plausibility ceiling refusing exactly this reading (slice K, 2026-09-12).
+            revoted = apr_at_width(s, w) if reward_rate > 0 else None
             cell.update({"reason": "no_emissions", "emissionsGrossPct": 0.0, "emissionsNetPct": 0.0,
+                         "emissionsIfRevotedGrossPct": revoted,
                          "lpNetPct": None, "mcLpNetPct": None, "qualifies": False})
             out["results"].setdefault(pid, {})[st["id"]] = cell
             out["verdict"]["fails"].append({"pool": pid, "setting": st["id"], "reason": "no_emissions"})

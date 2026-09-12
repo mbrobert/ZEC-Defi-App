@@ -800,3 +800,37 @@ stale against its own bound at the read (ages 1,136 / 652 / 17,544 s). The bound
 from read to read because the largest gap in the window does; the rule (`max gap × slack`,
 floored) does not. `docs/SEPOLIA-REHEARSAL.md` carries the same table as the rehearsal's
 reference; the keeper logs its own at startup for comparison.
+
+## Addendum 12 — slice K, 2026-09-12: the yield sample read live (gauges, Aave rates, prices) at block 51,226,072
+
+Purpose: the inputs `docs/MODEL-NUMBERS-2026-09-12.md` was generated from — the first live gauge
+sample since 2026-08-31 — recorded with their block and time. Method: `npm run backfill -w
+@zyo/yield -- sample` against `https://base-rpc.publicnode.com` (public, no key; `mainnet.base.org`
+refused the batched burst with `over rate limit`), token prices from GeckoTerminal at the same
+instant, `GECKO_MIN_INTERVAL_MS=15000` between the nine pool requests. Output:
+`services/yield/samples/gauge-emissions-2026-09-12.json`. Nothing was signed.
+
+- **Sampled at 2026-09-12T19:31:30.077Z, block 51,226,072**; AERO $0.5634 ($0.4782 on 2026-08-31).
+- **Aave v3 (PoolDataProvider, live):** USDC variable borrow **4.5174 %** (4.828 % on 2026-09-05, 4.633 % on 2026-09-10 at 51,127,409, 4.5205 % at 51,222,568 earlier this day), USDC supply 3.5169 %; cbBTC supply **0.0115 %**, LT 7800 / LTV 7300; WETH supply **1.7422 %**, LT 8300 / LTV 8000. Thresholds unchanged since 2026-09-05; every rate moved.
+- **Gauges (Voter `0x16613524e02ad97edfef371bc883f2f5d6c480a5`), one reading each** — the service withholds a marginal APR until three readings corroborate the staked anchor, so the sample carries the raw words and the model computes the APR from them:
+
+| Pool | Gauge | rewardRate (wei / s) | periodFinish | Epoch at the sample | stakedLiquidity | fee (bps) | Gross marginal APR at sheltered / steady / working (model) |
+|---|---|---|---|---|---|---|---|
+| `aero-cbbtc-usdc` | `0x6399ed6725cc163d019aa64ff55b22149d7179a8` | `113025843134787251` (≈ 9,765.4 AERO / day) | 1789603200 (2026-09-17) | live | `4866057281767` | 4.48 | 6.15 % / 19.41 % / 98.69 % |
+| `aero-usdc-weth-5` | `0xf33a96b5932d9e9b9a0eda447abd8c9d48d2e0c8` | `395705710963192131` (≈ 34,189.0 AERO / day) | 1789603200 (2026-09-17) | live | `14724958676260069756` | 5.94 | 3.93 % / 12.42 % / 63.13 % |
+| `aero-weth-cbbtc` | `0x41b2126661c673c2bedd208cc72e85dc51a5320a` | `97932138830729886` (≈ 8,461.3 AERO / day) | 1789603200 (2026-09-17) | live | `236247594590505401` | 25.05 | 4.33 % / 13.32 % / 70.21 % |
+| `aero-weth-link` | `0xd66c27ec3c0dfcd20678ff5f5c3cbb6ede033b92` | `8919467888046610` (≈ 770.6 AERO / day) | 1789603200 (2026-09-17) | live | `14560466473061927093701` | 25 | 26.39 % / 83.35 % / 423.69 % |
+| `aero-usdt-usdc` | `0xbd85d45f1636fceb2359d9dcf839f12b3cf5af3f` | `240675878787964` (≈ 20.8 AERO / day) | 1789603200 (2026-09-17) | live | `4057662150871269` | 0.09 | 0.00 % / 0.00 % / 0.01 % |
+| `cbeth-weth` | `0xf5550f8f0331b8caa165046667f4e6628e9e3aac` | `5390865703388402` (≈ 465.8 AERO / day) | 1789603200 (2026-09-17) | live | `10158957826336983034926643` | 0.65 | 0.00 % / 0.01 % / 0.05 % |
+| `aero-aero-weth` | `0xde8ff0d3e8ab225110b088a250b546015c567e27` | `151916281777765901` (≈ 13,125.6 AERO / day) | 1779926400 (2026-05-28) | LAPSED | `3010492983052584166390` | 30 | 0.00 % / 0.00 % / 0.00 % |
+| `aero-aero-cbbtc` | `0x2b74b62c564456c48055bd515a62594742b3f545` | `37554462218874000` (≈ 3,244.7 AERO / day) | 1789603200 (2026-09-17) | live | `1132942732640778303` | 7.5 | 11.67 % / 36.85 % / 187.32 % |
+| `aero-cbzec-usdc` | `0x8779e34e5d38358b0cb957c553b40cc1208c81fb` | `7140520125989201` (≈ 616.9 AERO / day) | 1789603200 (2026-09-17) | live | `14816700185765` | 20 | 1.06 % / 3.34 % / 16.99 % |
+
+What moved since the 2026-08-31 words the previous model used: the AERO price rose 18 %, but the
+gauges of the three calibrated pools pay far less to a marginal staker — cbBTC/USDC sheltered
+14.13 → **6.15 %** gross, WETH/USDC sheltered 7.63 → **3.93 %** (now below the borrow before any
+drag), WETH/cbBTC steady 8.32 → 13.32 % — and **the cbZEC/USDC gauge has an emissions vote for the
+first time** (none on 2026-09-10, Addendum 8): 1.06 / 3.34 / 16.99 % gross at the three widths on
+about $0.97 M of pool TVL, refused below the borrow at the two wider widths and for lack of a σ at
+the narrowest. AERO/WETH's epoch is still the one that ended 2026-05-28. The model's verdict on
+these words is `RISKS.md` §14.

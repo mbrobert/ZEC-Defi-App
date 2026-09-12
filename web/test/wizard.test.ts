@@ -60,12 +60,15 @@ test("deriveReview (lp): a pool that does not clear is priced from the served ve
   const d = deriveReview(st, DEMO_MARKET, gate)!;
   assert.equal(d.gateOk, false);
   assert.ok(d.problems.some((p) => /does not clear/i.test(p)));
-  assert.equal(d.verdict?.lpNetPct, -5.29);
+  assert.equal(d.verdict?.lpNetPct, -10.92);
   assert.equal(d.lpParams?.rangeWidthBps, 4500);
   assert.equal(d.lpParams?.rebalanceDelayHours, 48);
   assert.ok(d.yieldPlan && d.yieldPlan.totalUsd < 0);
-  // model's userNet for this cell at 40%: −4.03
-  assert.ok(Math.abs(d.yieldPlan!.userNetPct - -4.03) < 0.01);
+  // The review's user net is the market snapshot's borrow and supply (the 2026-09-05 ledger read:
+  // 4.828 % / 0.012 %) applied to the gate's lpNet (−10.92 on 2026-09-12): 0.012 + 0.4 × (−10.92 − 4.828).
+  // Computed here from the same two inputs, never typed as a result.
+  const expected = DEMO_MARKET.reserves.cbBTC!.supplyAprPct + 0.4 * (entry.lpNetPct! - DEMO_MARKET.usdcBorrowAprPct);
+  assert.ok(Math.abs(d.yieldPlan!.userNetPct - expected) < 0.01, `${d.yieldPlan!.userNetPct} vs ${expected}`);
 });
 
 test("deriveReview (lp): a clearing verdict yields a positive plan and no gate problem", () => {

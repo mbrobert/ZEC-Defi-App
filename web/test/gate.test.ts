@@ -133,10 +133,10 @@ test("verdictsFor sorts best lpNet first; findVerdict matches pool × setting ×
   assert.equal(findVerdict(v, { poolId: "aero-usdc-weth-5", setting: "working", collateral: "WETH" }), undefined);
 });
 
-test("demo gate = the yield model's verdict: NOTHING clears at 4.828%; cbZEC pool refused for no emissions; cbZEC collateral disabled", () => {
+test("demo gate = the yield model's verdict: NOTHING clears at 4.5174%; cbZEC pool refused below the borrow (its gauge is voted since 2026-09-12) or for no σ; cbZEC collateral disabled", () => {
   const g = demoGate();
   assert.equal(g.source, "demo");
-  assert.equal(g.borrowAprPct, 4.828);
+  assert.equal(g.borrowAprPct, 4.5174);
   assert.equal(g.engineFeeBps, 1500);
   assert.equal(DEMO_GATE_RAW.qualifying.length, 0);
   assert.equal(g.verdicts.filter((v) => v.qualifies).length, 0);
@@ -145,17 +145,20 @@ test("demo gate = the yield model's verdict: NOTHING clears at 4.828%; cbZEC poo
   const cbzec = g.verdicts.find((v) => v.poolId === "aero-cbzec-usdc" && v.collateral === "cbBTC");
   assert.ok(cbzec, "cbZEC pool is tracked");
   assert.equal(cbzec!.qualifies, false);
-  assert.equal(cbzec!.reason, "no_emissions");
+  // 2026-09-12: the cbZEC/USDC gauge carries an emissions vote (≈ 617 AERO/day), so the sheltered
+  // cell is refused for emissions BELOW the borrow, not for having none; the working cell for no σ.
+  assert.equal(cbzec!.reason, "emissions_below_borrow");
+  assert.equal(g.verdicts.find((v) => v.poolId === "aero-cbzec-usdc" && v.setting === "working" && v.collateral === "cbBTC")!.reason, "no_volatility_input");
   assert.ok(g.verdicts.filter((v) => v.collateral === "cbZEC").every((v) => v.reason === "collateral_disabled"));
-  // The best cell in the doc: cbBTC/USDC sheltered, lpNet −5.29, break-even 2.02×
+  // The best cell in the doc (2026-09-12): cbBTC/USDC sheltered, lpNet −10.92, break-even 4.56×
   const best = g.verdicts.find((v) => v.poolId === "aero-cbbtc-usdc" && v.setting === "sheltered" && v.collateral === "cbBTC")!;
-  assert.equal(best.lpNetPct, -5.29);
-  assert.equal(best.breakEvenEmissionsMultiple, 2.02);
+  assert.equal(best.lpNetPct, -10.92);
+  assert.equal(best.breakEvenEmissionsMultiple, 4.56);
   // Re-pinned to MODEL-NUMBERS-v2: the sim now rounds the gross APR to 2 dp
   // exactly as sources/gauges.ts does, so the sim and the served gate agree to
   // the last digit instead of the 0.01 pt double-rounding gap they used to
   // carry (audit wave 1 lens D INFO-1).
-  assert.equal(best.userNet.find((u) => u.ltvBps === 4000)?.userNetPct, -4.04);
+  assert.equal(best.userNet.find((u) => u.ltvBps === 4000)?.userNetPct, -6.16);
 });
 
 // W3-LOW-3 (wave 3): a direct-venue pool is offered only where the deployment has the direct venue.

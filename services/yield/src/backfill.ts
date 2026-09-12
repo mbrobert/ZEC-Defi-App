@@ -188,9 +188,17 @@ async function sample(): Promise<void> {
   const head = await rpc.blockNumber();
   const rates = await aave.sample();
   const live = new Map<string, Awaited<ReturnType<GeckoSource["liveSample"]>>>();
+  // GeckoTerminal's public tier allows about 30 requests a minute and the source's own retries
+  // (4 attempts, backing off) count against it, so a 12-pool burst that trips the limit once keeps
+  // tripping it. GECKO_MIN_INTERVAL_MS spaces the per-pool requests (2200 ≈ 27/min); default 0
+  // keeps the old behaviour (2026-09-12, slice K: four bursts in a row were refused).
+  const paceMs = Number(process.env.GECKO_MIN_INTERVAL_MS ?? "0");
+  // Only the Aerodrome pools are sampled below (the gauge loop) and AERO's price is found among
+  // them; the three non-Aerodrome curated pools were fetched and never read — 12 → 9 requests.
   for (const p of CURATED_POOLS) {
-    if (!p.poolAddress) continue;
+    if (!p.poolAddress || p.dex !== "AERODROME") continue;
     live.set(p.id, await gecko.liveSample(p.id, p.poolAddress as Address, p.feeTierBps));
+    if (paceMs > 0) await new Promise((r) => setTimeout(r, paceMs));
   }
   let aeroUsd: number | undefined;
   for (const s of live.values()) aeroUsd ??= priceForToken(s, AERO_ADDRESS);

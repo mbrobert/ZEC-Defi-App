@@ -141,7 +141,7 @@ export default function StrategyStep({
       <div className="grid gap-2.5" role="radiogroup" aria-label="Strategy">
         {offered.length === 0 && !gate.unavailableReason && (
           <div className="note note-warn" data-testid="gate-empty">
-            <b className="text-oil-ink">No pool clears the gate for {collateral} at today&rsquo;s {fmtPct(borrowAprPct)} borrow rate.</b> The model finds every Aerodrome pool × width net negative once impermanent loss is priced in. Hold the USDC or swap it; the list below shows what each pool would need.
+            <b className="text-oil-ink">No pool clears the gate for {collateral} at today&rsquo;s {fmtPct(gate.borrowAprPct ?? borrowAprPct)} borrow rate.</b> The model finds every Aerodrome pool × width net negative once impermanent loss is priced in. Hold the USDC or swap it; the list below shows what each pool would need.
           </div>
         )}
         {offered.map((e) => {

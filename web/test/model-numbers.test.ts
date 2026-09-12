@@ -113,7 +113,8 @@ function checkDoc(label: string, path: string, t: { skip: (m: string) => void })
   }
 
   const un = parseUserNet(doc);
-  assert.ok(un.length >= 48, `${label}: parsed ${un.length} user-net rows`);
+  const pricedCells = (doc.match(/^\| (?:aero-[a-z0-9-]+|cbeth-weth) \| (?:sheltered|steady|working) \|.*\| \*\*-?[\d.]+%\*\* \| \*\*-?[\d.]+%\*\* \|/gm) ?? []).length;
+  assert.equal(un.length, pricedCells * 6, `${label}: parsed ${un.length} user-net rows for ${pricedCells} priced cells`);
   for (const r of un) {
     const v = find(r.pool, r.setting, r.collateral);
     assert.ok(v, `${label}: ${r.pool}/${r.setting}/${r.collateral} missing`);
@@ -121,8 +122,9 @@ function checkDoc(label: string, path: string, t: { skip: (m: string) => void })
     assert.ok(cell, `${label}: ${r.pool}/${r.setting}/${r.collateral}/${r.ltvBps} missing from userNet`);
     assert.equal(shownSigned(cell!.userNetPct), r.userNet, `${label}: ${r.pool}/${r.setting}/${r.collateral}/${r.ltvBps} userNet`);
     assert.equal(shownSigned(v!.lpNetPct), r.lpNet, `${label}: ${r.pool}/${r.setting} lpNet in the user-net table`);
-    assert.equal(shownPct(v!.borrowAprPct, 3), r.borrow, `${label}: borrow rate`);
-    assert.equal(shownPct(v!.collateralSupplyAprPct, 3), r.supply, `${label}: ${r.collateral} supply rate`);
+    // The doc publishes the borrow as read (4.5174 % on 2026-09-12, four decimals); the app renders three.
+    assert.equal(shownPct(v!.borrowAprPct, 3), shownPct(Number(r.borrow.replace("%", "")), 3), `${label}: borrow rate`);
+    assert.equal(shownPct(v!.collateralSupplyAprPct, 3), shownPct(Number(r.supply.replace("%", "")), 3), `${label}: ${r.collateral} supply rate`);
   }
   return true;
 }
@@ -136,13 +138,15 @@ test("…and matches the round's MODEL-NUMBERS-v2 handover doc", (t) => {
 });
 
 test("the gate's own headline numbers are the ones the product quotes", () => {
-  assert.equal(gate.borrowAprPct, 4.828);
-  assert.equal(gate.borrowAprPct, DEMO_MARKET.usdcBorrowAprPct);
+  assert.equal(gate.borrowAprPct, 4.5174);
+  // The gate is the fresher of the demo's two dated reads (the market snapshot is the 2026-09-05
+  // ledger read; the gate the 2026-09-12 model) — the rule is pinned in snapshot.test.ts.
+  assert.ok(Date.parse(gate.emissionsSampledAt) > Date.parse(DEMO_MARKET.readAt));
   // Advanced mode prints the engine's cut and Oilskin's fee side by side.
   assert.equal(gate.engineFeeBps, 1500);
   assert.equal(gate.engineFeeBps! / 100, 15);
   assert.equal(FEES.performanceBps / 100, 10);
-  assert.equal(gate.emissionsSampledAt, "2026-08-31T01:34:32Z");
+  assert.equal(gate.emissionsSampledAt, "2026-09-12T19:31:30.077Z");
   assert.ok(gate.mcCalibrationGeneratedAt.length > 0, "the MC calibration stamp is served and shown");
   assert.equal(gate.stale, false);
   assert.equal(gate.verdicts.length, 81, "27 pool × setting cells × 3 collaterals");
@@ -168,30 +172,34 @@ test("nothing is offered, in either mode, and the 'why not' list has both a code
   const rec = recommend(gate, "cbBTC", 4000);
   assert.equal(rec.kind, "hold");
   if (rec.kind === "hold") {
-    assert.ok(rec.why.includes("4.83%"), rec.why);
+    assert.ok(rec.why.includes("4.52%"), rec.why);
     assert.ok(rec.closest, "Simple mode names the closest miss");
     assert.ok(rec.closestWhy.length > 30, rec.closestWhy);
   }
 });
 
-test("the best priced cell is exactly the one MODEL-NUMBERS-v2 §2 and §3 publish", () => {
+test("the best priced cell is exactly the one MODEL-NUMBERS-2026-09-12 publishes (literal pins, the mutation guard)", () => {
   const best = find("aero-cbbtc-usdc", "sheltered", "cbBTC")!;
-  assert.equal(best.lpNetPct, -5.29);
-  assert.equal(best.mcLpNetPct, -5.21);
+  assert.equal(best.lpNetPct, -10.92);
+  assert.equal(best.mcLpNetPct, -10.89);
   assert.equal(best.dragPct, -15.25);
-  assert.equal(best.emissionsGrossPct, 14.13);
-  assert.equal(best.emissionsNetPct, 10.81);
-  assert.equal(best.emissionsRealizedPct, 9.96);
+  assert.equal(best.emissionsGrossPct, 6.15);
+  assert.equal(best.emissionsNetPct, 4.7);
+  assert.equal(best.emissionsRealizedPct, 4.34);
   assert.equal(best.sigma, 0.4);
-  assert.equal(best.breakEvenEmissionsMultiple, 2.02);
-  assert.equal(best.userNet.find((u) => u.ltvBps === 3000)?.userNetPct, -3.02);
-  assert.equal(best.userNet.find((u) => u.ltvBps === 4000)?.userNetPct, -4.04);
-  assert.equal(best.userNet.find((u) => u.ltvBps === 5000)?.userNetPct, -5.05);
-  // The three cells MODEL-NUMBERS-v2 §6 moved by 0.01 pt, at their NEW values.
-  assert.equal(find("aero-usdc-weth-5", "sheltered", "cbBTC")!.lpNetPct, -21.85);
-  assert.equal(find("aero-cbbtc-usdc", "steady", "cbBTC")!.lpNetPct, -14.11);
-  assert.equal(find("aero-weth-cbbtc", "steady", "cbBTC")!.lpNetPct, -45.11);
-  // …and the cell that must no longer publish anything at all.
+  assert.equal(best.breakEvenEmissionsMultiple, 4.56);
+  assert.equal(best.userNet.find((u) => u.ltvBps === 3000)?.userNetPct, -4.62);
+  assert.equal(best.userNet.find((u) => u.ltvBps === 4000)?.userNetPct, -6.16);
+  assert.equal(best.userNet.find((u) => u.ltvBps === 5000)?.userNetPct, -7.71);
+  // Two more priced cells, at their 2026-09-12 values.
+  assert.equal(find("aero-cbbtc-usdc", "steady", "cbBTC")!.lpNetPct, -29.14);
+  assert.equal(find("aero-weth-cbbtc", "steady", "cbBTC")!.lpNetPct, -42.35);
+  // WETH/USDC sheltered fell below the borrow before any drag on 2026-09-12 (net 3.01 % < 4.52 %):
+  // refused before pricing, nothing published.
+  const wethSheltered = find("aero-usdc-weth-5", "sheltered", "cbBTC")!;
+  assert.equal(wethSheltered.reason, "emissions_below_borrow");
+  assert.equal(wethSheltered.lpNetPct, null);
+  // …and the cell that must no longer publish anything at all (since 2026-09-05).
   const gone = find("aero-weth-cbbtc", "sheltered", "cbBTC")!;
   assert.equal(gone.reason, "emissions_below_borrow");
   assert.equal(gone.lpNetPct, null);

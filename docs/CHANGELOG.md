@@ -3,6 +3,30 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-12 — Slice K: the yield gate on fresh chain reads
+
+- **Slice K** — the first live gauge sample since 2026-08-31: block 51,226,072 at 19:31:30 UTC
+  (`samples/gauge-emissions-2026-09-12.json`, `VERIFIED-BASE-FACTS.md` Addendum 12); the model
+  regenerated from it at the live **4.5174 %** borrow (`docs/MODEL-NUMBERS-2026-09-12.md`):
+  **nothing clears** — cbBTC/USDC sheltered nets **−10.92 %** (−5.29 % on the 2026-08-31 words;
+  its gauge pays a marginal staker 6.15 % gross, down from 14.13 %) and needs **4.56×** today's
+  emissions; WETH/USDC sheltered no longer beats the borrow before drag; the cbZEC/USDC gauge
+  carries its first vote (≈ 617 AERO/day) and is refused below the borrow or for no σ; every priced
+  cell's LP slice is negative, so no borrow rate opens the menu (`RISKS.md` §14). Machinery so the
+  next run is one command: `scripts/run-model.mjs` lifts as-of / borrow / supply / LT from the
+  sample (no typed numbers in `package.json`), the sample paces GeckoTerminal
+  (`GECKO_MIN_INTERVAL_MS`), fetches only the nine pools it uses, and writes to the right directory
+  under `tsx`; `prototype/scripts/gen-oil-model.mjs` re-pins both prototypes' `OIL_MODEL` block
+  from the model file (hand-edited before); the yield, web and prototype suites derive their model
+  expectations from the model / the pinned block instead of literals, pin the closed form's one
+  tolerance breach by name (WETH/cbBTC working, +5.46 pt at today's emissions), and state the rule
+  under which the demo's two dated reads (2026-09-05 market snapshot, 2026-09-12 gate) may differ.
+  Also fixed on the way: the advanced wizard's "no pool clears … at today's X % borrow rate"
+  quoted the market snapshot's rate instead of the gate's; the demo keeper grant lacked the WETH
+  line the panel has required since 2026-09-08 (the e2e dashboard scenario had been red since);
+  `verify-toggle`'s deep-equal died on a `bigint` (slice I). Counts: yield 131; web unit 171
+  (170 + 1), web e2e 14 / 0 / 6; prototypes 118 · 109 · 56 · 6.
+
 ## 2026-09-12 — Slice J: the Base Sepolia rehearsal package, nothing signed
 
 - **Slice J** — `docs/DEPLOYMENTS.md` is the template a testnet deployment fills in (chain id,

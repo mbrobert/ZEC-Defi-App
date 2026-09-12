@@ -60,7 +60,7 @@ const fuzzSimple = ([seed, N]) => {
       case "sim": a = pick([{ type: "sim", kind: "keeperOff", on: rnd() < 0.5 }, { type: "sim", kind: "failNext", on: rnd() < 0.7, step: pick([1, 2, 3, 4]), why: "fuzz revert" }, { type: "sim", kind: "refundNext", on: rnd() < 0.7 },
         { type: "sim", kind: "paused", asset: pick(["cbBTC", "WETH", "USDC", "cbZEC", "nope"]), on: rnd() < 0.5 }, { type: "sim", kind: "corroborated", on: rnd() < 0.75 }, { type: "sim", kind: "revote", on: rnd() < 0.5 }, { type: "sim", kind: "sandwich", on: rnd() < 0.5 }]); break;
       case "setBorrowRate": a = { type: "setBorrowRate", pct: pick([4.828, 0, 9, 25, 100, -1, 200, NaN]) }; break;
-      case "setMult": a = { type: "setMult", mult: pick([1, 1, 2, 4, 6.35, 8, 12, 0, -1, NaN, 500]) }; break;
+      case "setMult": a = { type: "setMult", mult: pick([1, 1, 2, 4, 5, 6.35, 8, 8.65, 12, 12.21, 0, -1, NaN, 500]) }; break;
       case "loadExample": a = { type: "loadExample" }; break;
       case "clearExample": a = { type: "clearExample" }; break;
       case "renewGrant": a = { type: "renewGrant" }; break;
@@ -176,7 +176,7 @@ const fuzzAdvanced = ([seed, N]) => {
       case "sim": a = pick([{ type: "sim", kind: "keeperOff", on: rnd() < 0.5 }, { type: "sim", kind: "failNext", on: rnd() < 0.7, step: pick([1, 2, 3, 4]), why: "fuzz revert" }, { type: "sim", kind: "refundNext", on: rnd() < 0.7 },
         { type: "sim", kind: "paused", asset: pick(["cbBTC", "WETH", "USDC", "cbZEC", "nope"]), on: rnd() < 0.5 }, { type: "sim", kind: "corroborated", on: rnd() < 0.75 }, { type: "sim", kind: "revote", on: rnd() < 0.5 }, { type: "sim", kind: "sandwich", on: rnd() < 0.5 }]); break;
       case "setBorrowRate": a = { type: "setBorrowRate", pct: pick([4.828, 0, 9, 25, 100, -1, 200, NaN]) }; break;
-      case "setMult": a = { type: "setMult", mult: pick([1, 1, 2, 4, 6.35, 8, 12, 0, -1, NaN, 500]) }; break;
+      case "setMult": a = { type: "setMult", mult: pick([1, 1, 2, 4, 5, 6.35, 8, 8.65, 12, 12.21, 0, -1, NaN, 500]) }; break;
       case "seed": a = { type: "seed" }; break;
       case "renewGrant": a = { type: "renewGrant", owner: rnd() < 0.85 ? undefined : o.DEMO_WALLETS.other }; break;
       case "revokeGrant": a = { type: "revokeGrant", owner: rnd() < 0.85 ? undefined : o.DEMO_WALLETS.other }; break;

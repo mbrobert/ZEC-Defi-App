@@ -30,6 +30,8 @@ check("static: strategies = leveraged LP / hold USDC / supply only / spot via Co
 /* ── 1. boot, constants, shared-block parity with simple.html ── */
 const page = await openPage(b, srv.url("index.html"));
 const o = (fn, ...args) => page.evaluate(([f, a]) => { const oil = window.__oil; const g = f.split(".").reduce((x, k) => x[k], oil); return typeof g === "function" ? g(...a) : g; }, [fn, args]);
+/* The borrow rate the pinned model was generated at (OIL_MODEL.borrowPctAtGeneration): every check that reproduces a MODEL-NUMBERS row uses it, never a literal (slice K, 2026-09-12). */
+const B = await o("MODEL.borrowPctAtGeneration");
 check("boot: zero console errors", page.__errors.length === 0, page.__errors.join(" | "));
 check("boot: no wallet → dashboard shows the connect banner; positions are per-wallet", await page.$eval("#noWalletBanner", e => e.style.display !== "none") && /Connect a wallet/.test(await page.textContent("#posList")));
 check("facts: LT cbBTC 7800 / WETH 8300; top 50/50; 6000 → 3870", await o("ltBpsOf", "cbBTC") === 7800 && await o("ltBpsOf", "WETH") === 8300 && await o("topLtvPct", "cbBTC") === 50 && await o("maxOfferedLtvBps", 6000) === 3870);
@@ -37,10 +39,11 @@ check("facts: ladder & fees mirror shared", JSON.stringify(await o("LADDER.rungs
 {
   const served = await o("MODEL.served");
   const bad = [];
-  for (const [id, w, net, reason] of served) { const g = await page.evaluate(([id, w]) => { const oil = window.__oil; const r = oil.gate(oil.poolById(id), 4.828, w); return { ok: r.ok, reason: r.reason, net: r.net }; }, [id, w]); if (g.reason !== reason || (net != null && !near(g.net, net, 0.005)) || g.ok) bad.push(`${id}@${w}`); }
-  check("gate: all 27 served MODEL-NUMBERS rows reproduce; none offered at 4.828%", bad.length === 0, bad.join(", "));
-  const sweep = await page.evaluate(() => { const oil = window.__oil; const out = []; for (const p of oil.MODEL.pools) for (let w = oil.SHARED.RANGE_WIDTH_BOUNDS.min; w <= oil.SHARED.RANGE_WIDTH_BOUNDS.max; w += 25) { const g = oil.gate(p, 4.828, w); if (g.ok || (Number.isFinite(g.net) && g.net > 4.828)) out.push([p.id, w, g.net]); } return out; });
-  check("net-APY model: across 9 pools × every width 150..5000 (step 25) nothing flips positive at today's numbers (Lens H High)", sweep.length === 0, JSON.stringify(sweep.slice(0, 5)));
+  for (const [id, w, net, reason] of served) { const g = await page.evaluate(([id, w]) => { const oil = window.__oil; const r = oil.gate(oil.poolById(id), oil.MODEL.borrowPctAtGeneration, w); return { ok: r.ok, reason: r.reason, net: r.net }; }, [id, w]); if (g.reason !== reason || (net != null && !near(g.net, net, 0.005)) || g.ok !== (reason === "ok")) bad.push(`${id}@${w}`); }
+  check(`gate: all 27 served MODEL-NUMBERS rows reproduce at the model's borrow ${B}%; offered exactly where the doc says ok`, bad.length === 0, bad.join(", "));
+  const offeredDoc = served.filter(r => r[3] === "ok").map(r => `${r[0]}@${r[1]}`);
+  const sweep = await page.evaluate(() => { const oil = window.__oil; const B = oil.MODEL.borrowPctAtGeneration; const out = []; for (const p of oil.MODEL.pools) for (let w = oil.SHARED.RANGE_WIDTH_BOUNDS.min; w <= oil.SHARED.RANGE_WIDTH_BOUNDS.max; w += 25) { const g = oil.gate(p, B, w); if (g.ok) out.push([p.id, w, g.net]); } return out; });
+  check(`net-APY model: across 9 pools × every width 150..5000 (step 25) the gate offers a width only for a pool whose PRESET cell the doc offers (${offeredDoc.length === 0 ? "none today" : offeredDoc.join(", ")}) — nothing flips positive off the doc (Lens H High)`, sweep.every(([id]) => offeredDoc.some(o => o.startsWith(id + "@"))), JSON.stringify(sweep.slice(0, 5)));
   const mono = await page.evaluate(() => { const oil = window.__oil; const p = oil.poolById("aero-cbbtc-usdc"); let prev = null, ok = true; for (let w = 5000; w >= 150; w -= 10) { const n = oil.lpNetPct(p, w); if (prev !== null && n > prev + 1e-9) ok = false; prev = n; } return ok; });
   check("net-APY model: lpNet is monotone non-increasing as the band tightens (drag grows faster than emissions)", mono);
 }
@@ -87,18 +90,18 @@ await page.click("#goDone");
 check("hold: dashboard shows HF 2.77, debt and the negative-carry chip", /HF 2\.77/.test(await page.textContent("#hfChip")) && /Negative carry/.test(await page.textContent("#posList")));
 
 /* ── 4. what-if LP: presets, width bounds, computed ±, refunds, compound/claim/withdraw ── */
-await page.evaluate(() => window.__oil.dispatch({ type: "setMult", mult: 4 }));
+await page.evaluate(() => window.__oil.dispatch({ type: "setMult", mult: 5 }));
 check("what-if: banner visible and labelled as not today's numbers", await page.$eval("#whatifBanner", e => e.style.display !== "none") && /not today/.test(await page.textContent("#whatifBanner")));
 await page.click(".tab[data-view=wiz]"); await page.click('#assetSeg [data-asset="cbBTC"]'); await page.click('#modeCards [data-mode="LP"]');
 await page.evaluate(() => window.__oil.dispatch({ type: "wiz", key: "amount", value: 0.2 })); await page.click("#nextBtn");
-check("pool: under what-if ×4 exactly one pool clears (cbBTC/USDC) and is auto-selected", /1 of 9 pools clear/.test(await page.textContent("#poolCount")) && (await o("S")).wiz.pool === "aero-cbbtc-usdc");
+check("pool: under what-if ×5 exactly one pool clears (cbBTC/USDC) and is auto-selected", /1 of 9 pools clear/.test(await page.textContent("#poolCount")) && (await o("S")).wiz.pool === "aero-cbbtc-usdc");
 await page.click("#nextBtn");
 {
   const cards = await page.$$eval("#presetCards .opt", e => e.map(x => x.textContent));
   check("range: presets show computed ± from the shared spans (25.23 / 7.79 / 1.51 for an uncorrelated pool)", /±25\.23%/.test(cards[0]) && /±7\.79%/.test(cards[1]) && /±1\.51%/.test(cards[2]));
   const r = await page.evaluate(() => { const o = window.__oil; o.dispatch({ type: "wiz", key: "rw", value: 8100 }); const a = o.S.wiz.rw; o.dispatch({ type: "wiz", key: "rw", value: 10 }); const b = o.S.wiz.rw; o.dispatch({ type: "wiz", key: "rw", value: 999 }); return [a, b, o.S.wiz.rw, o.S.wiz.preset, document.querySelector("#rwLbl").textContent, document.querySelector("#rwMax").textContent]; });
   check("range: width is clamped to [150, 5000] (8100 → 5000, 10 → 150); custom width flags CUSTOM and ± is derived (999 → ±5.12%)", r[0] === 5000 && r[1] === 150 && r[2] === 999 && r[3] === "CUSTOM" && /±5\.12%/.test(r[4]) && /±28\.40%/.test(r[5]), JSON.stringify(r));
-  const tight = await page.evaluate(() => { const o = window.__oil; o.dispatch({ type: "setMult", mult: 1 }); o.dispatch({ type: "wiz", key: "rw", value: 300 }); const r = { apy: document.querySelector("#pApy").textContent, neg: document.querySelector("#pApy").classList.contains("neg"), next: document.querySelector("#nextBtn").textContent }; o.dispatch({ type: "setMult", mult: 4 }); return r; });
+  const tight = await page.evaluate(() => { const o = window.__oil; o.dispatch({ type: "setMult", mult: 1 }); o.dispatch({ type: "wiz", key: "rw", value: 300 }); const r = { apy: document.querySelector("#pApy").textContent, neg: document.querySelector("#pApy").classList.contains("neg"), next: document.querySelector("#nextBtn").textContent }; o.dispatch({ type: "setMult", mult: 5 }); return r; });
   check("range: at today's numbers the Aggressive width fails the gate; projection negative & red; Continue blocked with the reason", tight.neg && /gate/.test(tight.next) && tight.apy.startsWith("−"), JSON.stringify(tight));
   await page.evaluate(() => window.__oil.dispatch({ type: "wiz", key: "preset", value: "CONSERVATIVE" }));
   check("range: preset restores width 4500 and delay 48h", (await o("S")).wiz.rw === 4500 && (await o("S")).wiz.rd === 48);
@@ -106,7 +109,7 @@ await page.click("#nextBtn");
 check("projection: positive APY under what-if is green and the note says WHAT-IF", await page.$eval("#pApy", e => e.classList.contains("posv")) && /WHAT-IF/.test(await page.textContent("#pNote")));
 await page.evaluate(() => window.__oil.dispatch({ type: "sim", kind: "refundNext", on: true }));
 await page.click("#nextBtn");
-check("review: LP review carries registry id, ± range, working slice, keeper permission and the what-if label", /Registry id/.test(await page.textContent("#revList")) && /±25\.23%/.test(await page.textContent("#revList")) && /WHAT-IF ×4/.test(await page.textContent("#revList")));
+check("review: LP review carries registry id, ± range, working slice, keeper permission and the what-if label", /Registry id/.test(await page.textContent("#revList")) && /±25\.23%/.test(await page.textContent("#revList")) && /WHAT-IF ×5/.test(await page.textContent("#revList")));
 await page.click("#nextBtn");
 await page.waitForFunction(() => window.__oil.S.flow && window.__oil.S.flow.status === "done", null, { timeout: 20000 });
 await page.click("#goDone");
@@ -195,7 +198,7 @@ await page.evaluate(() => { const o = window.__oil; o.S.positions.forEach(p => p
   await page.click("#tkBtn"); await page.waitForTimeout(80);
   const s3 = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
   check("390px: tester's kit fits", s3[0] <= s3[1]);
-  check("tester's kit: failure simulations present (reject, revert, refund, range, keeper, store, crash, recover, what-if, seed)", ["fail:reject","fail:revert","refund","range:out","range:in","keeper:off","keeper:on","store:corrupt","px:-55","px:+30","mult:4","seed"].every(k => html.includes(`data-tk="${k}"`)));
+  check("tester's kit: failure simulations present (reject, revert, refund, range, keeper, store, crash, recover, what-if, seed)", ["fail:reject","fail:revert","refund","range:out","range:in","keeper:off","keeper:on","store:corrupt","px:-55","px:+30","mult:5","seed"].every(k => html.includes(`data-tk="${k}"`)));
 }
 
 /* ── 9. failure simulations through the reducer; spot swap ── */
@@ -223,36 +226,39 @@ await page.evaluate(() => { const o = window.__oil; o.S.positions.forEach(p => p
   check("router: the balance claim is the delta form, not an absolute zero", /balance of every token it will touch/.test(html) && /unchanged/.test(html) && C.routerBalance.assertion === "delta" && /RouterBalanceChanged/.test(C.routerBalance.error));
 
   /* the boundary guard, at custom widths too */
-  const bnd = await page.evaluate(() => { const oil = window.__oil; return oil.MODEL.boundary.map(([id, w, gb, cl, mc]) => { const pl = oil.poolById(id); const g0 = oil.gate(pl, 4.828, w, gb / pl.emissions[w]);
-    let lo = 0.01, hi = 500; for (let i = 0; i < 200; i++) { const mid = (lo + hi) / 2; (oil.lpNetPct(pl, w, mid) > 4.828) ? hi = mid : lo = mid; }
-    const g1 = oil.gate(pl, 4.828, w, hi * (1 + 1e-9)); return { id, w, cl, mc, gotCl: g0.net, gotMc: g0.mcNet, reason: g1.reason, ok: g1.ok }; }); });
-  check("model: all 8 boundary cells reproduce both forms from the pinned coefficients, and 7 of 8 are refused within_model_uncertainty just above their break-even", bnd.length === 8 && bnd.every(r => near(r.gotCl, r.cl, 0.02) && near(r.gotMc, r.mc, 0.02)) && bnd.filter(r => r.reason === "within_model_uncertainty").length === 7 && bnd.filter(r => r.ok).length === 1, JSON.stringify(bnd.map(r => [r.id, r.w, r.reason])));
-  const custom = await page.evaluate(() => { const oil = window.__oil; const pl = oil.poolById("aero-cbbtc-usdc"); const g = oil.gate(pl, 4.828, 1000, 12); const gp = oil.gate(pl, 4.828, 1500, 12); const none = oil.gate(oil.poolById("aero-weth-link"), 4.828, 4500, 12); return { custom: g.reason, why: g.why, preset: gp.reason, none: none.reason }; });
+  const bnd = await page.evaluate(() => { const oil = window.__oil; const B = oil.MODEL.borrowPctAtGeneration; return oil.MODEL.boundary.map(([id, w, gb, cl, mc]) => { const pl = oil.poolById(id); const g0 = oil.gate(pl, B, w, gb / pl.emissions[w]);
+    let lo = 0.01, hi = 500; for (let i = 0; i < 200; i++) { const mid = (lo + hi) / 2; (oil.lpNetPct(pl, w, mid) > B) ? hi = mid : lo = mid; }
+    const g1 = oil.gate(pl, B, w, hi * (1 + 1e-9)); return { id, w, cl, mc, gotCl: g0.net, gotMc: g0.mcNet, reason: g1.reason, ok: g1.ok }; }); });
+  const nB = bnd.length, expRefused = bnd.filter(r => !(r.mc > B)).length;
+  check(`model: all ${nB} boundary cells reproduce both forms from the pinned coefficients, and the ${expRefused} whose Monte-Carlo form does not clear are refused within_model_uncertainty just above their break-even (${nB - expRefused} offered)`, nB >= 1 && bnd.every(r => near(r.gotCl, r.cl, 0.02) && near(r.gotMc, r.mc, 0.02)) && bnd.every(r => (r.mc > B) === r.ok && (r.mc > B || r.reason === "within_model_uncertainty")), JSON.stringify(bnd.map(r => [r.id, r.w, r.reason])));
+  const custom = await page.evaluate(() => { const oil = window.__oil; const B = oil.MODEL.borrowPctAtGeneration; const pl = oil.poolById("aero-cbbtc-usdc"); const g = oil.gate(pl, B, 1000, 12); const gp = oil.gate(pl, B, 1500, 12); const none = oil.gate(oil.poolById("aero-weth-link"), B, 4500, 12); return { custom: g.reason, why: g.why, preset: gp.reason, none: none.reason }; });
   check("gate: a width the Monte Carlo has never been run at is refused mc_calibration_stale — the advanced build cannot offer a cell the second model has not priced", custom.custom === "mc_calibration_stale" && /re-run/.test(custom.why) && custom.preset === "ok", JSON.stringify(custom).slice(0, 260));
   check("gate: a pool with no calibration at all is refused rather than falling back to the closed form", custom.none === "no_volatility_input" || custom.none === "mc_calibration_unavailable");
-  const sweep = await page.evaluate(() => { const oil = window.__oil; const bad = []; for (const pl of oil.MODEL.pools) for (let w = 150; w <= 5000; w += 50) for (const m of [1, 2, 4, 6.35, 12, 30, 60]) { const g = oil.gate(pl, 4.828, w, m); if (g.ok && !(g.mcNet > 4.828)) bad.push([pl.id, w, m]); } return bad; });
+  const sweep = await page.evaluate(() => { const oil = window.__oil; const B = oil.MODEL.borrowPctAtGeneration; const bad = []; for (const pl of oil.MODEL.pools) for (let w = 150; w <= 5000; w += 50) for (const m of [1, 2, 4, 6.35, 12, 30, 60]) { const g = oil.gate(pl, B, w, m); if (g.ok && !(g.mcNet > B)) bad.push([pl.id, w, m]); } return bad; });
   check("gate: across every pool × every width in the engine's bounds × 7 emissions multiples, the served gate is never more permissive than the Monte-Carlo form", sweep.length === 0, JSON.stringify(sweep.slice(0, 3)));
 
   const p3 = await openPage(b, srv.url("index.html"));
   await p3.evaluate(() => { const oil = window.__oil; oil.dispatch({ type: "connect", provider: "coinbase" }); });
   const refusals = await p3.evaluate(() => { const oil = window.__oil; const out = {};
-    const band = oil.gate(oil.poolById("aero-weth-cbbtc"), oil.S.borrowPct, 150, 12); out.band = { reason: band.reason, net: band.net, mc: band.mcNet, why: band.why };
+    const band = oil.gate(oil.poolById("aero-weth-cbbtc"), oil.S.borrowPct, 150, 8.67); out.band = { reason: band.reason, net: band.net, mc: band.mcNet, why: band.why, borrow: oil.S.borrowPct };
     oil.dispatch({ type: "sim", kind: "revote", on: true }); const im = oil.gate(oil.poolById("aero-aero-weth"), oil.S.borrowPct, 4500, 1, oil.gopt()); out.impl = { reason: im.reason, gross: im.gross, why: im.why }; oil.dispatch({ type: "sim", kind: "revote", on: false });
     oil.dispatch({ type: "sim", kind: "corroborated", on: false }); out.uncorr = oil.MODEL.pools.map(pl => oil.gate(pl, oil.S.borrowPct, 4500, 12, oil.gopt()).reason); oil.dispatch({ type: "sim", kind: "corroborated", on: true });
     oil.dispatch({ type: "sim", kind: "paused", asset: "cbBTC", on: true }); out.collPaused = oil.gate(oil.poolById("aero-cbbtc-usdc"), oil.S.borrowPct, 4500, 12, oil.gopt({ collateral: "cbBTC" })).reason; out.wiz = oil.wizDecision(oil.S).why; oil.dispatch({ type: "sim", kind: "paused", asset: "cbBTC", on: false });
     oil.dispatch({ type: "sim", kind: "paused", asset: "USDC", on: true }); out.borrowPaused = oil.gate(oil.poolById("aero-cbbtc-usdc"), oil.S.borrowPct, 4500, 12, oil.gopt({ collateral: "cbBTC" })).reason; oil.dispatch({ type: "sim", kind: "paused", asset: "USDC", on: false });
-    const oob = oil.gate(oil.poolById("aero-cbbtc-usdc"), 4.828, 4500, 400, { maxEmissionsAprPct: 1e9, maxAbsNetPct: 100 }); out.oob = oob.reason;
-    let reachable = false; for (let m = 1; m <= 100; m += 0.5) for (const pool of oil.MODEL.pools) for (const ww of [150, 300, 784, 1500, 2356, 4500]) if (oil.gate(pool, 4.828, ww, m).reason === "net_out_of_bounds") reachable = true; out.reachable = reachable;
+    const B = oil.MODEL.borrowPctAtGeneration;
+    const oob = oil.gate(oil.poolById("aero-cbbtc-usdc"), B, 4500, 400, { maxEmissionsAprPct: 1e9, maxAbsNetPct: 100 }); out.oob = oob.reason;
+    let reachable = false; for (let m = 1; m <= 100; m += 0.5) for (const pool of oil.MODEL.pools) for (const ww of [150, 300, 784, 1500, 2356, 4500]) if (oil.gate(pool, B, ww, m).reason === "net_out_of_bounds") reachable = true; out.reachable = reachable;
     return out; });
-  check("gate: WHAT-IF ×12 puts WETH/cbBTC at its tightest width inside the disagreement band — refused within_model_uncertainty with both numbers in the sentence", refusals.band.reason === "within_model_uncertainty" && refusals.band.net > 4.828 && refusals.band.mc < 4.828 && /closed form/.test(refusals.band.why) && /Monte Carlo/.test(refusals.band.why), JSON.stringify(refusals.band).slice(0, 260));
+  check(`gate: WHAT-IF ×8.67 puts WETH/cbBTC at its tightest width inside the disagreement band at the page's ${refusals.band.borrow}% borrow — refused within_model_uncertainty with both numbers in the sentence`, refusals.band.reason === "within_model_uncertainty" && refusals.band.net > refusals.band.borrow && refusals.band.mc < refusals.band.borrow && /closed form/.test(refusals.band.why) && /Monte Carlo/.test(refusals.band.why), JSON.stringify(refusals.band).slice(0, 260));
   check("gate: the AERO/WETH gauge's own recorded reading is refused emissions_implausible above the 1,000% ceiling", refusals.impl.reason === "emissions_implausible" && refusals.impl.gross > 1000 && /plausibility ceiling/.test(refusals.impl.why));
   check("gate: an uncorroborated staked-liquidity anchor refuses every gauge that has emissions with insufficient_samples", refusals.uncorr.filter(r => r === "insufficient_samples").length >= 6 && refusals.uncorr.every(r => r === "insufficient_samples" || r === "no_emissions"));
   check("gate: guardian pauses surface as collateral_paused / borrow_paused, and the wizard refuses to continue", refusals.collPaused === "collateral_paused" && refusals.borrowPaused === "borrow_paused", JSON.stringify(refusals).slice(0, 200));
   check("gate: net_out_of_bounds is a real branch, and the emissions ceiling makes it unreachable on any live input", refusals.oob === "net_out_of_bounds" && refusals.reachable === false);
   const docs = await p3.evaluate(() => ({ reasons: [...document.querySelectorAll("#docReasons tbody tr")].map(r => [r.children[0].textContent, r.children[1].textContent]), bnd: [...document.querySelectorAll("#docBoundary tbody tr")].length, note: document.querySelector("#docBoundaryNote").textContent, grant: [...document.querySelectorAll("#docGrant tbody tr")].length, floor: document.querySelector("#docFloorP").textContent, swap: document.querySelector("#docSwapP").textContent }));
   const btv = await p3.evaluate(() => [...document.querySelectorAll("#docBoundary tbody tr")].map(r => r.lastElementChild.textContent.trim()));
-  check("docs: the boundary table's own served-gate column shows 7 refusals and the single cell where the two forms agree — the table is evaluated, not narrated", btv.filter(x => /within_model_uncertainty/.test(x)).length === 7 && btv.filter(x => /offered/.test(x)).length === 1, JSON.stringify(btv));
-  check("docs: all 13 gate refusals are catalogued with a plain-English sentence, and the boundary table renders its 8 cells with the worst optimism named", docs.reasons.length === 13 && docs.reasons.every(([k, v]) => v.length > 40) && docs.bnd === 8 && /32\.02 points/.test(docs.note) && /6000 paths/.test(docs.note), JSON.stringify({ n: docs.reasons.length, bnd: docs.bnd }));
+  const worstAdv = bnd.reduce((a, r) => Math.max(a, r.cl - r.mc), 0), mcPathsAdv = await o("MODEL.mc.paths");
+  check(`docs: the boundary table's own served-gate column shows ${expRefused} refusals and ${nB - expRefused} offered — the table is evaluated at the model's borrow, not narrated`, btv.filter(x => /within_model_uncertainty/.test(x)).length === expRefused && btv.filter(x => /offered/.test(x)).length === nB - expRefused, JSON.stringify(btv));
+  check(`docs: all 13 gate refusals are catalogued with a plain-English sentence, and the boundary table renders its ${nB} cells with the worst optimism (${worstAdv.toFixed(2)} pt) named`, docs.reasons.length === 13 && docs.reasons.every(([k, v]) => v.length > 40) && docs.bnd === nB && new RegExp(worstAdv.toFixed(2).replace(".", "\\.") + " points").test(docs.note) && new RegExp(`${mcPathsAdv} paths`).test(docs.note), JSON.stringify({ n: docs.reasons.length, bnd: docs.bnd }));
   check("docs: the keeper's grant is tabulated field by field, and the entry-floor and swap-floor sections name the contract that enforces each", docs.grant === 6 && /AaveV3Venue\.borrow/.test(docs.floor) && /EntryHfTooLow/.test(docs.floor) && /1\.07/.test(docs.floor) && /minOutFor/.test(docs.swap) && /maxSlippageBps/.test(docs.swap));
 
   /* borrow-and-hold now goes through openBorrowOnly, and the floor is enforced */
@@ -271,7 +277,7 @@ await page.evaluate(() => { const o = window.__oil; o.S.positions.forEach(p => p
   check("hold: a hold position really opens at or above the advertised floor, and signing it grants the keeper its permission", opened.kind === "HOLD" && opened.hf >= opened.floor - 1e-9 && opened.grant.live && Math.abs(opened.grant.remainingDays - 30) < 1e-9, JSON.stringify({ hf: opened.hf, days: opened.grant.remainingDays }));
 
   /* the swap floor on an LP unwind */
-  const lp = await p3.evaluate(() => { const oil = window.__oil; oil.dispatch({ type: "setMult", mult: 4 }); oil.dispatch({ type: "wiz", key: "mode", value: "LP" }); oil.dispatch({ type: "wiz", key: "pool", value: "aero-cbbtc-usdc" }); oil.dispatch({ type: "wiz", key: "amount", value: 0.1 }); oil.dispatch({ type: "beginFlow" }); const id = oil.S.flow.id; for (let i = 0; i < 6; i++) oil.dispatch({ type: "flowAdvance", id }); oil.dispatch({ type: "flowComplete", id }); oil.dispatch({ type: "flowDismiss" });
+  const lp = await p3.evaluate(() => { const oil = window.__oil; oil.dispatch({ type: "setMult", mult: 5 }); oil.dispatch({ type: "wiz", key: "mode", value: "LP" }); oil.dispatch({ type: "wiz", key: "pool", value: "aero-cbbtc-usdc" }); oil.dispatch({ type: "wiz", key: "amount", value: 0.1 }); oil.dispatch({ type: "beginFlow" }); const id = oil.S.flow.id; for (let i = 0; i < 6; i++) oil.dispatch({ type: "flowAdvance", id }); oil.dispatch({ type: "flowComplete", id }); oil.dispatch({ type: "flowDismiss" });
     const p = oil.S.positions.find(x => x.kind === "LP"); const pool = oil.poolById(p.pool);
     const l = oil.swapLegFor(pool, p.lp + p.idle);
     return { minOut: l.minOut, quotedOut: l.quotedOut, slip: l.maxSlippageBps, cap: l.cap,
@@ -312,7 +318,7 @@ await page.evaluate(() => { const o = window.__oil; o.S.positions.forEach(p => p
   await p3.setViewportSize({ width: 390, height: 800 }); await p3.waitForTimeout(150);
   const sw3 = await p3.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
   check("390px: the dashboard with the keeper-permission card has no horizontal overflow", sw3[0] <= sw3[1], sw3.join("/"));
-  check("tester's kit: the new levers are all present (pauses, corroboration, gauge re-vote, raw batch, sandwich, grant revoke/renew/expire, the disagreement band)", ["pause:collateral","pause:borrow","pause:off","corr:off","corr:on","revote:on","revote:off","rawbatch","sandwich:on","sandwich:off","grant:revoke","grant:renew","grant:expire","mult:12"].every(k => html.includes(`data-tk="${k}"`)));
+  check("tester's kit: the new levers are all present (pauses, corroboration, gauge re-vote, raw batch, sandwich, grant revoke/renew/expire, the disagreement band)", ["pause:collateral","pause:borrow","pause:off","corr:off","corr:on","revote:on","revote:off","rawbatch","sandwich:on","sandwich:off","grant:revoke","grant:renew","grant:expire","mult:8.67"].every(k => html.includes(`data-tk="${k}"`)));
   check("sim: zero console errors across every new simulation", p3.__errors.length === 0, p3.__errors.join(" | "));
   await p3.close();
 }

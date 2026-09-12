@@ -70,6 +70,17 @@ function opt(env: NodeJS.ProcessEnv, name: string): string | undefined {
  */
 export const ENGINE_VAULT_DEFAULT = "0x7d27cdfbfcc878f7e7349e216d44204bfd2afd55";
 
+/**
+ * A path under services/yield whether this file runs compiled (dist/src/config.js) or through
+ * tsx (src/config.ts): the old `new URL("../../samples", import.meta.url)` was right for dist/
+ * and wrong for `npm run backfill` (tsx), which resolved to services/samples — the live sample of
+ * 2026-09-12 (slice K) read every gauge and then failed to write. YIELD_*_DIR still overrides.
+ */
+function packageRelative(dir: string): string {
+  const here = new URL(".", import.meta.url).pathname;
+  return new URL(here.endsWith("/dist/src/") ? `../../${dir}` : `../${dir}`, import.meta.url).pathname;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): YieldConfig {
   const vault = str(env, "ENGINE_VAULT_ADDRESS", ENGINE_VAULT_DEFAULT).toLowerCase();
   if (!/^0x[0-9a-f]{40}$/.test(vault)) throw new ConfigError("ENGINE_VAULT_ADDRESS", "not an address");
@@ -78,8 +89,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): YieldConfig {
     blockscoutKey: opt(env, "BLOCKSCOUT_PRO_API_KEY"),
     engineVault: vault,
     port: num(env, "YIELD_PORT", 8787, 1),
-    dataDir: str(env, "YIELD_DATA_DIR", new URL("../../data", import.meta.url).pathname),
-    samplesDir: str(env, "YIELD_SAMPLES_DIR", new URL("../../samples", import.meta.url).pathname),
+    dataDir: str(env, "YIELD_DATA_DIR", packageRelative("data")),
+    samplesDir: str(env, "YIELD_SAMPLES_DIR", packageRelative("samples")),
     refreshMs: num(env, "YIELD_REFRESH_MS", 120_000, 5_000),
     staleAfterMs: num(env, "YIELD_STALE_AFTER_MS", 600_000, 10_000),
     cohortWindows: str(env, "YIELD_COHORT_WINDOWS", "30,60,90")

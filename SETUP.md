@@ -155,7 +155,7 @@ run, builds shared + yield, starts the yield API on `127.0.0.1:8787`, serves
 `bash stop-demo.command` stops both (PID files in `.demo/`, logs there too).
 Be clear about what that gives you: the prototypes are pinned to the
 2026-09-05 chain read (`docs/VERIFIED-BASE-FACTS.md`) and to
-`docs/MODEL-NUMBERS-2026-09-05.md` and **do not read the yield API**
+`docs/MODEL-NUMBERS-2026-09-12.md` and **do not read the yield API**
 (`grep fetch prototype/simple.html` finds only the Simple ⇄ Advanced toggle
 probe). The yield API the script starts is there for the web app and for
 `curl`; the "LIVE chip" of the earlier demo no longer exists.

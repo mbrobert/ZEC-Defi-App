@@ -83,9 +83,22 @@ test("demo-gate.json is pinned to MODEL-NUMBERS.md (every served lpNet, drag, em
   const borrow = doc.match(/USDC variable borrow APR: ([\d.]+)%/);
   assert.ok(borrow, "doc states the borrow rate");
   assert.equal(Number(borrow![1]), DEMO_GATE_RAW.borrowAprPct);
-  assert.equal(DEMO_GATE_RAW.borrowAprPct, DEMO_MARKET.usdcBorrowAprPct);
-  assert.match(doc, /No pool × setting clears the gate/);
-  assert.equal(DEMO_GATE_RAW.qualifying.length, 0);
+  // The demo is two dated reads: the market snapshot (DEMO_MARKET, the ledger read of
+  // DEMO_SNAPSHOT_AT) and the gate (the model, at its own live borrow read). They may differ only
+  // when the gate is the FRESHER read, and both carry their dates (slice K, 2026-09-12: the model
+  // moved to a 2026-09-12 borrow read while the ledger snapshot is still 2026-09-05).
+  if (DEMO_GATE_RAW.borrowAprPct !== DEMO_MARKET.usdcBorrowAprPct) {
+    assert.ok(
+      Date.parse(DEMO_GATE_RAW.emissionsSampledAt) > Date.parse(DEMO_MARKET.readAt),
+      `the gate's borrow ${DEMO_GATE_RAW.borrowAprPct}% differs from the market snapshot's ${DEMO_MARKET.usdcBorrowAprPct}% but is not the fresher read`
+    );
+  }
+  // The doc's verdict — an empty menu, or the cells it lists — is the payload's, cell for cell.
+  const clearsDoc = /No pool × setting clears the gate/.test(doc)
+    ? []
+    : [...(doc.match(/\*\*Clears the gate:\*\* (.*)$/m)?.[1] ?? "").matchAll(/([\w-]+) \/ (sheltered|steady|working)/g)].map((m) => `${m[1]}/${m[2]}`).sort();
+  const clearsPayload = [...new Set(DEMO_GATE_RAW.qualifying.map((q: { poolId: string; setting: string }) => `${q.poolId}/${q.setting}`))].sort();
+  assert.deepEqual(clearsPayload, clearsDoc, "the cells demo-gate.json offers are exactly the cells MODEL-NUMBERS.md says clear");
 
   // Per pool × setting table: | pool | setting | width | delay | gross | net | realized | drag | **lpNet** | ...
   const rows = [...doc.matchAll(/^\| (aero-[a-z0-9-]+|cbeth-weth) \| (sheltered|steady|working) \| (\d+) \([^)]*\) \| (\d+)h \| ([\d.]+)% \| ([\d.]+)% \| ([-\d.]+%|—) \| ([-\d.]+%|—) \| \*\*([-\d.]+)%\*\*|^\| (aero-[a-z0-9-]+|cbeth-weth) \| (sheltered|steady|working) \| (\d+) \([^)]*\) \| (\d+)h \| ([\d.]+)% \| ([\d.]+)% \| — \| — \| — /gm)];
@@ -116,7 +129,10 @@ test("demo-gate.json is pinned to MODEL-NUMBERS.md (every served lpNet, drag, em
   // used to publish a user-net ladder for cells the gate refuses BEFORE it
   // computes one (audit wave 1 lens D MED-7), and demo mode is now generated
   // by running the gate itself, so those six rows no longer exist anywhere.
-  assert.ok(un.length >= 48, `parsed ${un.length} user-net rows`);
+  // Six user-net rows (2 collaterals × 3 LTV presets) per PRICED cell — a cell with a bold lpNet and mcLpNet.
+  const pricedCells = (doc.match(/^\| (?:aero-[a-z0-9-]+|cbeth-weth) \| (?:sheltered|steady|working) \|.*\| \*\*-?[\d.]+%\*\* \| \*\*-?[\d.]+%\*\* \|/gm) ?? []).length;
+  assert.ok(pricedCells >= 1, "at least one priced cell");
+  assert.equal(un.length, pricedCells * 6, `parsed ${un.length} user-net rows for ${pricedCells} priced cells`);
   for (const m of un) {
     const v = DEMO_GATE_RAW.verdicts.find((x) => x.poolId === m[1] && x.setting === m[2] && x.collateral === m[3])!;
     const cell = v.userNet.find((u) => u.ltvBps === Number(m[4]) * 100)!;
@@ -128,5 +144,9 @@ test("demo-gate.json states the same liquidation thresholds and supply rates as 
   assert.equal(DEMO_GATE_RAW.liquidationThresholdBps.cbBTC, DEMO_MARKET.reserves.cbBTC!.liquidationThresholdBps);
   assert.equal(DEMO_GATE_RAW.liquidationThresholdBps.WETH, DEMO_MARKET.reserves.WETH!.liquidationThresholdBps);
   const v = DEMO_GATE_RAW.verdicts.find((x) => x.collateral === "cbBTC" && x.collateralSupplyAprPct !== null)!;
-  assert.equal(v.collateralSupplyAprPct, DEMO_MARKET.reserves.cbBTC!.supplyAprPct);
+  // The supply rate follows the same rule as the borrow (snapshot pin above): equal, or the gate's
+  // read is the fresher one — both dated (2026-09-12: gate 0.0115 % vs the 2026-09-05 snapshot's 0.012 %).
+  if (v.collateralSupplyAprPct !== DEMO_MARKET.reserves.cbBTC!.supplyAprPct) {
+    assert.ok(Date.parse(DEMO_GATE_RAW.emissionsSampledAt) > Date.parse(DEMO_MARKET.readAt), "a differing supply rate must be the fresher read");
+  }
 });

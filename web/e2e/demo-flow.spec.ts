@@ -101,7 +101,7 @@ test.describe("Oilskin demo mode", () => {
     await expect(page.getByTestId("advanced-controls")).toHaveCount(0);
     const rec = page.getByTestId("recommendation-hold");
     await expect(rec).toContainText("recommended today");
-    await expect(rec).toContainText("4.83% USDC borrow rate");
+    await expect(rec).toContainText("4.52% USDC borrow rate");
     // Simple mode explains the refusal in one plain sentence — no codes, no jargon.
     const whyNot = page.getByTestId("recommendation-why-not");
     await expect(whyNot).toContainText("The closest one was USDC/cbBTC (conservative)");
@@ -154,17 +154,17 @@ test.describe("Oilskin demo mode", () => {
     await expect(page.getByTestId("entry-hf")).toHaveText("1.56"); // 0.78 / 0.50
     await page.getByTestId("wizard-next").click();
 
-    await expect(page.getByTestId("gate-empty")).toContainText("No pool clears the gate for cbBTC at today’s 4.83% borrow rate");
-    await expect(page.getByTestId("gate-line")).toContainText("emissions sampled 2026-08-31 01:34Z");
+    await expect(page.getByTestId("gate-empty")).toContainText("No pool clears the gate for cbBTC at today’s 4.52% borrow rate");
+    await expect(page.getByTestId("gate-line")).toContainText("emissions sampled 2026-09-12 19:31Z");
     await expect(page.getByTestId("gate-line")).toContainText("engine fee 15%");
     await expect(page.getByTestId("gate-line")).not.toContainText("STALE");
     await expect(page.locator('[data-testid^="strategy-aero-"]')).toHaveCount(0);
     const rejected = page.getByTestId("gate-rejected");
     await rejected.locator("summary").click();
     await expect(rejected).toContainText("USDC/cbBTC conservative");
-    await expect(rejected).toContainText("LP net -5.29% vs borrow 4.83%");
-    await expect(rejected).toContainText("would clear at 2.02× today's net emissions on the closed form alone");
-    await expect(rejected).toContainText("MC net -5.21%");
+    await expect(rejected).toContainText("LP net -10.92% vs borrow 4.52%");
+    await expect(rejected).toContainText("would clear at 4.56× today's net emissions on the closed form alone");
+    await expect(rejected).toContainText("MC net -10.89%");
     await expect(rejected).toContainText("Once the loss from the price moving is priced in, it earns less than the loan costs.");
     await expect(rejected).toContainText("gauge pays no AERO");
     await expect(page.getByTestId("advanced-controls")).toBeVisible();

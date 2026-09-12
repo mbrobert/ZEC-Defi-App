@@ -77,23 +77,32 @@ if (shared) {
     const bad = [];
     for (const r of rows) { const pool = P.OIL_MODEL.pools.find(p => p.id === r.id); const served = P.OIL_MODEL.served.find(s => s[0] === r.id && s[1] === r.w); if (!pool || !served) { bad.push(r.id + "@" + r.w + " missing"); continue; } if (!near(pool.emissions[r.w], r.gross, 1e-9)) bad.push(`${r.id}@${r.w} gross ${pool.emissions[r.w]}≠${r.gross}`); if ((served[2] == null) !== (r.lpNet == null) || (r.lpNet != null && !near(served[2], r.lpNet, 1e-9))) bad.push(`${r.id}@${r.w} lpNet ${served[2]}≠${r.lpNet}`); if (served[3] !== r.reason) bad.push(`${r.id}@${r.w} reason ${served[3]}≠${r.reason}`); }
     check("model: every pinned gross-emissions, lpNet and reason equals MODEL-NUMBERS.md", bad.length === 0, bad.join("; "));
-    const un = [...md.matchAll(/^\| (aero-[\w-]+) \| (sheltered|steady|working) \| (cbBTC|WETH) \| (\d+)% \([^)]+\) \| ([-\d.]+)% \| 4\.828% \| ([\d.]+)% \| \*\*([-\d.]+)%\*\* \|/gm)].map(m => ({ id: m[1], setting: m[2], asset: m[3], ltv: +m[4], user: +m[7] }));
+    const un = [...md.matchAll(/^\| (aero-[\w-]+) \| (sheltered|steady|working) \| (cbBTC|WETH) \| (\d+)% \([^)]+\) \| ([-\d.]+)% \| ([-\d.]+)% \| ([\d.]+)% \| \*\*([-\d.]+)%\*\* \|/gm)].map(m => ({ id: m[1], setting: m[2], asset: m[3], ltv: +m[4], borrow: +m[6], supply: +m[7], user: +m[8] }));
     const W = { sheltered: "CONSERVATIVE", steady: "MODERATE", working: "AGGRESSIVE" };
-    const badU = un.filter(r => { const pool = P.OIL_MODEL.pools.find(p => p.id === r.id); const w = P.presetWidthBps(W[r.setting], pool.pairClass); return !near(P.positionAprPct(r.asset, r.ltv, pool, 4.828, w), r.user, 0.011); });
-    check(`model: all ${un.length} userNet rows (pool × setting × collateral × LTV) reproduce to 0.011 pt`, un.length === 48 && badU.length === 0, JSON.stringify(badU.slice(0, 3)));
-    /* The six rows that disappeared were a user-net ladder published for a cell
-       (aero-weth-cbbtc/sheltered) the gate refuses with emissions_below_borrow
-       before it prices anything: 54 → 48. The prototypes must not price it either. */
-    check("model: the refused aero-weth-cbbtc/sheltered cell publishes no lpNet and no userNet ladder (54 → 48 rows)", (() => {
-      const rows = md.split("\n").filter(l => /^\| aero-weth-cbbtc \| sheltered \|/.test(l));
-      const g = P.gate(P.OIL_MODEL.pools.find(p => p.id === "aero-weth-cbbtc"), 4.828, 2356);
-      return un.every(r => !(r.id === "aero-weth-cbbtc" && r.setting === "sheltered")) && rows.length === 1 && /emissions_below_borrow/.test(rows[0]) && g.reason === "emissions_below_borrow" && !Number.isFinite(g.net) && P.OIL_MODEL.served.some(s => s[0] === "aero-weth-cbbtc" && s[1] === 2356 && s[2] === null) && !P.OIL_MODEL.userNetPinned.some(s => s[0] === "aero-weth-cbbtc" && s[1] === 2356);
-    })());
+    /* Each row is reproduced at ITS OWN borrow and supply (the columns the doc publishes): the page's
+       positionAprPct takes the supply from OIL_CHAIN_READ (the dated chain-read pin), so the difference
+       between that pin and the row's supply is added back — the model block moves with every model run,
+       the chain-read block only with a ledger re-read (slice K, 2026-09-12). */
+    const B = P.OIL_MODEL.borrowPctAtGeneration;
+    const pricedRows = rows.filter(r => r.lpNet !== null);
+    const badU = un.filter(r => { const pool = P.OIL_MODEL.pools.find(p => p.id === r.id); const w = P.presetWidthBps(W[r.setting], pool.pairClass); const supplyAdj = r.supply - P.OIL_CHAIN_READ.aaveReserves[r.asset].supplyAprPct; return !near(r.borrow, B, 1e-9) || !near(P.positionAprPct(r.asset, r.ltv, pool, r.borrow, w) + supplyAdj, r.user, 0.011); });
+    check(`model: all ${un.length} userNet rows (pool × setting × collateral × LTV) reproduce to 0.011 pt at the model's borrow ${B}% and each row's supply (6 per priced cell)`, un.length === pricedRows.length * 6 && badU.length === 0, JSON.stringify(badU.slice(0, 3)));
+    /* A cell the gate refuses BEFORE pricing (no σ, no emissions, emissions below the borrow) publishes
+       no lpNet and no user-net ladder — in the doc, in the pinned block, and in the page's own gate at
+       the model's borrow. (The 2026-09-05 instance was aero-weth-cbbtc/sheltered, 54 → 48 rows.) */
+    const unpriced = rows.filter(r => r.lpNet === null);
+    const badUnpriced = unpriced.filter(r => { const pool = P.OIL_MODEL.pools.find(p => p.id === r.id); const g = P.gate(pool, B, r.w); const settingOf = { 4500: "sheltered", 1500: "steady", 300: "working", 2356: "sheltered", 784: "steady", 150: "working" }[r.w]; return un.some(u => u.id === r.id && u.setting === settingOf) || g.reason !== r.reason || Number.isFinite(g.net) || !P.OIL_MODEL.served.some(s => s[0] === r.id && s[1] === r.w && s[2] === null) || P.OIL_MODEL.userNetPinned.some(s => s[0] === r.id && s[1] === r.w); });
+    check(`model: every cell refused before pricing (${unpriced.length} of 27) publishes no lpNet and no userNet ladder, and the page's gate refuses it for the same reason`, unpriced.length > 0 && badUnpriced.length === 0, JSON.stringify(badUnpriced.slice(0, 3).map(r => [r.id, r.w, r.reason])));
     /* The MC-calibrated column the gate now decides on, parsed from the same file. */
     const mcRows = md.split("\n").filter(l => /^\| (aero-[\w-]+|cbeth-weth) \| (sheltered|steady|working) \| \d+ \(/.test(l)).map(l => { const c = l.split("|").map(x => x.replace(/\*/g, "").trim()); return { id: c[1], w: parseInt(c[3]), mc: c[10] === "—" ? null : parseFloat(c[10]) }; }).filter(r => r.mc !== null);
     const badMc = mcRows.filter(r => { const pool = P.OIL_MODEL.pools.find(p => p.id === r.id); const v = P.mcLpNetPct(pool, r.w); return v === null || !near(v, r.mc, 0.011); });
-    check(`model: all ${mcRows.length} MC-calibrated lpNet cells reproduce from the two pinned coefficients to 0.011 pt`, mcRows.length === 8 && badMc.length === 0, JSON.stringify(badMc.slice(0, 3)));
-    check("model: the verdict 'no pool × setting clears the gate' holds in the page's gate at 4.828%", /No pool × setting clears the gate/.test(md) && P.OIL_MODEL.pools.every(p => ["CONSERVATIVE", "MODERATE", "AGGRESSIVE"].every(pr => !P.gate(p, 4.828, P.presetWidthBps(pr, p.pairClass)).ok)));
+    check(`model: all ${mcRows.length} MC-calibrated lpNet cells reproduce from the two pinned coefficients to 0.011 pt (one per priced cell)`, mcRows.length === pricedRows.length && badMc.length === 0, JSON.stringify(badMc.slice(0, 3)));
+    /* The doc's verdict — an empty menu, or the cells it lists as clearing — is what the page's gate says
+       at the model's borrow, cell for cell. */
+    const clearsDoc = /No pool × setting clears the gate/.test(md) ? [] : [...(md.match(/\*\*Clears the gate:\*\* (.*)$/m)?.[1] ?? "").matchAll(/([\w-]+) \/ (sheltered|steady|working)/g)].map(m => `${m[1]}/${m[2]}`);
+    const clearsPage = [];
+    for (const p of P.OIL_MODEL.pools) for (const [pr, name] of [["CONSERVATIVE", "sheltered"], ["MODERATE", "steady"], ["AGGRESSIVE", "working"]]) if (P.gate(p, B, P.presetWidthBps(pr, p.pairClass)).ok) clearsPage.push(`${p.id}/${name}`);
+    check(`model: the doc's verdict at ${B}% (${clearsDoc.length === 0 ? "no pool × setting clears" : clearsDoc.join(", ") + " clear"}) is the page's gate's verdict, cell for cell`, JSON.stringify(clearsDoc.sort()) === JSON.stringify(clearsPage.sort()), JSON.stringify({ doc: clearsDoc, page: clearsPage }));
     check("model: source string names the generator and the file's generation timestamp", (() => { const ts = (md.match(/generated (\S+)/) || [])[1]; return !!ts && P.OIL_MODEL.source.includes("generated " + ts); })(), P.OIL_MODEL.source);
   } else check("model: MODEL-NUMBERS.md present to pin against (skipped — file absent)", true);
 }
@@ -101,10 +110,16 @@ if (shared) {
 /* ── 5. both pages agree on every displayed number for the same inputs; links; stores ── */
 const srv = await serve(); const b = await browser();
 const ps = await openPage(b, srv.url("simple.html")), pa = await openPage(b, srv.url("index.html"));
-const probe = p => p.evaluate(() => { const o = window.__oil; const out = {}; for (const a of ["cbBTC", "WETH"]) for (const l of [30, 40, 50]) out[`${a}/${l}`] = [o.entryHf(a, l), o.dropPct(a, l), o.topLtvPct(a)]; for (const pl of o.MODEL.pools) for (const w of [150, 300, 784, 1500, 2356, 4500, 5000]) { const g = o.gate(pl, 4.828, w); out[`${pl.id}@${w}`] = [g.reason, Number.isFinite(g.net) ? +g.net.toFixed(4) : null, +g.gross.toFixed(4), +o.halfWidthPct(w).toFixed(4)]; } out.keep = o.feeKeep(); out.rungs = o.LADDER; return out; });
+const probe = p => p.evaluate(() => { const o = window.__oil; const out = {}; for (const a of ["cbBTC", "WETH"]) for (const l of [30, 40, 50]) out[`${a}/${l}`] = [o.entryHf(a, l), o.dropPct(a, l), o.topLtvPct(a)]; for (const pl of o.MODEL.pools) for (const w of [150, 300, 784, 1500, 2356, 4500, 5000]) { const g = o.gate(pl, o.MODEL.borrowPctAtGeneration, w); out[`${pl.id}@${w}`] = [g.reason, Number.isFinite(g.net) ? +g.net.toFixed(4) : null, +g.gross.toFixed(4), +o.halfWidthPct(w).toFixed(4)]; } out.keep = o.feeKeep(); out.rungs = o.LADDER; return out; });
 const a1 = await probe(ps), a2 = await probe(pa);
 check("agreement: simple and advanced compute identical HF / drop / top / gate / ± for 6 settings × 9 pools × 7 widths", JSON.stringify(a1) === JSON.stringify(a2));
-check("agreement: the three surfaces (simple, advanced, MODEL-NUMBERS) agree on cbBTC/USDC sheltered lpNet −5.29 and userNet −3.02 to 0.1 pt", near(a1["aero-cbbtc-usdc@4500"][1], -5.29, 0.1) && near(await ps.evaluate(() => window.__oil.positionAprPct("cbBTC", 30, window.__oil.poolById("aero-cbbtc-usdc"), 4.828, 4500)), -3.02, 0.1) && near(await pa.evaluate(() => window.__oil.positionAprPct("cbBTC", 30, window.__oil.poolById("aero-cbbtc-usdc"), 4.828, 4500)), -3.02, 0.1));
+{ const md = fs.existsSync("/tmp/build/MODEL-NUMBERS.md") ? fs.readFileSync("/tmp/build/MODEL-NUMBERS.md", "utf8") : null;
+  const docRow = md && md.match(/^\| aero-cbbtc-usdc \| sheltered \| cbBTC \| 30% \(p30\) \| ([-\d.]+)% \| ([-\d.]+)% \| ([\d.]+)% \| \*\*([-\d.]+)%\*\* \|/m);
+  const served = P.OIL_MODEL.served.find(s => s[0] === "aero-cbbtc-usdc" && s[1] === 4500);
+  const Bm = P.OIL_MODEL.borrowPctAtGeneration, supplyAdj = P.OIL_MODEL.supplyPctAtGeneration.cbBTC - P.OIL_CHAIN_READ.aaveReserves.cbBTC.supplyAprPct;
+  const userSimple = await ps.evaluate(([b]) => window.__oil.positionAprPct("cbBTC", 30, window.__oil.poolById("aero-cbbtc-usdc"), b, 4500), [Bm]);
+  const userAdv = await pa.evaluate(([b]) => window.__oil.positionAprPct("cbBTC", 30, window.__oil.poolById("aero-cbbtc-usdc"), b, 4500), [Bm]);
+  check(`agreement: the three surfaces (simple, advanced, MODEL-NUMBERS) agree on cbBTC/USDC sheltered lpNet ${served[2]} and userNet ${docRow ? docRow[4] : "(doc absent)"} to 0.1 pt at the model's borrow ${Bm}%`, near(a1["aero-cbbtc-usdc@4500"][1], served[2], 0.1) && (!docRow || (near(+docRow[1], served[2], 0.011) && near(userSimple + supplyAdj, +docRow[4], 0.1) && near(userAdv + supplyAdj, +docRow[4], 0.1))) && near(userSimple, userAdv, 1e-9)); }
 check("agreement: both pages' risk lists are identical", JSON.stringify(await ps.evaluate(() => window.__oil.RISKS)) === JSON.stringify(await pa.evaluate(() => window.__oil.RISKS)));
 /* ── the audit-fix round: the same contract facts, the same refusals, the same
    floors and the same honest custody language in both builds ── */

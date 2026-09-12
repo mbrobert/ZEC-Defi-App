@@ -411,7 +411,7 @@ test("recommend: with the model's verdict nothing clears → hold, with the reas
   const g = demoGate();
   const r = recommend(g, "cbBTC", 4000);
   assert.equal(r.kind, "hold");
-  assert.match(r.why, /4\.83% USDC borrow rate/);
+  assert.match(r.why, /4\.52% USDC borrow rate/);
   const best = g.verdicts.find((v) => v.poolId === "aero-cbbtc-usdc" && v.setting === "sheltered" && v.collateral === "cbBTC")!;
   const other = g.verdicts.find((v) => v.poolId === "aero-usdc-weth-5" && v.setting === "sheltered" && v.collateral === "cbBTC")!;
   const view = {

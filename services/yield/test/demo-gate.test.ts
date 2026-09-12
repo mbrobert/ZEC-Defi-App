@@ -40,7 +40,7 @@ const DEMO = read("../../samples/demo-gate.json") as {
   qualifying: unknown[];
   liquidationThresholdBps: Record<string, number>;
 };
-const SAMPLE = read("../../samples/gauge-emissions-2026-09-05-composite.json") as {
+const SAMPLE = read("../../samples/gauge-emissions-2026-09-12.json") as {
   sampledAt: string;
   aeroUsd: number;
   pools: Record<string, {
@@ -48,7 +48,7 @@ const SAMPLE = read("../../samples/gauge-emissions-2026-09-05-composite.json") a
     stakedLiquidity: string | null; dec1: number; token1Usd: number; feeBpsLive: number; wholePoolAprPct: number;
   }>;
 };
-const MODEL = read("../../samples/lp-model-2026-09-05.json") as {
+const MODEL = read("../../samples/lp-model-2026-09-12.json") as {
   inputs: { borrowAprPct: number; collateral: Record<string, { supplyAprPct: number; liquidationThresholdBps: number }> };
 };
 
@@ -165,20 +165,27 @@ test("FIX D-MED-7: demo mode publishes NOTHING on a refusal branch the live gate
 });
 
 test("FIX D-MED-1: epochActive comes from periodFinish, so a lapsed gauge reads no_emissions in demo mode exactly as it does live", () => {
-  // aero-aero-weth's epoch ended 2026-05-28 and cbZEC was never voted.
-  for (const poolId of ["aero-aero-weth", "aero-cbzec-usdc"]) {
+  // Which gauges were lapsed at the as-of instant is read from the SAMPLE'S OWN WORDS
+  // (rewardRate > 0 AND periodFinish > as-of), never from a list typed here: on 2026-08-31
+  // aero-aero-weth's epoch had ended (2026-05-28) and cbZEC had never been voted; on 2026-09-12
+  // the cbZEC gauge carried a vote (slice K).
+  const lapsed = Object.entries(SAMPLE.pools)
+    .filter(([, p]) => !(BigInt(p.rewardRateWeiPerSec) > 0n && p.periodFinish > NOW_S))
+    .map(([id]) => id);
+  assert.ok(lapsed.length >= 1, "the sample carries at least one lapsed gauge (aero-aero-weth has since 2026-05-28)");
+  for (const poolId of lapsed) {
     const rows = DEMO.verdicts.filter((v) => v.poolId === poolId && v.collateral !== "cbZEC");
     assert.ok(rows.length === 6, `${poolId}: ${rows.length} rows`);
-    assert.ok(rows.every((v) => v.reason === "no_emissions"), poolId);
+    assert.ok(rows.every((v) => v.reason === "no_emissions"), `${poolId} lapsed at the as-of instant must read no_emissions`);
+  }
+  for (const poolId of Object.keys(SAMPLE.pools).filter((id) => !lapsed.includes(id))) {
+    const rows = DEMO.verdicts.filter((v) => v.poolId === poolId && v.collateral !== "cbZEC");
+    assert.ok(rows.every((v) => v.reason !== "no_emissions"), `${poolId} live at the as-of instant must not read no_emissions`);
   }
   // and the pools whose epoch WAS live at the as-of instant are priced
   const priced = DEMO.verdicts.filter((v) => v.lpNetPct !== null);
   assert.ok(priced.length > 0, "the as-of instant must sit inside a live epoch");
   assert.ok(Date.parse(DEMO.asOf) >= Date.parse(SAMPLE.sampledAt), "the gate cannot be evaluated before its inputs exist");
-  for (const p of Object.values(SAMPLE.pools)) {
-    if (BigInt(p.rewardRateWeiPerSec) > 0n && p.periodFinish > NOW_S) continue;
-    assert.ok(true);
-  }
 });
 
 test("demo-gate.json carries the surface fields web/lib/gate.ts reads, and nothing qualifies at 4.828 %", () => {
