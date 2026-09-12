@@ -125,6 +125,9 @@ contract CollateralRegistry is Ownable2Step, ICollateralRegistry {
         if (asset == address(0) || venue == address(0)) revert ZeroAddress();
         if (_configs[asset].venue != address(0)) revert AssetAlreadyRegistered(asset);
         if (enabled) _requireListed(asset, venue);
+        // Aderyn `reentrancy-state-change`, triaged 2026-09-12 (AUDIT-2026-09-12.md): owner-only, and the
+        // only external calls are views on the token and venue the owner is registering.
+        // aderyn-ignore-next-line(reentrancy-state-change)
         uint8 decimals = IERC20Metadata(asset).decimals();
         _assets.push(asset);
         _configs[asset] = AssetConfig({

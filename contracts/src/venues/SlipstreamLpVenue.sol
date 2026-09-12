@@ -162,20 +162,31 @@ contract SlipstreamLpVenue is ILpVenue, Peripheral {
         if (performanceBps_ > MAX_PERFORMANCE_BPS) revert FeeAboveCap(performanceBps_, MAX_PERFORMANCE_BPS);
         // The four contracts must name each other: a venue built over a pool, a manager that does
         // not mint into it, or a gauge for another pool would hold the user's tokens hostage.
+        // Aderyn `reentrancy-state-change` on the constructor's reads below, triaged 2026-09-12
+        // (AUDIT-2026-09-12.md): nothing can re-enter a contract that has no code yet.
+        // aderyn-ignore-next-line(reentrancy-state-change)
         if (pool.nft() != address(npm)) revert PoolMismatch("pool.nft");
+        // aderyn-ignore-next-line(reentrancy-state-change)
         if (pool.gauge() != address(gauge)) revert PoolMismatch("pool.gauge");
+        // aderyn-ignore-next-line(reentrancy-state-change)
         if (gauge.nft() != address(npm)) revert PoolMismatch("gauge.nft");
+        // aderyn-ignore-next-line(reentrancy-state-change)
         if (gauge.pool() != address(pool)) revert PoolMismatch("gauge.pool");
+        // aderyn-ignore-next-line(reentrancy-state-change)
         if (gauge.rewardToken() != rewardToken) revert PoolMismatch("gauge.rewardToken");
         (bool ok, bytes memory ret) = address(swapAdapter).staticcall(abi.encodeWithSignature("POOL()"));
         if (!ok || ret.length < 32 || abi.decode(ret, (address)) != address(pool)) revert PoolMismatch("swap.POOL");
         POOL = pool;
         NPM = npm;
         GAUGE = gauge;
+        // aderyn-ignore-next-line(reentrancy-state-change)
         VOTER = ISlipstreamVoter(gauge.voter());
         SWAP = swapAdapter;
+        // aderyn-ignore-next-line(reentrancy-state-change)
         TOKEN0 = pool.token0();
+        // aderyn-ignore-next-line(reentrancy-state-change)
         TOKEN1 = pool.token1();
+        // aderyn-ignore-next-line(reentrancy-state-change)
         TICK_SPACING = pool.tickSpacing();
         if (TOKEN0 == address(0) || TOKEN1 == address(0) || TICK_SPACING <= 0) revert PoolMismatch("pool.tokens");
         POOL_ID = bytes32(uint256(uint160(address(pool))));
@@ -553,6 +564,9 @@ contract SlipstreamLpVenue is ILpVenue, Peripheral {
         bytes memory ret = _nested(
             address(SWAP),
             abi.encodeCall(
+                // Aderyn `unsafe-casting`, triaged 2026-09-12: `tol` is at most BPS / 2 and is then capped at the
+                // adapter's MAX_SLIPPAGE_BPS, itself a uint16 — the cast cannot truncate.
+                // aderyn-ignore-next-line(unsafe-casting)
                 ISwapAdapter.swap, (tokenIn, tokenOut, x, x, quotedOut, uint16(tol), deadline, abi.encode(TICK_SPACING))
             )
         );

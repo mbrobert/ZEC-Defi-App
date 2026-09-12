@@ -41,7 +41,10 @@ jobs:
             contracts/cache
             contracts/out
           key: foundry-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'contracts/src/**/*.sol', 'contracts/test/**/*.sol', 'contracts/script/**/*.sol') }}
-          restore-keys: foundry-${{ runner.os }}-
+          # No restore-keys fallback (2026-09-12): every partial via-IR recompile on the runner since 485b3ff
+          # (39 files after a fallback restore) ended at ~11 min with "the runner has received a shutdown
+          # signal" (exit 143) — five jobs in four runs — while both cold compiles passed in 13–15 min.
+          # Exact key or a cold compile until the cause is known (CHANGELOG 2026-09-12, Aderyn triage entry).
       - name: Unit + scenario + invariant suites (isolation pinned in foundry.toml)
         run: forge test -vv
 
@@ -68,7 +71,10 @@ jobs:
             contracts/cache
             contracts/out
           key: foundry-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'contracts/src/**/*.sol', 'contracts/test/**/*.sol', 'contracts/script/**/*.sol') }}
-          restore-keys: foundry-${{ runner.os }}-
+          # No restore-keys fallback (2026-09-12): every partial via-IR recompile on the runner since 485b3ff
+          # (39 files after a fallback restore) ended at ~11 min with "the runner has received a shutdown
+          # signal" (exit 143) — five jobs in four runs — while both cold compiles passed in 13–15 min.
+          # Exact key or a cold compile until the cause is known (CHANGELOG 2026-09-12, Aderyn triage entry).
       - name: forge build
         run: forge build
       - name: Upload the artifacts for the seam jobs
@@ -227,7 +233,10 @@ jobs:
             contracts/cache
             contracts/out
           key: foundry-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'contracts/src/**/*.sol', 'contracts/test/**/*.sol', 'contracts/script/**/*.sol') }}
-          restore-keys: foundry-${{ runner.os }}-
+          # No restore-keys fallback (2026-09-12): every partial via-IR recompile on the runner since 485b3ff
+          # (39 files after a fallback restore) ended at ~11 min with "the runner has received a shutdown
+          # signal" (exit 143) — five jobs in four runs — while both cold compiles passed in 13–15 min.
+          # Exact key or a cold compile until the cause is known (CHANGELOG 2026-09-12, Aderyn triage entry).
       - name: Fork suite at FORK_BLOCK (fails, and says NOT VERIFIED, without the secret)
         run: |
           set -o pipefail
@@ -298,7 +307,10 @@ jobs:
             contracts/cache
             contracts/out
           key: foundry-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'contracts/src/**/*.sol', 'contracts/test/**/*.sol', 'contracts/script/**/*.sol') }}
-          restore-keys: foundry-${{ runner.os }}-
+          # No restore-keys fallback (2026-09-12): every partial via-IR recompile on the runner since 485b3ff
+          # (39 files after a fallback restore) ended at ~11 min with "the runner has received a shutdown
+          # signal" (exit 143) — five jobs in four runs — while both cold compiles passed in 13–15 min.
+          # Exact key or a cold compile until the cause is known (CHANGELOG 2026-09-12, Aderyn triage entry).
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"

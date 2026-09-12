@@ -72,7 +72,10 @@ contract SlipstreamPoolSwapAdapter is ISwapAdapter, ICLSwapCallback, Peripheral 
     constructor(ISlipstreamPool pool) {
         if (address(pool) == address(0)) revert ZeroAddress();
         POOL = pool;
+        // Aderyn `reentrancy-state-change` (constructor reads), triaged 2026-09-12 (AUDIT-2026-09-12.md).
+        // aderyn-ignore-next-line(reentrancy-state-change)
         TOKEN0 = pool.token0();
+        // aderyn-ignore-next-line(reentrancy-state-change)
         TOKEN1 = pool.token1();
         TICK_SPACING = pool.tickSpacing();
         if (TOKEN0 == address(0) || TOKEN1 == address(0)) revert ZeroAddress();

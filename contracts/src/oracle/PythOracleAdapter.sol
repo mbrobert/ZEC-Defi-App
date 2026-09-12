@@ -71,7 +71,11 @@ contract PythOracleAdapter is IMorphoOracle {
         if (priceId == bytes32(0) || maxAge_ == 0 || twapWindow_ == 0 || maxDeviationBps_ >= BPS) {
             revert InvalidConfig();
         }
+        // Aderyn `reentrancy-state-change` on the four reads below (constructor: nothing can re-enter a
+        // contract that has no code yet), triaged 2026-09-12 (AUDIT-2026-09-12.md).
+        // aderyn-ignore-next-line(reentrancy-state-change)
         address t0 = pool.token0();
+        // aderyn-ignore-next-line(reentrancy-state-change)
         address t1 = pool.token1();
         bool baseIs0 = t0 == baseToken && t1 == quoteToken;
         bool baseIs1 = t1 == baseToken && t0 == quoteToken;
@@ -81,7 +85,9 @@ contract PythOracleAdapter is IMorphoOracle {
         POOL = pool;
         BASE_TOKEN = baseToken;
         QUOTE_TOKEN = quoteToken;
+        // aderyn-ignore-next-line(reentrancy-state-change)
         BASE_DECIMALS = IERC20Metadata(baseToken).decimals();
+        // aderyn-ignore-next-line(reentrancy-state-change)
         QUOTE_DECIMALS = IERC20Metadata(quoteToken).decimals();
         BASE_IS_TOKEN0 = baseIs0;
         maxAge = maxAge_;
@@ -100,6 +106,9 @@ contract PythOracleAdapter is IMorphoOracle {
         (uint256 p, uint256 t) = _pythE8();
         emit Refreshed(fee, p, t);
         if (msg.value > fee) {
+            // Aderyn `eth-send-unchecked-address`, triaged 2026-09-12: the refund goes to whoever paid the fee
+            // (msg.sender), by design; there is no other recipient to check against.
+            // aderyn-ignore-next-line(eth-send-unchecked-address)
             (bool ok,) = msg.sender.call{value: msg.value - fee}("");
             if (!ok) revert RefundFailed();
         }

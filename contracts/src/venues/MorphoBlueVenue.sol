@@ -103,6 +103,8 @@ contract MorphoBlueVenue is ICollateralVenue, Peripheral {
         for (uint256 i = 0; i < marketIds.length; i++) {
             bytes32 id = marketIds[i];
             MarketParams memory p = _params(id);
+            // Aderyn `reentrancy-state-change` (constructor read), triaged 2026-09-12 (AUDIT-2026-09-12.md).
+            // aderyn-ignore-next-line(reentrancy-state-change)
             (,,,, uint128 lastUpdate,) = morpho.market(id);
             if (lastUpdate == 0) revert MarketNotCreated(id);
             bytes32 recomputed = marketId(p);

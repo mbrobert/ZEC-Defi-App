@@ -72,6 +72,22 @@ liquidity provision; EIP = Ethereum Improvement Proposal.
   1.407), the funded sale at HF 1.16 landing inside the cap with the released ZEC collected to the unit,
   observe-only refusing by name. Not deployed; no keeper runs anywhere.
 
+## 2026-09-12 — Aderyn's first run triaged (four Highs, no code change), and the compiler-cache fallback dropped from CI
+
+- Slither passes on the runner since `7b5f72a` (296 results, no High), so Aderyn 0.6.8 ran for the
+  first time: **4 High / 15 Low**. Every High is a false positive or a pattern this codebase chose,
+  suppressed at its site with `// aderyn-ignore-next-line(<detector>)` and the reason
+  (`AUDIT-2026-09-12.md`, "Aderyn"): the factory forwards `msg.value` in full, the Pyth refund goes to
+  the fee's payer, the constructor reads cannot be re-entered, `uint16(tol)` is bounded by a `uint16`
+  cap. Aderyn could not be run on this Mac (crates.io has 0.1.9; v0.6.8 needs nightly Rust), so the
+  CI run of this commit is the check of these suppressions; halmos has still not run and is the next
+  step in that job.
+- `ci.yml` / `nightly-invariants.yml`: the Foundry cache is **exact key or nothing**. Since `485b3ff`
+  every partial via-IR recompile after a `restore-keys` fallback (39 files) ended at ~11 min with "the
+  runner has received a shutdown signal" (exit 143) — five jobs in four runs, no compiler error in
+  any log — while both cold compiles of the day passed in 13–15 min. The cause is not known; a
+  changed `.sol` now costs a cold compile on the runner until it is.
+
 ## 2026-09-12 — Ledger re-read: the demo's market snapshot is the yield sample's block, so the demo is one read
 
 - `docs/VERIFIED-BASE-FACTS.md`'s top ledger re-read read-only at block **51,226,072** (2026-09-12T19:31:31Z,

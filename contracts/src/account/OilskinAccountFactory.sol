@@ -12,6 +12,10 @@ import {Call} from "../interfaces/IOilskinAccount.sol";
 ///         `createAccount(owner)` may be called by anyone but only ever deploys the account of the
 ///         named owner; it is idempotent. `createAccountAndExec` gives a first-time user a single
 ///         transaction: deploy the account and run an owner batch (e.g. the router open) at once.
+/// @dev Aderyn `contract-locks-ether`, triaged 2026-09-12 (AUDIT-2026-09-12.md): the factory's one payable
+///      door forwards msg.value in full to the new account (`initialize{value: msg.value}` /
+///      `execBatchFromFactory{value: msg.value}`); there is no receive or fallback, and it holds nothing.
+// aderyn-ignore-next-line(contract-locks-ether)
 contract OilskinAccountFactory {
     /// @notice The account implementation every clone delegates to. Bricked (owner = 1).
     address public immutable IMPLEMENTATION;
