@@ -381,7 +381,7 @@ function grantCall(
     note:
       `account.grant(keeper, Permission{target: router, selector: unwind ${UNWIND_SELECTOR}, maxValuePerPeriod: 0, tokenLimits[], period: ${KEEPER_GRANT_PERIOD_S}, expiry: ${expiry}, allowCallback: true}). ` +
       "Every DIRECT token transfer or approval in the call tree is charged to the budget; the movers the budget cannot parse (Permit2 batch transferFrom, permitTransferFrom, ERC-777 send, ERC-677 transferAndCall) are refused outright on the keeper path with UnbudgetableSelector. " +
-      "Re-granting inside a live period does NOT refill the budget — spend carries forward per token. " +
+      "Re-granting inside a live period does NOT refill the budget — spend carries forward per token, listed again or not. " +
       `The grant expires on its own; nothing renews it silently. Pool id ${enginePoolId ? short(enginePoolId) : "—"}.`,
     required: !!keeper,
     encodable: !!keeper && !!account && !!d && !d.demo,

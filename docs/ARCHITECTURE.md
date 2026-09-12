@@ -145,8 +145,9 @@ a watcher can tell a kill switch from a no-op — and `revokeAll()` (an epoch
 bump that kills every grant). Rejected at grant time: a zero selector (it was
 a blanket permit for any call with fewer than four bytes of calldata,
 including a bare ETH send), a token limit of zero, and duplicate tokens.
-**A re-grant inside a live period carries the spend forward** instead of
-refilling the window, so "1,000 USDC per day" means that. `grantOf` returns
+**A re-grant inside a live period carries the spend forward** — every
+token's, listed again or not (wave 3, W3-LOW-7) — instead of refilling the
+window, so "1,000 USDC per day" means that. `grantOf` returns
 seven values including `allowCallback`, and both `grantOf`'s `valueSpent` and
 `tokenBudgetOf`'s `spent` apply the period roll in the view, so a client never
 sees a number the chain would not enforce. ERC-721/1155 receivers and

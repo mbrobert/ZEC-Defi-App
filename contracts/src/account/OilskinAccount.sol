@@ -45,9 +45,15 @@ contract OilskinAccount is IOilskinAccount, IERC721Receiver, IERC1155Receiver {
         uint40 expiry;
         uint40 periodStart;
         bool allowCallback;
+        /// The spend generation: bumped whenever EVERY token spend becomes void at once (a period
+        /// roll, or a re-grant that does not carry). A token's spend counts only while its stamp
+        /// matches, so a spend stays on the books whether or not the token is still listed
+        /// (wave 3, W3-LOW-7).
+        uint64 spendGen;
         address[] tokens;
         mapping(address => uint256) tokenLimit;
         mapping(address => uint256) tokenSpent;
+        mapping(address => uint64) tokenSpentGen;
     }
 
     mapping(bytes32 => GrantData) internal _grants;
@@ -304,7 +310,8 @@ contract OilskinAccount is IOilskinAccount, IERC721Receiver, IERC1155Receiver {
 
     /// @inheritdoc IOilskinAccount
     /// @dev Invariant: owner-only; overwrites any existing grant for the same (keeper, target,
-    ///      selector) and resets its spend; a token budget must be listed to be spendable.
+    ///      selector); inside a live period every spend already charged stays on the books,
+    ///      listed again or not; a token budget must be listed to be spendable.
     function grant(address keeper, Permission calldata p) external override {
         if (msg.sender != owner) revert NotOwner();
         if (
@@ -318,19 +325,17 @@ contract OilskinAccount is IOilskinAccount, IERC721Receiver, IERC1155Receiver {
         bytes32 key = _grantKey(keeper, p.target, p.selector);
         GrantData storage g = _grants[key];
 
-        // A re-grant must not refill an exhausted window: carry the spend forward unless the period
-        // has already rolled (or the grant is dead / from an older epoch, in which case there is
-        // nothing to carry).
-        uint256 n = g.tokens.length;
-        address[] memory oldTokens = new address[](n);
-        uint256[] memory oldSpent = new uint256[](n);
+        // A re-grant must not refill an exhausted window: inside a live period the spend of EVERY
+        // token charged so far stays on the books, listed again or not, until the period rolls.
+        // (Until wave 3's W3-LOW-7 only tokens present in both the old and the new list kept
+        // theirs; a token dropped in one re-grant and re-added in the next came back at zero.)
+        // When the period has already rolled, or the grant is dead / from an older epoch, there is
+        // nothing to carry and the generation moves on, which voids every stamped spend at once.
         bool carry = g.expiry != 0 && g.epoch == grantEpoch
             && block.timestamp < uint256(g.periodStart) + uint256(g.period);
+        uint256 n = g.tokens.length;
         for (uint256 i = 0; i < n; i++) {
-            oldTokens[i] = g.tokens[i];
-            oldSpent[i] = g.tokenSpent[oldTokens[i]];
-            delete g.tokenLimit[oldTokens[i]];
-            delete g.tokenSpent[oldTokens[i]];
+            delete g.tokenLimit[g.tokens[i]];
         }
         delete g.tokens;
 
@@ -342,6 +347,7 @@ contract OilskinAccount is IOilskinAccount, IERC721Receiver, IERC1155Receiver {
         if (!carry) {
             g.valueSpent = 0;
             g.periodStart = uint40(block.timestamp);
+            g.spendGen++;
         }
         for (uint256 i = 0; i < p.tokenLimits.length; i++) {
             TokenLimit calldata tl = p.tokenLimits[i];
@@ -352,14 +358,6 @@ contract OilskinAccount is IOilskinAccount, IERC721Receiver, IERC1155Receiver {
             }
             g.tokens.push(tl.token);
             g.tokenLimit[tl.token] = tl.amountPerPeriod;
-            if (carry) {
-                for (uint256 j = 0; j < n; j++) {
-                    if (oldTokens[j] == tl.token) {
-                        g.tokenSpent[tl.token] = oldSpent[j];
-                        break;
-                    }
-                }
-            }
         }
         emit Granted(keeper, p.target, p.selector, p.expiry, p.period, p.maxValuePerPeriod);
     }
@@ -417,7 +415,7 @@ contract OilskinAccount is IOilskinAccount, IERC721Receiver, IERC1155Receiver {
         returns (uint256 amountPerPeriod, uint256 spent)
     {
         GrantData storage g = _grants[_grantKey(keeper, target, selector)];
-        return (g.tokenLimit[token], _rolled(g) ? 0 : g.tokenSpent[token]);
+        return (g.tokenLimit[token], _rolled(g) ? 0 : _tokenSpent(g, token));
     }
 
     /// @inheritdoc IOilskinAccount
@@ -535,9 +533,11 @@ contract OilskinAccount is IOilskinAccount, IERC721Receiver, IERC1155Receiver {
         if (token != address(0)) {
             uint256 limit = g.tokenLimit[token];
             if (limit == 0) revert TokenNotBudgeted(token);
-            uint256 remaining = limit - _min(g.tokenSpent[token], limit);
+            uint256 spent = _tokenSpent(g, token);
+            uint256 remaining = limit - _min(spent, limit);
             if (amount > remaining) revert TokenBudgetExceeded(token, amount, remaining);
-            g.tokenSpent[token] += amount;
+            g.tokenSpent[token] = spent + amount;
+            g.tokenSpentGen[token] = g.spendGen;
             emit KeeperSpend(keeper, token, amount);
         }
     }
@@ -584,10 +584,13 @@ contract OilskinAccount is IOilskinAccount, IERC721Receiver, IERC1155Receiver {
         if (block.timestamp >= uint256(g.periodStart) + uint256(g.period)) {
             g.periodStart = uint40(block.timestamp);
             g.valueSpent = 0;
-            for (uint256 i = 0; i < g.tokens.length; i++) {
-                g.tokenSpent[g.tokens[i]] = 0;
-            }
+            g.spendGen++; // voids every token spend at once, listed or not
         }
+    }
+
+    /// @dev A token's spend in the live generation; a stamp from an older generation reads as zero.
+    function _tokenSpent(GrantData storage g, address token) internal view returns (uint256) {
+        return g.tokenSpentGen[token] == g.spendGen ? g.tokenSpent[token] : 0;
     }
 
     function _rolled(GrantData storage g) internal view returns (bool) {
