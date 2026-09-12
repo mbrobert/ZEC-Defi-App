@@ -1,0 +1,4151 @@
+{
+  "address": "Gw2UE3MixYgA8c7nLZC9UF2z3z5dWfzrFW7ESmi5Scog",
+  "metadata": {
+    "name": "oilskin",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Oilskin Solana module — program-owned Kamino obligation with a scoped, revocable keeper grant (scaffold; no handlers until docs/SOLANA-ARCHITECTURE.md is approved)"
+  },
+  "instructions": [
+    {
+      "name": "borrow",
+      "docs": [
+        "Borrow USDC into the Account; refused unless HF ≥ the entry floor and LTV ≤ the offer afterwards."
+      ],
+      "discriminator": [
+        228,
+        253,
+        131,
+        202,
+        207,
+        116,
+        89,
+        18
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true,
+          "relations": [
+            "account"
+          ]
+        },
+        {
+          "name": "account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "obligation",
+          "writable": true
+        },
+        {
+          "name": "account_usdc",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "account"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  198,
+                  250,
+                  122,
+                  243,
+                  190,
+                  219,
+                  173,
+                  58,
+                  61,
+                  101,
+                  243,
+                  106,
+                  171,
+                  201,
+                  116,
+                  49,
+                  177,
+                  187,
+                  228,
+                  194,
+                  210,
+                  246,
+                  224,
+                  228,
+                  124,
+                  166,
+                  2,
+                  3,
+                  69,
+                  47,
+                  93,
+                  97
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "kamino",
+          "accounts": [
+            {
+              "name": "klend_program",
+              "address": "KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD"
+            },
+            {
+              "name": "lending_market",
+              "address": "GBJ3bzUiMfwC9ugaF3MM68EXMDyTUb5UryRRAcVjEowd"
+            },
+            {
+              "name": "lending_market_authority",
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      108,
+                      109,
+                      97
+                    ]
+                  },
+                  {
+                    "kind": "const",
+                    "value": [
+                      225,
+                      130,
+                      98,
+                      123,
+                      149,
+                      66,
+                      66,
+                      65,
+                      166,
+                      16,
+                      97,
+                      10,
+                      138,
+                      185,
+                      214,
+                      123,
+                      112,
+                      115,
+                      92,
+                      250,
+                      179,
+                      10,
+                      6,
+                      100,
+                      173,
+                      162,
+                      29,
+                      89,
+                      31,
+                      20,
+                      216,
+                      64
+                    ]
+                  }
+                ],
+                "program": {
+                  "kind": "const",
+                  "value": [
+                    4,
+                    178,
+                    172,
+                    177,
+                    18,
+                    88,
+                    204,
+                    227,
+                    104,
+                    44,
+                    65,
+                    139,
+                    168,
+                    114,
+                    255,
+                    61,
+                    249,
+                    17,
+                    2,
+                    113,
+                    47,
+                    21,
+                    175,
+                    18,
+                    182,
+                    190,
+                    105,
+                    179,
+                    67,
+                    91,
+                    0,
+                    8
+                  ]
+                }
+              }
+            },
+            {
+              "name": "zec_reserve",
+              "writable": true,
+              "address": "6e8XcrdencrXBjXtTqYkRS63nS36petvzkV3gBf2ezbH"
+            },
+            {
+              "name": "usdc_reserve",
+              "writable": true,
+              "address": "EW9vT7g2VH2aTFfcbaXRUCbF7jEfaLwMiJpckwDZwUZd"
+            },
+            {
+              "name": "zec_mint",
+              "address": "A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS"
+            },
+            {
+              "name": "usdc_mint",
+              "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+            },
+            {
+              "name": "zec_liquidity_supply",
+              "writable": true,
+              "address": "7muPXroaziH8RTD62Ea4gQ3NuAPZswf8Gj7iuPZ6Ae6Y"
+            },
+            {
+              "name": "zec_collateral_mint",
+              "writable": true,
+              "address": "FQc32zaNbQnUZmQxd3Fqhg3enqfozyX6K74xcCCHw4NU"
+            },
+            {
+              "name": "zec_collateral_supply",
+              "writable": true,
+              "address": "8yr67socgzkzXYPMPC8KNCh8eLDPjGvqucLGXmCGdwq4"
+            },
+            {
+              "name": "usdc_liquidity_supply",
+              "writable": true,
+              "address": "C7ipQ9XPEncrVhCLXfHE4aCXPSk1HpPQUr127RwgVG9h"
+            },
+            {
+              "name": "usdc_fee_vault",
+              "writable": true,
+              "address": "HwgFUiBaEHv2QnrpgVxPmWuUC5nqt7iGSna99ZQL8oTB"
+            },
+            {
+              "name": "scope_prices",
+              "address": "3t4JZcueEzTbVP6kLxXrL3VpWx45jDer4eqysweBchNH"
+            },
+            {
+              "name": "farms_program",
+              "address": "FarmsPZpWu9i7Kky8tPN37rs2TpmMrAZrC7S7vJa91Hr"
+            },
+            {
+              "name": "instructions_sysvar",
+              "address": "Sysvar1nstructions1111111111111111111111111"
+            },
+            {
+              "name": "token_program",
+              "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+            }
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "amount_usdc",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "close_position",
+      "docs": [
+        "Repay everything then withdraw everything."
+      ],
+      "discriminator": [
+        123,
+        134,
+        81,
+        0,
+        49,
+        68,
+        98,
+        98
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true,
+          "relations": [
+            "account"
+          ]
+        },
+        {
+          "name": "account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "obligation",
+          "writable": true
+        },
+        {
+          "name": "account_zec",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "account"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  135,
+                  105,
+                  211,
+                  175,
+                  89,
+                  131,
+                  223,
+                  68,
+                  108,
+                  78,
+                  191,
+                  37,
+                  132,
+                  0,
+                  175,
+                  218,
+                  18,
+                  93,
+                  113,
+                  193,
+                  63,
+                  18,
+                  198,
+                  20,
+                  124,
+                  251,
+                  202,
+                  49,
+                  60,
+                  158,
+                  242,
+                  19
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "account_usdc",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "account"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  198,
+                  250,
+                  122,
+                  243,
+                  190,
+                  219,
+                  173,
+                  58,
+                  61,
+                  101,
+                  243,
+                  106,
+                  171,
+                  201,
+                  116,
+                  49,
+                  177,
+                  187,
+                  228,
+                  194,
+                  210,
+                  246,
+                  224,
+                  228,
+                  124,
+                  166,
+                  2,
+                  3,
+                  69,
+                  47,
+                  93,
+                  97
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "kamino",
+          "accounts": [
+            {
+              "name": "klend_program",
+              "address": "KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD"
+            },
+            {
+              "name": "lending_market",
+              "address": "GBJ3bzUiMfwC9ugaF3MM68EXMDyTUb5UryRRAcVjEowd"
+            },
+            {
+              "name": "lending_market_authority",
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      108,
+                      109,
+                      97
+                    ]
+                  },
+                  {
+                    "kind": "const",
+                    "value": [
+                      225,
+                      130,
+                      98,
+                      123,
+                      149,
+                      66,
+                      66,
+                      65,
+                      166,
+                      16,
+                      97,
+                      10,
+                      138,
+                      185,
+                      214,
+                      123,
+                      112,
+                      115,
+                      92,
+                      250,
+                      179,
+                      10,
+                      6,
+                      100,
+                      173,
+                      162,
+                      29,
+                      89,
+                      31,
+                      20,
+                      216,
+                      64
+                    ]
+                  }
+                ],
+                "program": {
+                  "kind": "const",
+                  "value": [
+                    4,
+                    178,
+                    172,
+                    177,
+                    18,
+                    88,
+                    204,
+                    227,
+                    104,
+                    44,
+                    65,
+                    139,
+                    168,
+                    114,
+                    255,
+                    61,
+                    249,
+                    17,
+                    2,
+                    113,
+                    47,
+                    21,
+                    175,
+                    18,
+                    182,
+                    190,
+                    105,
+                    179,
+                    67,
+                    91,
+                    0,
+                    8
+                  ]
+                }
+              }
+            },
+            {
+              "name": "zec_reserve",
+              "writable": true,
+              "address": "6e8XcrdencrXBjXtTqYkRS63nS36petvzkV3gBf2ezbH"
+            },
+            {
+              "name": "usdc_reserve",
+              "writable": true,
+              "address": "EW9vT7g2VH2aTFfcbaXRUCbF7jEfaLwMiJpckwDZwUZd"
+            },
+            {
+              "name": "zec_mint",
+              "address": "A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS"
+            },
+            {
+              "name": "usdc_mint",
+              "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+            },
+            {
+              "name": "zec_liquidity_supply",
+              "writable": true,
+              "address": "7muPXroaziH8RTD62Ea4gQ3NuAPZswf8Gj7iuPZ6Ae6Y"
+            },
+            {
+              "name": "zec_collateral_mint",
+              "writable": true,
+              "address": "FQc32zaNbQnUZmQxd3Fqhg3enqfozyX6K74xcCCHw4NU"
+            },
+            {
+              "name": "zec_collateral_supply",
+              "writable": true,
+              "address": "8yr67socgzkzXYPMPC8KNCh8eLDPjGvqucLGXmCGdwq4"
+            },
+            {
+              "name": "usdc_liquidity_supply",
+              "writable": true,
+              "address": "C7ipQ9XPEncrVhCLXfHE4aCXPSk1HpPQUr127RwgVG9h"
+            },
+            {
+              "name": "usdc_fee_vault",
+              "writable": true,
+              "address": "HwgFUiBaEHv2QnrpgVxPmWuUC5nqt7iGSna99ZQL8oTB"
+            },
+            {
+              "name": "scope_prices",
+              "address": "3t4JZcueEzTbVP6kLxXrL3VpWx45jDer4eqysweBchNH"
+            },
+            {
+              "name": "farms_program",
+              "address": "FarmsPZpWu9i7Kky8tPN37rs2TpmMrAZrC7S7vJa91Hr"
+            },
+            {
+              "name": "instructions_sysvar",
+              "address": "Sysvar1nstructions1111111111111111111111111"
+            },
+            {
+              "name": "token_program",
+              "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+            }
+          ]
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "deposit",
+      "docs": [
+        "Wallet ZEC → Account → Kamino collateral."
+      ],
+      "discriminator": [
+        242,
+        35,
+        198,
+        137,
+        82,
+        225,
+        242,
+        182
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "account"
+          ]
+        },
+        {
+          "name": "account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "obligation",
+          "docs": [
+            "this instruction re-creates it (same PDA) before depositing."
+          ],
+          "writable": true
+        },
+        {
+          "name": "user_metadata",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  114,
+                  95,
+                  109,
+                  101,
+                  116,
+                  97
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                4,
+                178,
+                172,
+                177,
+                18,
+                88,
+                204,
+                227,
+                104,
+                44,
+                65,
+                139,
+                168,
+                114,
+                255,
+                61,
+                249,
+                17,
+                2,
+                113,
+                47,
+                21,
+                175,
+                18,
+                182,
+                190,
+                105,
+                179,
+                67,
+                91,
+                0,
+                8
+              ]
+            }
+          }
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "owner_zec",
+          "writable": true
+        },
+        {
+          "name": "account_zec",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "account"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  135,
+                  105,
+                  211,
+                  175,
+                  89,
+                  131,
+                  223,
+                  68,
+                  108,
+                  78,
+                  191,
+                  37,
+                  132,
+                  0,
+                  175,
+                  218,
+                  18,
+                  93,
+                  113,
+                  193,
+                  63,
+                  18,
+                  198,
+                  20,
+                  124,
+                  251,
+                  202,
+                  49,
+                  60,
+                  158,
+                  242,
+                  19
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "kamino",
+          "accounts": [
+            {
+              "name": "klend_program",
+              "address": "KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD"
+            },
+            {
+              "name": "lending_market",
+              "address": "GBJ3bzUiMfwC9ugaF3MM68EXMDyTUb5UryRRAcVjEowd"
+            },
+            {
+              "name": "lending_market_authority",
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      108,
+                      109,
+                      97
+                    ]
+                  },
+                  {
+                    "kind": "const",
+                    "value": [
+                      225,
+                      130,
+                      98,
+                      123,
+                      149,
+                      66,
+                      66,
+                      65,
+                      166,
+                      16,
+                      97,
+                      10,
+                      138,
+                      185,
+                      214,
+                      123,
+                      112,
+                      115,
+                      92,
+                      250,
+                      179,
+                      10,
+                      6,
+                      100,
+                      173,
+                      162,
+                      29,
+                      89,
+                      31,
+                      20,
+                      216,
+                      64
+                    ]
+                  }
+                ],
+                "program": {
+                  "kind": "const",
+                  "value": [
+                    4,
+                    178,
+                    172,
+                    177,
+                    18,
+                    88,
+                    204,
+                    227,
+                    104,
+                    44,
+                    65,
+                    139,
+                    168,
+                    114,
+                    255,
+                    61,
+                    249,
+                    17,
+                    2,
+                    113,
+                    47,
+                    21,
+                    175,
+                    18,
+                    182,
+                    190,
+                    105,
+                    179,
+                    67,
+                    91,
+                    0,
+                    8
+                  ]
+                }
+              }
+            },
+            {
+              "name": "zec_reserve",
+              "writable": true,
+              "address": "6e8XcrdencrXBjXtTqYkRS63nS36petvzkV3gBf2ezbH"
+            },
+            {
+              "name": "usdc_reserve",
+              "writable": true,
+              "address": "EW9vT7g2VH2aTFfcbaXRUCbF7jEfaLwMiJpckwDZwUZd"
+            },
+            {
+              "name": "zec_mint",
+              "address": "A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS"
+            },
+            {
+              "name": "usdc_mint",
+              "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+            },
+            {
+              "name": "zec_liquidity_supply",
+              "writable": true,
+              "address": "7muPXroaziH8RTD62Ea4gQ3NuAPZswf8Gj7iuPZ6Ae6Y"
+            },
+            {
+              "name": "zec_collateral_mint",
+              "writable": true,
+              "address": "FQc32zaNbQnUZmQxd3Fqhg3enqfozyX6K74xcCCHw4NU"
+            },
+            {
+              "name": "zec_collateral_supply",
+              "writable": true,
+              "address": "8yr67socgzkzXYPMPC8KNCh8eLDPjGvqucLGXmCGdwq4"
+            },
+            {
+              "name": "usdc_liquidity_supply",
+              "writable": true,
+              "address": "C7ipQ9XPEncrVhCLXfHE4aCXPSk1HpPQUr127RwgVG9h"
+            },
+            {
+              "name": "usdc_fee_vault",
+              "writable": true,
+              "address": "HwgFUiBaEHv2QnrpgVxPmWuUC5nqt7iGSna99ZQL8oTB"
+            },
+            {
+              "name": "scope_prices",
+              "address": "3t4JZcueEzTbVP6kLxXrL3VpWx45jDer4eqysweBchNH"
+            },
+            {
+              "name": "farms_program",
+              "address": "FarmsPZpWu9i7Kky8tPN37rs2TpmMrAZrC7S7vJa91Hr"
+            },
+            {
+              "name": "instructions_sysvar",
+              "address": "Sysvar1nstructions1111111111111111111111111"
+            },
+            {
+              "name": "token_program",
+              "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+            }
+          ]
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount_zec",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "grant",
+      "docs": [
+        "Create or overwrite a keeper's grant."
+      ],
+      "discriminator": [
+        145,
+        189,
+        68,
+        153,
+        161,
+        231,
+        76,
+        107
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "account"
+          ]
+        },
+        {
+          "name": "account",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "grant",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  114,
+                  97,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account"
+              },
+              {
+                "kind": "arg",
+                "path": "keeper"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "keeper",
+          "type": "pubkey"
+        },
+        {
+          "name": "params",
+          "type": {
+            "defined": {
+              "name": "GrantParams"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "init_account",
+      "docs": [
+        "Create the Account PDA, its ZEC and USDC token accounts, and the Kamino user metadata + obligation it owns."
+      ],
+      "discriminator": [
+        169,
+        188,
+        158,
+        199,
+        9,
+        151,
+        101,
+        125
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "zec_mint",
+          "address": "A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS"
+        },
+        {
+          "name": "usdc_mint",
+          "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+        },
+        {
+          "name": "account_zec",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "account"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "zec_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "account_usdc",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "account"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "usdc_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "user_metadata",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  114,
+                  95,
+                  109,
+                  101,
+                  116,
+                  97
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                4,
+                178,
+                172,
+                177,
+                18,
+                88,
+                204,
+                227,
+                104,
+                44,
+                65,
+                139,
+                168,
+                114,
+                255,
+                61,
+                249,
+                17,
+                2,
+                113,
+                47,
+                21,
+                175,
+                18,
+                182,
+                190,
+                105,
+                179,
+                67,
+                91,
+                0,
+                8
+              ]
+            }
+          }
+        },
+        {
+          "name": "obligation",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  0
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  0
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  225,
+                  130,
+                  98,
+                  123,
+                  149,
+                  66,
+                  66,
+                  65,
+                  166,
+                  16,
+                  97,
+                  10,
+                  138,
+                  185,
+                  214,
+                  123,
+                  112,
+                  115,
+                  92,
+                  250,
+                  179,
+                  10,
+                  6,
+                  100,
+                  173,
+                  162,
+                  29,
+                  89,
+                  31,
+                  20,
+                  216,
+                  64
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                4,
+                178,
+                172,
+                177,
+                18,
+                88,
+                204,
+                227,
+                104,
+                44,
+                65,
+                139,
+                168,
+                114,
+                255,
+                61,
+                249,
+                17,
+                2,
+                113,
+                47,
+                21,
+                175,
+                18,
+                182,
+                190,
+                105,
+                179,
+                67,
+                91,
+                0,
+                8
+              ]
+            }
+          }
+        },
+        {
+          "name": "lending_market",
+          "address": "GBJ3bzUiMfwC9ugaF3MM68EXMDyTUb5UryRRAcVjEowd"
+        },
+        {
+          "name": "klend_program",
+          "address": "KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD"
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "keeper_protect",
+      "docs": [
+        "The keeper's one instruction: inside a live grant, at a crossed rung, repay from the Account's USDC and",
+        "release collateral to the keeper only against a Scope-priced payment already made."
+      ],
+      "discriminator": [
+        247,
+        39,
+        31,
+        102,
+        241,
+        154,
+        82,
+        177
+      ],
+      "accounts": [
+        {
+          "name": "keeper",
+          "signer": true
+        },
+        {
+          "name": "account",
+          "docs": [
+            "Writable because klend's V2 deposit/withdraw list the obligation owner as writable."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.owner",
+                "account": "UserAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "grant",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  114,
+                  97,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account"
+              },
+              {
+                "kind": "account",
+                "path": "keeper"
+              }
+            ]
+          }
+        },
+        {
+          "name": "obligation",
+          "writable": true
+        },
+        {
+          "name": "account_zec",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "account"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  135,
+                  105,
+                  211,
+                  175,
+                  89,
+                  131,
+                  223,
+                  68,
+                  108,
+                  78,
+                  191,
+                  37,
+                  132,
+                  0,
+                  175,
+                  218,
+                  18,
+                  93,
+                  113,
+                  193,
+                  63,
+                  18,
+                  198,
+                  20,
+                  124,
+                  251,
+                  202,
+                  49,
+                  60,
+                  158,
+                  242,
+                  19
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "account_usdc",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "account"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  198,
+                  250,
+                  122,
+                  243,
+                  190,
+                  219,
+                  173,
+                  58,
+                  61,
+                  101,
+                  243,
+                  106,
+                  171,
+                  201,
+                  116,
+                  49,
+                  177,
+                  187,
+                  228,
+                  194,
+                  210,
+                  246,
+                  224,
+                  228,
+                  124,
+                  166,
+                  2,
+                  3,
+                  69,
+                  47,
+                  93,
+                  97
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "kamino",
+          "accounts": [
+            {
+              "name": "klend_program",
+              "address": "KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD"
+            },
+            {
+              "name": "lending_market",
+              "address": "GBJ3bzUiMfwC9ugaF3MM68EXMDyTUb5UryRRAcVjEowd"
+            },
+            {
+              "name": "lending_market_authority",
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      108,
+                      109,
+                      97
+                    ]
+                  },
+                  {
+                    "kind": "const",
+                    "value": [
+                      225,
+                      130,
+                      98,
+                      123,
+                      149,
+                      66,
+                      66,
+                      65,
+                      166,
+                      16,
+                      97,
+                      10,
+                      138,
+                      185,
+                      214,
+                      123,
+                      112,
+                      115,
+                      92,
+                      250,
+                      179,
+                      10,
+                      6,
+                      100,
+                      173,
+                      162,
+                      29,
+                      89,
+                      31,
+                      20,
+                      216,
+                      64
+                    ]
+                  }
+                ],
+                "program": {
+                  "kind": "const",
+                  "value": [
+                    4,
+                    178,
+                    172,
+                    177,
+                    18,
+                    88,
+                    204,
+                    227,
+                    104,
+                    44,
+                    65,
+                    139,
+                    168,
+                    114,
+                    255,
+                    61,
+                    249,
+                    17,
+                    2,
+                    113,
+                    47,
+                    21,
+                    175,
+                    18,
+                    182,
+                    190,
+                    105,
+                    179,
+                    67,
+                    91,
+                    0,
+                    8
+                  ]
+                }
+              }
+            },
+            {
+              "name": "zec_reserve",
+              "writable": true,
+              "address": "6e8XcrdencrXBjXtTqYkRS63nS36petvzkV3gBf2ezbH"
+            },
+            {
+              "name": "usdc_reserve",
+              "writable": true,
+              "address": "EW9vT7g2VH2aTFfcbaXRUCbF7jEfaLwMiJpckwDZwUZd"
+            },
+            {
+              "name": "zec_mint",
+              "address": "A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS"
+            },
+            {
+              "name": "usdc_mint",
+              "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+            },
+            {
+              "name": "zec_liquidity_supply",
+              "writable": true,
+              "address": "7muPXroaziH8RTD62Ea4gQ3NuAPZswf8Gj7iuPZ6Ae6Y"
+            },
+            {
+              "name": "zec_collateral_mint",
+              "writable": true,
+              "address": "FQc32zaNbQnUZmQxd3Fqhg3enqfozyX6K74xcCCHw4NU"
+            },
+            {
+              "name": "zec_collateral_supply",
+              "writable": true,
+              "address": "8yr67socgzkzXYPMPC8KNCh8eLDPjGvqucLGXmCGdwq4"
+            },
+            {
+              "name": "usdc_liquidity_supply",
+              "writable": true,
+              "address": "C7ipQ9XPEncrVhCLXfHE4aCXPSk1HpPQUr127RwgVG9h"
+            },
+            {
+              "name": "usdc_fee_vault",
+              "writable": true,
+              "address": "HwgFUiBaEHv2QnrpgVxPmWuUC5nqt7iGSna99ZQL8oTB"
+            },
+            {
+              "name": "scope_prices",
+              "address": "3t4JZcueEzTbVP6kLxXrL3VpWx45jDer4eqysweBchNH"
+            },
+            {
+              "name": "farms_program",
+              "address": "FarmsPZpWu9i7Kky8tPN37rs2TpmMrAZrC7S7vJa91Hr"
+            },
+            {
+              "name": "instructions_sysvar",
+              "address": "Sysvar1nstructions1111111111111111111111111"
+            },
+            {
+              "name": "token_program",
+              "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+            }
+          ]
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "rung_id",
+          "type": "u8"
+        },
+        {
+          "name": "repay_usdc",
+          "type": "u64"
+        },
+        {
+          "name": "sell_zec",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "repay",
+      "docs": [
+        "Repay USDC from the Account (`u64::MAX` = all)."
+      ],
+      "discriminator": [
+        234,
+        103,
+        67,
+        82,
+        208,
+        234,
+        219,
+        166
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true,
+          "relations": [
+            "account"
+          ]
+        },
+        {
+          "name": "account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "obligation",
+          "writable": true
+        },
+        {
+          "name": "account_usdc",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "account"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  198,
+                  250,
+                  122,
+                  243,
+                  190,
+                  219,
+                  173,
+                  58,
+                  61,
+                  101,
+                  243,
+                  106,
+                  171,
+                  201,
+                  116,
+                  49,
+                  177,
+                  187,
+                  228,
+                  194,
+                  210,
+                  246,
+                  224,
+                  228,
+                  124,
+                  166,
+                  2,
+                  3,
+                  69,
+                  47,
+                  93,
+                  97
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "kamino",
+          "accounts": [
+            {
+              "name": "klend_program",
+              "address": "KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD"
+            },
+            {
+              "name": "lending_market",
+              "address": "GBJ3bzUiMfwC9ugaF3MM68EXMDyTUb5UryRRAcVjEowd"
+            },
+            {
+              "name": "lending_market_authority",
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      108,
+                      109,
+                      97
+                    ]
+                  },
+                  {
+                    "kind": "const",
+                    "value": [
+                      225,
+                      130,
+                      98,
+                      123,
+                      149,
+                      66,
+                      66,
+                      65,
+                      166,
+                      16,
+                      97,
+                      10,
+                      138,
+                      185,
+                      214,
+                      123,
+                      112,
+                      115,
+                      92,
+                      250,
+                      179,
+                      10,
+                      6,
+                      100,
+                      173,
+                      162,
+                      29,
+                      89,
+                      31,
+                      20,
+                      216,
+                      64
+                    ]
+                  }
+                ],
+                "program": {
+                  "kind": "const",
+                  "value": [
+                    4,
+                    178,
+                    172,
+                    177,
+                    18,
+                    88,
+                    204,
+                    227,
+                    104,
+                    44,
+                    65,
+                    139,
+                    168,
+                    114,
+                    255,
+                    61,
+                    249,
+                    17,
+                    2,
+                    113,
+                    47,
+                    21,
+                    175,
+                    18,
+                    182,
+                    190,
+                    105,
+                    179,
+                    67,
+                    91,
+                    0,
+                    8
+                  ]
+                }
+              }
+            },
+            {
+              "name": "zec_reserve",
+              "writable": true,
+              "address": "6e8XcrdencrXBjXtTqYkRS63nS36petvzkV3gBf2ezbH"
+            },
+            {
+              "name": "usdc_reserve",
+              "writable": true,
+              "address": "EW9vT7g2VH2aTFfcbaXRUCbF7jEfaLwMiJpckwDZwUZd"
+            },
+            {
+              "name": "zec_mint",
+              "address": "A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS"
+            },
+            {
+              "name": "usdc_mint",
+              "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+            },
+            {
+              "name": "zec_liquidity_supply",
+              "writable": true,
+              "address": "7muPXroaziH8RTD62Ea4gQ3NuAPZswf8Gj7iuPZ6Ae6Y"
+            },
+            {
+              "name": "zec_collateral_mint",
+              "writable": true,
+              "address": "FQc32zaNbQnUZmQxd3Fqhg3enqfozyX6K74xcCCHw4NU"
+            },
+            {
+              "name": "zec_collateral_supply",
+              "writable": true,
+              "address": "8yr67socgzkzXYPMPC8KNCh8eLDPjGvqucLGXmCGdwq4"
+            },
+            {
+              "name": "usdc_liquidity_supply",
+              "writable": true,
+              "address": "C7ipQ9XPEncrVhCLXfHE4aCXPSk1HpPQUr127RwgVG9h"
+            },
+            {
+              "name": "usdc_fee_vault",
+              "writable": true,
+              "address": "HwgFUiBaEHv2QnrpgVxPmWuUC5nqt7iGSna99ZQL8oTB"
+            },
+            {
+              "name": "scope_prices",
+              "address": "3t4JZcueEzTbVP6kLxXrL3VpWx45jDer4eqysweBchNH"
+            },
+            {
+              "name": "farms_program",
+              "address": "FarmsPZpWu9i7Kky8tPN37rs2TpmMrAZrC7S7vJa91Hr"
+            },
+            {
+              "name": "instructions_sysvar",
+              "address": "Sysvar1nstructions1111111111111111111111111"
+            },
+            {
+              "name": "token_program",
+              "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+            }
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "amount_usdc",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "revoke",
+      "docs": [
+        "Kill one keeper's grant."
+      ],
+      "discriminator": [
+        170,
+        23,
+        31,
+        34,
+        133,
+        173,
+        93,
+        242
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true,
+          "relations": [
+            "account"
+          ]
+        },
+        {
+          "name": "account",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "grant",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  114,
+                  97,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account"
+              },
+              {
+                "kind": "arg",
+                "path": "keeper"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "keeper",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "revoke_all",
+      "docs": [
+        "Kill every grant at once (epoch bump)."
+      ],
+      "discriminator": [
+        147,
+        196,
+        234,
+        31,
+        86,
+        199,
+        8,
+        234
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true,
+          "relations": [
+            "account"
+          ]
+        },
+        {
+          "name": "account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "transfer_out",
+      "docs": [
+        "Any token from the Account's ATA to the wallet. Owner-only, no other gate."
+      ],
+      "discriminator": [
+        202,
+        137,
+        44,
+        229,
+        158,
+        255,
+        205,
+        174
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "account"
+          ]
+        },
+        {
+          "name": "account",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "account_token",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "account"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "owner_token",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "owner"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "withdraw",
+      "docs": [
+        "Withdraw collateral (cToken units; `u64::MAX` = all) to the Account; refused below the exit floor unless the debt is dust."
+      ],
+      "discriminator": [
+        183,
+        18,
+        70,
+        156,
+        148,
+        109,
+        161,
+        34
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true,
+          "relations": [
+            "account"
+          ]
+        },
+        {
+          "name": "account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "obligation",
+          "writable": true
+        },
+        {
+          "name": "account_zec",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "account"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  135,
+                  105,
+                  211,
+                  175,
+                  89,
+                  131,
+                  223,
+                  68,
+                  108,
+                  78,
+                  191,
+                  37,
+                  132,
+                  0,
+                  175,
+                  218,
+                  18,
+                  93,
+                  113,
+                  193,
+                  63,
+                  18,
+                  198,
+                  20,
+                  124,
+                  251,
+                  202,
+                  49,
+                  60,
+                  158,
+                  242,
+                  19
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "kamino",
+          "accounts": [
+            {
+              "name": "klend_program",
+              "address": "KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD"
+            },
+            {
+              "name": "lending_market",
+              "address": "GBJ3bzUiMfwC9ugaF3MM68EXMDyTUb5UryRRAcVjEowd"
+            },
+            {
+              "name": "lending_market_authority",
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      108,
+                      109,
+                      97
+                    ]
+                  },
+                  {
+                    "kind": "const",
+                    "value": [
+                      225,
+                      130,
+                      98,
+                      123,
+                      149,
+                      66,
+                      66,
+                      65,
+                      166,
+                      16,
+                      97,
+                      10,
+                      138,
+                      185,
+                      214,
+                      123,
+                      112,
+                      115,
+                      92,
+                      250,
+                      179,
+                      10,
+                      6,
+                      100,
+                      173,
+                      162,
+                      29,
+                      89,
+                      31,
+                      20,
+                      216,
+                      64
+                    ]
+                  }
+                ],
+                "program": {
+                  "kind": "const",
+                  "value": [
+                    4,
+                    178,
+                    172,
+                    177,
+                    18,
+                    88,
+                    204,
+                    227,
+                    104,
+                    44,
+                    65,
+                    139,
+                    168,
+                    114,
+                    255,
+                    61,
+                    249,
+                    17,
+                    2,
+                    113,
+                    47,
+                    21,
+                    175,
+                    18,
+                    182,
+                    190,
+                    105,
+                    179,
+                    67,
+                    91,
+                    0,
+                    8
+                  ]
+                }
+              }
+            },
+            {
+              "name": "zec_reserve",
+              "writable": true,
+              "address": "6e8XcrdencrXBjXtTqYkRS63nS36petvzkV3gBf2ezbH"
+            },
+            {
+              "name": "usdc_reserve",
+              "writable": true,
+              "address": "EW9vT7g2VH2aTFfcbaXRUCbF7jEfaLwMiJpckwDZwUZd"
+            },
+            {
+              "name": "zec_mint",
+              "address": "A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS"
+            },
+            {
+              "name": "usdc_mint",
+              "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+            },
+            {
+              "name": "zec_liquidity_supply",
+              "writable": true,
+              "address": "7muPXroaziH8RTD62Ea4gQ3NuAPZswf8Gj7iuPZ6Ae6Y"
+            },
+            {
+              "name": "zec_collateral_mint",
+              "writable": true,
+              "address": "FQc32zaNbQnUZmQxd3Fqhg3enqfozyX6K74xcCCHw4NU"
+            },
+            {
+              "name": "zec_collateral_supply",
+              "writable": true,
+              "address": "8yr67socgzkzXYPMPC8KNCh8eLDPjGvqucLGXmCGdwq4"
+            },
+            {
+              "name": "usdc_liquidity_supply",
+              "writable": true,
+              "address": "C7ipQ9XPEncrVhCLXfHE4aCXPSk1HpPQUr127RwgVG9h"
+            },
+            {
+              "name": "usdc_fee_vault",
+              "writable": true,
+              "address": "HwgFUiBaEHv2QnrpgVxPmWuUC5nqt7iGSna99ZQL8oTB"
+            },
+            {
+              "name": "scope_prices",
+              "address": "3t4JZcueEzTbVP6kLxXrL3VpWx45jDer4eqysweBchNH"
+            },
+            {
+              "name": "farms_program",
+              "address": "FarmsPZpWu9i7Kky8tPN37rs2TpmMrAZrC7S7vJa91Hr"
+            },
+            {
+              "name": "instructions_sysvar",
+              "address": "Sysvar1nstructions1111111111111111111111111"
+            },
+            {
+              "name": "token_program",
+              "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+            }
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "collateral_amount",
+          "type": "u64"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Grant",
+      "discriminator": [
+        161,
+        166,
+        11,
+        205,
+        204,
+        135,
+        205,
+        54
+      ]
+    },
+    {
+      "name": "UserAccount",
+      "discriminator": [
+        211,
+        33,
+        136,
+        16,
+        186,
+        110,
+        242,
+        127
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "AccountInitialized",
+      "discriminator": [
+        82,
+        63,
+        202,
+        253,
+        82,
+        125,
+        73,
+        11
+      ]
+    },
+    {
+      "name": "AllGrantsRevoked",
+      "discriminator": [
+        174,
+        40,
+        170,
+        2,
+        56,
+        42,
+        243,
+        37
+      ]
+    },
+    {
+      "name": "Borrowed",
+      "discriminator": [
+        225,
+        182,
+        241,
+        78,
+        34,
+        145,
+        253,
+        230
+      ]
+    },
+    {
+      "name": "Deposited",
+      "discriminator": [
+        111,
+        141,
+        26,
+        45,
+        161,
+        35,
+        100,
+        57
+      ]
+    },
+    {
+      "name": "Granted",
+      "discriminator": [
+        181,
+        171,
+        83,
+        104,
+        129,
+        159,
+        110,
+        140
+      ]
+    },
+    {
+      "name": "KeeperProtected",
+      "discriminator": [
+        246,
+        14,
+        11,
+        77,
+        166,
+        49,
+        37,
+        255
+      ]
+    },
+    {
+      "name": "ObligationReleased",
+      "discriminator": [
+        131,
+        239,
+        36,
+        98,
+        252,
+        103,
+        130,
+        45
+      ]
+    },
+    {
+      "name": "PositionClosed",
+      "discriminator": [
+        157,
+        163,
+        227,
+        228,
+        13,
+        97,
+        138,
+        121
+      ]
+    },
+    {
+      "name": "Repaid",
+      "discriminator": [
+        38,
+        248,
+        231,
+        7,
+        150,
+        164,
+        172,
+        23
+      ]
+    },
+    {
+      "name": "Revoked",
+      "discriminator": [
+        113,
+        216,
+        148,
+        99,
+        124,
+        184,
+        0,
+        65
+      ]
+    },
+    {
+      "name": "TransferredOut",
+      "discriminator": [
+        73,
+        122,
+        64,
+        180,
+        25,
+        210,
+        47,
+        57
+      ]
+    },
+    {
+      "name": "Withdrawn",
+      "discriminator": [
+        20,
+        89,
+        223,
+        198,
+        194,
+        124,
+        219,
+        13
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "NotOwner",
+      "msg": "Only the account owner may do this"
+    },
+    {
+      "code": 6001,
+      "name": "OwnerIsPda",
+      "msg": "The wallet is a program-derived address; an account owner must be a signing key"
+    },
+    {
+      "code": 6002,
+      "name": "EntryHfTooLow",
+      "msg": "Health factor after this action is below the entry floor"
+    },
+    {
+      "code": 6003,
+      "name": "LtvAboveOffer",
+      "msg": "Loan-to-value after this borrow is above what Oilskin offers for this collateral"
+    },
+    {
+      "code": 6004,
+      "name": "ExitHfTooLow",
+      "msg": "Health factor after this withdraw is below the exit floor and the debt is not dust"
+    },
+    {
+      "code": 6005,
+      "name": "ObligationStale",
+      "msg": "The obligation was not refreshed in this slot"
+    },
+    {
+      "code": 6006,
+      "name": "PriceNotChecked",
+      "msg": "The reserve's price was not fully checked at its last refresh"
+    },
+    {
+      "code": 6007,
+      "name": "HealthOverflow",
+      "msg": "Health arithmetic overflowed"
+    },
+    {
+      "code": 6008,
+      "name": "UnexpectedKaminoLayout",
+      "msg": "Kamino account layout is not the one this program was built against"
+    },
+    {
+      "code": 6009,
+      "name": "WrongKaminoAccount",
+      "msg": "A Kamino account is not the one this market uses"
+    },
+    {
+      "code": 6010,
+      "name": "ZeroAmount",
+      "msg": "Amount must be greater than zero"
+    },
+    {
+      "code": 6011,
+      "name": "InvalidGrant",
+      "msg": "Grant parameters are invalid"
+    },
+    {
+      "code": 6012,
+      "name": "GrantNotLive",
+      "msg": "The grant is not live (expired, revoked, or from an older epoch)"
+    },
+    {
+      "code": 6013,
+      "name": "RungNotAllowed",
+      "msg": "This rung is not allowed by the grant"
+    },
+    {
+      "code": 6014,
+      "name": "RungIsNotifyOnly",
+      "msg": "The warn rung is notify-only: there is no on-chain action for it"
+    },
+    {
+      "code": 6015,
+      "name": "UnknownRung",
+      "msg": "Unknown rung id"
+    },
+    {
+      "code": 6016,
+      "name": "RungNotCrossed",
+      "msg": "The named rung is not crossed: the account is healthier than that"
+    },
+    {
+      "code": 6017,
+      "name": "RungUnderstated",
+      "msg": "A more severe rung is crossed than the one named"
+    },
+    {
+      "code": 6018,
+      "name": "RepayBudgetExceeded",
+      "msg": "Repay budget for this period is exhausted"
+    },
+    {
+      "code": 6019,
+      "name": "SellBudgetExceeded",
+      "msg": "Sell budget for this period is exhausted or selling is not permitted by the grant"
+    },
+    {
+      "code": 6020,
+      "name": "ProtectionIneffective",
+      "msg": "The action did not lift the health factor to the rung's disarm level and no budget was exhausted"
+    },
+    {
+      "code": 6021,
+      "name": "SaleBelowFloor",
+      "msg": "Sale proceeds are below the Scope-priced floor"
+    },
+    {
+      "code": 6022,
+      "name": "NotRevocable",
+      "msg": "Nothing to revoke: no grant exists for this keeper"
+    },
+    {
+      "code": 6023,
+      "name": "GrantStillLive",
+      "msg": "A live grant exists; revoke it before releasing the obligation"
+    },
+    {
+      "code": 6024,
+      "name": "InsufficientUsdcToClose",
+      "msg": "The account's USDC balance cannot cover the debt"
+    },
+    {
+      "code": 6025,
+      "name": "WrongTokenAccount",
+      "msg": "Token account is not the account's associated token account for that mint"
+    }
+  ],
+  "types": [
+    {
+      "name": "AccountInitialized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "account",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "obligation",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "AllGrantsRevoked",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "account",
+            "type": "pubkey"
+          },
+          {
+            "name": "epoch",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Borrowed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "account",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount_usdc",
+            "type": "u64"
+          },
+          {
+            "name": "hf_after_bps",
+            "type": "u64"
+          },
+          {
+            "name": "ltv_after_bps",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Deposited",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "account",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount_zec",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Grant",
+      "docs": [
+        "A keeper's delegation. The keeper may call `keeper_protect` and nothing else, inside these bounds."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "account",
+            "type": "pubkey"
+          },
+          {
+            "name": "keeper",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "version",
+            "type": "u8"
+          },
+          {
+            "name": "epoch",
+            "docs": [
+              "Must equal `UserAccount.grant_epoch` to be live."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "expiry_ts",
+            "docs": [
+              "Unix seconds; 0 after `revoke`."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "period_secs",
+            "type": "u64"
+          },
+          {
+            "name": "period_start_ts",
+            "type": "i64"
+          },
+          {
+            "name": "repay_usdc_per_period",
+            "docs": [
+              "USDC base units the keeper may repay from the account's idle USDC per period."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "repay_usdc_spent",
+            "type": "u64"
+          },
+          {
+            "name": "sell_zec_per_period",
+            "docs": [
+              "ZEC base units the keeper may sell per period to repay (0 = never sell collateral)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "sell_zec_spent",
+            "type": "u64"
+          },
+          {
+            "name": "max_sell_slippage_bps",
+            "docs": [
+              "Floor on a sale: proceeds ≥ Scope price × amount × (1 − this)."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "allowed_rungs",
+            "docs": [
+              "Bitmask over ladder rung ids (bit i = rung id i may be acted on)."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "_reserved",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "GrantParams",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "expiry_ts",
+            "type": "i64"
+          },
+          {
+            "name": "period_secs",
+            "type": "u64"
+          },
+          {
+            "name": "repay_usdc_per_period",
+            "type": "u64"
+          },
+          {
+            "name": "sell_zec_per_period",
+            "type": "u64"
+          },
+          {
+            "name": "max_sell_slippage_bps",
+            "type": "u16"
+          },
+          {
+            "name": "allowed_rungs",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Granted",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "account",
+            "type": "pubkey"
+          },
+          {
+            "name": "keeper",
+            "type": "pubkey"
+          },
+          {
+            "name": "expiry_ts",
+            "type": "i64"
+          },
+          {
+            "name": "period_secs",
+            "type": "u64"
+          },
+          {
+            "name": "repay_usdc_per_period",
+            "type": "u64"
+          },
+          {
+            "name": "sell_zec_per_period",
+            "type": "u64"
+          },
+          {
+            "name": "allowed_rungs",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "KeeperProtected",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "account",
+            "type": "pubkey"
+          },
+          {
+            "name": "keeper",
+            "type": "pubkey"
+          },
+          {
+            "name": "rung",
+            "type": "u8"
+          },
+          {
+            "name": "repaid_usdc",
+            "type": "u64"
+          },
+          {
+            "name": "sold_zec",
+            "type": "u64"
+          },
+          {
+            "name": "hf_before_bps",
+            "type": "u64"
+          },
+          {
+            "name": "hf_after_bps",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ObligationReleased",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "account",
+            "type": "pubkey"
+          },
+          {
+            "name": "new_owner",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PositionClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "account",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Repaid",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "account",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount_usdc",
+            "type": "u64"
+          },
+          {
+            "name": "hf_after_bps",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Revoked",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "account",
+            "type": "pubkey"
+          },
+          {
+            "name": "keeper",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TransferredOut",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "account",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "UserAccount",
+      "docs": [
+        "The user's account. `owner` is set once by `init_account` and never changes."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "docs": [
+              "The wallet that owns this account. Immutable."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "version",
+            "type": "u8"
+          },
+          {
+            "name": "grant_epoch",
+            "docs": [
+              "Bumped by `revoke_all`; a Grant is live only while its `epoch` equals this."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "obligation",
+            "docs": [
+              "The Kamino obligation this account owns (PDA of klend, owner = this account)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "created_slot",
+            "type": "u64"
+          },
+          {
+            "name": "_reserved",
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Withdrawn",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "account",
+            "type": "pubkey"
+          },
+          {
+            "name": "collateral_amount",
+            "type": "u64"
+          },
+          {
+            "name": "hf_after_bps",
+            "type": "u64"
+          }
+        ]
+      }
+    }
+  ]
+}

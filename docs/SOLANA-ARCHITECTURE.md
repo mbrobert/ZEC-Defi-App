@@ -1,4 +1,4 @@
-# Solana module — architecture (design record, 2026-09-12; owner path built and proven the same day)
+# Solana module — architecture (design record, 2026-09-12; program and keeper built and proven on localnet the same day)
 
 What the Solana module is, account by account and instruction by instruction, before a line of handler code
 exists. Every number here comes from `VERIFIED-SOLANA-FACTS.md` (read live 2026-09-12) or from
@@ -6,16 +6,22 @@ exists. Every number here comes from `VERIFIED-SOLANA-FACTS.md` (read live 2026-
 module's design (`ARCHITECTURE.md`) is the reference for every choice below: where the Solana design departs from
 it, the departure and its reason are stated.
 
-**Status (2026-09-12, evening).** The founder read this document, decided §12, installed the toolchain and
-started the localnet; the gate on handlers is lifted. **Built and proven on localnet (21/21):** every owner
+**Status (2026-09-12, night).** The founder read this document, decided §12, installed the toolchain and
+started the localnet; the gate on handlers is lifted. **Built and proven on localnet (26/26):** every owner
 instruction in §3 and `keeper_protect`, the ladder walked by the Scope mock (repay-only at HF 1.30, the
-sale path at HF 1.17). **Cannot be built:** `release_obligation` (§3, §12 (3)). **Not yet built:** the
-keeper process (`agent/` Solana path, §5), the pool-size gate (§7), the web flow (§8). Three facts the run established
-and the code now embodies: klend marks a reserve stale after every state change, so a post-action health view
-refreshes the reserves again before the obligation; klend **closes an obligation a full withdraw empties**
-(rent back to the Account PDA), so `deposit` re-creates it on the same PDA; and on this market Kamino's own
-40 % LTV cap binds before Oilskin's 1.55 floor on both `borrow` and `withdraw` (HF at the cap is 1.625), which
-makes the floors defense in depth — proven by host unit tests, not by the venue.
+sale path at HF 1.17), and the **keeper process** (§5, `agent/src/solana/`): discovery by program-account scan,
+valuation from one simulated refresh, the repay-only plan from the Account's idle USDC and the funded sale inside
+Kamino's cap, the signed transaction landing, the delegated ZEC collected, observe-only refusing by name
+(`solana/tests/keeper.spec.ts`, 5). **Cannot be built:** `release_obligation` (§3, §12 (3)). **Not yet
+built:** the pool-size gate (§7), the web flow (§8); nothing is deployed and no keeper runs anywhere. Three facts
+the program run established and the code now embodies: klend marks a reserve stale after every state change, so
+a post-action health view refreshes the reserves again before the obligation; klend **closes an obligation a
+full withdraw empties** (rent back to the Account PDA), so `deposit` re-creates it on the same PDA; and on this
+market Kamino's own 40 % LTV cap binds before Oilskin's 1.55 floor on both `borrow` and `withdraw` (HF at the
+cap is 1.625), which makes the floors defense in depth — proven by host unit tests, not by the venue. One fact
+the keeper run added: the same cap binds a **sale** too — collateral cannot leave above 40 % LTV, so a sale that
+repays and releases in one instruction lands the position at HF 1.625, above every disarm level; the keeper
+sizes the sale to whichever of the two (our disarm level, Kamino's cap) needs more ZEC, and says which.
 
 Abbreviations: HF = health factor; LT = liquidation threshold; LTV = loan-to-value; PDA = program-derived address
 (an account controlled by a program rather than a key); CPI = cross-program invocation (one Solana program
@@ -217,17 +223,41 @@ two sources read directly; an independent price (Pyth Hermes ZEC/USD or a Jupite
 recomputed HF must reproduce Kamino's within rounding. Any failure → `UNKNOWN` → the ladder never runs, exactly as
 on Base.
 
-## 5 · The keeper (`agent/`) on Solana
+## 5 · The keeper (`agent/`) on Solana — built 2026-09-12
 
-Reused as is: `engine/ladder.ts` (pure, shape-only), the store, the notifier and owner-history channel, the
-health monitor's episode/re-arm logic, the grant-expiry warnings. New, under `agent/src/solana/`: discovery
-(`getProgramAccounts` on the Oilskin program filtered by the Account discriminator, cursor by slot),
-valuation (§4), dispatch (build `keeper_protect`, `simulateTransaction` with the keeper as fee payer, persist
-`account:episode:seq:action` before send, confirm by signature status), and feeds. Observe-only mode without
-`KEEPER_SOLANA_PRIVATE_KEY` is the only mode a Claude session ever runs (`CLAUDE.md`). Plan sizing follows Base:
-`repay` targets the rung's disarm HF, capped at ⅓ of the position's value in USDC terms; `derisk` ⅔;
-`emergency` everything; sale amounts, if enabled, are priced off Scope 430 and the live Jupiter quote and pass
-`min_usdc_out` down.
+A sibling loop to the Base keeper, not a fork of it: the Base monitor and dispatcher (audited) are untouched;
+what is pure is reused, what is chain-shaped is new under `agent/src/solana/`.
+
+**Reused as is.** `engine/ladder.ts` (the shared HF ladder with hysteresis, shape-only), the progress watchdog
+and deadline helpers, the notifier with its channels (log, owner history, webhook) and the honest
+`personReached` rule, and the crash-safe store — now generic over an **id codec**: the Base store keeps
+EVM addresses and 0x hashes, the Solana store keeps base58 keys and signatures, and a store file refuses to
+open under the other codec (`store/keeperStore.ts`, `idCodec` in the file).
+
+**New, file by file.**
+
+| File | What it does | Proven by |
+|---|---|---|
+| `layouts.ts` | Hand-written byte layouts and encoders: `UserAccount` / `Grant` decode, klend `Obligation` / `Reserve` at the verified offsets (facts file), Scope entries, PDAs (Account, grant, obligation, market authority, ATAs), `refresh_reserve` / `refresh_obligation` / `keeper_protect` / SPL transfer encoders, anchor error names | `scripts/verify-solana-idl.mjs` (**77** checks against the committed `solana/idl/oilskin.json`, inside `npm test -w @zyo/agent`); `test/solana-layouts.test.ts` on a mainnet fixture (slot 446,506,191) |
+| `reader.ts` | Discovery: `getProgramAccounts` filtered by size and the `UserAccount` discriminator (no cursor — the program's accounts are few and the scan is one call). Valuation input: **one simulated transaction** (`refresh_reserve` ZEC, `refresh_reserve` USDC, `refresh_obligation`) with the refreshed account states returned, so the keeper reads Kamino's own numbers at the current slot and never re-derives interest or prices; the Account's token balances; the grant; the block time. Independent price: Jupiter's quote on mainnet, **declared absent** on localnet | `solana/tests/keeper.spec.ts` |
+| `valuation.ts` | Fail-closed rules on that snapshot — S1 obligation refreshed at the simulation slot and not stale; S2 both reserves active, the ZEC reserve's price status carrying all six klend checks; S3 Scope 430 fresh (≤ min(config, the reserve's own max age)), not future-dated, Scope 13 within 10 % of a dollar; S4 the independent price fresh and within 200 bps of Scope (required when a source is configured); S5 the HF recomputed from Scope and the LT agrees with Kamino's within 100 bps; S6 positive values. Anything else is `UNKNOWN` with the reasons named; `NO_DEBT` at or under `LOAN_DUST_UNITS` | `test/solana-layouts.test.ts`, `test/solana-monitor.test.ts` |
+| `policy.ts` | The plan for a fired rung. Target `T` = the rung's disarm HF × (1 + `KEEPER_PLAN_MARGIN_BPS`). **Repay-only** when the Account's idle USDC covers `need = D − C·P·LT / T`. Otherwise a **sale**: `Y` ZEC = max of what reaches `T` and what Kamino's LTV cap needs to let the collateral out; the keeper pays `X = Y·P·(1 − d)` USDC in, `d` ≤ the grant's allowance and ≤ `KEEPER_SALE_DISCOUNT_BPS` (0 by default: fair Scope value); every clamp (grant period budgets, `KEEPER_MAX_SALE_USDC`, the keeper's balance) is applied and named. Refusals by name: no live grant, a rung the grant excludes, discount above the allowance, already above the disarm level, keeper capital short | `test/solana-policy.test.ts` |
+| `dispatcher.ts` | Re-values, reads the grant, plans, builds one transaction (compute budget 1.4 M CU, the keeper's USDC transfer when a sale, `keeper_protect(rung, repay, sell)`), signs with the keeper key, **simulates** (a program refusal is classified by anchor error name: `GrantNotLive` / `RungNotAllowed` / `RungIsNotifyOnly` / `UnknownRung` permanent, `RungNotCrossed` / `RungUnderstated` superseding, the rest transient), **persists the signature before broadcast**, sends, confirms, and after a sale **collects** the delegated ZEC into the keeper's own token account in a second transaction. Observe-only dispatcher without a key: warn delivered or `LOGGED_ONLY`, every action `REFUSED` permanently by name | `solana/tests/keeper.spec.ts` |
+| `monitor.ts` | The Base tick order — resume pending → head → discover/register → rotated evaluate under concurrency → prune — with the same idempotency record (`account:episode:seq:action`, on disk as `PENDING` before the dispatcher is called), UNKNOWN streaks that escalate at the configured count, the confirmed-but-ineffective re-arm bounded per rung, permanent refusals abandoned instead of retried, `SENT` confirmed on the resume path, and an aborted tick that says so | `test/solana-monitor.test.ts` (8) |
+| `config.ts`, `keeper.ts`, `index.ts` | `SOLANA_RPC_URL`, `OILSKIN_SOLANA_PROGRAM_ID` (required), `SOLANA_STORE_PATH` (absolute), `KEEPER_SOLANA_KEYPAIR` (absolute path to a keypair file; **the CLI's default key is refused**; absent → observe-only, which then needs `SOLANA_SIM_PAYER`, a funded pubkey the read-only simulations name), `SOLANA_PRICE_SOURCE` `jupiter` \| `scope-only` (the latter logs a loud localnet-only warning), the freshness/deviation/tolerance knobs, `KEEPER_MAX_SALE_USDC` (0 = never sells), `KEEPER_SALE_DISCOUNT_BPS`, `KEEPER_PLAN_MARGIN_BPS`, the poll/deadline/watchdog/notify timings, `NOTIFY_WEBHOOK_URL`. `runSolanaKeeper(env, opts)` wires it and runs the loop with the Base shutdown pattern; `npm run dev:solana -w @zyo/agent` | `solana/tests/keeper.spec.ts` runs it in-process with `maxTicks` |
+
+**What the localnet run proved (2026-09-12, `keeper.spec.ts`).** At $1,000 the top-preset position values at
+HF 1.629 and nothing fires. At $800 (HF 1.30) repay fires; the plan is repay-only, 294.19 USDC of the Account's
+idle USDC for an expected HF 1.4070 (the disarm level plus the 50 bps margin); the transaction lands, the grant's
+`repayUsdcSpent` equals the USDC that left the Account, the keeper's own USDC did not move, and the next tick
+fires nothing. With the idle USDC transferred out and the price at $660 (HF 1.16), de-risk fires; the keeper
+pays USDC in at fair Scope value, the program repays it and releases ZEC inside Kamino's 40 % cap, every USDC
+paid reduced the debt, the released ZEC equals the ZEC collected into the keeper's account, nothing stays
+delegated, and `sellZecSpent` equals it. Observe-only on a fresh store records the next fall and refuses by
+name with nothing signed. Two departures from this section's original design are now fact: plan sizing is
+the analytic `need` / `Y` above, not the Base "⅓ / ⅔ of value" fractions, because Kamino's cap decides how
+much collateral can leave; and the sale floor is enforced by the program from Scope, so the keeper passes
+amounts, not a `min_usdc_out`.
 
 ## 6 · What is shared, and how it is consumed
 
@@ -335,7 +365,14 @@ from `SOLANA_TOKENS` / `KAMINO_ZCASH_MARKET` in shared. Two fixtures make it usa
   fixture rewrites both mints' authorities to test keypairs generated by the harness at run time (never
   committed); USDC minting lets a test cover the interest a full repay needs.
 
-Scenarios, mirroring `contracts/test`: init → deposit → borrow at 40 % (HF 1.625) → refuse a borrow at 45 % →
+**As run (2026-09-12, 26 passing in 24 s under `anchor test --skip-local-validator`):** `localnet.spec.ts` 4 (the
+world), `owner-path.spec.ts` 11, `ladder.spec.ts` 6 (the program's `keeper_protect` at every rung), and
+`keeper.spec.ts` 5 — the keeper **agent** itself (§5), run in-process against the same world with a throwaway
+keeper key generated under `fixtures/`. The specs time the grant by the **chain** clock (`getBlockTime`), never
+the host's: a warped validator runs hours ahead of the wall clock, and the keeper's freshness rules compare
+chain time with chain time.
+
+Scenarios as planned, mirroring `contracts/test`: init → deposit → borrow at 40 % (HF 1.625) → refuse a borrow at 45 % →
 price fixture −8 % → `keeper_protect(warn)` refused (warn is notify-only, no budget) → −17 % → `repay` lifts to
 1.40 → −27 % → `derisk` → revoke → keeper refused by name → owner `close_position` → `transfer_out`. Property
 tests (Rust, `proptest`): the keeper never exceeds the grant under random sequences; the owner can always exit;

@@ -27,14 +27,14 @@ import type { Channel } from "./notifier.js";
  *
  * `reachesAPerson: false` — a record on this host is not a notification.
  */
-export function ownerHistoryChannel(store: KeeperStore): Channel {
+export function ownerHistoryChannel<Id extends string, Tx extends string>(store: KeeperStore<Id, Tx>): Channel {
   return {
     name: "owner-history",
     reachesAPerson: false,
     send: async (e) => {
       if (!e.account) return; // fleet-level event — nothing to attribute to an owner
       const entry: OwnerNotifyEntry = { kind: e.kind, severity: e.severity, rung: e.rung, hf: e.hf ?? null, at: e.at };
-      await store.recordOwnerNotification(e.account, entry);
+      await store.recordOwnerNotification(e.account as Id, entry);
     },
   };
 }

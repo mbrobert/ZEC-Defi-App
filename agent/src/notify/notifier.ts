@@ -1,6 +1,5 @@
 import type { Logger } from "../log.js";
 import { withDeadline } from "../services/deadline.js";
-import type { Address } from "../types/evm.js";
 
 /**
  * The keeper's outbound channel.
@@ -51,9 +50,9 @@ export type Severity = "info" | "warn" | "critical";
 export interface KeeperEvent {
   kind: KeeperEventKind;
   severity: Severity;
-  /** Account the event is about; absent for fleet-level events. */
-  account?: Address;
-  owner?: Address;
+  /** Account the event is about (0x on Base, base58 on Solana); absent for fleet-level events. */
+  account?: string;
+  owner?: string;
   rung?: string;
   action?: string;
   hf?: number | null;

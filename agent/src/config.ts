@@ -137,7 +137,7 @@ export class ConfigError extends Error {
 /** Strict decimal literal: no whitespace, no exponent, no hex, no empty. */
 const STRICT_NUMBER = /^-?(0|[1-9][0-9]*)(\.[0-9]+)?$/;
 
-function readRaw(env: NodeJS.ProcessEnv, name: string): string | undefined {
+export function readRaw(env: NodeJS.ProcessEnv, name: string): string | undefined {
   const raw = env[name];
   if (raw === undefined) return undefined;
   // Whitespace-only is a typo, not "unset": refuse rather than fall back.

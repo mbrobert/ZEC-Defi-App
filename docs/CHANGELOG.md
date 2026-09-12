@@ -3,6 +3,24 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-12 — Solana slice S4: the keeper agent on Solana
+
+- **The keeper's Solana path** (`agent/src/solana/`, `docs/SOLANA-ARCHITECTURE.md` §5): discovery by
+  program-account scan; valuation from **one simulated refresh** (both reserves, then the obligation) so the
+  keeper reads Kamino's own numbers at the current slot, gated by fail-closed rules S1–S6 (freshness at the
+  simulation slot, klend's six price checks, Scope age and dollar sanity, an independent price within 200 bps
+  when configured, the recomputed HF within 100 bps of Kamino's); a plan that repays from the Account's idle
+  USDC when that reaches the disarm level and otherwise sizes a sale to whichever of the disarm level and
+  Kamino's 40 % LTV cap needs more ZEC, paying fair Scope value less at most the configured discount inside
+  the grant's allowance, every clamp named; a dispatcher that simulates, classifies program refusals by anchor
+  error name, persists the signature before broadcast, confirms, and collects the delegated ZEC; the Base
+  monitor's tick order and idempotency record; observe-only without `KEEPER_SOLANA_KEYPAIR` (the CLI's
+  default key is refused). The store is generic over an id codec (EVM / base58) and refuses a file written
+  under the other. Proven: `verify-solana-idl` **77/77** against the committed IDL, +21 agent tests (**263**),
+  and `solana/tests/keeper.spec.ts` on localnet (+5, **26/26**): repay-only at HF 1.30 (294.19 USDC → HF
+  1.407), the funded sale at HF 1.16 landing inside the cap with the released ZEC collected to the unit,
+  observe-only refusing by name. Not deployed; no keeper runs anywhere.
+
 ## 2026-09-12 — Slice K: the yield gate on fresh chain reads
 
 - **Slice K** — the first live gauge sample since 2026-08-31: block 51,226,072 at 19:31:30 UTC

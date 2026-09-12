@@ -1,0 +1,97 @@
+{
+  "address": "HFn8GnPADiny6XqUoWE8uRPPxb29ikn4yTuPa9MF2fWJ",
+  "metadata": {
+    "name": "mock_scope",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "LOCALNET ONLY. A stand-in loaded at Scope's program id so tests can stamp Kamino's oracle prices fresh and move them. Never deployed anywhere real; not part of the audited surface."
+  },
+  "instructions": [
+    {
+      "name": "set_price",
+      "docs": [
+        "Set `prices[index]` to (value, exp) and stamp it with the current slot and unix time."
+      ],
+      "discriminator": [
+        16,
+        19,
+        182,
+        8,
+        149,
+        83,
+        72,
+        181
+      ],
+      "accounts": [
+        {
+          "name": "oracle_prices",
+          "writable": true
+        },
+        {
+          "name": "payer",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "index",
+          "type": "u16"
+        },
+        {
+          "name": "value",
+          "type": "u64"
+        },
+        {
+          "name": "exp",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "stamp_fresh",
+      "docs": [
+        "Re-stamp `indices` with the current slot and unix time, prices unchanged."
+      ],
+      "discriminator": [
+        45,
+        77,
+        150,
+        251,
+        156,
+        64,
+        230,
+        66
+      ],
+      "accounts": [
+        {
+          "name": "oracle_prices",
+          "writable": true
+        },
+        {
+          "name": "payer",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "indices",
+          "type": {
+            "vec": "u16"
+          }
+        }
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "IndexOutOfRange",
+      "msg": "index out of range"
+    },
+    {
+      "code": 6001,
+      "name": "UnexpectedLayout",
+      "msg": "account is not a 512-entry OraclePrices"
+    }
+  ]
+}

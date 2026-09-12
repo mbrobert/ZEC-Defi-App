@@ -8,6 +8,30 @@ import { isAddress, lowerAddress } from "../types/evm.js";
 import type { LadderState } from "../engine/ladder.js";
 
 /**
+ * How account ids and transaction ids look on the chain this store serves. The store is chain-agnostic in
+ * everything but this: EVM ids are 0x-hex and case-insensitive (normalised lower), Solana ids are base58 and
+ * CASE-SENSITIVE (never normalised). A store file records its codec; opening it with another is refused.
+ */
+export interface IdCodec {
+  name: "evm" | "base58";
+  isId(v: string): boolean;
+  normalize(v: string): string;
+  isTxHash(v: string): boolean;
+}
+export const EVM_ID_CODEC: IdCodec = {
+  name: "evm",
+  isId: (v) => isAddress(v),
+  normalize: (v) => v.toLowerCase(),
+  isTxHash: (v) => /^0x[0-9a-fA-F]{64}$/.test(v),
+};
+export const BASE58_ID_CODEC: IdCodec = {
+  name: "base58",
+  isId: (v) => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(v),
+  normalize: (v) => v,
+  isTxHash: (v) => /^[1-9A-HJ-NP-Za-km-z]{64,90}$/.test(v),
+};
+
+/**
  * Crash-safe keeper store: one JSON file, one writer.
  *
  * Guarantees (each has a test in test/keeperStore.test.ts):
@@ -62,10 +86,10 @@ export const READABLE_VERSIONS = [2, 3] as const;
 
 export type ValuationKind = "OK" | "NO_DEBT" | "UNKNOWN";
 
-export interface AccountRecord {
-  /** Lower-cased account address (the id). */
-  account: Address;
-  owner: Address;
+export interface AccountRecord<Id extends string = Address> {
+  /** The account id, normalised by the store's codec (lower-cased on EVM, verbatim base58 on Solana). */
+  account: Id;
+  owner: Id;
   discoveredAtBlock: string;
   addedAt: string;
   ladder: LadderState;
@@ -80,8 +104,8 @@ export interface AccountRecord {
   lastReasons?: string[];
   /** Last on-chain grant state seen for this account (expiry surfaced, not discarded). */
   grant?: {
-    target: Address;
-    selector: Hex;
+    target: Id;
+    selector: string;
     active: boolean;
     allowCallback: boolean;
     expiry: number;
@@ -149,17 +173,17 @@ export const DISPATCH_STATUSES: readonly DispatchStatus[] = [
   "ABANDONED",
 ];
 
-export interface DispatchRecord {
+export interface DispatchRecord<Id extends string = Address, Tx extends string = Hex> {
   /** `${account}:${episode}:${seq}:${action}` */
   key: string;
-  account: Address;
+  account: Id;
   episode: number;
   seq: number;
   action: string;
   rung: string;
   hf: number;
   status: DispatchStatus;
-  txHash?: Hex;
+  txHash?: Tx;
   attempts: number;
   error?: string;
   createdAt: string;
@@ -182,28 +206,30 @@ export interface DispatchRecord {
    * here and skipped with USDC left, or owing now but not here → FAILED. Absent on a record from
    * before this build or a dispatch without a venue reader, when the older, stricter rule applies.
    */
-  venueBooks?: VenueBook[];
+  venueBooks?: VenueBook<Id>[];
   /** Times this record wedged a tick. Quarantined at the cap. */
   stalls?: number;
 }
 
 /** One venue's book for the account at dispatch time; bigints as decimal strings (JSON). */
-export interface VenueBook {
-  venue: Address;
+export interface VenueBook<Id extends string = Address> {
+  venue: Id;
   debtUsdc: string;
   hfWad: string;
 }
 
-export interface StoreState {
+export interface StoreState<Id extends string = Address, Tx extends string = Hex> {
   version: typeof STORE_VERSION;
+  /** Which id codec wrote this file; absent on files from before 2026-09-12 (EVM). */
+  idCodec?: IdCodec["name"];
   cursor: { lastScannedBlock: string } | null;
   /** `tick` drives evaluation rotation: a persisted counter, never the block
    *  number — at a 30 s poll Base advances ~15 blocks a tick, so `head % n`
    *  was a FIXED permutation for every account count dividing 15 and the same
    *  accounts were truncated every time (audit C-LOW-3). */
   counters: { episode: number; dispatchSeq: number; tick: number };
-  accounts: AccountRecord[];
-  dispatches: DispatchRecord[];
+  accounts: AccountRecord<Id>[];
+  dispatches: DispatchRecord<Id, Tx>[];
   /**
    * Owner-notification entries for accounts not registered yet (a startup race between
    * discovery and the first tick), keyed by lowercase account address; attached to the record on
@@ -212,9 +238,10 @@ export interface StoreState {
   deferredNotify?: Record<string, OwnerNotifyEntry[]>;
 }
 
-export function emptyState(): StoreState {
+export function emptyState<Id extends string = Address, Tx extends string = Hex>(codec: IdCodec = EVM_ID_CODEC): StoreState<Id, Tx> {
   return {
     version: STORE_VERSION,
+    idCodec: codec.name,
     cursor: null,
     counters: { episode: 0, dispatchSeq: 0, tick: 0 },
     accounts: [],
@@ -291,9 +318,12 @@ function isNonNegInt(v: unknown): v is number {
 }
 
 /** Validate a parsed store document. Throws StoreError on any shape problem. */
-export function validateState(doc: unknown): StoreState {
+export function validateState<Id extends string = Address, Tx extends string = Hex>(doc: unknown, codec: IdCodec = EVM_ID_CODEC): StoreState<Id, Tx> {
   if (!isRecord(doc)) throw new StoreError("document is not an object");
   if (doc.version !== STORE_VERSION) throw new StoreError(`unsupported version ${String(doc.version)}`);
+  if (doc.idCodec !== undefined && doc.idCodec !== codec.name) {
+    throw new StoreError(`store was written for the ${String(doc.idCodec)} id codec, this keeper uses ${codec.name}`);
+  }
   if (!isRecord(doc.counters) || !isNonNegInt((doc.counters as Record<string, unknown>).tick)) {
     throw new StoreError("counters.tick malformed");
   }
@@ -307,11 +337,11 @@ export function validateState(doc: unknown): StoreState {
 
   const accountIds = new Set<string>();
   for (const a of doc.accounts as unknown[]) {
-    if (!isRecord(a) || typeof a.account !== "string" || !isAddress(a.account)) throw new StoreError("account record malformed");
-    const id = a.account.toLowerCase();
+    if (!isRecord(a) || typeof a.account !== "string" || !codec.isId(a.account)) throw new StoreError("account record malformed");
+    const id = codec.normalize(a.account);
     if (accountIds.has(id)) throw new DuplicateIdError("account", id);
     accountIds.add(id);
-    if (typeof a.owner !== "string" || !isAddress(a.owner)) throw new StoreError(`account ${id}: owner malformed`);
+    if (typeof a.owner !== "string" || !codec.isId(a.owner)) throw new StoreError(`account ${id}: owner malformed`);
     if (!isRecord(a.ladder) || !Array.isArray(a.ladder.fired)) throw new StoreError(`account ${id}: ladder malformed`);
     if (a.episode !== null && !isNonNegInt(a.episode)) throw new StoreError(`account ${id}: episode malformed`);
     if (a.episode !== null && a.episode > (doc.counters as { episode: number }).episode) {
@@ -333,31 +363,31 @@ export function validateState(doc: unknown): StoreState {
       throw new StoreError(`dispatch ${d.key}: status malformed`);
     }
     if (!isNonNegInt(d.attempts)) throw new StoreError(`dispatch ${d.key}: attempts malformed`);
-    if (d.txHash !== undefined && !(typeof d.txHash === "string" && /^0x[0-9a-fA-F]{64}$/.test(d.txHash))) {
+    if (d.txHash !== undefined && !(typeof d.txHash === "string" && codec.isTxHash(d.txHash))) {
       throw new StoreError(`dispatch ${d.key}: txHash malformed`);
     }
     if (d.venueBooks !== undefined) {
       if (!Array.isArray(d.venueBooks)) throw new StoreError(`dispatch ${d.key}: venueBooks malformed`);
       for (const b of d.venueBooks as unknown[]) {
         const digits = (x: unknown) => typeof x === "string" && /^\d+$/.test(x);
-        if (!isRecord(b) || typeof b.venue !== "string" || !isAddress(b.venue) || !digits(b.debtUsdc) || !digits(b.hfWad)) {
+        if (!isRecord(b) || typeof b.venue !== "string" || !codec.isId(b.venue) || !digits(b.debtUsdc) || !digits(b.hfWad)) {
           throw new StoreError(`dispatch ${d.key}: venueBooks entry malformed`);
         }
       }
     }
   }
-  return doc as unknown as StoreState;
+  return doc as unknown as StoreState<Id, Tx>;
 }
 
 /** Parse + validate, with the corrupt-JSON message the operator sees. */
-export function parseStore(raw: string, path: string): StoreState {
+export function parseStore<Id extends string = Address, Tx extends string = Hex>(raw: string, path: string, codec: IdCodec = EVM_ID_CODEC): StoreState<Id, Tx> {
   let doc: unknown;
   try {
     doc = JSON.parse(raw);
   } catch {
     throw new StoreError(`${path} is not valid JSON — refusing to start on a corrupt store`);
   }
-  return validateState(migrateDoc(doc));
+  return validateState<Id, Tx>(migrateDoc(doc), codec);
 }
 
 /** v2 → v3: the persisted tick counter that drives rotation did not exist. */
@@ -369,7 +399,7 @@ function migrateDoc(doc: unknown): unknown {
   return doc;
 }
 
-function migrate(s: StoreState): StoreState {
+function migrate<Id extends string, Tx extends string>(s: StoreState<Id, Tx>): StoreState<Id, Tx> {
   return s;
 }
 
@@ -395,6 +425,8 @@ export interface KeeperStoreOptions {
    * truncated the store (audit C-HIGH-4) — so it must be testable.
    */
   writeChunk?: (fd: number, buf: Buffer, offset: number, length: number) => number;
+  /** How ids look on this chain. Defaults to EVM (0x, lower-cased); the Solana keeper passes BASE58_ID_CODEC. */
+  idCodec?: IdCodec;
 }
 
 export const STORE_DEFAULTS = {
@@ -405,8 +437,8 @@ export const STORE_DEFAULTS = {
 
 const TERMINAL_STATUSES: readonly DispatchStatus[] = ["CONFIRMED", "NOTIFIED", "SUPERSEDED", "ABANDONED"];
 
-export class KeeperStore {
-  private state: StoreState | null = null;
+export class KeeperStore<Id extends string = Address, Tx extends string = Hex> {
+  private state: StoreState<Id, Tx> | null = null;
   private fingerprint: Fingerprint | null = null;
   private queue: Promise<unknown> = Promise.resolve();
   private locked = false;
@@ -418,6 +450,7 @@ export class KeeperStore {
   private readonly ownerNotifyHistoryCap: number;
   private readonly writeChunk: (fd: number, buf: Buffer, offset: number, length: number) => number;
   private readonly now: () => Date;
+  readonly codec: IdCodec;
   /** Random per-process id written into the lock and re-verified before every write. */
   readonly instanceId: string = randomUUID();
   /** Set once an unrecoverable store error happens; every later write repeats it. */
@@ -438,6 +471,12 @@ export class KeeperStore {
     this.ownerNotifyHistoryCap = opts.ownerNotifyHistoryCap ?? STORE_DEFAULTS.ownerNotifyHistoryCap;
     this.writeChunk = opts.writeChunk ?? ((fd, buf, offset, length) => writeSync(fd, buf, offset, length));
     this.now = opts.now ?? (() => new Date());
+    this.codec = opts.idCodec ?? EVM_ID_CODEC;
+  }
+
+  /** Normalise an id the way this store's chain does (lower-case on EVM, verbatim on Solana). */
+  private id(v: string): Id {
+    return this.codec.normalize(v) as Id;
   }
 
   /** The error that poisoned this store, if any. The keeper exits on it. */
@@ -557,14 +596,14 @@ export class KeeperStore {
       raw = await readFile(this.path, "utf8");
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code === "ENOENT") {
-        this.state = emptyState();
+        this.state = emptyState<Id, Tx>(this.codec);
         await this.persist();
         return;
       }
       throw e;
     }
     try {
-      this.state = migrate(parseStore(raw, this.path));
+      this.state = migrate(parseStore<Id, Tx>(raw, this.path, this.codec));
       this.fingerprint = await this.fingerprintOf(raw);
       return;
     } catch (primary) {
@@ -577,9 +616,9 @@ export class KeeperStore {
       } catch {
         throw primary;
       }
-      let recovered: StoreState;
+      let recovered: StoreState<Id, Tx>;
       try {
-        recovered = migrate(parseStore(bak, this.bakPath));
+        recovered = migrate(parseStore<Id, Tx>(bak, this.bakPath, this.codec));
       } catch {
         throw primary;
       }
@@ -668,41 +707,41 @@ export class KeeperStore {
 
   // ---- reads --------------------------------------------------------------
 
-  private snapshot(): StoreState {
+  private snapshot(): StoreState<Id, Tx> {
     if (!this.state) throw new StoreError("not open");
     return this.state;
   }
 
-  getState(): Readonly<StoreState> {
+  getState(): Readonly<StoreState<Id, Tx>> {
     return structuredClone(this.snapshot());
   }
 
-  listAccounts(): AccountRecord[] {
+  listAccounts(): AccountRecord<Id>[] {
     return structuredClone(this.snapshot().accounts);
   }
 
-  getAccount(account: Address): AccountRecord | undefined {
-    const id = lowerAddress(account);
+  getAccount(account: Id): AccountRecord<Id> | undefined {
+    const id = this.id(account);
     const a = this.snapshot().accounts.find((x) => x.account === id);
     return a ? structuredClone(a) : undefined;
   }
 
   /** An account's owner-notification history, oldest first, capped. */
-  getOwnerNotifyHistory(account: Address): OwnerNotifyEntry[] {
-    const id = lowerAddress(account);
+  getOwnerNotifyHistory(account: Id): OwnerNotifyEntry[] {
+    const id = this.id(account);
     const a = this.snapshot().accounts.find((x) => x.account === id);
     if (a) return structuredClone(a.notifyHistory ?? []);
     // Not registered yet: whatever was recorded for it is waiting in the deferred bucket.
     return structuredClone(this.snapshot().deferredNotify?.[id] ?? []);
   }
 
-  getDispatch(key: string): DispatchRecord | undefined {
+  getDispatch(key: string): DispatchRecord<Id, Tx> | undefined {
     const d = this.snapshot().dispatches.find((x) => x.key === key);
     return d ? structuredClone(d) : undefined;
   }
 
-  listDispatches(filter?: { account?: Address; status?: DispatchStatus }): DispatchRecord[] {
-    const acc = filter?.account ? lowerAddress(filter.account) : undefined;
+  listDispatches(filter?: { account?: Id; status?: DispatchStatus }): DispatchRecord<Id, Tx>[] {
+    const acc = filter?.account ? this.id(filter.account) : undefined;
     return structuredClone(
       this.snapshot().dispatches.filter(
         (d) => (acc === undefined || d.account === acc) && (filter?.status === undefined || d.status === filter.status)
@@ -710,7 +749,7 @@ export class KeeperStore {
     );
   }
 
-  get counters(): Readonly<StoreState["counters"]> {
+  get counters(): Readonly<StoreState<Id, Tx>["counters"]> {
     return { ...this.snapshot().counters };
   }
 
@@ -726,7 +765,7 @@ export class KeeperStore {
    * handed to `fn` is the live object — return normally to commit, throw to
    * roll back (the in-memory copy is restored from the last persisted JSON).
    */
-  mutate<T>(fn: (s: StoreState) => T): Promise<T> {
+  mutate<T>(fn: (s: StoreState<Id, Tx>) => T): Promise<T> {
     const run = async (): Promise<T> => {
       if (this.fatalError) throw this.fatalError;
       if (!this.locked) throw new StoreError("not open");
@@ -736,15 +775,15 @@ export class KeeperStore {
       let result: T;
       try {
         result = fn(this.snapshot());
-        validateState(JSON.parse(JSON.stringify(this.state)));
+        validateState(JSON.parse(JSON.stringify(this.state)), this.codec);
       } catch (e) {
-        this.state = JSON.parse(before) as StoreState;
+        this.state = JSON.parse(before) as StoreState<Id, Tx>;
         throw e;
       }
       try {
         await this.persist();
       } catch (e) {
-        this.state = JSON.parse(before) as StoreState;
+        this.state = JSON.parse(before) as StoreState<Id, Tx>;
         throw e;
       }
       return result;
@@ -754,13 +793,13 @@ export class KeeperStore {
     return next;
   }
 
-  registerAccount(rec: { account: Address; owner: Address; discoveredAtBlock: bigint }, now: Date): Promise<AccountRecord> {
+  registerAccount(rec: { account: Id; owner: Id; discoveredAtBlock: bigint }, now: Date): Promise<AccountRecord<Id>> {
     return this.mutate((s) => {
-      const id = lowerAddress(rec.account);
+      const id = this.id(rec.account);
       if (s.accounts.some((a) => a.account === id)) throw new DuplicateIdError("account", id);
-      const a: AccountRecord = {
+      const a: AccountRecord<Id> = {
         account: id,
-        owner: lowerAddress(rec.owner),
+        owner: this.id(rec.owner),
         discoveredAtBlock: rec.discoveredAtBlock.toString(),
         addedAt: now.toISOString(),
         ladder: { fired: [] },
@@ -781,9 +820,9 @@ export class KeeperStore {
     });
   }
 
-  updateAccount(account: Address, patch: Partial<Omit<AccountRecord, "account" | "owner">>): Promise<AccountRecord> {
+  updateAccount(account: Id, patch: Partial<Omit<AccountRecord<Id>, "account" | "owner">>): Promise<AccountRecord<Id>> {
     return this.mutate((s) => {
-      const id = lowerAddress(account);
+      const id = this.id(account);
       const a = s.accounts.find((x) => x.account === id);
       if (!a) throw new StoreError(`account ${id} not registered`);
       Object.assign(a, patch);
@@ -797,9 +836,9 @@ export class KeeperStore {
    * registered yet gets the entry in a deferred bucket that `registerAccount` attaches later —
    * never dropped, never a delivery failure (audit wave 2, N-MED-1 / N-LOW-1).
    */
-  recordOwnerNotification(account: Address, entry: OwnerNotifyEntry): Promise<OwnerNotifyEntry[]> {
+  recordOwnerNotification(account: Id, entry: OwnerNotifyEntry): Promise<OwnerNotifyEntry[]> {
     return this.mutate((s) => {
-      const id = lowerAddress(account);
+      const id = this.id(account);
       const a = s.accounts.find((x) => x.account === id);
       const list = a ? (a.notifyHistory ?? (a.notifyHistory = [])) : ((s.deferredNotify ??= {})[id] ??= []);
       list.push(entry);
@@ -829,9 +868,9 @@ export class KeeperStore {
   }
 
   /** Allocate the next episode number for `account` and persist it. */
-  beginEpisode(account: Address): Promise<number> {
+  beginEpisode(account: Id): Promise<number> {
     return this.mutate((s) => {
-      const id = lowerAddress(account);
+      const id = this.id(account);
       const a = s.accounts.find((x) => x.account === id);
       if (!a) throw new StoreError(`account ${id} not registered`);
       if (a.episode !== null) throw new StoreError(`account ${id} already in episode ${a.episode}`);
@@ -841,9 +880,9 @@ export class KeeperStore {
     });
   }
 
-  endEpisode(account: Address): Promise<void> {
+  endEpisode(account: Id): Promise<void> {
     return this.mutate((s) => {
-      const id = lowerAddress(account);
+      const id = this.id(account);
       const a = s.accounts.find((x) => x.account === id);
       if (!a) throw new StoreError(`account ${id} not registered`);
       a.episode = null;
@@ -854,14 +893,14 @@ export class KeeperStore {
    * Allocate a dispatch sequence number, mint the key and persist a PENDING
    * record — all before the caller sends anything. Returns the record.
    */
-  createDispatch(input: { account: Address; episode: number; action: string; rung: string; hf: number }, now: Date): Promise<DispatchRecord> {
+  createDispatch(input: { account: Id; episode: number; action: string; rung: string; hf: number }, now: Date): Promise<DispatchRecord<Id, Tx>> {
     return this.mutate((s) => {
-      const id = lowerAddress(input.account);
+      const id = this.id(input.account);
       s.counters.dispatchSeq += 1;
       const seq = s.counters.dispatchSeq;
-      const key = dispatchKey(id, input.episode, seq, input.action);
+      const key = `${id}:${input.episode}:${seq}:${input.action}`;
       if (s.dispatches.some((d) => d.key === key)) throw new DuplicateIdError("dispatch", key);
-      const d: DispatchRecord = {
+      const d: DispatchRecord<Id, Tx> = {
         key,
         account: id,
         episode: input.episode,
@@ -899,7 +938,7 @@ export class KeeperStore {
     if (!this.needsPrune()) return Promise.resolve(0);
     return this.mutate((s) => {
       const keep = this.keepTerminalPerAccount;
-      const terminalByAccount = new Map<string, DispatchRecord[]>();
+      const terminalByAccount = new Map<string, DispatchRecord<Id, Tx>[]>();
       for (const d of s.dispatches) {
         if (!TERMINAL_STATUSES.includes(d.status)) continue;
         const arr = terminalByAccount.get(d.account) ?? [];
@@ -931,9 +970,9 @@ export class KeeperStore {
 
   updateDispatch(
     key: string,
-    patch: Partial<Pick<DispatchRecord, "status" | "txHash" | "attempts" | "error" | "sentNonce" | "closeIds" | "venueBooks" | "stalls">>,
+    patch: Partial<Pick<DispatchRecord<Id, Tx>, "status" | "txHash" | "attempts" | "error" | "sentNonce" | "closeIds" | "venueBooks" | "stalls">>,
     now: Date
-  ): Promise<DispatchRecord> {
+  ): Promise<DispatchRecord<Id, Tx>> {
     return this.mutate((s) => {
       const d = s.dispatches.find((x) => x.key === key);
       if (!d) throw new StoreError(`dispatch ${key} not found`);
