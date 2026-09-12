@@ -7710,6 +7710,9 @@
         }
       },
       "errors": {
+        "AmbiguousPositionId(uint256)": {
+          "selector": "0x22222d01"
+        },
         "AssetDisabled(address,string)": {
           "selector": "0x121ab360"
         },
@@ -8390,6 +8393,17 @@
             }
           ],
           "anonymous": false
+        },
+        {
+          "type": "error",
+          "name": "AmbiguousPositionId",
+          "inputs": [
+            {
+              "name": "positionId",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
         },
         {
           "type": "error",

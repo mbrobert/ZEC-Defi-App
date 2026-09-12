@@ -3,6 +3,15 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-11 — Wave-3 Lows, fixed in order (one commit each; `AUDIT-2026-09-11.md` carries each status)
+
+- **W3-LOW-1** — `StrategyRouter._lpVenueForIds` asks both LP venues about the first owned id and
+  refuses `AmbiguousPositionId(id)` when both claim it (the engine's and the position manager's id
+  counters are independent) instead of routing the batch to the engine's; the owner closes such an id
+  through the venue's own `close`. `audit-regressions/LpVenueRouting.t.sol` (3) collides engine id 1
+  with Slipstream token 1 on a fresh fixture. ABI 420 → 421; keeper seam 109 → 110; contracts 363 →
+  366 passed.
+
 ## 2026-09-11 — Slice H: static analysis and symbolic execution wired into CI; nothing ran locally
 
 None of Slither, Aderyn or halmos is installed on the founder's Mac and none was installed by the

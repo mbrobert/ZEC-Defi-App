@@ -748,10 +748,10 @@ through a window of `MAX_ENUMERATION`, and `unstakedOverflow(account)` names
 what the window did not reach (the keeper warns, the dashboard says so);
 before that, 512 dust NFTs sent by anyone made `positionsOf` revert and the
 keeper refuse every rung for the account. *Residuals:*
-(a) the engine's and the NPM's id spaces are independent counters, so an
-account owning the SAME number on both venues has the engine's closed through
-`unwind` and the direct one through the direct venue's own `close`
-(W3-LOW-1, listed with its cost); (a′) an unstaked position the account
+(a) the engine's and the NPM's id spaces are independent counters; since the
+W3-LOW-1 fix an id BOTH venues claim for the account is refused by name
+(`AmbiguousPositionId`) instead of routed to the engine's, and the owner closes
+that id through the venue's own `close` — `LpVenueRouting.t.sol`; (a′) an unstaked position the account
 itself holds can sit beyond the window when a stranger pads the holdings, and
 is then invisible to the keeper and the dashboard until the padding is
 cleared — the owner's raw exec reaches it; (b) the

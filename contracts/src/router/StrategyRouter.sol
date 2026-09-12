@@ -164,6 +164,10 @@ contract StrategyRouter is Peripheral {
     /// @notice A fixed `withdrawAmount` could not be met from the venues holding the account's
     ///         collateral: `withdrawn` of `asked` came back. `max` never raises this.
     error CollateralShort(uint256 asked, uint256 withdrawn);
+    /// @notice Both LP venues say the calling account owns `positionId` (the engine's and the
+    ///         position manager's id counters are independent): the batch cannot be routed by
+    ///         name, so it is refused instead of closing the engine's by default (wave 3, W3-LOW-1).
+    error AmbiguousPositionId(uint256 positionId);
     error EntryHfTooLow(uint256 healthFactor, uint256 floor);
     error ExitHfTooLow(uint256 healthFactor, uint256 floor);
     /// @notice The router's own balance of `token` moved across the call: `before` → `current`.
@@ -484,12 +488,12 @@ contract StrategyRouter is Peripheral {
     }
 
     /// @dev The LP venue, its swap adapter and the pool of the first id in `ids` that `account`
-    ///      owns — the engine venue asked first, then the direct venue. A stale id at index 0 no
-    ///      longer decides the batch's pool: the venue reports it in `failed` like any other, and
-    ///      the tokens the router swaps are always the tokens the venue paid out. Residual, stated
-    ///      (`RISKS.md` §12): the two id spaces are independent counters, so an account owning the
-    ///      SAME number on both venues has the engine's closed through `unwind` and the direct one
-    ///      through the direct venue's own `close`.
+    ///      owns. A stale id at index 0 no longer decides the batch's pool: the venue reports it in
+    ///      `failed` like any other, and the tokens the router swaps are always the tokens the venue
+    ///      paid out. The two id spaces are independent counters, so BOTH venues are asked about
+    ///      the first owned id: an id both claim is refused by name (`AmbiguousPositionId`, wave 3
+    ///      W3-LOW-1) rather than routed to the engine's by default — the caller then closes that
+    ///      id through the venue's own `close`, where there is no ambiguity.
     function _lpVenueForIds(uint256[] calldata ids, address account)
         internal
         view
@@ -498,11 +502,14 @@ contract StrategyRouter is Peripheral {
         bool direct = address(LP_VENUE_DIRECT) != address(0);
         for (uint256 i = 0; i < ids.length; i++) {
             (bytes32 pid, bool owned) = LP_VENUE.ownedPool(ids[i], account);
-            if (owned && pid != bytes32(0)) return (LP_VENUE, SWAP, pid);
-            if (direct) {
-                (pid, owned) = LP_VENUE_DIRECT.ownedPool(ids[i], account);
-                if (owned && pid != bytes32(0)) return (LP_VENUE_DIRECT, SWAP_DIRECT, pid);
-            }
+            bytes32 pidDirect;
+            bool ownedDirect;
+            if (direct) (pidDirect, ownedDirect) = LP_VENUE_DIRECT.ownedPool(ids[i], account);
+            bool engineOwns = owned && pid != bytes32(0);
+            bool directOwns = ownedDirect && pidDirect != bytes32(0);
+            if (engineOwns && directOwns) revert AmbiguousPositionId(ids[i]);
+            if (engineOwns) return (LP_VENUE, SWAP, pid);
+            if (directOwns) return (LP_VENUE_DIRECT, SWAP_DIRECT, pidDirect);
         }
         return (LP_VENUE, SWAP, bytes32(0));
     }

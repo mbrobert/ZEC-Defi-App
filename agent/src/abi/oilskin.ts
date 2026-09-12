@@ -258,6 +258,8 @@ export const strategyRouterAbi = [
   { type: "error", name: "ExitHfTooLow", inputs: [{ name: "healthFactor", type: "uint256" }, { name: "floor", type: "uint256" }] },
   { type: "error", name: "UnknownPool", inputs: [{ name: "poolId", type: "bytes32" }] },
   { type: "error", name: "CollateralShort", inputs: [{ name: "asked", type: "uint256" }, { name: "withdrawn", type: "uint256" }] },
+  // W3-LOW-1: an id both LP venues claim for the account is refused, never routed to the engine's by default.
+  { type: "error", name: "AmbiguousPositionId", inputs: [{ name: "positionId", type: "uint256" }] },
   { type: "error", name: "AssetNotRegistered", inputs: [{ name: "asset", type: "address" }] },
   { type: "error", name: "VenueDisabled", inputs: [{ name: "venue", type: "address" }] },
   // The DELTA form. `RouterHoldsBalance` (an absolute zero-balance assertion, and a
