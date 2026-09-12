@@ -44,25 +44,32 @@ avm install 1.2.0 && avm use 1.2.0
 anchor --version
 ```
 
-## Build, then prove the harness
+## Build, then prove the program on localnet
 
 ```bash
 cd solana
-anchor keys sync              # writes target/deploy/oilskin-keypair.json (gitignored) and rewrites the placeholder id
-anchor build                  # compiles the empty program + the generated ladder module
+anchor keys sync              # once: writes target/deploy/oilskin-keypair.json (gitignored) and the program id
+anchor build                  # builds programs/oilskin AND programs/mock_scope (the localnet-only Scope stand-in)
+cargo test --manifest-path programs/oilskin/Cargo.toml --lib     # 5 host unit tests (health.rs)
 ```
 
-Localnet with the ZCASH-market world cloned from mainnet (read-only clone; nothing is sent anywhere):
+Localnet with the ZCASH-market world cloned from mainnet (read-only clone; nothing is sent anywhere real):
 
 ```bash
-bash scripts/localnet.sh                       # terminal 1 — clones klend, Scope, Farms, the market, reserves, vaults, mints
-anchor test --skip-local-validator             # terminal 2 — tests/localnet.spec.ts: the world and both fixtures are present
+bash scripts/localnet.sh                       # terminal 1 — warp-slot above mainnet; klend + Farms cloned; the Scope MOCK at Scope's id; market, reserves, vaults, Scope accounts, mints cloned; ZEC and USDC mint authorities swapped for throwaway keys
+anchor test --skip-local-validator             # terminal 2 — deploys oilskin to :8899 and runs tests/*.spec.ts (15)
 ```
 
-What the two fixtures are for is in `docs/SOLANA-ARCHITECTURE.md` §11: Scope prices are stamped with a
-far-future timestamp so Kamino's 180 s staleness check passes on a fresh validator (**first thing to verify:
-that klend does not reject a future timestamp**), and the ZEC mint's authority is swapped for a throwaway local
-key so tests can mint collateral (`fixtures/local-mint-authority.json`, gitignored, regenerated per run).
+**If a validator from before 2026-09-12 13:00 is still running, restart it with the script above**: the old
+world had the real Scope program and a slot-0 ledger, and both make klend refuse every borrow. A second
+instance for parallel work: `RPC_PORT=8999 FAUCET_PORT=9901 GOSSIP_PORT=8101 PORT_RANGE=8200-8400
+LEDGER=.anchor/test-ledger-2 bash scripts/localnet.sh`, then `anchor test --skip-local-validator
+--provider.cluster http://127.0.0.1:8999`.
+
+Why the mock and the warp: `docs/SOLANA-ARCHITECTURE.md` §11. In short, klend refuses a Scope price older than
+180 s and overflows on a future-dated one, and its `slots_elapsed` overflows when the validator's slot is below
+the cloned reserves' mainnet slot. The fixtures (`fixtures/`, gitignored, regenerated per run) are the two mint
+authorities only.
 
 ## Key hygiene (the rules in `CLAUDE.md`, applied here)
 

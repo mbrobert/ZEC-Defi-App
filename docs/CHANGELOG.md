@@ -122,6 +122,19 @@ while its NatSpec claims the balance delta; W3-LOW-7 the grant's spend carry-for
 **Not done.** No `acceptVenue`, `Deploy.s.sol` untouched, nothing broadcast; the fork tests were not
 re-run against Base in this session.
 
+## 2026-09-12 (evening) — Solana slice S2: decisions taken, the owner path built and proven on localnet
+
+The founder decided `SOLANA-ARCHITECTURE.md` §12 (keeper may sell collateral to stop a liquidation; Squads
+multisig; `release_obligation` yes; the rate is shown, never a refusal; no fees; one audit for both modules)
+and installed the toolchain. The Anchor program now carries every owner instruction of §3, with the entry and
+exit floors enforced in the program, `kamino.rs` (klend builders, CPI helpers, byte-verified readers), and a
+second seam (`generated/addresses.rs` from shared). Localnet **15/15**, host unit **5**, seams **7**. What the
+run taught and the code now embodies: klend marks a reserve stale after every state change (refresh again
+before the post-action view); klend closes an emptied obligation (deposit re-creates it); Kamino's own 40 %
+cap binds before the 1.55 floor on this market. Harness: `--warp-slot` above mainnet (klend's `slots_elapsed`
+overflows otherwise) and `programs/mock_scope` at Scope's program id (a future-dated Scope timestamp is refused,
+verified) so tests stamp prices fresh and can move them. Reader SDKs isolated in `solana/readers`.
+
 ## 2026-09-12 — Step 7: the Solana module, design before code
 
 **Direction.** `DIRECTION-2026-09-11.md` copied into the repo; `CLAUDE.md`, `README.md` and the

@@ -1,4 +1,4 @@
-# Solana module — architecture (design record, 2026-09-12; nothing built)
+# Solana module — architecture (design record, 2026-09-12; owner path built and proven the same day)
 
 What the Solana module is, account by account and instruction by instruction, before a line of handler code
 exists. Every number here comes from `VERIFIED-SOLANA-FACTS.md` (read live 2026-09-12) or from
@@ -6,9 +6,16 @@ exists. Every number here comes from `VERIFIED-SOLANA-FACTS.md` (read live 2026-
 module's design (`ARCHITECTURE.md`) is the reference for every choice below: where the Solana design departs from
 it, the departure and its reason are stated.
 
-**Status.** The founder's direction (`DIRECTION-2026-09-11.md`): build the Solana module in full, with the
-ladder as an *action*, never the "lite" wallet-signed, notify-only variant. Handoff Step 7c: scaffold only, no
-instruction handlers until this document has been committed and read. That is the state of `solana/` today.
+**Status (2026-09-12, evening).** The founder read this document, decided §12, installed the toolchain and
+started the localnet; the gate on handlers is lifted. **Built and proven on localnet (15/15):** every owner
+instruction in §3 (`init_account`, `deposit`, `borrow`, `repay`, `withdraw`, `transfer_out`, `close_position`,
+`grant`, `revoke`, `revoke_all`). **Not yet built:** `keeper_protect` and `release_obligation` (the next
+slice; the mock Scope now lets tests move the ZEC price to walk the ladder). Three facts the run established
+and the code now embodies: klend marks a reserve stale after every state change, so a post-action health view
+refreshes the reserves again before the obligation; klend **closes an obligation a full withdraw empties**
+(rent back to the Account PDA), so `deposit` re-creates it on the same PDA; and on this market Kamino's own
+40 % LTV cap binds before Oilskin's 1.55 floor on both `borrow` and `withdraw` (HF at the cap is 1.625), which
+makes the floors defense in depth — proven by host unit tests, not by the venue.
 
 Abbreviations: HF = health factor; LT = liquidation threshold; LTV = loan-to-value; PDA = program-derived address
 (an account controlled by a program rather than a key); CPI = cross-program invocation (one Solana program
@@ -136,7 +143,7 @@ the program checks is the HF Kamino would liquidate against at that slot.
 | `deposit` | `amount_zec: u64` | wallet ATA → Account ATA; CPI `depositReserveLiquidityAndObligationCollateralV2` | Kamino's deposit limit and 24-h withdrawal cap apply; nothing to add |
 | `borrow` | `amount_usdc: u64` | CPI `borrowObligationLiquidityV2` to the Account USDC ATA | **after the borrow: HF ≥ ENTRY_HF_FLOOR (1.55) and LTV ≤ min(MAX_OFFERED_LTV_CAP 50 %, reserve LTV 40 %)** — today that is 40 % and HF 1.625 at the top preset |
 | `repay` | `amount_usdc: u64` or `u64::MAX` | CPI `repayObligationLiquidityV2` from the Account USDC ATA | — |
-| `withdraw` | `amount_zec: u64` or `u64::MAX` | CPI `withdrawObligationCollateralAndRedeemReserveCollateralV2` to the Account ZEC ATA | **after the withdraw: HF ≥ ENTRY_HF_FLOOR unless debt ≤ LOAN_DUST_UNITS** (the twin of the router's exit floor and slice C's one dust threshold) |
+| `withdraw` | `collateral_amount: u64` (cToken units) or `u64::MAX` | CPI `withdrawObligationCollateralAndRedeemReserveCollateralV2` to the Account ZEC ATA. `u64::MAX` withdraws **the most Kamino allows** (everything when there is no debt, and then klend closes the emptied obligation) | **after the withdraw: HF ≥ ENTRY_HF_FLOOR unless debt ≤ LOAN_DUST_UNITS** (the twin of the router's exit floor and slice C's one dust threshold) |
 | `transfer_out` | `mint, amount: u64` | Account ATA → wallet ATA | owner-only; this plus `repay`/`withdraw` is the always-exit path — no grant, no keeper, no Oilskin off-chain component needed |
 | `close_position` | `min_zec_out: u64` | `repay(MAX)` then `withdraw(MAX)` in one instruction; the "unwind" | refuses if the Account USDC ATA cannot cover the debt (the user tops up first) |
 | `grant` | `keeper, expiry_ts, period_secs, repay_usdc_per_period, sell_zec_per_period, max_sell_slippage_bps, allowed_rungs` | creates or overwrites the Grant; **a re-grant inside a live period carries spend forward** (Base's rule) | refuses `expiry ≤ now`, `period == 0`, an empty rung mask, a zero repay budget, slippage > 500 bps |
@@ -304,13 +311,17 @@ programs (klend, Scope, Farms) and the accounts cloned (the market, both reserve
 cToken mints and vaults, Scope `OraclePrices` + `OracleMappings` + configuration, the ZEC and USDC mints), all
 from `SOLANA_TOKENS` / `KAMINO_ZCASH_MARKET` in shared. Two fixtures make it usable:
 
-- **Scope prices go stale in 180 s.** `scripts/patch-scope-fixture.mjs` dumps `OraclePrices`, rewrites the
-  `unix_timestamp` of entries 430, 429, 13 and 456 to the far future and the `last_updated_slot` to 0, and
-  loads it with `--account` at genesis, so Kamino's `now − ts > max_age` staleness check reads fresh
-  (`saturating_sub`); **whether klend also rejects a future timestamp is the first thing the harness verifies**.
-  The same script can set a chosen ZEC price to simulate a drawdown per test.
-- **ZEC cannot be minted locally** (the authority is the bridge's PDA): the fixture rewrites the mint's
-  authority to a test keypair's public key generated by the harness at run time (never committed).
+- **Scope prices go stale in 180 s, and a future-dated timestamp is refused** (verified 2026-09-12: klend
+  computes the age with a checked subtraction and returns `MathOverflow`). So the harness loads
+  `programs/mock_scope` — LOCALNET ONLY — **at Scope's own program id**; the cloned `OraclePrices` account
+  (owner = that id) becomes writable, and the tests stamp entries 430, 429, 13 and 456 with the validator's
+  clock before every Kamino-touching call (`stamp_fresh`) and move the ZEC spot and TWAP together
+  (`set_price`) to walk the ladder. Kamino never CPIs into Scope, so nothing else changes.
+- **The validator must start above mainnet's slot** (`--warp-slot`): klend's `slots_elapsed` is
+  `current − last_update.slot` with a checked subtraction, and the cloned reserves carry mainnet slot numbers.
+- **ZEC and USDC cannot be minted locally** (the ZEC authority is the bridge's PDA, USDC's is Circle's): the
+  fixture rewrites both mints' authorities to test keypairs generated by the harness at run time (never
+  committed); USDC minting lets a test cover the interest a full repay needs.
 
 Scenarios, mirroring `contracts/test`: init → deposit → borrow at 40 % (HF 1.625) → refuse a borrow at 45 % →
 price fixture −8 % → `keeper_protect(warn)` refused (warn is notify-only, no budget) → −17 % → `repay` lifts to

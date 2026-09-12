@@ -1125,9 +1125,9 @@ own USDC token account; a frozen account cannot repay from idle USDC.
 authority policy (`SOLANA-ARCHITECTURE.md` §12 (2)). Copy may not claim "no
 operator powers" before that.
 
-**Does not (yet).** The program is being built (handlers landing from
-2026-09-12); until the localnet suites prove each instruction, nothing enforces
-this. Decided 2026-09-12: the keeper **may sell collateral** to stop a
+**Does not (yet).** The owner path is built and proven on localnet
+(2026-09-12, 15/15); `keeper_protect` and `release_obligation` are not, so no
+automated protection exists yet on Solana. Decided 2026-09-12: the keeper **may sell collateral** to stop a
 liquidation, bounded per period and priced off Scope — so the pre-sign copy
 must say the keeper can sell ZEC, and how much; the program's upgrade authority
 goes to a Squads multisig at deploy, and until that handover a single deployer
