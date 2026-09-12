@@ -1,0 +1,91 @@
+# Oilskin Solana module — Anchor workspace. Design: docs/SOLANA-ARCHITECTURE.md. Facts: docs/VERIFIED-SOLANA-FACTS.md.
+# Localnet only. There is no devnet ZCASH market; the mainnet programs and accounts are cloned into the local
+# validator (list below, every address from docs/VERIFIED-SOLANA-FACTS.md). Nothing here deploys anywhere.
+
+[toolchain]
+anchor_version = "1.2.0"   # crates.io max_stable for anchor-lang / anchor-cli on 2026-09-12; npm client @anchor-lang/core 1.2.0
+solana_version = "4.2.2"   # Agave stable release of 2026-08-28
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+# Anchor's placeholder id. `anchor keys sync` replaces it at the first build with the keypair it writes to
+# target/deploy/oilskin-keypair.json — gitignored, never committed, never read into a Claude session.
+oilskin = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "localnet"
+# The founder's local CLI keypair. Claude Code is denied this path (.claude/settings.json).
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "npx ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
+
+[test]
+startup_wait = 30000
+shutdown_wait = 2000
+upgradeable = false
+
+[test.validator]
+url = "https://api.mainnet-beta.solana.com"   # clone source; a keyed RPC (SOLANA_RPC_URL) is kinder to the rate limit
+ledger = ".anchor/test-ledger"
+bind_address = "127.0.0.1"
+
+# ---- programs (program account + its programdata account, so the upgradeable loader can execute them) ----
+[[test.validator.clone]]
+address = "KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD"   # Kamino Lend
+[[test.validator.clone]]
+address = "9uSbGW1y9H5Av6H5TKxQ1wnFApSq2t3oEpfF2YfjDQGA"   # klend programdata
+[[test.validator.clone]]
+address = "HFn8GnPADiny6XqUoWE8uRPPxb29ikn4yTuPa9MF2fWJ"   # Scope
+[[test.validator.clone]]
+address = "DuKtB88SQGJbow5jxmUSwgJWmC7zma8mX3Nodz1Gsjs2"   # Scope programdata
+[[test.validator.clone]]
+address = "FarmsPZpWu9i7Kky8tPN37rs2TpmMrAZrC7S7vJa91Hr"   # Kamino Farms (in every klend V2 CPI account list)
+[[test.validator.clone]]
+address = "5Fz4tY19ihWJAW1j9RNoEQJKSdn5mQHjcVrcZ5BRK5E9"   # Farms programdata
+
+# ---- the ZCASH market ----
+[[test.validator.clone]]
+address = "GBJ3bzUiMfwC9ugaF3MM68EXMDyTUb5UryRRAcVjEowd"   # LendingMarket
+[[test.validator.clone]]
+address = "6e8XcrdencrXBjXtTqYkRS63nS36petvzkV3gBf2ezbH"   # ZEC reserve
+[[test.validator.clone]]
+address = "7muPXroaziH8RTD62Ea4gQ3NuAPZswf8Gj7iuPZ6Ae6Y"   # ZEC liquidity supply vault
+[[test.validator.clone]]
+address = "3oxg1uptz3hSYvPiZEPW1UK2T2G5UUniyc2yjrszQC7R"   # ZEC fee vault
+[[test.validator.clone]]
+address = "FQc32zaNbQnUZmQxd3Fqhg3enqfozyX6K74xcCCHw4NU"   # ZEC cToken mint
+[[test.validator.clone]]
+address = "8yr67socgzkzXYPMPC8KNCh8eLDPjGvqucLGXmCGdwq4"   # ZEC cToken supply vault
+[[test.validator.clone]]
+address = "EW9vT7g2VH2aTFfcbaXRUCbF7jEfaLwMiJpckwDZwUZd"   # USDC reserve
+[[test.validator.clone]]
+address = "C7ipQ9XPEncrVhCLXfHE4aCXPSk1HpPQUr127RwgVG9h"   # USDC liquidity supply vault
+[[test.validator.clone]]
+address = "HwgFUiBaEHv2QnrpgVxPmWuUC5nqt7iGSna99ZQL8oTB"   # USDC fee vault
+[[test.validator.clone]]
+address = "HfwrP5s6bL8pGuqAQUGr6S79AEfyWm2F8W6WJkuXmT53"   # USDC cToken mint
+[[test.validator.clone]]
+address = "GV12UJQSNK3cQPAGea9bHXcu7STuAadaCLeSwEKirWtQ"   # USDC cToken supply vault
+
+# ---- Scope feed the reserves read (klend feed, NOT the Hubble feed) ----
+[[test.validator.clone]]
+address = "3t4JZcueEzTbVP6kLxXrL3VpWx45jDer4eqysweBchNH"   # OraclePrices — replaced by the timestamp-patched fixture in scripts/localnet.sh
+[[test.validator.clone]]
+address = "4zh6bmb77qX2CL7t5AJYCqa6YqFafbz3QJNeFvZjLowg"   # OracleMappings
+[[test.validator.clone]]
+address = "6cMwdbrJ95D7v5655Zsoe7oXmjQJMnagWK8EcdG6qmGM"   # Scope configuration
+
+# ---- mints ----
+[[test.validator.clone]]
+address = "A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS"   # bridged ZEC — replaced by the mint-authority-patched fixture in scripts/localnet.sh
+[[test.validator.clone]]
+address = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"   # USDC
+[[test.validator.clone]]
+address = "5mRY96MiFac9DBToh16j5dgq6kiJCPqhPXPzpoNNtxmw"   # ZEC Metaplex metadata (name/symbol for the UI tests)

@@ -1,0 +1,33 @@
+{
+  "name": "@zyo/solana",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Oilskin Solana module — the Anchor program that twins OilskinAccount + grant on Solana (Kamino ZCASH market), its read-only facts readers, the shared-ladder seam, and the localnet harness. Design in docs/SOLANA-ARCHITECTURE.md; facts in docs/VERIFIED-SOLANA-FACTS.md. No instruction handlers until the founder has read the architecture.",
+  "scripts": {
+    "facts": "node scripts/read-facts.mjs",
+    "authorities": "node scripts/read-authorities.mjs",
+    "gen:ladder": "node scripts/gen-ladder.mjs",
+    "test": "node --test \"test/**/*.test.mjs\"",
+    "test:localnet": "anchor test --skip-build --skip-local-validator",
+    "fixtures": "node scripts/patch-scope-fixture.mjs",
+    "localnet": "bash scripts/localnet.sh"
+  },
+  "dependencies": {
+    "@kamino-finance/klend-sdk": "12.0.0",
+    "@kamino-finance/scope-sdk": "^10.1.0",
+    "@solana-program/compute-budget": "0.8.0",
+    "@solana/kit": "^2.3.0",
+    "@solana/web3.js": "1.99.0",
+    "@zyo/shared": "*",
+    "decimal.js": "^10.4.3"
+  },
+  "devDependencies": {
+    "@anchor-lang/core": "^1.2.0",
+    "@types/mocha": "^10.0.10",
+    "chai": "^4.5.0",
+    "mocha": "^11.1.0",
+    "ts-mocha": "^11.1.0",
+    "typescript": "^5.6.0"
+  }
+}

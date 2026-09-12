@@ -13,7 +13,16 @@
       "Bash(git push --force:*)",
       "Bash(git push -f:*)",
       "Bash(forge script:*--broadcast*)",
-      "Bash(cast send:*)"
+      "Bash(cast send:*)",
+      "Read(~/.config/solana/**)",
+      "Read(**/target/deploy/*.json)",
+      "Read(**/*-keypair.json)",
+      "Bash(solana-keygen:*)",
+      "Bash(cat ~/.config/solana/*)",
+      "Bash(anchor deploy:*)",
+      "Bash(solana program deploy:*)",
+      "Bash(solana transfer:*)",
+      "Bash(anchor upgrade:*)"
     ]
   }
 }

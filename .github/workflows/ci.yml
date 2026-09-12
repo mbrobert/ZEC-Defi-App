@@ -89,3 +89,18 @@ jobs:
             contracts/slither.sarif
             contracts/aderyn.json
           if-no-files-found: ignore
+
+  solana-seam:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # The seam test imports only @zyo/shared and node builtins: no Rust, no Solana CLI, no validator.
+      - name: Install shared
+        run: npm install -w @zyo/shared
+      - name: Build shared
+        run: npm run build -w @zyo/shared
+      - name: Ladder seam (generated/ladder.rs == packages/shared)
+        run: npm test -w @zyo/solana

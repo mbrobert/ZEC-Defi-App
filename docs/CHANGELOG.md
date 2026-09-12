@@ -49,6 +49,37 @@ while its NatSpec claims the balance delta; W3-LOW-7 the grant's spend carry-for
 **Not done.** No `acceptVenue`, `Deploy.s.sol` untouched, nothing broadcast; the fork tests were not
 re-run against Base in this session.
 
+## 2026-09-12 — Step 7: the Solana module, design before code
+
+**Direction.** `DIRECTION-2026-09-11.md` copied into the repo; `CLAUDE.md`, `README.md` and the
+package descriptions now say what the founder decided: chain-agnostic, ZEC-holder-centric, a Base module and
+a Solana module both built in full, never a notify-only "lite" variant. The product-describing "Base-first"
+labels became "Base module"; dated audit and research records keep theirs.
+
+**Facts (Step 7a).** `VERIFIED-SOLANA-FACTS.md`, read live 2026-09-12 (slots 446,294,693 → 446,298,641) with
+the reader committed as `solana/scripts/read-facts.mjs` and its raw output as
+`research/solana-facts-2026-09-12.json`: the ZCASH market and its two reserves decoded field by field (LTV 40,
+LT 65, cap 13,000 ZEC, $2 M USDC limit, the five-point rate curve, 180 s / 240 s oracle ages, the $400–$2,000
+band), the Scope chain (430 = MostRecentOf(Pyth Lazer 407, Chainlink 428), 15 % divergence, 7,200 s), the
+bridged ZEC mint (authority = PDA `["authority"]` of the bridge program `dahP…CPxe`, proven; no freeze
+authority; minting observed), every program's upgrade authority, all 45 obligations (one is 58.8 % of the
+debt), the USDC projection against Base's live Aave rate (+$84 K crosses it, +$358 K empties the pool),
+Jupiter depth (400 ZEC at 0.56 % impact) and Kamino's own disclosure wording, verbatim. The research file
+the handoff cites does not exist anywhere; the drift table records where the direction memo's numbers moved.
+`packages/shared/src/solana.ts` carries the addresses and a dated snapshot (+6 tests).
+
+**Design (Step 7b).** `SOLANA-ARCHITECTURE.md`: Account and Grant PDAs, a program-owned Kamino obligation,
+typed owner instructions with the entry and exit floors in the program, one keeper instruction the chain
+gates on the refreshed health factor and on its own outcome, the ladder generated from shared, the
+pool-size gate, the deposit-flow disclosures, the risks (`RISKS.md` §22, `PRIVACY.md` §6), the audit scope
+(`AUDIT-SCOPE.md`), the localnet test plan, and seven decisions for the founder. `ARCHITECTURE.md` points at it.
+
+**Scaffold (Step 7c).** `solana/` as a sibling npm workspace: Anchor 1.2.0 / Agave 4.2.2 pins, an empty
+program (no handlers, by instruction), `generated/ladder.rs` from `gen-ladder.mjs` with a seam test
+(`npm test -w @zyo/solana`, 4), the localnet harness with the two fixtures (Scope timestamps, ZEC mint
+authority), `SETUP.md`, key-path deny rules in `.claude/settings.json`, a CI job for the seam. Not run here:
+`anchor build` and the localnet smoke test (no toolchain on the founder's Mac).
+
 ## 2026-09-11 — Slice F: the two decisions implemented — one Close clears every book; cbZEC/USDC held directly on Slipstream
 
 **Two-book Close (RISKS §8, option 1).** `StrategyRouter.unwind`'s withdraw leg now visits every

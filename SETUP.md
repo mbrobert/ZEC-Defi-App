@@ -1,6 +1,6 @@
 # Oilskin — setup
 
-Base-first v1 (2026-09-06, after the wave-1 audit fix round). What is in the
+Base module v1 (2026-09-06, after the wave-1 audit fix round). What is in the
 tree, how to build it, how to run it. Status and risks: `README.md`,
 `docs/RISKS.md`; what the audit found and changed: `docs/AUDIT-2026-09-06.md`.
 Nothing here is deployed; every "live" path below needs addresses that do not
@@ -12,7 +12,9 @@ provision; LTV = loan-to-value; HF = health factor; CI = continuous integration.
 
 ## Toolchain
 
-- Node ≥ 22 and npm (workspaces: `packages/shared`, `agent`, `services/yield`, `web`).
+- Node ≥ 22 and npm (workspaces: `packages/shared`, `agent`, `services/yield`, `web`, `solana`).
+- Rust, the Solana CLI (Agave 4.2.2) and Anchor 1.2.0 for `solana/` only — `solana/SETUP.md`; no existing
+  suite needs them, and `npm test -w @zyo/solana` (the ladder seam) runs without them.
 - Foundry (`forge`) for `contracts/`; solc 0.8.24, via-IR, EVM `cancun`
   (transient storage is used by `OilskinAccount` and `PythOracleAdapter`).
   Offline containers with a pre-fetched compiler: `FOUNDRY_PROFILE=local`

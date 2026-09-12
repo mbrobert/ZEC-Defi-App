@@ -1,0 +1,9 @@
+.anchor/
+target/
+test-ledger/
+.facts/
+fixtures/*.json
+node_modules/
+*-keypair.json
+**/deploy/*.json
+.DS_Store

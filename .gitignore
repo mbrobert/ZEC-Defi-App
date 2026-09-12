@@ -17,3 +17,8 @@ coverage/
 *.tar.gz
 .demo/
 .claude/settings.local.json
+solana/target/
+solana/.anchor/
+solana/test-ledger/
+solana/**/*-keypair.json
+solana/target/deploy/*.json

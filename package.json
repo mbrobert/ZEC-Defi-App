@@ -7,7 +7,8 @@
     "packages/shared",
     "agent",
     "services/yield",
-    "web"
+    "web",
+    "solana"
   ],
   "scripts": {
     "build": "npm run build -w @zyo/shared && npm run build -w @zyo/agent && npm run build -w @zyo/yield && npm run build -w @zyo/web",
