@@ -245,7 +245,7 @@ entirely in our control; **[ext]** depend on someone else and get a fallback.
     cbZEC peg risk, our-own-market risk if item 12 ships, liquidation, IL, keeper dependence, smart-contract
     risk, demo status. The words "private", "shielded", "non-custodial", "locked payout address" leave the
     product unless a specific surface still earns them.
-20. **[own] Pre-audit tooling and CI for the new surface.** Slither + Aderyn on every push, Halmos on the
+20. **[own] Pre-audit tooling and CI for the new surface.** *(2026-09-11, slice H: the CI job and five halmos properties exist — `AUDIT-2026-09-11.md` §Slice H; none of the three tools has run locally yet, install commands there.)* Slither + Aderyn on every push, Halmos on the
     router invariants, Tenderly simulation of the full deposit/unwind against Base mainnet state, fork tests
     that run in CI against Base (Aave, Morpho, Aerodrome, cbZEC) — because C-2 was invisible to any suite
     that did not touch the chain.

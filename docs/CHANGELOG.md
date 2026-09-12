@@ -3,6 +3,20 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-11 — Slice H: static analysis and symbolic execution wired into CI; nothing ran locally
+
+None of Slither, Aderyn or halmos is installed on the founder's Mac and none was installed by the
+session (the brief: name the command, continue). `AUDIT-2026-09-11.md` §Slice H carries the three
+install commands. Added: a `static-analysis` CI job on every push and pull request — Slither
+`--fail-high` over `src/`, Aderyn failing on a non-empty `high_issues` in its JSON report, halmos on
+`contracts/test/halmos/` — with the reports uploaded; five halmos properties: four on the account's
+grant budget and calldata parser (an ungranted root call always reverts `NotGranted`; a recognised
+mover is charged exactly its calldata amount and never past the budget; the five unparsable movers
+always revert; a non-mover is never charged) that fail the job when violated, and one bounded
+router-balance property expected to time out (`continue-on-error`). No Slither / Aderyn finding was
+triaged and no property was proved in this session — the honest count is zero of each until the
+first run; the files compile under Forge and `forge test` does not run them.
+
 ## 2026-09-11 — Slice G: wave-3 adversarial audit with executed proofs of concept (`AUDIT-2026-09-11.md`)
 
 **Scope.** What wave 2 did not cover — `SnuggleLpVenue` beyond `closeMany` / `_takeFee` /

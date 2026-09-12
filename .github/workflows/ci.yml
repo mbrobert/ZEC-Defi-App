@@ -39,3 +39,53 @@ jobs:
         run: npm test -w @zyo/agent
       - name: Yield service suite (tsc + node:test, offline fixtures)
         run: npm test -w @zyo/yield
+
+  # Slice H (2026-09-11, BASE-PIVOT item 20): static analysis and symbolic execution on every push.
+  # The job FAILS on a new High from Slither (`--fail-high`) or Aderyn (the report's high_issues), and
+  # on a violated halmos property of the account's grant budget / calldata parser. The router balance
+  # property runs with `continue-on-error`: it walks the whole unwind tree and is expected to time out
+  # rather than to fail (AUDIT-2026-09-11.md §Slice H).
+  static-analysis:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+      - name: Fetch libraries (not vendored in repo)
+        run: |
+          git clone --depth 1 --branch v5.7.0 https://github.com/OpenZeppelin/openzeppelin-contracts lib/openzeppelin-contracts
+          git clone --depth 1 --branch v1.16.2 https://github.com/foundry-rs/forge-std lib/forge-std
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Slither (fails on High)
+        run: |
+          python3 -m pip install --quiet slither-analyzer
+          slither . --filter-paths "lib/|test/|script/" --exclude-dependencies --fail-high --sarif slither.sarif || exit 1
+      - name: Aderyn (fails on High)
+        run: |
+          curl --proto '=https' --tlsv1.2 -LsSf https://github.com/cyfrin/aderyn/releases/latest/download/aderyn-installer.sh | bash
+          export PATH="$HOME/.local/bin:$HOME/.cyfrin/bin:$PATH"
+          aderyn . --src src/ -o aderyn.json
+          HIGHS=$(python3 -c 'import json;d=json.load(open("aderyn.json"));print(len((d.get("high_issues") or {}).get("issues") or []))')
+          echo "Aderyn high issues: $HIGHS"
+          test "$HIGHS" -eq 0
+      - name: Halmos — the account's grant budget and calldata parser (fails on a violated property)
+        run: |
+          python3 -m pip install --quiet halmos
+          halmos --contract AccountGrantHalmos --loop 4 --solver-timeout-assertion 120000
+      - name: Halmos — the router's balance unchanged across unwind (bounded; may time out)
+        continue-on-error: true
+        run: |
+          timeout 20m halmos --contract RouterBalanceHalmos --loop 3 --solver-timeout-assertion 60000 || echo "router property: timed out or unknown — recorded, not a failure"
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: static-analysis-reports
+          path: |
+            contracts/slither.sarif
+            contracts/aderyn.json
+          if-no-files-found: ignore

@@ -555,8 +555,13 @@ the engine lists first and, re-pointed at the real Aerodrome entry (slice B,
 single-sided deposit is a one-sided range, not a swap to ratio; and
 the cbZEC B20 test cannot execute inside a fork EVM at all (its values were
 read live with `cast`). No product code was changed to turn any of these
-green. Slither / Aderyn / Halmos /
-Tenderly CI (`BASE-PIVOT-2026-09.md` item 20) is a **plan**. Peripheral-to-
+green. Slither / Aderyn / Halmos CI (`BASE-PIVOT-2026-09.md` item 20) exists since
+2026-09-11 (slice H: a `static-analysis` job failing on a new High, four halmos
+properties on the account's grant budget and parser, one bounded router
+property) — but **none of the three tools has run on the founder's Mac**, so
+no Slither or Aderyn finding has been triaged yet and no halmos property has
+been proved (`AUDIT-2026-09-11.md` §Slice H has the install commands). Tenderly
+is still a plan. Peripheral-to-
 peripheral reentrancy is bounded at depth 8, not prevented: venue A → B → A is
 reachable, and today's venues are stateless, which is the only reason nothing
 breaks — a future venue with per-call state must carry its own guard

@@ -276,4 +276,12 @@ Runs the contracts suite and the agent + yield suites on push to `main` and
 on pull requests. Gaps, unchanged: no shared / web / prototype jobs; no fork
 job (needs a `BASE_BASE_RPC_URL`-class secret); the agent job runs before any
 contracts compile, so its `verify-abi` skips there — order the jobs and set
-`VERIFY_ABI_STRICT=1`; no static analysis (Slither / Aderyn).
+`VERIFY_ABI_STRICT=1`. Since 2026-09-11 (slice H) a `static-analysis` job
+runs Slither (`--fail-high`, paths filtered to `src/`), Aderyn (fails when the
+JSON report's `high_issues` is non-empty) and halmos on
+`contracts/test/halmos/` (the account properties fail the job; the router
+property is `continue-on-error` with a 20-minute timeout) on every push and
+pull request, uploading the reports as artifacts. Not yet run locally — none
+of the three tools is installed on the founder's Mac (`AUDIT-2026-09-11.md`
+§Slice H has the commands); the first CI run's findings are still to be
+triaged.
