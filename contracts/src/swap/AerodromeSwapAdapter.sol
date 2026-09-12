@@ -68,11 +68,11 @@ contract AerodromeSwapAdapter is ISwapAdapter, Peripheral {
     ///      — so a router that lies about its return value does not help (until wave 3's W3-LOW-6
     ///      the comparison was on the return value, and this sentence was not true); the allowance
     ///      is exact and reset; a deadline is mandatory.
-    /// @dev Slither `reentrancy-eth` ("stale balance used after the call"), triaged 2026-09-12
+    /// @dev Slither `reentrancy-balance` (High; "stale balance used after the call"), triaged 2026-09-12
     ///      (AUDIT-2026-09-12.md): the balance DELTA across the swap is the floor check by design —
     ///      read before, read after, compare — and this adapter holds nothing of its own between
     ///      calls. Proved by audit-regressions/SwapAdapterFloor.t.sol (W3-LOW-6).
-    // slither-disable-next-line reentrancy-eth
+    // slither-disable-next-line reentrancy-eth,reentrancy-balance
     function swap(
         address tokenIn,
         address tokenOut,

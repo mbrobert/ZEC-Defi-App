@@ -42,6 +42,20 @@ liquidity provision; EIP = Ethereum Improvement Proposal.
   1.407), the funded sale at HF 1.16 landing inside the cap with the released ZEC collected to the unit,
   observe-only refusing by name. Not deployed; no keeper runs anywhere.
 
+## 2026-09-12 — Static analysis, second pass: the swap adapters' High is Slither's `reentrancy-balance`, not `reentrancy-eth`
+
+- The triage commit (`485b3ff`) suppressed the five swap-adapter findings as `reentrancy-eth`; Slither
+  reports them under `reentrancy-balance`, a High-severity detector of its own ("balance read before
+  the call, used after it"), so the second CI run still failed `--fail-high` at 301 results. The two
+  `slither-disable-next-line` comments now name both detectors, the NatSpec and the audit table say
+  `reentrancy-balance`, and the CI command run locally (Slither in a scratch venv, same flags) exits 0 at
+  **296 results, no High**; `forge build` clean (comments only). Also on record: the `contracts` job of
+  `485b3ff` and the `contracts-build` job of `7041771` ended at ~11 min with "the runner has received a
+  shutdown signal" (exit 143) while recompiling 39 via-IR files after the cache key changed — the log
+  shows `Compiling 39 files with Solc 0.8.24` and then the signal, no compiler error; the two cold
+  compiles earlier in the day took 13–15 min on the runner and passed. The push of this commit re-runs
+  them.
+
 ## 2026-09-12 — NI-HIGH-1 follow-ups closed: the keeper reads `DustLegKept`, the Close plan says a dust leg is kept
 
 - `agent/src/abi/oilskin.ts` gains the `DustLegKept` fragment (seam 110 → 111); `summarizeUnwinds`
