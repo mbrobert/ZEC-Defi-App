@@ -716,6 +716,24 @@ describe("KeeperDispatcher — world check before acting (resume safety)", () =>
     assert.equal(r.oil.txFrom.length, 0);
   });
 
+  it("A4: a record carrying its own disarm threshold is judged against it, not the floor's ladder; a record without one still is", async () => {
+    // HF 1.38: under the floor's repay disarm (1.40) — but above a 1.30-entry account's repay disarm (1.22).
+    const r = await rig(1.38);
+    r.oil.setPositions(ACCOUNT_A, [{ id: 1n, poolId: POOL_A }]);
+    r.grantAll();
+    const own = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.18, { disarmHf: 1.22 }), valuation: null });
+    assert.equal(own.status, "SUPERSEDED", JSON.stringify(own));
+    assert.match((own as { reason: string }).reason, /1\.3800 ≥ repay disarm 1\.22/);
+    assert.equal(r.oil.txFrom.length, 0, "nothing sent");
+    const unknown = await r.dispatcher.dispatch({ record: record("repay", "nope", 1.3), valuation: null });
+    assert.equal(unknown.status, "REFUSED");
+    assert.match((unknown as { reason: string }).reason, /unknown rung nope/);
+    // A pre-A4 record (no disarmHf) is judged against HF_LADDER's repay disarm 1.40: 1.38 is still low, so it acts.
+    const floor = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: null });
+    assert.equal(floor.status, "SENT", JSON.stringify(floor));
+    assert.equal(r.oil.txFrom.length, 1);
+  });
+
   it("resume: no debt any more ⇒ SUPERSEDED; unvaluable ⇒ REFUSED (fail closed); still low ⇒ acts", async () => {
     const r = await rig(1.3);
     r.oil.setPositions(ACCOUNT_A, [{ id: 1n, poolId: POOL_A }]);

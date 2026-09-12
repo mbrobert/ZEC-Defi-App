@@ -111,18 +111,24 @@ export function tokenForCollateral(symbol: CollateralSymbol): (typeof BASE_TOKEN
 /** Product-wide ceiling on the LTV we will ever offer, whatever the venue allows. */
 export const MAX_OFFERED_LTV_CAP_BPS = 5000;
 
-/** ENTRY_HF_FLOOR expressed in hundredths so the floor division is exact integer math. */
-const ENTRY_HF_FLOOR_HUNDREDTHS = Math.round(ENTRY_HF_FLOOR * 100);
+/** A floor expressed in hundredths so the floor division is exact integer math. */
+function floorHundredths(entryHfFloor: number): number {
+  if (typeof entryHfFloor !== "number" || !Number.isFinite(entryHfFloor) || entryHfFloor <= 1) {
+    throw new RangeError(`entryHfFloor must be a finite number > 1, got ${String(entryHfFloor)}`);
+  }
+  return Math.round(entryHfFloor * 100);
+}
 
 /**
  * Highest LTV we offer for an asset whose venue liquidation threshold is
- * `liquidationThresholdBps`: min(cap, floor(LT / ENTRY_HF_FLOOR)).
- * Integer arithmetic so 7800 → 5032 → 5000 and 6000 → 3870 exactly.
+ * `liquidationThresholdBps`: min(cap, floor(LT / entryHfFloor)). The floor is the registry's
+ * (`entryHfFloorWad`, read live where a surface can); the shared ENTRY_HF_FLOOR is the deploy
+ * default. Integer arithmetic so 7800 → 5032 → 5000 and 6000 → 3870 exactly at 1.55.
  * Mirrors CollateralRegistry.maxOfferedLtvBps on-chain.
  */
-export function maxOfferedLtvBps(liquidationThresholdBps: number): number {
+export function maxOfferedLtvBps(liquidationThresholdBps: number, entryHfFloor: number = ENTRY_HF_FLOOR): number {
   assertBps(liquidationThresholdBps, "liquidationThresholdBps");
-  const derived = Math.floor((liquidationThresholdBps * 100) / ENTRY_HF_FLOOR_HUNDREDTHS);
+  const derived = Math.floor((liquidationThresholdBps * 100) / floorHundredths(entryHfFloor));
   return Math.min(MAX_OFFERED_LTV_CAP_BPS, derived);
 }
 
@@ -131,8 +137,8 @@ export function maxOfferedLtvBps(liquidationThresholdBps: number): number {
  * nearest 100 bps so web and prototypes round the same way.
  * 7000 → 4516 → 4500; 7800 → 5000.
  */
-export function maxOfferedLtvStopBps(liquidationThresholdBps: number): number {
-  return Math.floor(maxOfferedLtvBps(liquidationThresholdBps) / 100) * 100;
+export function maxOfferedLtvStopBps(liquidationThresholdBps: number, entryHfFloor: number = ENTRY_HF_FLOOR): number {
+  return Math.floor(maxOfferedLtvBps(liquidationThresholdBps, entryHfFloor) / 100) * 100;
 }
 
 export type LtvPresetId = "p30" | "p40" | "top";
@@ -159,8 +165,8 @@ export const LTV_PRESET_FIXED_BPS = { p30: 3000, p40: 4000 } as const;
  * (= maxOfferedLtvBps). Each carries `offerable` and its computed entry HF.
  * cbBTC (LT 7800) → top 5000; WETH (8300) → 5000; a 6000-LT asset → 3870.
  */
-export function ltvPresets(liquidationThresholdBps: number): LtvPreset[] {
-  const max = maxOfferedLtvBps(liquidationThresholdBps);
+export function ltvPresets(liquidationThresholdBps: number, entryHfFloor: number = ENTRY_HF_FLOOR): LtvPreset[] {
+  const max = maxOfferedLtvBps(liquidationThresholdBps, entryHfFloor);
   const make = (id: LtvPresetId, ltvBps: number): LtvPreset => ({
     id,
     label: id === "top" ? "Top" : `${ltvBps / 100}%`,
@@ -174,7 +180,7 @@ export function ltvPresets(liquidationThresholdBps: number): LtvPreset[] {
 }
 
 /** Is a user-chosen LTV within what we offer for this asset? */
-export function isOfferableLtv(liquidationThresholdBps: number, ltvBps: number): boolean {
+export function isOfferableLtv(liquidationThresholdBps: number, ltvBps: number, entryHfFloor: number = ENTRY_HF_FLOOR): boolean {
   assertBps(ltvBps, "ltvBps");
-  return ltvBps > 0 && ltvBps <= maxOfferedLtvBps(liquidationThresholdBps);
+  return ltvBps > 0 && ltvBps <= maxOfferedLtvBps(liquidationThresholdBps, entryHfFloor);
 }

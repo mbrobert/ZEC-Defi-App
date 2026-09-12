@@ -439,9 +439,16 @@ own proofs of concept, re-run with the expectations flipped.
    fallback for a feed that cannot be walked. A startup self-check that would
    leave every account `UNKNOWN` is a **loud fatal** (`FEED_SELFCHECK=fatal` by
    default; `warn` is an explicit operator override).
-4. **Ladder** (`engine/ladder.ts`) over shared `HF_LADDER`: warn < 1.50,
-   repay < 1.35, derisk < 1.20, emergency < 1.05, each disarming at rung + 0.05
-   (`HF_HYSTERESIS`); a gap down fires the most severe crossed rung once;
+4. **Ladder** (`engine/ladder.ts`) over the ACCOUNT's ladder (A4, 2026-09-12,
+   BUILD-PLAN D7): `resolveLadder` reads `StrategyRouter.entryHfWad(account)`
+   each tick (`services/entryHf.ts`) and runs shared `ladderFor(entryHf)` —
+   at the 1.55 floor that is warn < 1.50, repay < 1.35, derisk < 1.20,
+   emergency < 1.05, each disarming at rung + 0.05; at 1.30 it is 1.27 / 1.19
+   / 1.11 / 1.05 with 0.03. No record, or no router, means the floor's ladder
+   (`HF_LADDER`) and `entryHf: null` on the account record; a read that fails
+   keeps the last value; the rung's disarm is written on the dispatch record
+   (`disarmHf`) so the dispatcher sizes and judges against the ladder that
+   fired. A gap down fires the most severe crossed rung once;
    recovery re-arms per rung. A confirmed action that did not clear its rung
    re-arms it (bounded by `MAX_RUNG_REFIRES`), so a rung cannot "succeed" and
    latch. The most severe rung is never abandoned for retry exhaustion while
@@ -506,9 +513,12 @@ here with the facts each was checked against, per the "never invent a number"
 1.55" — that is `ENTRY_HF_FLOOR` (`packages/shared/src/health.ts:14`), the
 minimum HF a **freshly opened** position must have. It is a different
 constant from the ladder. The `warn` rung that actually fires notifications is
-**1.50** (`HF_LADDER[0].hf`, `health.ts:47`); `repay` 1.35, `derisk` 1.20,
+**1.50** (`HF_LADDER[0].hf`); `repay` 1.35, `derisk` 1.20,
 `emergency` 1.05 — unchanged from what `TESTING.md` and `ARCHITECTURE.md`
 already documented. v1 uses 1.50, not 1.55, because that is what is in code.
+(Since A4, 2026-09-12, those are the rungs of a position opened AT the floor;
+a position's own rungs derive from its recorded entry HF, `ladderFor`, §4 of
+the keeper pipeline above.)
 
 **The fact that decided this, checked before comparing anything:** the keeper
 (`agent/src/index.ts`) is a headless daemon with **no inbound port** — it only
@@ -652,8 +662,8 @@ published break-even are refused by the guard (`RISKS.md` §14).
 
 `base.ts` (every address, checksummed, asserted unique; `CHAINLINK_ZEC_USD =
 null`; `MORPHO_BLUE.marketIds` = the two chain-verified Base market ids (2026-09-07);
-`COW_PROTOCOL.vaultRelayer = null` on purpose — unverified), `health.ts` (`ENTRY_HF_FLOOR`, `HF_LADDER`, `rungFor`
-throws on NaN — fail closed), `collateral.ts` (`COLLATERAL_ASSETS`, cbZEC
+`COW_PROTOCOL.vaultRelayer = null` on purpose — unverified), `health.ts` (`ENTRY_HF_FLOOR`, `ladderFor(entryHf)`
+and its floor instance `HF_LADDER`, `hfFromWad` for the router's record, `rungFor` throws on NaN — fail closed), `collateral.ts` (`COLLATERAL_ASSETS`, cbZEC
 `enabled: false` + reason; `maxOfferedLtvBps`, `ltvPresets` 30 / 40 / top),
 `fees.ts` (`FEES.performanceBps = 1000`, `maxPerformanceBps = 2000`,
 `orchestrationBps = 0`; the performance fee is applied to **gains only** —

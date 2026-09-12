@@ -196,6 +196,20 @@ export const strategyRouterAbi = [
     ],
   },
   { type: "function", name: "USDC", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
+  /**
+   * The entry health factor recorded at the account's last open (WAD; 0 = none recorded). The
+   * keeper derives the account's ladder from it with shared `ladderFor` (BUILD-PLAN-2026-09-12
+   * D7, step A4); an account without a record runs the registry floor's ladder, and says so.
+   */
+  { type: "function", name: "entryHfWad", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ name: "healthFactorWad", type: "uint256" }] },
+  {
+    type: "event",
+    name: "EntryHfRecorded",
+    inputs: [
+      { name: "account", type: "address", indexed: true },
+      { name: "healthFactorWad", type: "uint256", indexed: false },
+    ],
+  },
   { type: "function", name: "LP_VENUE", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
   { type: "function", name: "SWAP", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
   // The direct Slipstream venue over the cbZEC/USDC pool and its pool-direct adapter (2026-09-11);

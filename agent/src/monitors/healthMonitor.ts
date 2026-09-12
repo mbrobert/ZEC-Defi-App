@@ -1,3 +1,4 @@
+import { ladderFor, MIN_LADDER_ENTRY_HF } from "@zyo/shared";
 import type { Dispatcher, DispatchResult } from "../dispatch/types.js";
 import { stepLadder, validateLadder, type LadderRung, type LadderState } from "../engine/ladder.js";
 import { UNTRACKED_COLLATERAL, type Valuation } from "../engine/valuation.js";
@@ -7,6 +8,7 @@ import type { AccountValuation } from "../engine/venueValuation.js";
 import { readTickContexts, valueAccount, type TickContexts } from "../services/accountValuer.js";
 import type { AaveReader } from "../services/chain.js";
 import type { AccountDiscovery } from "../services/discovery.js";
+import type { EntryHfReader } from "../services/entryHf.js";
 import { AbortedError, DeadlineError, mapBounded, withDeadline } from "../services/deadline.js";
 import type { VenueReader } from "../services/venues.js";
 import { DuplicateIdError, isFatalStoreError, KeeperStore, type AccountRecord, type DispatchRecord } from "../store/keeperStore.js";
@@ -79,7 +81,18 @@ export interface MonitorDeps {
   venues?: VenueReader | null;
   discovery: AccountDiscovery;
   store: KeeperStore;
+  /**
+   * The floor's ladder (`HF_LADDER`): what an account with no recorded entry HF runs on, and the
+   * shape every derived ladder shares (rung ids and order). Since A4 (BUILD-PLAN-2026-09-12 D7)
+   * each account's ladder is `ladderFor(entryHf)` for the entry HF the router recorded at its open
+   * — see `entryHf` and `resolveLadder`.
+   */
   ladder: readonly LadderRung[];
+  /**
+   * Reads `StrategyRouter.entryHfWad(account)`. Null when no router is configured: every account
+   * then runs the floor's ladder, and its record says `entryHf: null`.
+   */
+  entryHf?: EntryHfReader | null;
   dispatcher: Dispatcher;
   log: Logger;
   config: MonitorConfig;
@@ -129,7 +142,11 @@ export class HealthMonitor {
     this.now = d.now ?? (() => new Date());
   }
 
-  /** Most severe rung in the ladder — the one that must never be given up on. */
+  /**
+   * Most severe rung in the ladder — the one that must never be given up on. Only its ID is ever
+   * compared, and `ladderFor` keeps the ids and their order for every entry HF, so the floor's
+   * ladder answers for all of them.
+   */
   private get lastResortRung(): LadderRung {
     return [...this.d.ladder].sort((a, b) => a.severity - b.severity)[this.d.ladder.length - 1];
   }
@@ -497,6 +514,10 @@ export class HealthMonitor {
     const l = log.child({ account: rec.account });
     const nowIso = this.now().toISOString();
 
+    // The account's ladder, from the entry HF the router recorded for it (A4). Read before the
+    // valuation so a failed read is judged on its own and the floor's ladder is the stated fallback.
+    const { ladder, entryHf } = await this.resolveLadder(rec, handle.signal, l);
+
     let valuation: Valuation;
     try {
       const av = await valueAccount(
@@ -534,7 +555,7 @@ export class HealthMonitor {
       l.warn("valuation UNKNOWN — fail closed, no action", { reasons: valuation.reasons, streak });
       await this.bookkeep(
         rec.account,
-        { lastValuation: "UNKNOWN", unknownStreak: streak, lastEvaluatedAt: nowIso, lastReasons: valuation.reasons },
+        { lastValuation: "UNKNOWN", unknownStreak: streak, lastEvaluatedAt: nowIso, lastReasons: valuation.reasons, entryHf },
         l,
         handle.signal
       );
@@ -551,8 +572,8 @@ export class HealthMonitor {
 
     // ---- NO_DEBT: everything re-arms (HF = +∞) -------------------------
     const hf = valuation.kind === "OK" ? valuation.hf : Number.POSITIVE_INFINITY;
-    const { ladder: startState, refires, rearmedIds } = this.reArmIneffective(rec, hf, l);
-    const step = stepLadder(this.d.ladder, startState, hf);
+    const { ladder: startState, refires, rearmedIds } = this.reArmIneffective(rec, hf, ladder, l);
+    const step = stepLadder(ladder, startState, hf);
 
     if (!step.fire) {
       // Nothing to dispatch: persist ladder state / re-arms / episode end.
@@ -563,6 +584,7 @@ export class HealthMonitor {
         lastEvaluatedAt: nowIso,
         unknownStreak: 0,
         rungRefires: refires,
+        entryHf,
       };
       if (step.episodeEnded) patch.episode = null;
       if (step.rearmed.length) l.info("rungs re-armed", { rungs: step.rearmed.map((r) => r.id), hf });
@@ -606,6 +628,9 @@ export class HealthMonitor {
           action: fire.action,
           rung: fire.id,
           hf: okValuation.hf,
+          // The threshold this rung re-arms at, from THIS account's ladder: the dispatcher sizes a
+          // repay to it and judges a resumed record against it (A4).
+          disarmHf: fire.disarmHf,
           status: "PENDING",
           attempts: 0,
           createdAt: nowIso,
@@ -618,6 +643,7 @@ export class HealthMonitor {
         a.lastEvaluatedAt = nowIso;
         a.unknownStreak = 0;
         a.rungRefires = refires;
+        a.entryHf = entryHf;
         return structuredClone(d);
       });
     } catch (e) {
@@ -638,6 +664,9 @@ export class HealthMonitor {
       rung: fire.id,
       action: fire.action,
       hf: okValuation.hf,
+      rungHf: fire.hf,
+      disarmHf: fire.disarmHf,
+      entryHf,
       episode: record.episode,
       key: record.key,
       crossed: step.crossed.map((r) => r.id),
@@ -704,6 +733,57 @@ export class HealthMonitor {
   }
 
   /**
+   * The ladder this account runs on (BUILD-PLAN-2026-09-12 D7 / A4): `ladderFor(entryHf)` for the
+   * entry HF the router recorded at its open, read fresh each tick. Every fallback is the FLOOR's
+   * ladder, said out loud:
+   *   • no reader (no router configured) or the router reads 0 → `entryHf: null`, the floor's;
+   *   • the read fails → the last value the store holds, if any, else the floor's, at warn;
+   *   • a record under `MIN_LADDER_ENTRY_HF` (a floor set inside the "rungs collapse" band the
+   *     plan flags) → the floor's, at error: that floor is the operator's to raise.
+   * The derived ladder still passes the keeper's own shape check; it cannot fail it by
+   * construction, and if it ever did the floor's ladder runs and the reason is logged.
+   */
+  private async resolveLadder(
+    rec: AccountRecord,
+    signal: AbortSignal,
+    l: Logger
+  ): Promise<{ ladder: readonly LadderRung[]; entryHf: number | null }> {
+    const floor = { ladder: this.d.ladder, entryHf: null };
+    let entryHf: number | null = rec.entryHf ?? null;
+    if (this.d.entryHf) {
+      try {
+        const read = await this.d.entryHf.read(rec.account, signal);
+        entryHf = read > 0 ? read : null;
+      } catch (e) {
+        if (e instanceof AbortedError || signal.aborted) throw e;
+        l.warn("entry HF read failed — keeping the last recorded value", { error: errMsg(e), entryHf });
+      }
+    }
+    if (entryHf === null) {
+      if (rec.entryHf) l.info("entry HF record gone (router reads 0) — the floor's ladder runs", { was: rec.entryHf });
+      return floor;
+    }
+    if (entryHf < MIN_LADDER_ENTRY_HF) {
+      l.error("recorded entry HF is under the least the ladder can be derived from — the floor's ladder runs; raise the registry floor", {
+        entryHf,
+        min: MIN_LADDER_ENTRY_HF,
+      });
+      return { ladder: this.d.ladder, entryHf };
+    }
+    try {
+      const ladder = ladderFor(entryHf);
+      validateLadder(ladder);
+      if (rec.entryHf !== entryHf) {
+        l.info("ladder derived from the recorded entry HF", { entryHf, rungs: ladder.map((r) => `${r.id}<${r.hf}/≥${r.disarmHf}`) });
+      }
+      return { ladder, entryHf };
+    } catch (e) {
+      l.error("ladder could not be derived from the recorded entry HF — the floor's ladder runs", { entryHf, error: errMsg(e) });
+      return { ladder: this.d.ladder, entryHf };
+    }
+  }
+
+  /**
    * Re-arm a rung whose action CONFIRMED but did not clear it.
    *
    * A rung that fires, sends a transaction that succeeds, and leaves the health
@@ -716,6 +796,7 @@ export class HealthMonitor {
   private reArmIneffective(
     rec: AccountRecord,
     hf: number,
+    ladder: readonly LadderRung[],
     l: Logger
   ): { ladder: LadderState; refires: Record<string, number>; rearmedIds: string[] } {
     const refires: Record<string, number> = { ...(rec.rungRefires ?? {}) };
@@ -734,7 +815,7 @@ export class HealthMonitor {
     const rearmedIds: string[] = [];
     const fired = new Set(rec.ladder.fired);
     for (const id of [...fired]) {
-      const rung = this.d.ladder.find((r) => r.id === id);
+      const rung = ladder.find((r) => r.id === id);
       if (!rung || hf >= rung.hf) continue; // already cleared, or the normal disarm applies
       const last = byRung.get(id);
       if (!last || last.status !== "CONFIRMED") continue;

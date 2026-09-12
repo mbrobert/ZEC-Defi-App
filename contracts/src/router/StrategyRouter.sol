@@ -156,6 +156,11 @@ contract StrategyRouter is Peripheral {
     ///         goes on (NI-HIGH-1, 2026-09-12: the deep invariant run found a 6,192-wei WETH fee
     ///         reverting the whole Close — and the keeper's protection with it — as `ZeroQuote`).
     event DustLegKept(address indexed account, address indexed token, uint256 amount);
+    /// @notice The account's health factor right after an open (leveraged or borrow-only) — the
+    ///         entry HF the user chose on the slider, as the venue measured it. The keeper derives
+    ///         the account's ladder from it (`packages/shared` `ladderFor`), not from a global
+    ///         table (BUILD-PLAN-2026-09-12 D7, step A4). A top-up records the new value.
+    event EntryHfRecorded(address indexed account, uint256 healthFactorWad);
     event Swept(address indexed account, address indexed token, address indexed to, uint256 amount);
 
     error ZeroAddress();
@@ -349,6 +354,11 @@ contract StrategyRouter is Peripheral {
         }
     }
 
+    /// @notice The entry health factor recorded at the account's last open (WAD; 0 = never opened
+    ///         through this router, or opened before this record existed — the keeper then runs the
+    ///         registry floor's ladder and says so). Read by the keeper and the dashboard.
+    mapping(address account => uint256 healthFactorWad) public entryHfWad;
+
     // -------------------------------------------------------------- internal
 
     function _supplyAndBorrow(
@@ -375,6 +385,9 @@ contract StrategyRouter is Peripheral {
         healthFactor = venue.healthFactor(account);
         uint256 floor = REGISTRY.entryHfFloorWad();
         if (healthFactor < floor) revert EntryHfTooLow(healthFactor, floor);
+        // The chosen entry HF, as measured: the one record the per-position ladder derives from.
+        entryHfWad[account] = healthFactor;
+        emit EntryHfRecorded(account, healthFactor);
     }
 
     /// @dev Close the ids, swap any non-USDC proceeds, and report what closed. Separated so the

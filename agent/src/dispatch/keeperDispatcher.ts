@@ -430,7 +430,7 @@ export class KeeperDispatcher implements Dispatcher {
       return { status: "REFUSED", reason: `cannot read LP state (fail closed): ${errMsg(e)}` };
     }
 
-    const rung = this.d.ladder.find((r) => r.id === record.rung);
+    const disarmHf = this.disarmFor(record);
     const bandToleranceBps = this.bandToleranceFor(record.attempts);
 
     // Value every id the plan might close, by simulating what the router would
@@ -439,7 +439,7 @@ export class KeeperDispatcher implements Dispatcher {
       await this.probeValues(account, valuation.dominantCollateral.asset, positions, pools, nowS, bandToleranceBps, signal, log);
     }
 
-    const usdcNeeded = rung ? usdcNeededFor(valuation, rung.disarmHf, this.d.usdc) : null;
+    const usdcNeeded = disarmHf !== null ? usdcNeededFor(valuation, disarmHf, this.d.usdc) : null;
 
     // 4. Plan — one unwind per pool, one selector, one grant.
     const plan = planAction({
@@ -973,12 +973,23 @@ export class KeeperDispatcher implements Dispatcher {
     if (valuation.kind === "NO_DEBT") {
       return { kind: "STOP", result: { status: "SUPERSEDED", reason: "no debt — nothing to protect" } };
     }
-    const rung = this.d.ladder.find((r) => r.id === record.rung);
-    if (!rung) return { kind: "STOP", result: { status: "REFUSED", reason: `unknown rung ${record.rung}` } };
-    if (valuation.hf >= rung.disarmHf) {
-      return { kind: "STOP", result: { status: "SUPERSEDED", reason: `HF ${valuation.hf.toFixed(4)} ≥ ${rung.id} disarm ${rung.disarmHf}` } };
+    const disarmHf = this.disarmFor(record);
+    if (disarmHf === null) return { kind: "STOP", result: { status: "REFUSED", reason: `unknown rung ${record.rung}` } };
+    if (valuation.hf >= disarmHf) {
+      return { kind: "STOP", result: { status: "SUPERSEDED", reason: `HF ${valuation.hf.toFixed(4)} ≥ ${record.rung} disarm ${disarmHf}` } };
     }
     return { kind: "ACT", valuation };
+  }
+
+  /**
+   * The disarm threshold the record was fired against. Since A4 (BUILD-PLAN-2026-09-12 D7) the
+   * monitor writes it on the record — the account's ladder derives from its recorded entry HF, so
+   * the rung id alone no longer names a threshold. A record from before that carries only the id
+   * and is judged against the floor's ladder, the one every position ran on then.
+   */
+  private disarmFor(record: DispatchRecord): number | null {
+    if (typeof record.disarmHf === "number" && Number.isFinite(record.disarmHf)) return record.disarmHf;
+    return this.d.ladder.find((r) => r.id === record.rung)?.disarmHf ?? null;
   }
 }
 

@@ -3,6 +3,30 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-12 (later) — A4.1: the ladder is the position's own (BUILD-PLAN D7 §2b, the keeper half)
+
+- **Shared** (`packages/shared/src/health.ts`): `ladderFor(entryHf)` — rung = 1 + (entry − 1) × 0.91 / 0.64
+  / 0.36 / 0.09, emergency never under 1.05, hysteresis max(0.02, 0.05 × (entry − 1) ÷ 0.55), rungs kept
+  strictly decreasing — with `HF_LADDER = ladderFor(ENTRY_HF_FLOOR)` reproducing 1.50 / 1.35 / 1.20 / 1.05
+  number for number (the Solana seam's generated `ladder.rs` is byte-identical); `hysteresisFor`,
+  `ltvForEntryHfBps` (LTV at entry = LT ÷ HF), `drawdownToLiquidationPct`, `hfFromWad`, `HF_MARKS`
+  (Sheltered 1.55 / Expert 1.30 — marks, not modes), `MIN_LADDER_ENTRY_HF` = 1.10; `maxOfferedLtvBps`,
+  `maxOfferedLtvStopBps`, `ltvPresets` and `isOfferableLtv` take the floor as a parameter. Shared 75 → **82**.
+- **Contracts**: `StrategyRouter.entryHfWad[account]` — the health factor the venue measured at every open
+  (leveraged or borrow-only), emitted as `EntryHfRecorded`; 0 for an account that never opened. Proven in
+  `audit-regressions/EntryHfRecorded.t.sol`: the record is the returned HF, a top-up moves it, and with the
+  registry floor set to 1.25 an open at 60 % LTV records 1.30, at 62.4 % records 1.25, and 63 % reverts
+  `EntryHfTooLow` with nothing recorded. Forge 384 → **388** / 11 skipped. ABI bundle regenerated (427 entries).
+- **Keeper**: `HealthMonitor.resolveLadder` reads the record each tick (`services/entryHf.ts`, a bounded
+  `readContract`) and runs `ladderFor(entryHf)` for the account; the floor's ladder runs — and the account
+  record says `entryHf: null` — when there is no router, the router reads 0, or the record is under 1.10
+  (logged at error, naming the registry floor); a failed read keeps the last value at warn. The rung's disarm
+  is written on the dispatch record (`disarmHf`) and the dispatcher sizes a repay to it and judges a resumed
+  record against it; a record from before this build is judged against the floor's ladder. Store validation
+  covers both fields. Keeper `verify-abi` 111 → **113**, tests 264 → **269** / 52 suites; IDL seam 77/77.
+- Left for A4.2: the slider itself (wizard, dashboard, both prototypes), the yield service's floor read, and
+  the founder's floor number (1.25 proposed). The Solana keeper still reads the global table (B stream).
+
 ## 2026-09-12 (late) — A3: the yield gate becomes a forecast (BUILD-PLAN D4/D5/D7), in two commits
 
 - **The forecast service** (`b849b17`): `GET /v1/forecast` (`services/yield/src/forecast.ts`) prices every

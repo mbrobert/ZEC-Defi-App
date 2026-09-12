@@ -173,8 +173,21 @@ a loan that reverts inside Aave. **`AaveV3Venue.borrow` itself reverts
 through the venue — the router's leveraged open, the new `openBorrowOnly`, a
 raw owner `execBatch`, a keeper call — and `unwind` reverts `ExitHfTooLow`
 (on the **global** health factor) if a withdrawal would leave debt below it.
-The keeper ladder (shared `HF_LADDER`: warn 1.50, repay 1.35, derisk 1.20,
-emergency 1.05, hysteresis 0.05) closes a fraction of the LP **value** and
+The keeper ladder is the position's own since A4 (2026-09-12, BUILD-PLAN D7):
+`StrategyRouter` records the health factor every open lands at
+(`entryHfWad[account]`, event `EntryHfRecorded`), the keeper reads it each tick
+and runs shared `ladderFor(entryHf)` — rung = 1 + (entry − 1) × 0.91 / 0.64 /
+0.36 / 0.09, emergency never under 1.05, hysteresis max(0.02, 0.05 × (entry − 1)
+÷ 0.55) — so a position opened at the 1.55 floor still runs warn 1.50, repay
+1.35, derisk 1.20, emergency 1.05 with 0.05 of hysteresis (`HF_LADDER`, the
+same numbers as before), and one opened at 1.30 runs 1.27 / 1.19 / 1.11 / 1.05
+with 0.03. An account with no record (opened before the record existed, or a
+router that reads 0) runs the floor's ladder and its store record says
+`entryHf: null`; the disarm threshold a rung fired at travels on the dispatch
+record, so a resumed action is judged against the ladder that fired it, never
+against a table. A registry floor under 1.10 (`MIN_LADDER_ENTRY_HF`) cannot
+hold four rungs; the keeper then runs the floor's ladder and logs an error
+naming the floor. The ladder closes a fraction of the LP **value** and
 repays (`agent/src/dispatch/policy.ts`). Every HF, rung price and liquidation
 drop the UI shows is computed from the live LT
 (`web/components/wizard/SettingStep.tsx`, shared `ltvPresets`,

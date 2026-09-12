@@ -114,6 +114,14 @@ export interface AccountRecord<Id extends string = Address> {
   /** Times a rung was re-armed because the action it fired did not clear it. */
   rungRefires?: Record<string, number>;
   /**
+   * The entry health factor the router recorded for this account (`StrategyRouter.entryHfWad`,
+   * BUILD-PLAN-2026-09-12 D7 / A4), as last read — the ladder the account runs on derives from it
+   * (`ladderFor` in packages/shared). `null` = nothing recorded (opened before the record existed,
+   * or the router reads 0): the floor's ladder runs, and this says so. Absent on a record from a
+   * store written before A4, which means the same.
+   */
+  entryHf?: number | null;
+  /**
    * Durable per-account notification history (see notify/ownerNotifier.ts). Capped PER KIND,
    * oldest of that kind dropped first — one emergency episode's dispatch and escalation entries
    * used to push the `warn` entry out of a single shared ring (audit wave 2, N-LOW-1).
@@ -207,6 +215,13 @@ export interface DispatchRecord<Id extends string = Address, Tx extends string =
    * before this build or a dispatch without a venue reader, when the older, stricter rule applies.
    */
   venueBooks?: VenueBook<Id>[];
+  /**
+   * The disarm threshold of the rung that fired, from the ACCOUNT's ladder at fire time (A4: the
+   * ladder derives from the account's recorded entry HF, so the rung id alone no longer names a
+   * threshold). The dispatcher sizes a repay to it and judges a resumed record against it. Absent
+   * on a record from before A4, which is judged against the floor's ladder.
+   */
+  disarmHf?: number;
   /** Times this record wedged a tick. Quarantined at the cap. */
   stalls?: number;
 }
@@ -348,6 +363,9 @@ export function validateState<Id extends string = Address, Tx extends string = H
       throw new StoreError(`account ${id}: episode ${a.episode} exceeds counter`);
     }
     if (!isNonNegInt(a.unknownStreak)) throw new StoreError(`account ${id}: unknownStreak malformed`);
+    if (a.entryHf !== undefined && a.entryHf !== null && !(typeof a.entryHf === "number" && Number.isFinite(a.entryHf) && a.entryHf > 0)) {
+      throw new StoreError(`account ${id}: entryHf malformed`);
+    }
   }
   const keys = new Set<string>();
   for (const d of doc.dispatches as unknown[]) {
@@ -363,6 +381,9 @@ export function validateState<Id extends string = Address, Tx extends string = H
       throw new StoreError(`dispatch ${d.key}: status malformed`);
     }
     if (!isNonNegInt(d.attempts)) throw new StoreError(`dispatch ${d.key}: attempts malformed`);
+    if (d.disarmHf !== undefined && !(typeof d.disarmHf === "number" && Number.isFinite(d.disarmHf) && d.disarmHf > 0)) {
+      throw new StoreError(`dispatch ${d.key}: disarmHf malformed`);
+    }
     if (d.txHash !== undefined && !(typeof d.txHash === "string" && codec.isTxHash(d.txHash))) {
       throw new StoreError(`dispatch ${d.key}: txHash malformed`);
     }
@@ -893,7 +914,10 @@ export class KeeperStore<Id extends string = Address, Tx extends string = Hex> {
    * Allocate a dispatch sequence number, mint the key and persist a PENDING
    * record — all before the caller sends anything. Returns the record.
    */
-  createDispatch(input: { account: Id; episode: number; action: string; rung: string; hf: number }, now: Date): Promise<DispatchRecord<Id, Tx>> {
+  createDispatch(
+    input: { account: Id; episode: number; action: string; rung: string; hf: number; disarmHf?: number },
+    now: Date
+  ): Promise<DispatchRecord<Id, Tx>> {
     return this.mutate((s) => {
       const id = this.id(input.account);
       s.counters.dispatchSeq += 1;
@@ -913,6 +937,7 @@ export class KeeperStore<Id extends string = Address, Tx extends string = Hex> {
         createdAt: now.toISOString(),
         updatedAt: now.toISOString(),
       };
+      if (input.disarmHf !== undefined) d.disarmHf = input.disarmHf;
       s.dispatches.push(d);
       return structuredClone(d);
     });

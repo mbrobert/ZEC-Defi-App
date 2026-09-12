@@ -15,6 +15,7 @@ import { HealthMonitor, type TickReport } from "./monitors/healthMonitor.js";
 import { AaveReader, aaveAddressesFor, reserveSpecsFor } from "./services/chain.js";
 import { sleep } from "./services/deadline.js";
 import { AccountDiscovery } from "./services/discovery.js";
+import { RouterEntryHfReader } from "./services/entryHf.js";
 import { UnsupportedVenueError, VenueReader } from "./services/venues.js";
 import { KeeperStore } from "./store/keeperStore.js";
 import { ProgressWatchdog, type TickHandle } from "./watchdog.js";
@@ -292,12 +293,16 @@ export async function runKeeper(env: NodeJS.ProcessEnv, opts: RunOptions = {}): 
   let stopReason = "";
   let fatalStoreError: Error | null = null;
 
+  // The entry HF the router recorded per account is what each account's ladder derives from (A4);
+  // without a router every account runs the floor's ladder and its record says so.
+  const entryHf = config.routerAddress ? new RouterEntryHfReader(client, config.routerAddress, { deadlineMs: config.rpcDeadlineMs }) : null;
   const monitor = new HealthMonitor({
     reader,
     venues,
     discovery,
     store,
     ladder: HF_LADDER,
+    entryHf,
     dispatcher,
     log,
     config: {

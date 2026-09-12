@@ -290,6 +290,39 @@ describe("keeper store — counters and episodes", () => {
     await s.close();
   });
 
+  it("A4: an account's recorded entry HF and a dispatch's disarm threshold persist and are validated on load", async () => {
+    const path = fresh();
+    const s = new KeeperStore(path);
+    await s.open();
+    await s.registerAccount({ account: ACCOUNT_A, owner: OWNER_A, discoveredAtBlock: 1n }, NOW);
+    await s.updateAccount(ACCOUNT_A, { entryHf: 1.3 });
+    const ep = await s.beginEpisode(ACCOUNT_A);
+    const d = await s.createDispatch({ account: ACCOUNT_A, episode: ep, action: "notify", rung: "warn", hf: 1.26, disarmHf: 1.3 }, NOW);
+    assert.equal(d.disarmHf, 1.3);
+    const plain = await s.createDispatch({ account: ACCOUNT_A, episode: ep, action: "repay", rung: "repay", hf: 1.18 }, NOW);
+    assert.equal(plain.disarmHf, undefined, "absent when not given — judged against the floor's ladder");
+    await s.close();
+    const again = new KeeperStore(path);
+    await again.open();
+    assert.equal(again.getAccount(ACCOUNT_A)?.entryHf, 1.3);
+    assert.equal(again.getDispatch(d.key)?.disarmHf, 1.3);
+    assert.equal(again.getDispatch(plain.key)?.disarmHf, undefined);
+    await again.close();
+    // `null` entryHf is the stated "no record"; anything else non-numeric or ≤ 0 is refused, as is a bad disarm.
+    const doc = JSON.parse(await readFile(path, "utf8"));
+    doc.accounts[0].entryHf = null;
+    assert.doesNotThrow(() => validateState(doc));
+    doc.accounts[0].entryHf = "1.3";
+    assert.throws(() => validateState(doc), /entryHf malformed/);
+    doc.accounts[0].entryHf = 0;
+    assert.throws(() => validateState(doc), /entryHf malformed/);
+    doc.accounts[0].entryHf = 1.3;
+    doc.dispatches[0].disarmHf = -1;
+    assert.throws(() => validateState(doc), /disarmHf malformed/);
+    doc.dispatches[0].disarmHf = "1.3";
+    assert.throws(() => validateState(doc), /disarmHf malformed/);
+  });
+
   it("slice 5: the per-venue snapshot persists on the dispatch record, survives reopen, and a malformed entry is refused on load", async () => {
     const path = fresh();
     const s = new KeeperStore(path);

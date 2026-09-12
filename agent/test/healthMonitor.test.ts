@@ -3,13 +3,15 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { HF_LADDER } from "@zyo/shared";
-import { accountCreatedEvent } from "../src/abi/oilskin.js";
+import { decodeFunctionData, encodeFunctionResult, getAddress, parseUnits } from "viem";
+import { HF_LADDER, ladderFor } from "@zyo/shared";
+import { accountCreatedEvent, strategyRouterAbi } from "../src/abi/oilskin.js";
 import type { DispatchIntent, DispatchResult, Dispatcher } from "../src/dispatch/types.js";
 import { Logger, memorySink } from "../src/log.js";
 import { HealthMonitor, rotate, type MonitorConfig } from "../src/monitors/healthMonitor.js";
 import { AaveReader, aaveAddressesFromShared, reserveSpecsFromShared } from "../src/services/chain.js";
 import { AccountDiscovery } from "../src/services/discovery.js";
+import { RouterEntryHfReader } from "../src/services/entryHf.js";
 import { KeeperStore, StoreTamperedError, type DispatchRecord } from "../src/store/keeperStore.js";
 import type { Address } from "../src/types/evm.js";
 import { ProgressWatchdog, type TickHandle } from "../src/watchdog.js";
@@ -75,10 +77,30 @@ interface Rig {
   watchdog: ProgressWatchdog;
   storePath: string;
   readsInFlight: { peak: number };
+  /** What the mock router's `entryHfWad(account)` answers, per lower-cased account (absent = 0). */
+  entryHfs: Map<string, number>;
+  /** When set, the router read throws — the monitor keeps the last recorded value. */
+  routerFault: { on: boolean };
 }
 
-async function rig(opts: { chain?: MockChain; storePath?: string; config?: Partial<MonitorConfig>; deadlineMs?: number } = {}): Promise<Rig> {
+/** The mock StrategyRouter: only `entryHfWad` (A4). Wad = the number at 18 decimals. */
+const ROUTER = getAddress("0x2000000000000000000000000000000000000001") as Address;
+function mockRouter(chain: MockChain, entryHfs: Map<string, number>, fault: { on: boolean }): void {
+  chain.contracts.set(ROUTER.toLowerCase(), (data) => {
+    if (fault.on) throw new Error("mock router: read fault");
+    const { functionName, args } = decodeFunctionData({ abi: strategyRouterAbi, data });
+    if (functionName !== "entryHfWad") throw new Error(`mock router: ${functionName} not mocked`);
+    const [account] = args as [Address];
+    const hf = entryHfs.get(account.toLowerCase()) ?? 0;
+    return encodeFunctionResult({ abi: strategyRouterAbi, functionName, result: parseUnits(hf.toString(), 18) });
+  });
+}
+
+async function rig(opts: { chain?: MockChain; storePath?: string; config?: Partial<MonitorConfig>; deadlineMs?: number; noRouter?: boolean } = {}): Promise<Rig> {
   const chain = opts.chain ?? newMockChain();
+  const entryHfs = new Map<string, number>();
+  const routerFault = { on: false };
+  if (!opts.noRouter) mockRouter(chain, entryHfs, routerFault);
   const storePath = opts.storePath ?? freshPath();
   const store = new KeeperStore(storePath);
   await store.open();
@@ -115,6 +137,7 @@ async function rig(opts: { chain?: MockChain; storePath?: string; config?: Parti
     discovery,
     store,
     ladder: HF_LADDER,
+    entryHf: opts.noRouter ? null : new RouterEntryHfReader(client, ROUTER, { deadlineMs: opts.deadlineMs ?? 300 }),
     dispatcher,
     log,
     config: { ...CONFIG, ...(opts.config ?? {}) },
@@ -130,7 +153,7 @@ async function rig(opts: { chain?: MockChain; storePath?: string; config?: Parti
     },
   });
   const tick = () => monitor.tick(watchdog.beginTick());
-  return { chain, store, dispatcher, monitor, sink, escalations, fatals, events, tick, watchdog, storePath, readsInFlight };
+  return { chain, store, dispatcher, monitor, sink, escalations, fatals, events, tick, watchdog, storePath, readsInFlight, entryHfs, routerFault };
 }
 
 const keyOf = (r: Rig, i: number) => r.dispatcher.calls[i].intent.record.key;
@@ -274,6 +297,117 @@ describe("health monitor — ladder, hysteresis, re-arm, episodes", () => {
     assert.equal(r.store.getAccount(ACCOUNT_A)?.episode, null);
     assert.deepEqual(r.store.getAccount(ACCOUNT_A)?.ladder.fired, []);
     await r.store.close();
+  });
+});
+
+describe("health monitor — the ladder is the account's, derived from its recorded entry HF (A4, BUILD-PLAN D7)", () => {
+  it("opened at HF 1.30 the rungs are 1.27 / 1.19 / 1.11 / 1.05: 1.28 fires nothing, 1.26 warns with the account's disarm on the record, 1.18 repays; a record-less account runs the floor's ladder", async () => {
+    const r = await rig();
+    r.chain.emitAccountCreated(OWNER_A, ACCOUNT_A, 1n);
+    r.chain.emitAccountCreated(OWNER_B, ACCOUNT_B, 1n);
+    r.entryHfs.set(ACCOUNT_A.toLowerCase(), 1.3);
+    const ladder = ladderFor(1.3);
+    assert.deepEqual(ladder.map((x) => x.hf), [1.27, 1.19, 1.11, 1.05]);
+    assert.deepEqual(ladder.map((x) => x.disarmHf), [1.3, 1.22, 1.14, 1.08]);
+
+    // 1.28 is under the floor's warn (1.50) and repay (1.35) — and fires NOTHING on this account.
+    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.28));
+    cbBtcPosition(r.chain, ACCOUNT_B, debtForHf(1.49));
+    let rep = await r.tick();
+    const a = () => rep.outcomes.find((o) => o.account === ACCOUNT_A.toLowerCase())!;
+    const b = () => rep.outcomes.find((o) => o.account === ACCOUNT_B.toLowerCase())!;
+    assert.equal(a().fired, null, "1.28 sits above the 1.27 warn rung of the 1.30 ladder");
+    assert.equal(b().fired, "warn", "the record-less account runs the floor's ladder: 1.49 < 1.50");
+    assert.equal(r.store.getAccount(ACCOUNT_A)?.entryHf, 1.3);
+    assert.equal(r.store.getAccount(ACCOUNT_B)?.entryHf, null, "null = no record, the floor's ladder, said");
+    const warnB = r.dispatcher.calls[0].intent.record;
+    assert.equal(warnB.account, ACCOUNT_B.toLowerCase());
+    assert.equal(warnB.disarmHf, HF_LADDER[0].disarmHf, "the floor's warn disarm (1.55) travels on the record");
+
+    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.26));
+    rep = await r.tick();
+    assert.equal(a().fired, "warn");
+    const warnA = r.dispatcher.calls[1].intent.record;
+    assert.equal(warnA.account, ACCOUNT_A.toLowerCase());
+    assert.equal(warnA.rung, "warn");
+    assert.equal(warnA.disarmHf, 1.3, "the 1.30 ladder's warn disarm, not the floor's 1.55");
+    assert.ok(Math.abs(warnA.hf - 1.26) < 1e-6, `hf at fire ${warnA.hf}`);
+
+    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.18));
+    rep = await r.tick();
+    assert.equal(a().fired, "repay");
+    assert.equal(r.dispatcher.calls[2].intent.record.disarmHf, 1.22);
+
+    // Bouncing between the repay trigger (1.19) and its disarm (1.22) fires nothing more — the ACCOUNT's
+    // hysteresis. (Dipping under 1.19 again would re-fire the confirmed-but-ineffective repay once, C-MED-2.)
+    for (const hf of [1.21, 1.195, 1.215]) {
+      cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(hf));
+      await r.tick();
+    }
+    assert.equal(r.dispatcher.calls.length, 3);
+    // 1.23 re-arms repay (≥ 1.22) but not warn (< 1.30); the episode continues.
+    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.23));
+    await r.tick();
+    assert.deepEqual(r.store.getAccount(ACCOUNT_A)?.ladder.fired, ["warn"]);
+    // Still the episode A's warn opened (episode numbers are store-wide: B's warn took 1, so A's is 2).
+    assert.equal(r.store.getAccount(ACCOUNT_A)?.episode, warnA.episode);
+    assert.equal(warnA.episode, 2);
+
+    // The record and the account's entry HF survive a reopen (the store validates both on load).
+    await r.store.close();
+    const again = new KeeperStore(r.storePath);
+    await again.open();
+    assert.equal(again.getAccount(ACCOUNT_A)?.entryHf, 1.3);
+    assert.equal(again.getDispatch(warnA.key)?.disarmHf, 1.3);
+    await again.close();
+  });
+
+  it("a failed router read keeps the last recorded entry HF; the router reading 0 afterwards returns the account to the floor's ladder", async () => {
+    const r = await rig();
+    r.chain.emitAccountCreated(OWNER_A, ACCOUNT_A, 1n);
+    r.entryHfs.set(ACCOUNT_A.toLowerCase(), 1.3);
+    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.28));
+    await r.tick();
+    assert.equal(r.store.getAccount(ACCOUNT_A)?.entryHf, 1.3);
+
+    r.routerFault.on = true;
+    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.26));
+    let rep = await r.tick();
+    assert.equal(rep.outcomes[0].fired, "warn", "the kept 1.30 ladder: 1.26 < 1.27");
+    assert.equal(r.dispatcher.calls[0].intent.record.disarmHf, 1.3);
+    assert.equal(r.store.getAccount(ACCOUNT_A)?.entryHf, 1.3, "kept, not dropped");
+    assert.ok(r.sink.lines.some((x) => x.includes("entry HF read failed")), "said at warn");
+
+    // The router now answers 0 (say, a redeploy without the record): the floor's ladder runs and the store says so.
+    r.routerFault.on = false;
+    r.entryHfs.delete(ACCOUNT_A.toLowerCase());
+    rep = await r.tick();
+    assert.equal(rep.outcomes[0].fired, "repay", "at 1.26 the floor's repay rung (1.35) is crossed; warn was already fired");
+    assert.equal(r.dispatcher.calls[1].intent.record.disarmHf, HF_LADDER[1].disarmHf);
+    assert.equal(r.store.getAccount(ACCOUNT_A)?.entryHf, null);
+    assert.ok(r.sink.lines.some((x) => x.includes("entry HF record gone")));
+    await r.store.close();
+  });
+
+  it("a recorded entry HF under 1.10 (a floor set in the rungs-collapse band) runs the floor's ladder and says so at error; no router at all means the floor's ladder for everyone", async () => {
+    const r = await rig();
+    r.chain.emitAccountCreated(OWNER_A, ACCOUNT_A, 1n);
+    r.entryHfs.set(ACCOUNT_A.toLowerCase(), 1.08);
+    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.45));
+    const rep = await r.tick();
+    assert.equal(rep.outcomes[0].fired, "warn", "the floor's ladder: 1.45 < 1.50");
+    assert.equal(r.store.getAccount(ACCOUNT_A)?.entryHf, 1.08, "what the router said is recorded as read");
+    assert.ok(r.sink.lines.some((x) => x.includes("raise the registry floor")));
+    await r.store.close();
+
+    const bare = await rig({ noRouter: true });
+    bare.chain.emitAccountCreated(OWNER_A, ACCOUNT_A, 1n);
+    cbBtcPosition(bare.chain, ACCOUNT_A, debtForHf(1.45));
+    const rep2 = await bare.tick();
+    assert.equal(rep2.outcomes[0].fired, "warn");
+    assert.equal(bare.store.getAccount(ACCOUNT_A)?.entryHf, null);
+    assert.equal(bare.chain.calls.filter((c) => c.label.startsWith("custom(")).length, 0, "no router read was attempted");
+    await bare.store.close();
   });
 });
 

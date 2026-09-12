@@ -7710,6 +7710,11 @@
           "stateMutability": "view",
           "outputs": "address"
         },
+        "entryHfWad(address)": {
+          "selector": "0xd4889f0d",
+          "stateMutability": "view",
+          "outputs": "uint256"
+        },
         "openBorrowOnly((address,uint256,(uint256,uint256,bytes),uint256,uint256))": {
           "selector": "0x16e05d79",
           "stateMutability": "nonpayable",
@@ -7746,6 +7751,13 @@
           "topic0": "0xac2f9283088c51eb17a07b62fc748de0f6d5514a584106cfef45c4692ad36489",
           "indexed": [
             true,
+            true,
+            false
+          ]
+        },
+        "EntryHfRecorded(address,uint256)": {
+          "topic0": "0x96480321ecdb23bc139580df0a2b52f4a5e85d444c04a5f1edc34d1c62c02bf9",
+          "indexed": [
             true,
             false
           ]
@@ -7974,6 +7986,25 @@
               "name": "",
               "type": "address",
               "internalType": "address"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "entryHfWad",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "healthFactorWad",
+              "type": "uint256",
+              "internalType": "uint256"
             }
           ],
           "stateMutability": "view"
@@ -8319,6 +8350,25 @@
             },
             {
               "name": "amount",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "event",
+          "name": "EntryHfRecorded",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "healthFactorWad",
               "type": "uint256",
               "indexed": false,
               "internalType": "uint256"
