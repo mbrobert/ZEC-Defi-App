@@ -512,6 +512,12 @@ export interface UnwindPlanInput {
   collateralPlaces?: number;
   /** Which venue holds the position being closed — wording only; the router resolves the ids. */
   positionVenue?: "engine" | "direct";
+  /**
+   * Direct venue (W3-LOW-5): the gauge's early-withdraw penalty if the position is unstaked now —
+   * `bps` of the AERO earned so far goes to the gauge's minter until `until`. The plan states it
+   * before the button; it does not block the Close (the principal is unaffected).
+   */
+  earlyPenalty?: { bps: number; until: string } | null;
 }
 
 export function buildUnwindPlan(i: UnwindPlanInput): PlannedCall[] {
@@ -523,6 +529,10 @@ export function buildUnwindPlan(i: UnwindPlanInput): PlannedCall[] {
     places > 1
       ? ` Your ${asset.symbol} sits in ${places} places, because Oilskin changed the lending contract while your position was open; this same transaction returns it from every one of them — nothing is left behind for a second signature.`
       : "";
+  const penalty = i.earlyPenalty && i.earlyPenalty.bps > 0
+    // Seconds matter here: the live window is ten seconds long.
+    ? ` Closing before ${i.earlyPenalty.until.replace("T", " ").slice(0, 19)} UTC forfeits ${i.earlyPenalty.bps >= 10_000 ? "ALL" : `${(i.earlyPenalty.bps / 100).toFixed(2)}%`} of the AERO this position has earned so far to the gauge's minter — Aerodrome's early-unstake rule, not Oilskin's; your USDC and cbZEC come back in full either way.`
+    : "";
   const abiOk = ABI_STATUS === "verified" && !!d && !d.demo && !refused;
   const q = i.quote;
   const quoteOk = !!q && validateSwapQuote(q).length === 0;
@@ -543,7 +553,7 @@ export function buildUnwindPlan(i: UnwindPlanInput): PlannedCall[] {
       kind: "unwind",
       wallet: "transaction",
       title: "Close the position, repay the loan, get your collateral back — one transaction",
-      plain: `One transaction that closes ${i.poolLabel ?? "the position"}, turns everything back into USDC at a price floor you can see below, repays your Aave loan in full and returns your ${asset.symbol} to your wallet; the performance fee is taken only on the rewards it collects.${twoPlaces}`,
+      plain: `One transaction that closes ${i.poolLabel ?? "the position"}, turns everything back into USDC at a price floor you can see below, repays your Aave loan in full and returns your ${asset.symbol} to your wallet; the performance fee is taken only on the rewards it collects.${twoPlaces}${penalty}`,
       to: i.account,
       toLabel: `your Oilskin account (${i.account ? short(i.account) : "…"})`,
       functionName: "execWithCallback → StrategyRouter.unwind",

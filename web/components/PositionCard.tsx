@@ -84,8 +84,15 @@ export default function PositionCard({
                 </div>
               )}
               <div className="mt-1.5">
-                While staked in the Aerodrome gauge this pool&rsquo;s trading fees go to veAERO voters; the position earns AERO emissions instead. The engine keeps 15% of what it harvests before it reaches your account.
+                {p.venue === "direct"
+                  ? `Held directly on Aerodrome Slipstream (no engine, no engine fee), ${p.staked ? "staked in the pool's gauge: its trading fees go to veAERO voters and the position earns AERO emissions instead" : "NOT staked in the gauge: it earns the pool's trading fees, no AERO"}. The range does not move on its own.`
+                  : "While staked in the Aerodrome gauge this pool’s trading fees go to veAERO voters; the position earns AERO emissions instead. The engine keeps 15% of what it harvests before it reaches your account."}
               </div>
+              {p.earlyPenalty && p.earlyPenalty.bps > 0 && (
+                <div className="mt-1.5 text-oil-ink3" data-testid="early-penalty">
+                  Unstaking before {p.earlyPenalty.until.replace("T", " ").slice(0, 19)} UTC forfeits {p.earlyPenalty.bps >= 10_000 ? "all" : `${(p.earlyPenalty.bps / 100).toFixed(2)}%`} of the AERO earned so far to the gauge&rsquo;s minter (Aerodrome&rsquo;s early-unstake rule).
+                </div>
+              )}
               <div className="mt-1.5 text-oil-ink3">
                 Claim guidance: {claim.claim ? "worth claiming" : claim.reason === "below-floor" ? "below the claim floor" : claim.reason === "gas-too-high" ? "gas would eat too much" : "wait"} (policy from @zyo/shared).
               </div>

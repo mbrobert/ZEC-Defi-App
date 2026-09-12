@@ -172,6 +172,12 @@ export interface LpPositionRead {
   venue: "engine" | "direct";
   /** Direct venue only: whether the NFT is staked in the pool's gauge (earning AERO). */
   staked?: boolean;
+  /**
+   * Direct venue only (W3-LOW-5): the gauge's early-withdraw penalty if the position is unstaked
+   * now — `bps` of the AERO earned so far goes to the minter until `until` (ISO time). Null when no
+   * window is open. Read live from `earlyWithdrawPenalty(id, account)`.
+   */
+  earlyPenalty?: { bps: number; until: string } | null;
   rangeWidthBps: number;
   tickLower: number;
   tickUpper: number;
@@ -698,6 +704,10 @@ export async function readDirectPositions(client: ReadClient, venue: Address, ac
     client,
     ids.map((id) => ({ address: venue, abi: DIRECT_LP_VENUE_ABI, functionName: "positionRange", args: [id, account] })),
   );
+  const penalties = await safeMulticall(
+    client,
+    ids.map((id) => ({ address: venue, abi: DIRECT_LP_VENUE_ABI, functionName: "earlyWithdrawPenalty", args: [id, account] })),
+  );
   let tick: number | null = null;
   if (poolAddress) {
     const [s] = await safeMulticall(client, [{ address: poolAddress, abi: AERODROME_CLPOOL_ABI, functionName: "slot0" }]);
@@ -708,12 +718,18 @@ export async function readDirectPositions(client: ReadClient, venue: Address, ac
     if (!Array.isArray(r)) return;
     const lower = Number(r[0]);
     const upper = Number(r[1]);
+    const pen = penalties[idx];
+    const earlyPenalty =
+      Array.isArray(pen) && typeof pen[0] === "bigint" && typeof pen[1] === "bigint" && (pen[0] as bigint) > 0n
+        ? { bps: Number(pen[0]), until: new Date(Number(pen[1]) * 1000).toISOString() }
+        : null;
     out.push({
       positionId: ids[idx],
       enginePoolId: poolId,
       pool,
       venue: "direct",
       staked: Boolean(r[3]),
+      earlyPenalty,
       rangeWidthBps: upper - lower,
       tickLower: lower,
       tickUpper: upper,

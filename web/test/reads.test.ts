@@ -630,3 +630,38 @@ test("readKeeperGrant reads expiry, allowCallback and the period-rolled token bu
   });
   assert.equal(await readKeeperGrant(dead, ACCOUNT, KEEPER, ROUTER), null);
 });
+
+// W3-LOW-5 (wave 3): readDirectPositions carries the gauge's early-withdraw penalty window.
+test("W3-LOW-5: readDirectPositions reads positionRange, the pool's tick and earlyWithdrawPenalty per id", async () => {
+  const { readDirectPositions } = await import("../lib/reads");
+  const VENUE = "0x1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d" as const;
+  const POOL = "0x0fc47c17af86078d809358db1b4db2debc988566";
+  const client = {
+    async multicall({ contracts }: { contracts: readonly { address: string; functionName: string; args?: readonly unknown[] }[] }) {
+      return contracts.map((c) => {
+        if (c.functionName === "POOL") return { status: "success" as const, result: POOL };
+        if (c.functionName === "positionRange") return { status: "success" as const, result: [-24_000, -23_600, 123_456n, true] };
+        if (c.functionName === "earlyWithdrawPenalty") {
+          const id = c.args?.[0] as bigint;
+          return { status: "success" as const, result: id === 7n ? [10_000n, 1_789_156_810n] : [0n, 1_789_156_800n] };
+        }
+        if (c.functionName === "slot0") return { status: "success" as const, result: [24_158_478_068_572_882_064_475_621_010n, -23_756, 0, 1, 1, true] };
+        return { status: "failure" as const };
+      });
+    },
+    async readContract() {
+      throw new Error("unused");
+    },
+    async getCode() {
+      return "0x";
+    },
+  };
+  const rows = await readDirectPositions(client as never, VENUE, "0x2222222222222222222222222222222222222222", [7n, 9n]);
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].venue, "direct");
+  assert.equal(rows[0].staked, true);
+  assert.equal(rows[0].pool?.id, "aero-cbzec-usdc");
+  assert.equal(rows[0].inRange, true);
+  assert.deepEqual(rows[0].earlyPenalty, { bps: 10_000, until: new Date(1_789_156_810 * 1000).toISOString() });
+  assert.equal(rows[1].earlyPenalty, null, "no open window → null");
+});

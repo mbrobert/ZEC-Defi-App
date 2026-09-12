@@ -8,7 +8,7 @@ import {Call} from "../interfaces/IOilskinAccount.sol";
 import {ILpVenue, LpOpenParams, PriceBand} from "../interfaces/ILpVenue.sol";
 import {ISwapAdapter} from "../interfaces/ISwapAdapter.sol";
 import {IAerodromeCLPool} from "../interfaces/IAerodromeCLPool.sol";
-import {ISlipstreamGauge, ISlipstreamNpm, ISlipstreamPool, ISlipstreamVoter} from "../interfaces/ISlipstream.sol";
+import {ISlipstreamGauge, ISlipstreamGaugeFactory, ISlipstreamNpm, ISlipstreamPool, ISlipstreamVoter} from "../interfaces/ISlipstream.sol";
 import {LiquidityAmounts} from "../libraries/LiquidityAmounts.sol";
 import {TickMath} from "../libraries/TickMath.sol";
 
@@ -143,6 +143,8 @@ contract SlipstreamLpVenue is ILpVenue, Peripheral {
     error PositionsUnreadable(bytes reason);
     /// @notice The rounded range does not contain the current tick — nothing to centre on.
     error RangeExcludesPrice(int24 tick, int24 tickLower, int24 tickUpper);
+    /// @notice The gauge factory's penalty parameters could not be read (fail closed, never "no penalty").
+    error PenaltyUnreadable(bytes reason);
 
     constructor(
         ISlipstreamPool pool,
@@ -410,6 +412,46 @@ contract SlipstreamLpVenue is ILpVenue, Peripheral {
         if (poolId != POOL_ID) revert PoolInactive(poolId);
         (uint160 sqrtP,) = _readSlot0();
         return sqrtP;
+    }
+
+    /// @notice The gauge's early-withdraw penalty on `positionId`'s AERO if `account` unstakes it
+    ///         now (`close`, `closeMany`, or a `claim` — `getReward` applies it too): `penaltyBps`
+    ///         of the reward goes to the minter while `block.timestamp < until`; (0, until) once the
+    ///         window has passed, (0, 0) for an id the account has not staked. Read live from the
+    ///         gauge factory (`penaltyRate`, `minStakeTimes(pool)`) and the gauge (`depositTimestamp`)
+    ///         — wave 3, W3-LOW-5; on Base the cbZEC/USDC pool read 10,000 bps for 10 seconds.
+    function earlyWithdrawPenalty(uint256 positionId, address account)
+        external
+        view
+        returns (uint256 penaltyBps, uint256 until)
+    {
+        if (!GAUGE.stakedContains(account, positionId)) return (0, 0);
+        uint256 deposited;
+        uint256 rate;
+        uint256 minStake;
+        try GAUGE.depositTimestamp(positionId) returns (uint256 t) {
+            deposited = t;
+        } catch (bytes memory r) {
+            revert PenaltyUnreadable(r);
+        }
+        address factory;
+        try GAUGE.gaugeFactory() returns (address f) {
+            factory = f;
+        } catch (bytes memory r) {
+            revert PenaltyUnreadable(r);
+        }
+        try ISlipstreamGaugeFactory(factory).penaltyRate() returns (uint256 p) {
+            rate = p;
+        } catch (bytes memory r) {
+            revert PenaltyUnreadable(r);
+        }
+        try ISlipstreamGaugeFactory(factory).minStakeTimes(address(POOL)) returns (uint256 m) {
+            minStake = m;
+        } catch (bytes memory r) {
+            revert PenaltyUnreadable(r);
+        }
+        until = deposited + minStake;
+        penaltyBps = (rate != 0 && block.timestamp < until) ? rate : 0;
     }
 
     /// @notice The range and liquidity of `positionId`, and whether it is staked in the gauge by

@@ -724,6 +724,10 @@ no gauge (zero) and two of them zero liquidity.
 cbZEC/USDC pointers. (2) A staked position is the gauge's on the NFT's books and the account's on
 the gauge's; enumeration is `stakedValues` plus the NPM's `tokenOfOwnerByIndex` filtered by pool.
 (3) The pool-direct swap pays the pool inside the callback, from the account, exactly the positive
-delta the pool reports. (4) Not read: `gaugeFactory.penaltyRate()` and `minStakeTimes(pool)` for
-this pool — an early-withdraw penalty on AERO, if set, reduces the reward a fast close collects;
-the venue does not check it.
+delta the pool reports. (4) Read 2026-09-11 at block **51,193,797** (W3-LOW-5): gauge factory `0x3852…6AbB`
+`penaltyRate()` = **10,000 bps** and `minStakeTimes(0x0Fc4…8566)` = **10 seconds**; the gauge's
+`gaugeFactory()` = `0x3852…6AbB`, `minter()` = `0xeB018363F0a9Af8f91F06FEe6613a751b2A33FE5`,
+`depositTimestamp(1)` = 0 (no such stake). So `_applyPenalty` forfeits **all** of a position's AERO
+to the minter when it is unstaked (`withdraw` or `getReward`) within ten seconds of its
+`deposit`, and nothing after that; `SlipstreamLpVenue.earlyWithdrawPenalty(id, account)` reads
+these live and the position card and the Close plan show the window while it is open.

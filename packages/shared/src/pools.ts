@@ -236,7 +236,7 @@ export const CURATED_POOLS: CuratedPool[] = [
     gauge: AERODROME.pools.cbZEC_USDC.gauge,
     tickSpacing: AERODROME.pools.cbZEC_USDC.tickSpacing,
     note:
-      "Emissions here exist only while the weekly Aerodrome vote sends them (first vote: the epoch of 2026-09-10; re-voted every Thursday) — the gate reads the gauge live and refuses this pool in any epoch without one. The range is static: if the price leaves it the position earns nothing until closed and re-opened. cbZEC is a Coinbase B20 token the issuer can pause or block.",
+      "Emissions here exist only while the weekly Aerodrome vote sends them (first vote: the epoch of 2026-09-10; re-voted every Thursday) — the gate reads the gauge live and refuses this pool in any epoch without one. The range is static: if the price leaves it the position earns nothing until closed and re-opened. Unstaking within ten seconds of staking forfeits all AERO earned to Aerodrome's minter (gauge factory, read 2026-09-11). cbZEC is a Coinbase B20 token the issuer can pause or block.",
   },
 ];
 

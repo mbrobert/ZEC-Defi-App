@@ -412,3 +412,17 @@ test("W3-LOW-4: a quote with an oracle cross-check says how close; a quote witho
   assert.match(noCheck, /the pool's own price is the only one this quote rests on/);
   assert.equal(unchecked[0].encodable, true, "still signable: the floor binds, the wording is honest");
 });
+
+// W3-LOW-5 (wave 3): the Close plan states the gauge's early-withdraw penalty while its window is open.
+test("W3-LOW-5: a Close inside the gauge's penalty window says what is forfeited and until when; none outside it", () => {
+  const cbzec: QuotedSwap = { ...QUOTE, tokenSymbol: "cbZEC", tokenAddress: BASE_TOKENS.cbZEC.address, tokenDecimals: 8, tickSpacing: 200, quotedIn: 10n ** 8n, quotedOut: 1_075_500_000n, minOutForQuotedIn: 1_064_745_000n, crossCheckDelta: null };
+  const inside = buildUnwindPlan({ account: ACCOUNT, positionIds: [7n], collateral: "cbBTC", deployment: LIVE, deadline: 1_800_000_000, bandToleranceBps: 100, quote: cbzec, positionVenue: "direct", earlyPenalty: { bps: 10_000, until: "2026-09-11T20:00:10.000Z" } });
+  assert.match(inside[0].plain, /forfeits ALL of the AERO this position has earned so far to the gauge's minter/);
+  assert.match(inside[0].plain, /Closing before 2026-09-11 20:00:10 UTC/);
+  assert.match(inside[0].plain, /your USDC and cbZEC come back in full either way/);
+  assert.equal(inside[0].encodable, true, "stated, not blocked");
+  const partial = buildUnwindPlan({ account: ACCOUNT, positionIds: [7n], collateral: "cbBTC", deployment: LIVE, deadline: 1_800_000_000, bandToleranceBps: 100, quote: cbzec, positionVenue: "direct", earlyPenalty: { bps: 2_500, until: "2026-09-11T20:00:10.000Z" } });
+  assert.match(partial[0].plain, /forfeits 25\.00% of the AERO/);
+  const outside = buildUnwindPlan({ account: ACCOUNT, positionIds: [7n], collateral: "cbBTC", deployment: LIVE, deadline: 1_800_000_000, bandToleranceBps: 100, quote: cbzec, positionVenue: "direct", earlyPenalty: null });
+  assert.doesNotMatch(outside[0].plain, /forfeits/);
+});

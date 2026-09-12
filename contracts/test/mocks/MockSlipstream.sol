@@ -283,6 +283,16 @@ contract MockCLGauge is ERC721Holder {
         return address(VOTER);
     }
 
+    /// @dev The real gauge points at a CLGaugeFactory whose `penaltyRate()` / `minStakeTimes(pool)`
+    ///      set the early-withdraw penalty; this mock answers both itself.
+    function gaugeFactory() external view returns (address) {
+        return address(this);
+    }
+
+    function minStakeTimes(address) external view returns (uint256) {
+        return minStakeTime;
+    }
+
     function deposit(uint256 tokenId) external {
         require(!refuse, "gauge refused");
         require(NPM.ownerOf(tokenId) == msg.sender, "NA");

@@ -5563,6 +5563,11 @@
           "stateMutability": "nonpayable",
           "outputs": "uint256,uint256,uint256,uint256[]"
         },
+        "earlyWithdrawPenalty(uint256,address)": {
+          "selector": "0xb31e1567",
+          "stateMutability": "view",
+          "outputs": "uint256,uint256"
+        },
         "increase(uint256,uint256,uint256,(uint160,uint160),uint256)": {
           "selector": "0x02efe039",
           "stateMutability": "nonpayable",
@@ -5751,6 +5756,9 @@
         },
         "NotPositionOwner(uint256,address)": {
           "selector": "0x606840e0"
+        },
+        "PenaltyUnreadable(bytes)": {
+          "selector": "0xbd7e2085"
         },
         "PoolInactive(bytes32)": {
           "selector": "0x3ec8a600"
@@ -6198,6 +6206,35 @@
             }
           ],
           "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "earlyWithdrawPenalty",
+          "inputs": [
+            {
+              "name": "positionId",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "account",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "penaltyBps",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "until",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "view"
         },
         {
           "type": "function",
@@ -7020,6 +7057,17 @@
               "name": "owner",
               "type": "address",
               "internalType": "address"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "PenaltyUnreadable",
+          "inputs": [
+            {
+              "name": "reason",
+              "type": "bytes",
+              "internalType": "bytes"
             }
           ]
         },

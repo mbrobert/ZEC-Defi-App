@@ -735,8 +735,9 @@ untaxed. *Risk lines it adds, each stated in code or copy:* a killed or
 unvoted gauge pays nothing (the yield gate reads `rewardRate` live and the
 pool note says the vote is weekly); the range does not follow the price (the
 dashboard shows it; the disclosure says it earns nothing outside it); an
-early-withdraw penalty on the AERO if the gauge factory sets one (not read,
-not checked — Addendum 9); the pool IS the depth (≈ $0.9M on 2026-09-10); the
+early-withdraw penalty on the AERO — read 2026-09-11: 100 % of the reward for
+ten seconds after staking, shown live by `earlyWithdrawPenalty` on the position
+and in the Close plan (W3-LOW-5, Addendum 9); the pool IS the depth (≈ $0.9M on 2026-09-10); the
 second factory's fee manager `0xE6A4…2075` sets the pool's swap fee (§16); the
 callback is a new door — accepted only from the bound pool, only while a swap
 is in flight, only once, paying exactly the pool's positive delta and never

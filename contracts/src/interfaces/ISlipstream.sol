@@ -128,6 +128,19 @@ interface ISlipstreamGauge {
     function nft() external view returns (address);
     function pool() external view returns (address);
     function voter() external view returns (address);
+    /// @dev The factory whose `penaltyRate()` / `minStakeTimes(pool)` set the early-withdraw penalty.
+    function gaugeFactory() external view returns (address);
+    /// @dev When `tokenId` was staked (0 = not staked); the penalty window counts from here.
+    function depositTimestamp(uint256 tokenId) external view returns (uint256);
+}
+
+/// @dev `ICLGaugeFactory` subset (CLGaugeFactory.sol, verified): the early-withdraw penalty —
+///      `penaltyRate()` in bps of the reward, applied while `block.timestamp < depositTimestamp +
+///      minStakeTimes(pool)` (read 2026-09-11 at block 51,193,797 for the cbZEC/USDC pool: 10,000
+///      bps for 10 seconds — Addendum 9).
+interface ISlipstreamGaugeFactory {
+    function penaltyRate() external view returns (uint256);
+    function minStakeTimes(address pool) external view returns (uint256);
 }
 
 /// @dev The Aerodrome Voter surface the venue reads: whether a gauge is alive (a killed gauge

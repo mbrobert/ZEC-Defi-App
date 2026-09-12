@@ -20,6 +20,8 @@ export interface PositionView {
   venue?: "engine" | "direct";
   /** Direct venue: staked in the pool's gauge (earning AERO) or held unstaked in the account. */
   staked?: boolean;
+  /** Direct venue: the gauge's early-withdraw penalty window, while one is open (W3-LOW-5). */
+  earlyPenalty?: { bps: number; until: string } | null;
   preset: RangePreset | "UNKNOWN";
   rangeWidthBps?: number;
   tickLower?: number;
@@ -97,6 +99,7 @@ export function mergePositions(chain: LpPositionRead[] | null, cache: IndexedAcc
         enginePoolId: c.enginePoolId,
         venue: c.venue,
         staked: c.staked,
+        earlyPenalty: c.earlyPenalty ?? null,
         preset: presetOf(c.rangeWidthBps, pool),
         rangeWidthBps: c.rangeWidthBps,
         tickLower: c.tickLower,

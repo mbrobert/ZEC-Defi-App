@@ -24,6 +24,11 @@ liquidity provision; EIP = Ethereum Improvement Proposal.
   when a cross-check was possible and "no oracle cross-check was possible: Aave has no price for
   <token>, so the pool's own price is the only one this quote rests on" when it was not (cbZEC); the
   plan stays signable. `web/test/plan.test.ts` (+1). Web 163 → **165** (163 passed, 2 skipped).
+- **W3-LOW-5** — the gauge factory's early-withdraw penalty read live: 10,000 bps for 10 seconds on
+  the cbZEC/USDC pool (block 51,193,797, Addendum 9). `SlipstreamLpVenue.earlyWithdrawPenalty(id,
+  account)` (fails closed by name), the position read and card carry it, the Close plan says what is
+  forfeited and until when. `audit-regressions/DirectVenuePenalty.t.sol` (4), `plan` and `reads` (+1
+  each). ABI 422 → 423.
 
 ## 2026-09-11 — Slice H: static analysis and symbolic execution wired into CI; nothing ran locally
 
