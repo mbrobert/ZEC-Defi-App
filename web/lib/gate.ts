@@ -149,6 +149,19 @@ export function reasonPlain(reason: string | null): string {
 /** Every reason the UI has copy for — the drift test asserts it covers the service's union. */
 export const KNOWN_REASONS: readonly string[] = Object.keys(REASON_TEXT);
 
+/**
+ * The verdicts a given deployment can act on (audit wave 3, W3-LOW-3). A pool held on the direct
+ * Slipstream venue is only openable where `router.LP_VENUE_DIRECT()` names one; on a deployment
+ * without it (Base Sepolia, the demo) such a verdict used to reach the wizard, the user signed the
+ * Permit2 message, and only the band quote refused ("no direct Slipstream venue"). Engine-pool
+ * verdicts pass through untouched; nothing else about the view changes.
+ */
+export function gateForDeployment(gate: GateView, deployment: { lpVenueDirect: `0x${string}` | null } | null): GateView {
+  if (deployment?.lpVenueDirect) return gate;
+  const verdicts = gate.verdicts.filter((v) => v.pool.protocol !== "DIRECT");
+  return verdicts.length === gate.verdicts.length ? gate : { ...gate, verdicts };
+}
+
 const SETTING_IDS: GateSettingId[] = ["sheltered", "steady", "working"];
 const PRESETS: NamedRangePreset[] = ["CONSERVATIVE", "MODERATE", "AGGRESSIVE"];
 

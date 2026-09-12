@@ -7,6 +7,7 @@ import { usePublicClient, useSignTypedData, useWriteContract } from "wagmi";
 import { isCollateralSymbol, lpPoolId, type CollateralSymbol } from "@zyo/shared";
 import { BASE_TOKENS, CHAIN_ID, COLLATERAL_ASSETS } from "@/lib/chain";
 import { useAccountRead, useDeployment, useGate, useMarket, useSession } from "@/lib/hooks";
+import { gateForDeployment } from "@/lib/gate";
 import { useMode } from "@/lib/mode";
 import { fromAtomic } from "@/lib/math";
 import { buildOpenPlan, deadlineFromNow, type OpenPlanInput } from "@/lib/plan";
@@ -35,8 +36,10 @@ function Wizard() {
   const s = useSession();
   const { mode } = useMode();
   const { market, source } = useMarket();
-  const { gate } = useGate();
+  const { gate: servedGate } = useGate();
   const { deployment } = useDeployment();
+  // W3-LOW-3: a direct-venue pool is only offered where the deployment has the direct venue.
+  const gate = useMemo(() => gateForDeployment(servedGate, deployment), [servedGate, deployment]);
   const { account } = useAccountRead(market);
   const publicClient = usePublicClient({ chainId: CHAIN_ID });
   const { writeContractAsync } = useWriteContract();

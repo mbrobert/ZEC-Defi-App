@@ -12,6 +12,7 @@ const chainPos = (id: bigint, poolId: string, over: Partial<LpPositionRead> = {}
     positionId: id,
     enginePoolId: (pool?.enginePoolId ?? "0x" + "0".repeat(64)) as `0x${string}`,
     pool,
+    venue: "engine",
     rangeWidthBps: 1500,
     tickLower: -199_200,
     tickUpper: -197_700,

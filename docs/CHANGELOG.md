@@ -16,6 +16,10 @@ liquidity provision; EIP = Ethereum Improvement Proposal.
   sits — before, it was measured from the band's edge to the current price and a price that had
   drifted to the edge swapped with zero tolerance. `audit-regressions/DirectVenueBandEdge.t.sol` (4);
   the pre-fix refusal was reproduced first. ABI 421 → 422.
+- **W3-LOW-3** — `web/lib/gate.ts` `gateForDeployment(gate, deployment)` drops DIRECT-pool verdicts
+  when the deployment names no direct venue, so the wizard never offers a pool it cannot open there
+  (before, the Permit2 signature was collected and only the band quote refused). `web/test/gate.test.ts`
+  (+1); two web test fixtures updated for the slice-F types.
 
 ## 2026-09-11 — Slice H: static analysis and symbolic execution wired into CI; nothing ran locally
 

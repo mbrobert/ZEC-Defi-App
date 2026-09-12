@@ -157,3 +157,26 @@ test("demo gate = the yield model's verdict: NOTHING clears at 4.828%; cbZEC poo
   // carry (audit wave 1 lens D INFO-1).
   assert.equal(best.userNet.find((u) => u.ltvBps === 4000)?.userNetPct, -4.04);
 });
+
+// W3-LOW-3 (wave 3): a direct-venue pool is offered only where the deployment has the direct venue.
+test("W3-LOW-3: gateForDeployment drops DIRECT-pool verdicts without a direct venue and keeps everything else", async () => {
+  const { gateForDeployment } = await import("../lib/gate");
+  const { CURATED_POOLS } = await import("@zyo/shared");
+  const gate = demoGate();
+  const direct = CURATED_POOLS.filter((p) => p.protocol === "DIRECT").map((p) => p.id);
+  assert.ok(direct.includes("aero-cbzec-usdc"));
+  // Give the demo gate a direct-pool verdict so the filter has something to drop.
+  const sample = gate.verdicts[0];
+  const cbzec = CURATED_POOLS.find((p) => p.id === "aero-cbzec-usdc")!;
+  const withDirect = { ...gate, verdicts: [...gate.verdicts, { ...sample, poolId: cbzec.id, pool: cbzec }] };
+  const engineOnly = gate.verdicts.filter((v) => v.pool.protocol !== "DIRECT").length;
+  const none = gateForDeployment(withDirect, { lpVenueDirect: null });
+  assert.equal(none.verdicts.length, engineOnly, "every direct verdict is dropped");
+  assert.ok(none.verdicts.every((v) => v.pool.protocol !== "DIRECT"));
+  const nullDeployment = gateForDeployment(withDirect, null);
+  assert.equal(nullDeployment.verdicts.length, engineOnly);
+  const some = gateForDeployment(withDirect, { lpVenueDirect: "0x1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d" });
+  assert.equal(some.verdicts.length, withDirect.verdicts.length, "kept where the venue exists");
+  const engineView = { ...gate, verdicts: gate.verdicts.filter((v) => v.pool.protocol !== "DIRECT") };
+  assert.strictEqual(gateForDeployment(engineView, null), engineView, "a view without direct verdicts is returned as is");
+});
