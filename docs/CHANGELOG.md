@@ -96,6 +96,23 @@ liquidity provision; EIP = Ethereum Improvement Proposal.
   1.407), the funded sale at HF 1.16 landing inside the cap with the released ZEC collected to the unit,
   observe-only refusing by name. Not deployed; no keeper runs anywhere.
 
+## 2026-09-12 — CI: the contracts suite as three jobs, halmos on its own profile — the runner is 2 cores / 7 GB and a whole-tree via-IR compile never finishes on it
+
+- The previous entry's theory (partial recompiles) was wrong: with the exact-key cache the cold compile of
+  `5932d2a` died the same way at 13.5 min, and so did `b933864` — seven jobs in a row since `485b3ff`,
+  every one at "Compiling 138 files" then "the runner has received a shutdown signal" (exit 143). The
+  repository is private, so `ubuntu-latest` is the 2-core / 7 GB runner; the `fork` job compiles the 108
+  files its test needs in ~96 s on that same runner, so the 30 remaining test contracts (the ten
+  top-level suites, the 19 audit regressions, the invariant handler) are what the runner cannot hold.
+  `ci.yml`: `contracts` is a matrix of `unit` / `audit-regressions` / `invariant`, each
+  `forge test -vv --threads 1 --match-path <group>` with its own cache key and a summary line
+  (`contracts (<group>): P passed / F failed / S skipped of T`); `contracts-build` compiles
+  `--skip test` (the seam jobs read product artifacts); the cache fallbacks are back. Aderyn passed on
+  `b933864` (**0 High**) and halmos ran for the first time — and met the same shutdown while compiling,
+  so both halmos steps now run under `FOUNDRY_PROFILE=halmos` (`foundry.toml`: `test = "test/halmos"`).
+  Workflows re-parsed; the run of this commit is the test of all three changes. `docs/TESTING.md`
+  "CI" carries the reasoning.
+
 ## 2026-09-12 — Aderyn's first run triaged (four Highs, no code change), and the compiler-cache fallback dropped from CI
 
 - Slither passes on the runner since `7b5f72a` (296 results, no High), so Aderyn 0.6.8 ran for the

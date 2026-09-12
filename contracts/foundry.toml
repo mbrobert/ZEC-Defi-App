@@ -35,6 +35,13 @@ base = "${BASE_RPC_URL}"
 base_sepolia = "${BASE_SEPOLIA_RPC_URL}"
 
 # Offline containers with a pre-fetched compiler: `FOUNDRY_PROFILE=local forge test`
+# Halmos compiles the project through `forge build` before it runs; on CI's 2-core / 7 GB runner a
+# via-IR compile of every test contract never finishes (ci.yml, the contracts jobs), so the halmos
+# steps run with FOUNDRY_PROFILE=halmos and compile src + the two harnesses only. Everything else
+# inherits from the default profile.
+[profile.halmos]
+test = "test/halmos"
+
 [profile.local]
 solc = "/root/.solc/solc-0.8.24"
 optimizer = true

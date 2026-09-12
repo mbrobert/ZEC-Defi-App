@@ -21,9 +21,29 @@ env:
   FORGE_STD_TAG: v1.16.2
 
 jobs:
+  # The suites run as three jobs, one per test group, because the private repository's standard
+  # runner (2 cores, 7 GB) never finishes a via-IR compile of the whole tree: the fork job compiles
+  # the 108 files it needs in ~96 s on the same runner, while the full 138 — the ten top-level test
+  # contracts, the 19 audit regressions and the invariant handler on top — ended seven jobs in a row
+  # at 11–14 min with "the runner has received a shutdown signal" (exit 143), after a fallback-restored
+  # cache and cold alike (2026-09-12, CHANGELOG). `--match-path` makes forge compile only the matched
+  # tests and their dependencies, so each job's compile stays inside what the runner has, and one solc
+  # at a time (`--threads 1`) keeps the peak memory of the biggest test contracts to one process.
+  # docs/TESTING.md "Contracts" lists the three groups and their counts; together they are the suite.
   contracts:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        # forge's `*` crosses directory separators, so the top-level group excludes the sub-directories
+        # by name (measured with `forge test --list`: unit 9 files / 250 tests, regressions 17 / 132,
+        # invariant 1 / 11 on 2026-09-12; the fork tests have their own job, halmos its own steps).
+        group:
+          - { name: unit, args: '--match-path "test/*.t.sol" --no-match-path "test/{audit-regressions,invariant,fork,halmos}/**"' }
+          - { name: audit-regressions, args: '--match-path "test/audit-regressions/*.t.sol"' }
+          - { name: invariant, args: '--match-path "test/invariant/*.t.sol"' }
+    name: contracts (${{ matrix.group.name }})
     defaults:
       run:
         working-directory: contracts
@@ -34,23 +54,39 @@ jobs:
         run: |
           git clone --depth 1 --branch "$OZ_TAG" https://github.com/OpenZeppelin/openzeppelin-contracts lib/openzeppelin-contracts
           git clone --depth 1 --branch "$FORGE_STD_TAG" https://github.com/foundry-rs/forge-std lib/forge-std
-      - name: Restore the compiler cache (keyed on every .sol and foundry.toml)
+      - name: Runner resources (evidence for the shutdown signals)
+        run: nproc; free -h; df -h . | tail -1
+      - name: Restore the compiler cache (per group, keyed on every .sol and foundry.toml)
         uses: actions/cache@v4
         with:
           path: |
             contracts/cache
             contracts/out
-          key: foundry-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'contracts/src/**/*.sol', 'contracts/test/**/*.sol', 'contracts/script/**/*.sol') }}
-          # No restore-keys fallback (2026-09-12): every partial via-IR recompile on the runner since 485b3ff
-          # (39 files after a fallback restore) ended at ~11 min with "the runner has received a shutdown
-          # signal" (exit 143) — five jobs in four runs — while both cold compiles passed in 13–15 min.
-          # Exact key or a cold compile until the cause is known (CHANGELOG 2026-09-12, Aderyn triage entry).
-      - name: Unit + scenario + invariant suites (isolation pinned in foundry.toml)
-        run: forge test -vv
+          key: foundry-${{ runner.os }}-${{ matrix.group.name }}-${{ hashFiles('contracts/foundry.toml', 'contracts/src/**/*.sol', 'contracts/test/**/*.sol', 'contracts/script/**/*.sol') }}
+          restore-keys: foundry-${{ runner.os }}-${{ matrix.group.name }}-
+      - name: forge test — ${{ matrix.group.name }} (isolation pinned in foundry.toml; compiles only this group and its dependencies)
+        run: forge test -vv --threads 1 ${{ matrix.group.args }} | tee "test-${{ matrix.group.name }}.log"
+      - name: Totals into the run summary
+        if: always()
+        run: |
+          # Foundry's closing line: "Ran N test suites in …: P tests passed, F failed, S skipped (T total tests)"
+          TOTALS=$(sed -n 's/^Ran [0-9]* test suites\{0,1\} in .*: \([0-9]*\) tests\{0,1\} passed, \([0-9]*\) failed, \([0-9]*\) skipped (\([0-9]*\) total tests\{0,1\}).*/\1 \2 \3 \4/p' "test-${{ matrix.group.name }}.log" | tail -1)
+          if [ -z "$TOTALS" ]; then
+            echo "::error::contracts (${{ matrix.group.name }}): forge printed no totals line — the group did not run to the end"
+            echo "### contracts (${{ matrix.group.name }}): NOT RUN TO THE END" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          read -r PASSED FAILED SKIPPED TOTAL <<< "$TOTALS"
+          LINE="contracts (${{ matrix.group.name }}): ${PASSED} passed / ${FAILED} failed / ${SKIPPED} skipped of ${TOTAL}"
+          echo "$LINE"
+          echo "### $LINE" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$FAILED" -ne 0 ]; then echo "::error::$LINE"; exit 1; fi
 
-  # One compile, shared with the seam jobs below: the keeper's and the root's ABI checks read
-  # contracts/out/, and a fresh runner has none (the keeper job printed "verify-abi: SKIP" on every
-  # run before 2026-09-12 — green, and proving nothing).
+  # One compile of the PRODUCT contracts, shared with the seam jobs below: the keeper's and the root's
+  # ABI checks read contracts/out/, and a fresh runner has none (the keeper job printed "verify-abi:
+  # SKIP" on every run before 2026-09-12 — green, and proving nothing). Tests are skipped here on
+  # purpose: they are what the runner cannot compile in one go (see the contracts jobs), and the seam
+  # reads product artifacts only.
   contracts-build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -64,19 +100,16 @@ jobs:
         run: |
           git clone --depth 1 --branch "$OZ_TAG" https://github.com/OpenZeppelin/openzeppelin-contracts lib/openzeppelin-contracts
           git clone --depth 1 --branch "$FORGE_STD_TAG" https://github.com/foundry-rs/forge-std lib/forge-std
-      - name: Restore the compiler cache
+      - name: Restore the compiler cache (product contracts and scripts)
         uses: actions/cache@v4
         with:
           path: |
             contracts/cache
             contracts/out
-          key: foundry-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'contracts/src/**/*.sol', 'contracts/test/**/*.sol', 'contracts/script/**/*.sol') }}
-          # No restore-keys fallback (2026-09-12): every partial via-IR recompile on the runner since 485b3ff
-          # (39 files after a fallback restore) ended at ~11 min with "the runner has received a shutdown
-          # signal" (exit 143) — five jobs in four runs — while both cold compiles passed in 13–15 min.
-          # Exact key or a cold compile until the cause is known (CHANGELOG 2026-09-12, Aderyn triage entry).
-      - name: forge build
-        run: forge build
+          key: foundry-${{ runner.os }}-build-${{ hashFiles('contracts/foundry.toml', 'contracts/src/**/*.sol', 'contracts/script/**/*.sol') }}
+          restore-keys: foundry-${{ runner.os }}-build-
+      - name: forge build (src and script; tests compile in the contracts jobs)
+        run: forge build --skip test
       - name: Upload the artifacts for the seam jobs
         uses: actions/upload-artifact@v4
         with:
@@ -233,10 +266,7 @@ jobs:
             contracts/cache
             contracts/out
           key: foundry-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'contracts/src/**/*.sol', 'contracts/test/**/*.sol', 'contracts/script/**/*.sol') }}
-          # No restore-keys fallback (2026-09-12): every partial via-IR recompile on the runner since 485b3ff
-          # (39 files after a fallback restore) ended at ~11 min with "the runner has received a shutdown
-          # signal" (exit 143) — five jobs in four runs — while both cold compiles passed in 13–15 min.
-          # Exact key or a cold compile until the cause is known (CHANGELOG 2026-09-12, Aderyn triage entry).
+          restore-keys: foundry-${{ runner.os }}-
       - name: Fork suite at FORK_BLOCK (fails, and says NOT VERIFIED, without the secret)
         run: |
           set -o pipefail
@@ -307,10 +337,7 @@ jobs:
             contracts/cache
             contracts/out
           key: foundry-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'contracts/src/**/*.sol', 'contracts/test/**/*.sol', 'contracts/script/**/*.sol') }}
-          # No restore-keys fallback (2026-09-12): every partial via-IR recompile on the runner since 485b3ff
-          # (39 files after a fallback restore) ended at ~11 min with "the runner has received a shutdown
-          # signal" (exit 143) — five jobs in four runs — while both cold compiles passed in 13–15 min.
-          # Exact key or a cold compile until the cause is known (CHANGELOG 2026-09-12, Aderyn triage entry).
+          restore-keys: foundry-${{ runner.os }}-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -326,12 +353,19 @@ jobs:
           HIGHS=$(python3 -c 'import json;d=json.load(open("aderyn.json"));print(len((d.get("high_issues") or {}).get("issues") or []))')
           echo "Aderyn high issues: $HIGHS"
           test "$HIGHS" -eq 0
+      # Both halmos steps compile under FOUNDRY_PROFILE=halmos (foundry.toml: test = "test/halmos"), so
+      # forge builds src + the two harnesses instead of every test contract — the full via-IR compile
+      # is what ended the first halmos run with the runner's shutdown signal (2026-09-12, CHANGELOG).
       - name: Halmos — the account's grant budget and calldata parser (fails on a violated property)
+        env:
+          FOUNDRY_PROFILE: halmos
         run: |
           python3 -m pip install --quiet halmos
           halmos --contract AccountGrantHalmos --loop 4 --solver-timeout-assertion 120000
       - name: Halmos — the router's balance unchanged across unwind (bounded; may time out)
         continue-on-error: true
+        env:
+          FOUNDRY_PROFILE: halmos
         run: |
           timeout 20m halmos --contract RouterBalanceHalmos --loop 3 --solver-timeout-assertion 60000 || echo "router property: timed out or unknown — recorded, not a failure"
       - name: Upload reports

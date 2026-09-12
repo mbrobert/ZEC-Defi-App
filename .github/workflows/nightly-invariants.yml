@@ -38,8 +38,7 @@ jobs:
             contracts/cache
             contracts/out
           key: foundry-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'contracts/src/**/*.sol', 'contracts/test/**/*.sol', 'contracts/script/**/*.sol') }}
-          # No restore-keys fallback — same reason as ci.yml (2026-09-12): a partial via-IR recompile after a
-          # fallback restore killed the runner five times; exact key or a cold compile.
+          restore-keys: foundry-${{ runner.os }}-
       - name: Invariants at runs=1500 × depth=120 (the metrics table is the call summary)
         run: |
           set -o pipefail

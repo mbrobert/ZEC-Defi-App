@@ -293,19 +293,38 @@ pull requests, and no job can go green over a suite it did not run:
 
 | Job | Runs | Proves |
 |---|---|---|
-| `contracts` | `forge test -vv` | the 31 suites at `foundry.toml`'s 256 × 40 |
-| `contracts-build` | `forge build`, uploads `contracts/out` | one compile, shared by the two seam jobs |
+| `contracts` (three jobs: `unit`, `audit-regressions`, `invariant`) | `forge test -vv --threads 1 --match-path <group>` — `test/*.t.sol` minus the sub-directories (forge's `*` crosses `/`, so `--no-match-path "test/{audit-regressions,invariant,fork,halmos}/**"`; 9 files / 250 tests), `test/audit-regressions/*.t.sol` (17 / 132), `test/invariant/*.t.sol` (1 / 11); each job prints `contracts (<group>): P passed / F failed / S skipped of T` into the run summary | the 31 suites at `foundry.toml`'s 256 × 40, split so that no job compiles every test contract at once (below: why) |
+| `contracts-build` | `forge build --skip test`, uploads `contracts/out` | one compile of the product contracts and scripts, shared by the two seam jobs (they read product artifacts only) |
 | `abi-seam` | `node scripts/verify-abi.mjs`, then `VERIFY_ABI_STRICT=1 node agent/scripts/verify-abi.mjs`, both on the downloaded artifacts | the committed bundle equals the compiled artifacts (exit 1 on drift) and the keeper's seam runs with nothing skipped — before this slice the keeper job had no artifacts, printed `verify-abi: SKIP` on every run and stayed green |
 | `agent` | `VERIFY_ABI_STRICT=1 npm test -w @zyo/agent`, `npm test -w @zyo/yield`, on the artifacts | keeper 110/110 strict + IDL seam 77/77 + 263 tests; yield 131 |
 | `shared` | `npm test -w @zyo/shared` | 75 |
 | `web` | `npm run typecheck -w @zyo/web`, `VERIFY_ABI_STRICT=1 npm test -w @zyo/web` | tsc clean; 167 tests, the ABI-drift test and both model pins RUN |
 | `prototypes` | Playwright's Chromium (`playwright install --with-deps chromium`), `services/yield/samples/MODEL-NUMBERS.md` copied to `/tmp/build/` so `verify-toggle`'s model pin runs | 118 · 109 · 56 · 6 |
 | `fork` | `forge test --match-path test/fork/BaseFork.t.sol -vv` at `FORK_BLOCK` (pinned in the workflow's `env`: 51,222,568) with `secrets.BASE_RPC_URL` as `FORK_URL`, then `scripts/check-cbzec-b20.sh` at the same block; the log is uploaded | the 11 fork tests and the B20 read. **Without the secret the job FAILS and its own summary line reads `fork: 11 skipped = NOT VERIFIED`** — the green check over eleven skipped tests is what this slice removed. With the secret, a skip (an engine entry the suite selects by property has vanished) also fails, by name. An RPC that no longer serves state at the pinned block fails with the RPC's error: move `FORK_BLOCK` forward deliberately, re-run, record the block |
-| `static-analysis` | Slither (`--fail-high`), Aderyn, halmos (slice H, unchanged) | fails on a High or a violated account property; the router property is `continue-on-error` |
+| `static-analysis` | Slither (`--fail-high`), Aderyn, halmos — the halmos steps under `FOUNDRY_PROFILE=halmos` (`test = "test/halmos"`, so forge compiles src + the two harnesses) | fails on a High or a violated account property; the router property is `continue-on-error` |
 | `solana-seam` | `npm test -w @zyo/solana` | 7 |
 
 Every Foundry job restores `contracts/cache` + `contracts/out` from
-`actions/cache`, keyed on every `.sol` and `foundry.toml`.
+`actions/cache`, keyed on every `.sol` and `foundry.toml` (per group for the
+three `contracts` jobs, `-build-` for `contracts-build`), with a prefix fallback.
+
+**Why the contracts suite is three jobs (2026-09-12, evening).** The repository is
+private, so `ubuntu-latest` is the 2-core / 7 GB standard runner. On it the `fork`
+job compiles the 108 files its test needs in ~96 s, but a via-IR compile of all
+138 — the ten top-level test contracts, the 19 audit regressions and the
+invariant handler on top — never finished: seven jobs in a row (`485b3ff`,
+`7041771`, `7b5f72a` ×2, `b849b17`, `5932d2a` ×2, `b933864` ×2) ended at 11–14
+min with "the runner has received a shutdown signal" (exit 143), after a
+fallback-restored cache and cold alike, with no compiler error in any log — the
+signature of the runner running out of memory. The two cold compiles that had
+passed earlier in the day (13–15 min) were the margin. `forge test --match-path`
+compiles only the matched tests and their dependencies, so each group's job
+stays inside the runner, and `--threads 1` keeps the biggest test contracts to
+one solc process at a time. The first halmos run (`b933864`) ended the same
+way for the same reason — halmos compiles the tree through `forge build` — so
+its steps run under `FOUNDRY_PROFILE=halmos`, whose `test` directory is the two
+harnesses. Locally the suite is still one command (`forge test`, 384 / 0 / 11);
+CI's three summary lines add up to it.
 
 `nightly-invariants.yml` (03:17 UTC daily, and `workflow_dispatch`) runs the
 invariant suite at `FOUNDRY_INVARIANT_RUNS=1500 FOUNDRY_INVARIANT_DEPTH=120`
