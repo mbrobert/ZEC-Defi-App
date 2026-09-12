@@ -498,11 +498,11 @@ button:focus-visible,[tabindex]:focus-visible,a:focus-visible,input:focus-visibl
   <div class="mstrip num">
     <div class="m"><b>Base</b><span>chain 8453 · Aave v3 · Aerodrome · Snuggle</span></div>
     <div class="m"><b id="msBorrow">—</b><span>live USDC borrow (Aave)</span></div>
-    <div class="m"><b id="msOffered">—</b><span>pools clearing the gate</span></div>
+    <div class="m"><b id="msOffered">—</b><span>pools beating the borrow (both models)</span></div>
     <span class="chip chip-mute" style="margin-left:auto">demo data · unaudited</span>
   </div>
   <div class="banner info" id="noWalletBanner"><b>No wallet connected</b><span class="muted small">Positions are owned by the wallet that opened them. Connect the same wallet to see yours — there is no lookup by address, because the position <i>is</i> the wallet's account.</span><button class="btn btn-gold" id="dashConnect" style="margin-left:auto;padding:7px 12px">Connect wallet</button></div>
-  <div class="banner" id="whatifBanner" style="display:none"><b>WHAT-IF <span id="whatifMult">×5</span> emissions</b><span class="muted small">Tester's-kit scenario — not today's numbers. At the real <span id="whatifBorrow"></span> borrow and the sampled emissions, no pool clears the gate.</span></div>
+  <div class="banner" id="whatifBanner" style="display:none"><b>WHAT-IF <span id="whatifMult">×5</span> emissions</b><span class="muted small">Tester's-kit scenario — not today's numbers. At the real <span id="whatifBorrow"></span> borrow and the sampled emissions, no pool beats the borrow on both models.</span></div>
   <div class="banner crit" id="keeperBanner" style="display:none"><b>Keeper offline (simulated)</b><span class="muted small">Nothing is watching your health factor. The ladder will not act until it is back — the keeper-dependence risk, shown rather than hidden.</span></div>
 
   <div class="grid-stats">
@@ -599,7 +599,7 @@ button:focus-visible,[tabindex]:focus-visible,a:focus-visible,input:focus-visibl
           <div class="opt-cards" style="grid-template-columns:1fr 1fr" id="modeCards" role="radiogroup">
             <div class="opt sel" role="radio" tabindex="0" data-mode="LP" aria-checked="true">
               <div class="t">Leveraged LP <span class="chip chip-gold">Keep your asset</span></div>
-              <div class="d">Supply collateral to Aave, borrow USDC at the live rate, deploy it into one gated Aerodrome pool via the Snuggle engine. Emissions-only; the gate is computed.</div>
+              <div class="d">Supply collateral to Aave, borrow USDC at the live rate, deploy it into one Aerodrome pool via the Snuggle engine, with the model's forecast beside every pool. Emissions-only; the forecast is computed.</div>
             </div>
             <div class="opt" role="radio" tabindex="-1" data-mode="HOLD" aria-checked="false">
               <div class="t">Borrow &amp; hold USDC <span class="chip chip-mute">Negative carry</span></div>
@@ -634,7 +634,7 @@ button:focus-visible,[tabindex]:focus-visible,a:focus-visible,input:focus-visibl
           </div>
         </div>
         <div class="field" id="poolBlock">
-          <label>Pool — <span id="poolCount" class="faint"></span> <span class="tt" title="Every curated Aerodrome pool the engine supports. A pool is offered at your setting only when emissions × (1 − fees) − IL drag at the chosen width beats the live Aave USDC borrow rate; the rest are shown gated with the reason. The registry id is the exact bytes32 key the deposit passes on-chain.">ⓘ</span></label>
+          <label>Pool — <span id="poolCount" class="faint"></span> <span class="tt" title="Every curated Aerodrome pool the engine supports. Each pool shows whether emissions × (1 − fees) − IL drag at the chosen width beats the live Aave USDC borrow rate on both models; every pool can be picked, and a pool is greyed out only when it cannot be opened at all. The registry id is the exact bytes32 key the deposit passes on-chain.">ⓘ</span></label>
           <div class="pool-list" id="poolList" role="radiogroup"></div>
         </div>
         <div class="field" id="spotBlock" style="display:none">
@@ -681,6 +681,8 @@ button:focus-visible,[tabindex]:focus-visible,a:focus-visible,input:focus-visibl
         <div class="rev-list" id="revList"></div>
         <div class="note small" id="revTx"></div>
         <div class="note warn small" id="revRisk"><b>Risks you are taking</b><ul class="risks" id="revRisks"></ul></div>
+        <label class="note small" id="wizAckWrap" style="display:flex;gap:10px;align-items:flex-start;cursor:pointer"><input type="checkbox" id="wizAck" style="margin-top:3px;accent-color:var(--gold)"><span id="wizAckText"></span></label>
+        <div class="tiny faint" id="wizAckHint">Confirm &amp; sign stays off until this is ticked. It resets if you change anything.</div>
       </div>
 
       <div class="wnav">
@@ -711,9 +713,9 @@ button:focus-visible,[tabindex]:focus-visible,a:focus-visible,input:focus-visibl
 
 <!-- ═══ POOLS ═══ -->
 <div class="view" id="view-pools"><div class="wrap">
-  <div class="section-h" style="margin-top:26px"><h2 style="font-size:20px">Curated pools — emissions-only, gated</h2>
+  <div class="section-h" style="margin-top:26px"><h2 style="font-size:20px">Curated pools — emissions-only, with a forecast</h2>
     <span class="small muted num" id="poolsMeta"></span></div>
-  <p class="muted small" style="margin-bottom:16px;max-width:760px">Aerodrome pools reachable through the Snuggle engine, verified against the live registry on Base — the id shown is the exact bytes32 key deposits pass on-chain. Positions are staked in each pool's gauge and earn AERO in lieu of trading fees. A pool is offered only when emissions × fee keep − IL drag beats the live Aave USDC borrow rate at the chosen width; the table shows the gate at each preset. The cbZEC/USDC pool is tracked but its gauge has never been voted, so it earns nothing and is never offered.</p>
+  <p class="muted small" style="margin-bottom:16px;max-width:760px">Aerodrome pools reachable through the Snuggle engine, verified against the live registry on Base — the id shown is the exact bytes32 key deposits pass on-chain. Positions are staked in each pool's gauge and earn AERO in lieu of trading fees. Each cell shows whether emissions × fee keep − IL drag beats the live Aave USDC borrow rate at that preset, on both models; every pool can be opened after you acknowledge its forecast (2026-09-12). The cbZEC/USDC pool is tracked; its gauge's first vote landed in the week of 2026-09-10 and its forecast is shown like any other.</p>
   <div class="card" style="overflow:auto"><table class="ptable" id="poolTable">
     <thead><tr><th>Pool</th><th>Class</th><th>Emissions</th><th>Conservative</th><th>Moderate</th><th>Aggressive</th><th>Registry id</th></tr></thead>
     <tbody></tbody>
@@ -782,7 +784,7 @@ button:focus-visible,[tabindex]:focus-visible,a:focus-visible,input:focus-visibl
       <button data-doc="own">Ownership &amp; the keeper</button>
       <button data-doc="modes">The strategies</button>
       <button data-doc="health">Health &amp; the ladder</button>
-      <button data-doc="pools">Pools &amp; the gate</button>
+      <button data-doc="pools">Pools &amp; the forecast</button>
       <button data-doc="rewards">Rewards &amp; claiming</button>
       <button data-doc="withdraw">Withdrawals</button>
       <button data-doc="fees">Fees</button>
@@ -795,7 +797,7 @@ button:focus-visible,[tabindex]:focus-visible,a:focus-visible,input:focus-visibl
         <p>You need one thing: <b>a wallet on Base</b> — Coinbase Wallet, MetaMask, WalletConnect, or any EIP-6963 wallet. It signs; your Oilskin account owns.</p>
         <h3>Your first position, in three steps</h3>
         <p>1 · Connect, pick collateral (cbBTC or WETH; cbZEC as collateral is v1.1) and a strategy in <b>New position</b>.</p>
-        <p>2 · Review the projection rail: net APY (sign shown honestly), health factor, liquidation price, fees, the gate. Nothing moves until you confirm.</p>
+        <p>2 · Review the projection rail: net APY (sign shown honestly), health factor, liquidation price, fees, the forecast. Tick the acknowledgment. Nothing moves until you confirm.</p>
         <p>3 · Sign. Your first deposit is two transactions (account creation, then the router call); after that, one. Each step turns green only when its Base transaction confirms.</p>
         <p>There is no email and no account with us. There is KYC only if you enter through Coinbase to get cbZEC — see Risks &amp; cbZEC.</p>
       </div>
@@ -825,7 +827,7 @@ button:focus-visible,[tabindex]:focus-visible,a:focus-visible,input:focus-visibl
 
       <div class="doc-sec" data-doc="modes">
         <h2>The strategies</h2>
-        <h3>Leveraged LP</h3><p>Collateral on Aave v3, USDC borrowed at your setting, deployed to one gated Aerodrome pool via the Snuggle engine and staked in its gauge. Emissions-only; IL drag modelled per width; the gate is computed at the live borrow rate.</p>
+        <h3>Leveraged LP</h3><p>Collateral on Aave v3, USDC borrowed at your setting, deployed to one Aerodrome pool via the Snuggle engine and staked in its gauge. Emissions-only; IL drag modelled per width; the forecast is computed at the live borrow rate and acknowledged before you sign.</p>
         <h3>Borrow &amp; hold USDC</h3><p>Same collateral and borrow; the USDC stays in your account. Liquidity without selling — at the cost of the borrow rate every day it sits idle.</p>
         <h3>Supply only</h3><p>Collateral on Aave earning its supply rate. No debt, HF ∞. Upgrade in place.</p>
         <h3>Spot swap via CoW</h3><p>Quote → sign an order → settle in CoW's batch auction (MEV-protected, free expiry). Nothing custodied. A swap is a disposal; the borrow routes exist so holders can earn without one.</p>
@@ -842,15 +844,15 @@ button:focus-visible,[tabindex]:focus-visible,a:focus-visible,input:focus-visibl
       </div>
 
       <div class="doc-sec" data-doc="pools">
-        <h2>Pools &amp; the gate</h2>
+        <h2>Pools &amp; the forecast</h2>
         <p id="docGateP"></p>
         <table class="dtable" id="docPools"></table>
         <p id="docModelSrc"></p>
         <h3>Two models, and the band between them</h3>
-        <p>The published slice comes from a closed form that assumes the position never leaves its band. A real concentrated position spends part of the year outside it earning nothing, and pays a swap cost at every re-centre. So the gate prices every cell a second time with a Monte-Carlo-calibrated form — <span class="mono">mcLpNet = netEmissions × inRangeEmissionsFactor + mcDragPct</span>, exactly affine in the emissions rate, so two coefficients price the cell at every level including the boundary — and offers only when <b>both</b> clear the borrow. Where they disagree the cell is inside the model's own uncertainty and is refused.</p>
+        <p>The published slice comes from a closed form that assumes the position never leaves its band. A real concentrated position spends part of the year outside it earning nothing, and pays a swap cost at every re-centre. So the gate prices every cell a second time with a Monte-Carlo-calibrated form — <span class="mono">mcLpNet = netEmissions × inRangeEmissionsFactor + mcDragPct</span>, exactly affine in the emissions rate, so two coefficients price the cell at every level including the boundary — and shows <b>both</b> numbers with the gap between them. Where they disagree the cell is inside the model's own uncertainty — the card says so, and the choice is yours.</p>
         <table class="dtable" id="docBoundary"></table>
         <p id="docBoundaryNote"></p>
-        <h3>Every reason a pool can be refused</h3>
+        <h3>Every reason a pool can have no forecast, or cannot be opened</h3>
         <table class="dtable" id="docReasons"></table>
       </div>
 
@@ -1037,7 +1039,7 @@ button:focus-visible,[tabindex]:focus-visible,a:focus-visible,input:focus-visibl
       <button class="tk-b badb" data-tk="store:corrupt">Corrupt saved state, reload</button>
       <button class="tk-b" data-tk="store:wipe">Wipe saved state</button>
     </div>
-    <h4>Gate refusals &amp; contract guards</h4>
+    <h4>Forecast reasons &amp; contract guards</h4>
     <div class="tk-grid">
       <button class="tk-b badb" data-tk="pause:collateral">Aave guardian pauses your collateral reserve</button>
       <button class="tk-b badb" data-tk="pause:borrow">Aave guardian pauses USDC borrowing</button>
@@ -1249,15 +1251,16 @@ const OIL_CONTRACTS = Object.freeze({
    2026-09-12T19:44:42+00:00 by services/yield/scripts/lp-sim.py; what
    /v1/gate serves). Gauge words sampled 2026-09-12T19:31:30.077Z block 51226072,
    AERO $0.5634; σ trailing-realised as of 2026-08-31 (only 3 pools have a
-   calibrated σ — the gate REFUSES the rest with no_volatility_input).
+   calibrated σ — the rest are shown UNPRICED, no_volatility_input; since 2026-09-12
+   the gate is information and forecast() below prices every cell it can).
    `emissions[widthBps]` = gross emissions APR at that TOTAL tick span; other
    widths derive by the concentration relation E(w) = E(w₀)·f(w₀)/f(w).
    `epochActive` is the gauge's own recorded epoch state at the as-of instant
    (rewardRate > 0 AND periodFinish > as-of) — the gate derives no_emissions
    from THAT, never from a rounded APR of 0.00.
-   `mc` carries the Monte-Carlo calibration the gate now decides on alongside
-   the closed form; `served` and `userNetPinned` are pins the page RECOMPUTES
-   and the suites assert — no verdict on this page is read from them.
+   `mc` carries the Monte-Carlo calibration the model prices alongside the
+   closed form; `served` and `userNetPinned` are pins the page RECOMPUTES
+   and the suites assert — no number on this page is read from them.
    GENERATED by prototype/scripts/gen-oil-model.mjs from samples/lp-model-*.json — do not edit by hand. ── */
 const OIL_MODEL = Object.freeze({
   source: "MODEL-NUMBERS.md generated 2026-09-12T19:44:42+00:00 (services/yield/scripts/lp-sim.py; closed form + Monte-Carlo calibration, 6000 paths, as of 2026-09-12T19:31:31Z)",
@@ -1266,21 +1269,21 @@ const OIL_MODEL = Object.freeze({
      the dated ledger read; the suites add the difference back when they reproduce a row). */
   supplyPctAtGeneration: { cbBTC: 0.0115, WETH: 1.7422 },
   keep: { engine: 0.765, direct: 0.90 },
-  /* The gate's own bounds (services/yield/src/gate.ts). Refusals, never clamps. */
+  /* The model's own bounds (services/yield/src/gate.ts). Bounds, never clamps. */
   bounds: { maxEmissionsAprPct: 1000, maxAbsNetPct: 2000, minStakedSamples: 3 },
   pools: [
     { id:"aero-cbbtc-usdc",  name:"cbBTC/USDC", tag:"BLUE CHIP", pairClass:"UNCORRELATED", entryAsset:"USDC",  c:["usdc","cbbtc"], eid:"0xb1830be2f9077713501ee7b52c92f6c8307ea8ceb16309d1f7fb1ad2643837e6", poolAddress:"0x4e962bb3889bf030368f56810a9c96b83cb3e778", sigma: 0.40, feeBps: 4.48, epochActive: true, emissions: { 4500: 6.15, 1500: 19.41, 300: 98.69 }, note:"the BTC workhorse — closest to clearing" },
     { id:"aero-usdc-weth-5", name:"WETH/USDC",  tag:"BLUE CHIP", pairClass:"UNCORRELATED", entryAsset:"USDC",  c:["weth","usdc"],  eid:"0x0ea72f44ccaf524e3fda5e4a6682fda7a79e42dc2858ee27be311e9337aa72a8", poolAddress:"0xb2cc224c1c9fee385f8ad6a55b4d94e92359dc59", sigma: 0.55, feeBps: 5.94, epochActive: true, emissions: { 4500: 3.93, 1500: 12.42, 300: 63.13 }, note:"the flagship — deepest ETH flow on Base" },
     { id:"aero-weth-cbbtc",  name:"WETH/cbBTC", tag:"BLUE CHIP", pairClass:"CORRELATED",   entryAsset:"cbBTC", c:["weth","cbbtc"], eid:"0xc97cb5ca633aa7364b3c5789cb0b59b6de362ec48a09b5e4c8e805cedd99c35f", poolAddress:"0x70acdf2ad0bf2402c957154f944c19ef4e1cbae1", sigma: 0.33, feeBps: 25.05, epochActive: true, emissions: { 2356: 4.33, 784: 13.32, 150: 70.21 }, note:"correlated majors — gentle IL, thin emissions" },
-    { id:"aero-weth-link",   name:"WETH/LINK",  tag:"BLUE CHIP", pairClass:"UNCORRELATED", entryAsset:"WETH",  c:["weth","link"],  eid:"0x477c2374e9cc1a6d42b8ad7a59ffbc2769932d7f659162824276c0b396f7ab24", poolAddress:"0x72be417afb0abea66913141c605d313bb389b59c", sigma: null, feeBps: 25, epochActive: true, emissions: { 4500: 26.39, 1500: 83.35, 300: 423.69 }, note:"ETH against LINK — no σ calibrated, gate refuses" },
+    { id:"aero-weth-link",   name:"WETH/LINK",  tag:"BLUE CHIP", pairClass:"UNCORRELATED", entryAsset:"WETH",  c:["weth","link"],  eid:"0x477c2374e9cc1a6d42b8ad7a59ffbc2769932d7f659162824276c0b396f7ab24", poolAddress:"0x72be417afb0abea66913141c605d313bb389b59c", sigma: null, feeBps: 25, epochActive: true, emissions: { 4500: 26.39, 1500: 83.35, 300: 423.69 }, note:"ETH against LINK — no σ calibrated, no forecast" },
     { id:"aero-usdt-usdc",   name:"USDT/USDC",  tag:"STABLE",    pairClass:"CORRELATED",   entryAsset:"USDC",  c:["usdt","usdc"],  eid:"0x0ff8167e00d9a34d07034a4a6a8a6dec2ef8caffca0a5178ec940f7fb76babd7", poolAddress:"0xa41bc0affba7fd420d186b84899d7ab2ac57fcd1", sigma: null, feeBps: 0.09, epochActive: true, emissions: { 2356: 0.00, 784: 0.00, 150: 0.01 }, note:"parking tier — near-zero IL, near-zero emissions" },
     { id:"cbeth-weth",       name:"cbETH/WETH", tag:"STABLE",    pairClass:"CORRELATED",   entryAsset:"WETH",  c:["cbeth","weth"], eid:"0xcfdea513927b5d64e00e0096e4263b6b67f4e209017f1dde6f9f82856805d419", poolAddress:"0x47ca96ea59c13f72745928887f84c9f52c3d7348", sigma: null, feeBps: 0.65, epochActive: true, emissions: { 2356: 0.00, 784: 0.01, 150: 0.05 }, note:"correlated LST pair — near-zero IL, near-zero emissions" },
     { id:"aero-aero-weth",   name:"AERO/WETH",  tag:"VOLATILE",  pairClass:"UNCORRELATED", entryAsset:"WETH",  c:["weth","aero"],  eid:"0x6d9490cf9c55426c33c1259073a54bcd6ac78bc43d62796ac62154188ee4c1d1", poolAddress:"0x82321f3beb69f503380d6b233857d5c43562e2d0", sigma: null, feeBps: 30, epochActive: false, emissions: { 4500: 0.00, 1500: 0.00, 300: 0.00 },
       /* The gauge's epoch had LAPSED at the as-of instant (periodFinish 1779926400 < 2026-09-12T19:31:31Z), so the model publishes 0. The reading the sample actually carried is kept verbatim, keyed by the half-width it was measured at, because it is the real example of a marginal in-range APR that the plausibility ceiling exists to refuse. */
       sampledAprByHalfWidth: { 0.2523: 9858.66, 0.0779: 31135.54, 0.0151: 158263.82 },
       note:"the venue's own token — the gauge epoch had lapsed at the sample" },
-    { id:"aero-aero-cbbtc",  name:"AERO/cbBTC", tag:"VOLATILE",  pairClass:"UNCORRELATED", entryAsset:"cbBTC", c:["aero","cbbtc"], eid:"0xa893d6d3bc3a29d7424223766ebfb8aed8d3b1ec5329d3ae1d7624b0e96d9bfc", poolAddress:"0xdfe5f275020def30993f042174fc2d335678b626", sigma: null, feeBps: 7.5, epochActive: true, emissions: { 4500: 11.67, 1500: 36.85, 300: 187.32 }, note:"AERO against BTC — no σ calibrated, gate refuses" },
-    { id:"aero-cbzec-usdc",  name:"cbZEC/USDC", tag:"cbZEC",     pairClass:"UNCORRELATED", entryAsset:"USDC",  c:["cbzec","usdc"], eid:null, poolAddress:"0x0Fc47C17AF86078d809358db1b4db2DeBC988566", sigma: null, feeBps: 20, epochActive: true, emissions: { 4500: 1.06, 1500: 3.34, 300: 16.99 }, note:"gauge epoch active at the 2026-09-12 sample — no σ calibrated, gate refuses", tracked:true, direct:true },
+    { id:"aero-aero-cbbtc",  name:"AERO/cbBTC", tag:"VOLATILE",  pairClass:"UNCORRELATED", entryAsset:"cbBTC", c:["aero","cbbtc"], eid:"0xa893d6d3bc3a29d7424223766ebfb8aed8d3b1ec5329d3ae1d7624b0e96d9bfc", poolAddress:"0xdfe5f275020def30993f042174fc2d335678b626", sigma: null, feeBps: 7.5, epochActive: true, emissions: { 4500: 11.67, 1500: 36.85, 300: 187.32 }, note:"AERO against BTC — no σ calibrated, no forecast" },
+    { id:"aero-cbzec-usdc",  name:"cbZEC/USDC", tag:"cbZEC",     pairClass:"UNCORRELATED", entryAsset:"USDC",  c:["cbzec","usdc"], eid:null, poolAddress:"0x0Fc47C17AF86078d809358db1b4db2DeBC988566", sigma: null, feeBps: 20, epochActive: true, emissions: { 4500: 1.06, 1500: 3.34, 300: 16.99 }, note:"gauge epoch active at the 2026-09-12 sample — no σ calibrated, no forecast", tracked:true, direct:true },
   ],
   /* The Monte-Carlo calibration of each priced cell (services/yield/samples/mc-calibration.json).
      mcLpNet = netEmissions × inRangeEmissionsFactor + mcDragPct — affine in the
@@ -1302,9 +1305,10 @@ const OIL_MODEL = Object.freeze({
       ["aero-weth-cbbtc", 150, 0.33, 25.05, 0.18720316358995068, -98.4191537178157, 0.7872646118721461, 766.0711666666666],
     ],
   },
-  /* [poolId, widthBps, lpNetPct|null, reason] — the served verdict at each
-     preset width. lpNet is null wherever the gate refuses BEFORE it prices the
-     cell, exactly as /v1/gate leaves it. "ok" would mean offered. */
+  /* [poolId, widthBps, lpNetPct|null, reason] — the served gate row at each
+     preset width. lpNet is null wherever the gate stops BEFORE it prices the
+     cell, exactly as /v1/gate leaves it; forecast() prices those cells anyway.
+     "ok" would mean it beats the borrow on both forms. */
   served: [
     ["aero-cbbtc-usdc", 4500, -10.92, "net_below_borrow"], ["aero-cbbtc-usdc", 1500, -29.14, "net_below_borrow"], ["aero-cbbtc-usdc", 300, -66.56, "net_below_borrow"],
     ["aero-usdc-weth-5", 4500, null, "emissions_below_borrow"], ["aero-usdc-weth-5", 1500, -56.74, "net_below_borrow"], ["aero-usdc-weth-5", 300, -89.79, "net_below_borrow"],
@@ -1317,7 +1321,7 @@ const OIL_MODEL = Object.freeze({
     ["aero-cbzec-usdc", 4500, null, "emissions_below_borrow"], ["aero-cbzec-usdc", 1500, null, "emissions_below_borrow"], ["aero-cbzec-usdc", 300, null, "no_volatility_input"],
   ],
   /* [poolId, widthBps, collateral, ltvPct, userNetPct] — a sample of the served
-     user-net rows; a slot whose cell the gate refuses before pricing has no row. */
+     user-net rows; a slot whose cell the gate stops at before pricing has no row. */
   userNetPinned: [
     ["aero-usdc-weth-5", 300, "cbBTC", 50, -47.14], ["aero-cbbtc-usdc", 4500, "cbBTC", 30, -4.62], ["aero-cbbtc-usdc", 4500, "WETH", 30, -2.89],
     ["aero-cbbtc-usdc", 1500, "WETH", 40, -11.72], ["aero-cbbtc-usdc", 300, "cbBTC", 50, -35.53], ["aero-weth-cbbtc", 784, "WETH", 50, -21.69],
@@ -1421,10 +1425,13 @@ function grossIfRevotedPct(pool, widthBps){
      collateral enabled → guardian pauses → emissions present, plausible and
      corroborated → emissions beat the borrow → σ calibrated → CLOSED FORM beats
      the borrow → MONTE-CARLO-CALIBRATED FORM beats the borrow → inside bounds.
-   Both forms must clear. The band where they disagree is the model's own
-   uncertainty and is refused with within_model_uncertainty — that band is the
-   one that would otherwise have been an offer, and at the worst cell the closed
+   Both forms must clear for `ok`. The band where they disagree is the model's own
+   uncertainty, named within_model_uncertainty — at the worst cell the closed
    form is 32 points optimistic there.
+   SINCE 2026-09-12 (BUILD-PLAN D4/D5, step A3) THE GATE IS INFORMATION: the pages
+   act on `forecast()` below, which prices every number the inputs allow and
+   refuses only for safety; `gate()` is kept, unchanged, as the reason catalogue
+   and the boundary record the suites pin.
    `opts` carries the live reads that are not properties of the pool:
      { collateral, paused:{SYM:bool}, corroborated:bool, revote:bool,
        maxEmissionsAprPct, maxAbsNetPct } — each defaults to the chain read. */
@@ -1433,14 +1440,14 @@ const GATE_WHY = {
   collateral_paused: "Aave's guardian has paused this collateral reserve — it still quotes a rate, but every supply against it reverts on chain",
   borrow_paused: "Aave's guardian has paused USDC borrowing — the loan half of this position cannot be opened at all",
   no_emissions: "no emissions — this gauge's reward epoch has ended, so it pays nothing until AERO voters fund it again",
-  emissions_implausible: `the gauge reading is above the ${OIL_MODEL.bounds.maxEmissionsAprPct}% plausibility ceiling — a marginal in-range rate that large means almost nothing is staked, and it would be diluted the moment anyone else staked, so we refuse to quote it`,
-  insufficient_samples: `we have not yet seen ${OIL_MODEL.bounds.minStakedSamples} independent readings of how much is staked in this gauge — until they agree, any APR built on the first one could be a fabrication, so nothing is published`,
+  emissions_implausible: `the gauge reading is above the ${OIL_MODEL.bounds.maxEmissionsAprPct}% plausibility ceiling — a marginal in-range rate that large means almost nothing is staked, and it would be diluted the moment anyone else staked, so it is not a number a position can be priced on`,
+  insufficient_samples: `we have not yet seen ${OIL_MODEL.bounds.minStakedSamples} independent readings of how much is staked in this gauge — until they agree, any APR built on the first one could be a fabrication, so no number is shown for it`,
   emissions_below_borrow: "emissions after fees are below the borrow rate before any IL",
-  no_volatility_input: "no σ calibrated for this pool — the gate refuses rather than guesses",
+  no_volatility_input: "no σ calibrated for this pool — the loss from the price moving cannot be priced, so there is no forecast for it",
   net_below_borrow: "emissions after fees and IL drag are below the borrow rate",
-  within_model_uncertainty: "our two models disagree here: the closed form clears the borrow, the Monte-Carlo-calibrated one does not. The closed form assumes the position never leaves its band; the simulation prices the time it spends outside. Inside that band we do not offer",
-  mc_calibration_unavailable: "no Monte-Carlo calibration exists for this pool and width, and we will not offer a position the second model has never priced",
-  mc_calibration_stale: "the Monte-Carlo calibration for this cell was run at a different band width, or at a calmer volatility, than today's inputs — it would flatter the position, so it is refused until it is re-run",
+  within_model_uncertainty: "our two models disagree here: the closed form clears the borrow, the Monte-Carlo-calibrated one does not. The closed form assumes the position never leaves its band; the simulation prices the time it spends outside. Inside that band both numbers are shown and the gap between them is the model's own uncertainty",
+  mc_calibration_unavailable: "no Monte-Carlo calibration exists for this pool and width, so the closed form's number stands alone and unchecked",
+  mc_calibration_stale: "the Monte-Carlo calibration for this cell was run at a different band width, or at a calmer volatility, than today's inputs — it would flatter the position, so its number is withheld until it is re-run",
   net_out_of_bounds: `the arithmetic came out beyond ±${OIL_MODEL.bounds.maxAbsNetPct}%/yr — that is a broken input, not a yield`,
 };
 function gate(pool, borrowPct, widthBps=widthFor(pool), mult=1, opts){
@@ -1481,7 +1488,44 @@ function gate(pool, borrowPct, widthBps=widthFor(pool), mult=1, opts){
   st.ok = true; st.reason = "ok"; st.why = "";
   return st;
 }
-const positionAprPct = (asset, ltvPct, pool, borrowPct, widthBps=widthFor(pool), mult=1, opts) => { const n = pool.sigma==null ? NaN : gate(pool, borrowPct, widthBps, mult, opts).net; return supplyAprOf(asset) + (ltvPct/100)*(n - borrowPct); };
+/* ── The forecast — the gate's model as information (BUILD-PLAN-2026-09-12 D4/D5, step A3) ──
+   Mirrors services/yield/src/forecast.ts. Every number the inputs allow is priced: a cell the gate
+   stops at emissions_below_borrow still gets its drag, both forms and its user net; a gauge that
+   pays nothing is priced as the drag alone. `allowed` is the safety list only (a disabled asset, a
+   guardian pause); `priced` says whether the LP slice has a number; `reason` is the gate's, kept as
+   information; `clears` is the borrow comparison — shown, never enforced. */
+const FORECAST_SAFETY = ["collateral_disabled","collateral_paused","borrow_paused"];
+function forecast(pool, borrowPct, widthBps=widthFor(pool), mult=1, opts){
+  const g = gate(pool, borrowPct, widthBps, mult, opts);
+  const o = opts || {}; const asset = o.collateral;
+  const safety = FORECAST_SAFETY.includes(g.reason);
+  const f = Object.assign({}, g, { allowed: !safety, refusal: safety ? g.reason : null, priced:false, unpriced:null, gap:NaN, mcUnavailable:null, clears:{ closed:null, mc:null, both:null } });
+  if(!f.allowed) return f;
+  if(g.reason==="emissions_implausible" || g.reason==="insufficient_samples"){ f.unpriced = g.reason; return f; }   // no trustworthy reading → nothing to price
+  const zero = g.reason==="no_emissions";
+  const r = zero ? 0 : g.r;
+  f.r = r; f.gross = zero ? 0 : g.gross;
+  if(pool.sigma==null){ f.unpriced = "no_volatility_input"; return f; }
+  f.net = zero ? -ilDragPct(pool.sigma, widthBps) : lpNetPct(pool, widthBps, mult);
+  f.realized = zero ? 0 : realizedEmissionsPct(pool, widthBps, mult);
+  const mc = mcApply(pool, widthBps, r);
+  if(mc.ok){ f.mcNet = mc.mcNet; f.mcCell = mc.cell; } else { f.mcNet = NaN; f.mcCell = null; f.mcUnavailable = mc.reason; }
+  f.priced = Number.isFinite(f.net);
+  f.gap = Number.isFinite(f.mcNet) ? f.net - f.mcNet : NaN;
+  const mcKnown = Number.isFinite(f.mcNet);
+  f.clears = { closed: f.net > borrowPct, mc: mcKnown ? f.mcNet > borrowPct : null, both: mcKnown ? (f.net > borrowPct && f.mcNet > borrowPct) : null };
+  if(asset) f.userNet = ltvPresetsFor(asset).map(p=>({ ltvBps:p.ltvBps, offerable:p.offerable, userNetPct: supplyAprOf(asset) + (p.ltvBps/10000)*(f.net - borrowPct) }));
+  return f;
+}
+/* One sentence per card — the forecast in words, never a bare code. */
+function forecastWhy(f){
+  if(!f.allowed) return `cannot be opened — ${f.why}`;
+  if(!f.priced) return `no forecast — ${GATE_WHY[f.unpriced]}`;
+  const mc = Number.isFinite(f.mcNet) ? `; the stricter model says ${f.mcNet.toFixed(2)}%` : "; the stricter model has no number here";
+  const vs = f.clears.both ? "beats the borrow on both models" : (f.clears.closed && f.clears.mc===false) ? "beats the borrow on the closed form only — the two models disagree here" : `below the ${f.borrowPct.toFixed(3)}% borrow`;
+  return `forecast ${f.net.toFixed(2)}% on the working slice${mc} — ${vs}`;
+}
+const positionAprPct = (asset, ltvPct, pool, borrowPct, widthBps=widthFor(pool), mult=1, opts) => { const n = forecast(pool, borrowPct, widthBps, mult, opts).net; return supplyAprOf(asset) + (ltvPct/100)*(n - borrowPct); };
 /* ── The swap floor, mirrored from AerodromeSwapAdapter ─────────────────────
    minOut = amountIn × quotedOut/quotedIn × (BPS − maxSlippageBps)/BPS, computed
    on the amount ACTUALLY swapped, so a leg that settles larger or smaller than
@@ -1519,7 +1563,7 @@ function swapLegFor(pool, valueUsd, maxSlippageBps=OIL_CONTRACTS.swap.defaultMax
            minOut: m.ok?m.minOut:null, error: m.ok?null:m.error, actualOut, reverts: m.ok ? actualOut < m.minOut : true,
            revertError: m.ok ? "InsufficientOutput()" : m.error };
 }
-/* Per-year rates the demo accrues at: realised emissions r(1−e^−x)/x and drag (1−e^−x), as fractions of the working slice. σ-less pools accrue their net emissions with no drag (they are never offered anyway). */
+/* Per-year rates the demo accrues at: realised emissions r(1−e^−x)/x and drag (1−e^−x), as fractions of the working slice. σ-less pools accrue their net emissions with no drag (they have no forecast; a user who opens one anyway sees the emissions and no drag, which the acknowledgment says). */
 function accrualRates(pool, widthBps, mult=1){ const r=grossEmissionsPct(pool, widthBps, mult)/100*feeKeep(pool); if(pool.sigma==null) return {realized:r, drag:0}; const x=xOf(pool.sigma, widthBps); if(x<=0) return {realized:r, drag:0}; return {realized: r*(1-Math.exp(-x))/x, drag: 1-Math.exp(-x)}; }
 const fmtDrag = v => v==null ? "n/a (no σ)" : v.toFixed(1)+"%";
 const classifyCbZecAddress = v => { if(typeof v!=="string"||!/^0x[0-9a-fA-F]{40}$/.test(v)) return "invalid"; const l=v.toLowerCase(); if(l===SH.CBZEC_ADDRESS.toLowerCase()) return "genuine"; if(l.startsWith(SH.COUNTERFEIT_PREFIX)) return "counterfeit"; return "unrelated"; };
@@ -1538,7 +1582,7 @@ const MODES = ["LP","HOLD","SUPPLY","SPOT"];
 
 /* ── Store: versioned, validated on load, two-tab safe ── */
 const STORE_KEY = "oilskin.adv.v2";
-function freshWiz(){ const asset="cbBTC"; return { asset, amount: 0.1, mode:"LP", ltv: SH.LTV_PRESET_FIXED_BPS.p30/100, pool: null, preset:"CONSERVATIVE", rw: presetWidthBps("CONSERVATIVE","UNCORRELATED"), rd: SH.RANGE_PRESETS[0].defaultRebalanceDelayHours, rew:"COMPOUND", econ:true, step:1 }; }
+function freshWiz(){ const asset="cbBTC"; return { asset, amount: 0.1, mode:"LP", ltv: SH.LTV_PRESET_FIXED_BPS.p30/100, pool: null, preset:"CONSERVATIVE", rw: presetWidthBps("CONSERVATIVE","UNCORRELATED"), rd: SH.RANGE_PRESETS[0].defaultRebalanceDelayHours, rew:"COMPOUND", econ:true, step:1, ack:false }; }
 const GRANT_EXPIRY_S = OIL_CONTRACTS.grant.expiryDays*86400;
 /* Session-only simulation levers: `paused` mirrors Aave's guardian pause per
    reserve, `corroborated` the gauge sampler's anchor state, `revote` a lapsed
@@ -1691,8 +1735,11 @@ function wizDecision(s){
     const pool=poolById(w.pool); if(!pool) return {ok:false, why:"Pick a pool"};
     if(!fin(w.rw, SH.RANGE_WIDTH_BOUNDS.min, SH.RANGE_WIDTH_BOUNDS.max)||!Number.isInteger(w.rw)) return {ok:false, why:`Width must be an integer in [${SH.RANGE_WIDTH_BOUNDS.min}, ${SH.RANGE_WIDTH_BOUNDS.max}] bps`};
     if(!fin(w.rd, SH.REBALANCE_DELAY_BOUNDS.minHours, SH.REBALANCE_DELAY_BOUNDS.maxHours)) return {ok:false, why:"Rebalance delay out of bounds"};
-    const g=gate(pool, s.borrowPct, w.rw, s.mult, gopts(s,{collateral:w.asset})); if(!g.ok) return {ok:false, why:`${pool.name} fails the gate at this width — ${g.why}`};
+    // Safety only (BUILD-PLAN-2026-09-12 §2): a disabled asset or a guardian pause blocks; a bad forecast is shown and acknowledged, never a block.
+    const f=forecast(pool, s.borrowPct, w.rw, s.mult, gopts(s,{collateral:w.asset})); if(!f.allowed) return {ok:false, why:`${pool.name} cannot be opened at this width — ${f.why}`};
   }
+  // The acknowledgment (D4/D5): the sentence on the review step that names this position's numbers; nothing is signed without it.
+  if(w.step===4 && !w.ack) return {ok:false, why:"Read the numbers and tick the acknowledgment"};
   return {ok:true, why:""};
 }
 
@@ -1701,6 +1748,7 @@ function reduce(s, a){
     case "connect": { const addr=a.addr||DEMO_WALLETS[a.provider]||DEMO_WALLETS.coinbase; s.wallet={addr, provider:a.provider||"coinbase"}; ladderOf(s, addr); return s; }
     case "disconnect": s.wallet=null; return s;
     case "wiz": { const w=s.wiz; const k=a.key, v=a.value;
+      if(k!=="step" && k!=="ack" && k!=="econ") w.ack=false;
       if(k==="asset"){ if(!(v in MIN_AMOUNT)) return s; w.asset=v; if(ltOf(v)==null && w.mode!=="SPOT") w.mode="SPOT"; const top=topLtvPct(v); if(w.ltv>top) w.ltv=top||w.ltv; w.pool=null; }
       else if(k==="amount"){ w.amount = fin(v) ? v : 0; }   // a bad amount becomes 0 (blocked by the gate) — never NaN, so the saved state stays loadable
       else if(k==="mode"){ if(!MODES.includes(v)) return s; if(ltOf(w.asset)==null && v!=="SPOT") return s; w.mode=v; }
@@ -1711,6 +1759,7 @@ function reduce(s, a){
       else if(k==="rd"){ if(fin(v)) w.rd=Math.max(SH.REBALANCE_DELAY_BOUNDS.minHours, Math.min(SH.REBALANCE_DELAY_BOUNDS.maxHours, Math.round(v))); }
       else if(k==="rew"){ if(v==="COMPOUND"||v==="CLAIM_TO_WALLET") w.rew=v; }
       else if(k==="econ"){ w.econ=!!v; }
+      else if(k==="ack"){ w.ack=!!v; }
       else if(k==="step"){ if(fin(v,1,4)) w.step=v; }
       return s; }
     case "setPrice": { if(fin(a.px,1e-9) && a.asset in s.price){ s.price[a.asset]=a.px; if(s.wallet) runLadder(s, s.wallet.addr); for(const o of new Set(s.positions.map(p=>p.owner.toLowerCase()))) if(!sameAddr(o, s.wallet&&s.wallet.addr)) runLadder(s, o); } return s; }
@@ -1758,7 +1807,8 @@ function reduce(s, a){
     default: return s;
   }
 }
-const firstOfferedPoolId = (borrowPct, mult=1, opts) => { const p=OIL_MODEL.pools.find(pl=>gate(pl,borrowPct,presetWidthBps("CONSERVATIVE",pl.pairClass),mult,opts).ok); return p?p.id:null; };
+/* The default pool: the first that beats the borrow on both models, else the best forecast among the pools that can be opened, else null. */
+const firstOfferedPoolId = (borrowPct, mult=1, opts) => { const fc=pl=>forecast(pl,borrowPct,presetWidthBps("CONSERVATIVE",pl.pairClass),mult,opts); const beats=OIL_MODEL.pools.find(pl=>fc(pl).clears.both); if(beats) return beats.id; const priced=OIL_MODEL.pools.map(pl=>[pl,fc(pl)]).filter(([,f])=>f.allowed&&f.priced).sort((x,y)=>y[1].net-x[1].net); return priced.length?priced[0][0].id:null; };
 function mkLp(s, owner, asset, coll, ltvPct, poolId, widthBps, delayH, autoCompound, openedAt){ const borrowed=coll*s.price[asset]*(ltvPct/100); return { id:s.nextId++, kind:"LP", owner, asset, coll, ltv:ltvPct, debt:borrowed, lp:borrowed, lpBasis:borrowed, emis:0, idle:0, interest:0, claimed:0, pool:poolId, widthBps, delayH, autoCompound, inRange:true, cooldown:60, unwound:false, openedAt, ageS:0 }; }
 function withdrawCapPct(s,p){ // collateral may leave only while account HF stays ≥ entry floor
   const D=debtOf(s,p.owner); if(D<=0) return 100; const W=weightedCollOf(s,p.owner); const maxW=Math.max(0, W - LAD.entryHfFloor*D); const mine=p.coll*s.price[p.asset]*ltOf(p.asset); if(mine<=0) return 0; return Math.max(0, Math.min(100, Math.floor(maxW/mine*100/5)*5)); }
@@ -1887,7 +1937,7 @@ function posCard(p){
   const el=document.createElement("div"); el.className="card pos"; el.dataset.id=p.id; const apr=positionApr(S,p);
   let chips="", nums="", body="", title="";
   if(p.kind==="LP"){ const pool=poolById(p.pool), g=gate(pool,S.borrowPct,p.widthBps,S.mult,gopt({collateral:p.asset}));
-    chips=`<span class="chip chip-mute">Aerodrome · Snuggle</span>`+(p.cooldown>0?`<span class="chip chip-info cool"><span class="cool-ring" style="--p:${(1-p.cooldown/60)*100}%"></span>Hold ${Math.ceil(p.cooldown)}s</span>`:p.lp<=0?`<span class="chip chip-warn">Unwound</span>`:p.inRange?`<span class="chip chip-good"><span class="dot"></span>In range</span>`:`<span class="chip chip-warn"><span class="dot"></span>Out of range · rebalance after ${p.delayH}h</span>`)+(g.ok?"":`<span class="chip chip-warn">gate: ${g.why}</span>`)+`<span class="chip chip-mute">${p.autoCompound?"Auto-compound":"Manual claims"}</span>`;
+    chips=`<span class="chip chip-mute">Aerodrome · Snuggle</span>`+(p.cooldown>0?`<span class="chip chip-info cool"><span class="cool-ring" style="--p:${(1-p.cooldown/60)*100}%"></span>Hold ${Math.ceil(p.cooldown)}s</span>`:p.lp<=0?`<span class="chip chip-warn">Unwound</span>`:p.inRange?`<span class="chip chip-good"><span class="dot"></span>In range</span>`:`<span class="chip chip-warn"><span class="dot"></span>Out of range · rebalance after ${p.delayH}h</span>`)+(g.ok?"":`<span class="chip chip-mute">forecast: ${forecastWhy(forecast(pool,S.borrowPct,p.widthBps,S.mult,gopt({collateral:p.asset})))}</span>`)+`<span class="chip chip-mute">${p.autoCompound?"Auto-compound":"Manual claims"}</span>`;
     nums=`<div class="pos-num"><div class="lbl">Value</div><div class="v num">${usd(posValue(S,p))}</div></div><div class="pos-num"><div class="lbl">Net APY</div><div class="v num ${signCls(apr)}">${pct(apr)}</div></div><div class="pos-num"><div class="lbl">Claimable</div><div class="v num">${usd(p.emis)}</div></div>`;
     const gross=p.emis/feeKeep(pool), feeE=gross*CR.snuggleEngineFeeBps/10000, feeP=(gross-feeE)*FEES.performanceBps/10000;
     body=`<div style="display:flex;gap:34px;flex-wrap:wrap"><div class="ybreak" style="flex:1;min-width:260px">
@@ -1946,7 +1996,7 @@ function refreshStats(){
   $("#stColl").textContent=Object.keys(byAsset).length?Object.entries(byAsset).map(([a,v])=>`${fmtAsset(v,a)} ${a}`).join(" + "):"—";
   $("#stCollSub").textContent=owner?`${usd(collUsdOf(S,owner))} · supply ${Object.keys(byAsset).map(a=>`${a} ${supplyAprOf(a).toFixed(3)}%`).join(", ")||"—"}`:"—";
   $("#stClaim").textContent=usd(mine.reduce((a,p)=>a+claimableOf(p),0));
-  $("#msBorrow").textContent=S.borrowPct.toFixed(3)+"%"; $("#msOffered").textContent=OIL_MODEL.pools.filter(p=>gate(p,S.borrowPct,presetWidthBps("CONSERVATIVE",p.pairClass),S.mult,gopt({collateral:S.wiz.asset})).ok).length+" / "+OIL_MODEL.pools.length+(S.mult!==1?` (WHAT-IF ×${S.mult})`:"");
+  $("#msBorrow").textContent=S.borrowPct.toFixed(3)+"%"; $("#msOffered").textContent=OIL_MODEL.pools.filter(p=>forecast(p,S.borrowPct,presetWidthBps("CONSERVATIVE",p.pairClass),S.mult,gopt({collateral:S.wiz.asset})).clears.both).length+" / "+OIL_MODEL.pools.length+(S.mult!==1?` (WHAT-IF ×${S.mult})`:"");
   $("#whatifBanner").style.display=S.mult!==1?"flex":"none"; $("#whatifMult").textContent="×"+S.mult;
   $("#noWalletBanner").style.display=owner?"none":"flex";
   const b=$("#connectBtn"); if(owner){b.textContent=short(owner);b.classList.add("num");} else {b.textContent="Connect wallet";b.classList.remove("num");}
@@ -1973,7 +2023,7 @@ $("#grantRevoke").addEventListener("click",()=>{ if($("#grantRevoke").disabled) 
 /* adjust modal */
 const prm={p:null};
 function prmOpen(p){ prm.p=p; $("#prmTitle").textContent=`Adjust — ${poolById(p.pool).name}`; const r=$("#prmRw"); r.min=SH.RANGE_WIDTH_BOUNDS.min; r.max=SH.RANGE_WIDTH_BOUNDS.max; r.value=p.widthBps; $("#prmRd").value=p.delayH; $("#prmComp").classList.toggle("on",p.autoCompound); $("#prmComp").setAttribute("aria-checked",p.autoCompound); $("#prmRwMin").textContent=`±${halfWidthPct(SH.RANGE_WIDTH_BOUNDS.min).toFixed(2)}%`; $("#prmRwMax").textContent=`±${halfWidthPct(SH.RANGE_WIDTH_BOUNDS.max).toFixed(2)}%`; prmSync(); $("#prmOverlay").classList.add("on"); }
-function prmSync(){ const w=+$("#prmRw").value, pool=poolById(prm.p.pool), g=gate(pool,S.borrowPct,w,S.mult,gopt({collateral:prm.p.asset})); $("#prmRwLbl").textContent=`±${halfWidthPct(w).toFixed(2)}% (${w} bps)`; $("#prmRdLbl").textContent=$("#prmRd").value+"h"; $("#prmRwNote").innerHTML=`Emissions ${g.gross.toFixed(2)}% · IL drag at this width ${fmtDrag(ilDragPct(pool.sigma,w))} · working slice <span class="${signCls(g.net)}">${Number.isFinite(g.net)?pct(g.net):"—"}</span>${g.ok?"":" — fails the gate; the position keeps running but no new borrow may be added"}`; }
+function prmSync(){ const w=+$("#prmRw").value, pool=poolById(prm.p.pool), g=gate(pool,S.borrowPct,w,S.mult,gopt({collateral:prm.p.asset})); $("#prmRwLbl").textContent=`±${halfWidthPct(w).toFixed(2)}% (${w} bps)`; $("#prmRdLbl").textContent=$("#prmRd").value+"h"; $("#prmRwNote").innerHTML=`Emissions ${g.gross.toFixed(2)}% · IL drag at this width ${fmtDrag(ilDragPct(pool.sigma,w))} · working slice <span class="${signCls(g.net)}">${Number.isFinite(g.net)?pct(g.net):"—"}</span>${g.ok?"":" — below the borrow on the forecast; the position keeps running"}`; }
 $("#prmRw").addEventListener("input",prmSync); $("#prmRd").addEventListener("input",prmSync);
 $("#prmComp").addEventListener("click",e=>{e.currentTarget.classList.toggle("on");e.currentTarget.setAttribute("aria-checked",e.currentTarget.classList.contains("on"));});
 $("#prmApply").addEventListener("click",()=>{ $("#prmOverlay").classList.remove("on"); dispatch({type:"adjust",id:prm.p.id,widthBps:+$("#prmRw").value,delayH:+$("#prmRd").value,autoCompound:$("#prmComp").classList.contains("on")}); toast("⚙ Parameters applied via updateParameters — no close, no new hold"); });
@@ -2018,6 +2068,7 @@ $("#maxBtn").addEventListener("click",()=>{ $("#amt").value=DEMO_BAL[S.wiz.asset
 $$("#modeCards [data-mode]").forEach(o=>o.addEventListener("click",()=>{ if(o.getAttribute("aria-disabled")==="true") return; dispatch({type:"wiz",key:"mode",value:o.dataset.mode}); }));
 $$("#rewCards [data-rew]").forEach(o=>o.addEventListener("click",()=>dispatch({type:"wiz",key:"rew",value:o.dataset.rew})));
 $("#econToggle").addEventListener("click",e=>{ dispatch({type:"wiz",key:"econ",value:!S.wiz.econ}); });
+$("#wizAck").addEventListener("change",e=>dispatch({type:"wiz",key:"ack",value:e.target.checked}));
 $("#ltv").addEventListener("input",e=>dispatch({type:"wiz",key:"ltv",value:+e.target.value}));
 $("#rw").addEventListener("input",e=>dispatch({type:"wiz",key:"rw",value:+e.target.value}));
 $("#rd").addEventListener("input",e=>dispatch({type:"wiz",key:"rd",value:+e.target.value}));
@@ -2027,9 +2078,9 @@ function renderWizard(){
   $$("#stepsBar .step").forEach(s=>{const k=+s.dataset.s; s.classList.toggle("on",k===w.step); s.classList.toggle("done",k<w.step); s.style.opacity=st.includes(k)?"1":".35";});
   $("#backBtn").style.visibility=w.step===st[0]?"hidden":"visible";
   $("#stepGuide").textContent = w.step===1 ? "Connect the wallet that will own the position, choose what you keep as collateral (it is never sold), how much, and what the borrowed dollars should do. The button stays off until each choice is valid, and tells you why."
-    : w.step===2 ? (w.mode==="SPOT" ? "Check the quote. You will sign an order, not a transaction; the swap settles in a batch and you can walk away until then." : "Choose how much to borrow against your collateral — less is safer, and the default is the safest — and, for a pool position, which pool. Anything that loses money at today's rates is greyed out and cannot be picked.")
+    : w.step===2 ? (w.mode==="SPOT" ? "Check the quote. You will sign an order, not a transaction; the swap settles in a batch and you can walk away until then." : "Choose how much to borrow against your collateral — less is safer, and the default is the safest — and, for a pool position, which pool. Every pool can be picked; the forecast beside each says what the model expects at today's rates, a loss included.")
     : w.step===3 ? "Choose how wide a price band your liquidity covers — wider is calmer, tighter earns more per dollar but drags more — and where your earnings should go."
-    : "Read every number below; each one is computed, none is typed. Nothing moves until you sign, and if any hop fails, none of them lands.";
+    : "Read every number below; each one is computed, none is typed. Tick the acknowledgment — it names this position's forecast, borrow cost and liquidation drawdown. Nothing moves until you sign, and if any hop fails, none of them lands.";
   const d = w.step===4 ? wizDecision(S) : stepGate(); const nb=$("#nextBtn"); nb.disabled=!d.ok; nb.textContent = d.ok ? (w.step===4?"Confirm & sign ✓":"Continue →") : d.why; nb.title=d.ok?"":d.why;
   // wallets
   $$("#wizWallets .wbtn").forEach(b=>{ const on=!!(S.wallet&&S.wallet.provider===b.dataset.provider); b.classList.toggle("sel",on); b.setAttribute("aria-checked",on); b.tabIndex=on||(!S.wallet&&b.dataset.provider==="coinbase")?0:-1; });
@@ -2057,10 +2108,10 @@ function renderWizard(){
   if(w.mode==="SPOT"){ const usdIn=fin(w.amount)?w.amount*S.price[w.asset]:0; $("#spotQuote").innerHTML=`<b>${fin(w.amount)?w.amount:"—"} ${w.asset} → ≈ ${usd(usdIn*(1-0.0002))} USDC</b> · CoW batch auction, 2 bps solver fee, free expiry, MEV-protected. Settlement ${short(SH.COW_PROTOCOL.settlement)}; the vault relayer is read from <span class="mono">settlement.vaultRelayer()</span> before any approval. Demo quote.`; }
   // step 3
   if(w.mode==="LP"){ const pool=poolById(w.pool), pc=pool?pool.pairClass:"UNCORRELATED";
-    $("#presetCards").innerHTML=SH.RANGE_PRESETS.map(pr=>{ const bps=pr.rangeWidthBps[pc]; const on=w.preset===pr.preset; const g=pool?gate(pool,S.borrowPct,bps,S.mult,gopt({collateral:w.asset})):null; return `<div class="opt${on?" sel":""}" role="radio" aria-checked="${on}" tabindex="${on?0:-1}" data-preset="${pr.preset}"><div class="t">${pr.label}</div><div class="small num" style="color:var(--gold);font-weight:650;margin-top:3px">±${halfWidthPct(bps).toFixed(2)}% · ${bps} bps${pc==="CORRELATED"?" · correlated":""}</div><div class="d">${pr.description}${g?` Emissions ${g.gross.toFixed(2)}%, IL drag ${fmtDrag(ilDragPct(pool.sigma,bps))} → slice <span class="${signCls(g.net)}">${Number.isFinite(g.net)?pct(g.net):"—"}</span>${g.ok?"":" (gated)"}`:""}</div></div>`; }).join("");
+    $("#presetCards").innerHTML=SH.RANGE_PRESETS.map(pr=>{ const bps=pr.rangeWidthBps[pc]; const on=w.preset===pr.preset; const g=pool?gate(pool,S.borrowPct,bps,S.mult,gopt({collateral:w.asset})):null; return `<div class="opt${on?" sel":""}" role="radio" aria-checked="${on}" tabindex="${on?0:-1}" data-preset="${pr.preset}"><div class="t">${pr.label}</div><div class="small num" style="color:var(--gold);font-weight:650;margin-top:3px">±${halfWidthPct(bps).toFixed(2)}% · ${bps} bps${pc==="CORRELATED"?" · correlated":""}</div><div class="d">${pr.description}${g?` Emissions ${g.gross.toFixed(2)}%, IL drag ${fmtDrag(ilDragPct(pool.sigma,bps))} → slice <span class="${signCls(g.net)}">${Number.isFinite(g.net)?pct(g.net):"—"}</span>${g.ok?"":" (below the borrow)"}`:""}</div></div>`; }).join("");
     $$("#presetCards [data-preset]").forEach(o=>o.addEventListener("click",()=>dispatch({type:"wiz",key:"preset",value:o.dataset.preset})));
     const r=$("#rw"); r.min=SH.RANGE_WIDTH_BOUNDS.min; r.max=SH.RANGE_WIDTH_BOUNDS.max; r.value=w.rw; $("#rwLbl").textContent=`±${halfWidthPct(w.rw).toFixed(2)}% (${w.rw} bps${w.preset==="CUSTOM"?" · custom":""})`; $("#rwMin").textContent=`±${halfWidthPct(SH.RANGE_WIDTH_BOUNDS.min).toFixed(2)}%`; $("#rwMax").textContent=`±${halfWidthPct(SH.RANGE_WIDTH_BOUNDS.max).toFixed(2)}%`;
-    if(pool){ const g=gate(pool,S.borrowPct,w.rw,S.mult,gopt({collateral:w.asset})); $("#rwNote").innerHTML=`Engine bounds [${SH.RANGE_WIDTH_BOUNDS.min}, ${SH.RANGE_WIDTH_BOUNDS.max}] bps total span · emissions ${g.gross.toFixed(2)}% at this width · IL drag ${fmtDrag(ilDragPct(pool.sigma,w.rw))} · working slice <span class="${signCls(g.net)}">${Number.isFinite(g.net)?pct(g.net):"—"}</span>${g.ok?"":" — fails the gate here"}`; }
+    if(pool){ const g=gate(pool,S.borrowPct,w.rw,S.mult,gopt({collateral:w.asset})); $("#rwNote").innerHTML=`Engine bounds [${SH.RANGE_WIDTH_BOUNDS.min}, ${SH.RANGE_WIDTH_BOUNDS.max}] bps total span · emissions ${g.gross.toFixed(2)}% at this width · IL drag ${fmtDrag(ilDragPct(pool.sigma,w.rw))} · working slice <span class="${signCls(g.net)}">${Number.isFinite(g.net)?pct(g.net):"—"}</span>${g.ok?"":" — below the borrow here"}`; }
     $("#rd").value=w.rd; $("#rdLbl").textContent=w.rd+"h";
   }
   $$("#rewCards [data-rew]").forEach(o=>{ const on=w.rew===o.dataset.rew; o.classList.toggle("sel",on); o.setAttribute("aria-checked",on); o.tabIndex=on?0:-1; });
@@ -2071,13 +2122,15 @@ function renderWizard(){
 }
 function renderPoolList(){
   const w=S.wiz; const list=OIL_MODEL.pools; const L=$("#poolList"); L.innerHTML="";
-  const offered=list.filter(p=>gate(p,S.borrowPct,presetWidthBps(w.preset==="CUSTOM"?"CONSERVATIVE":w.preset,p.pairClass),S.mult,gopt({collateral:w.asset})).ok);
-  $("#poolCount").textContent=`${offered.length} of ${list.length} pools clear the gate at ${S.borrowPct.toFixed(3)}% borrow (${w.preset==="CUSTOM"?"conservative":w.preset.toLowerCase()} width)${offered.length?"":" — the menu is empty by the model's verdict; pick Borrow & hold, Supply only or Spot"}${S.mult!==1?` · WHAT-IF ×${S.mult}`:""}`;
-  if(!w.pool && offered.length){ w.pool=offered[0].id; w.rw=presetWidthBps(w.preset==="CUSTOM"?"CONSERVATIVE":w.preset, offered[0].pairClass); }
-  list.forEach((p,i)=>{ const bps=presetWidthBps(w.preset==="CUSTOM"?"CONSERVATIVE":w.preset,p.pairClass), g=gate(p,S.borrowPct,bps,S.mult,gopt({collateral:w.asset})); const on=w.pool===p.id;
-    const el=document.createElement("div"); el.className="pool-row"+(on?" sel":""); el.setAttribute("role","radio"); el.setAttribute("aria-checked",on); el.setAttribute("aria-disabled",!g.ok); el.tabIndex=on||(!w.pool&&i===0)?0:-1;
-    el.innerHTML=`${coins2(p.c)}<div class="info"><div class="nm">${p.name} ${RISK_CHIP[p.tag]} <span class="faint tiny">${p.pairClass==="CORRELATED"?"correlated":""}</span></div><div class="ds">${p.note} · emissions ${g.gross.toFixed(2)}% · IL drag ${fmtDrag(ilDragPct(p.sigma,bps))} at ±${halfWidthPct(bps).toFixed(2)}%</div>${g.ok?"":`<div class="why">gated: ${g.why}</div>`}</div><div class="apy"><div class="v num ${g.net<0?"neg":""}">${Number.isFinite(g.net)?pct(g.net):"—"}</div><div class="l">working slice</div></div>`;
-    el.addEventListener("click",()=>{ if(!g.ok){ toast(`${p.name} is gated — ${g.why}`); return; } dispatch({type:"wiz",key:"pool",value:p.id}); });
+  const width=p=>presetWidthBps(w.preset==="CUSTOM"?"CONSERVATIVE":w.preset,p.pairClass);
+  const fc=p=>forecast(p,S.borrowPct,width(p),S.mult,gopt({collateral:w.asset}));
+  const beats=list.filter(p=>fc(p).clears.both), openable=list.filter(p=>fc(p).allowed);
+  $("#poolCount").textContent=`${beats.length} of ${list.length} pools beat the borrow on both models at ${S.borrowPct.toFixed(3)}% (${w.preset==="CUSTOM"?"conservative":w.preset.toLowerCase()} width) — every one of the ${openable.length} that can be opened shows its forecast; read it before you pick${S.mult!==1?` · WHAT-IF ×${S.mult}`:""}`;
+  if(!w.pool && openable.length){ const first=firstOfferedPoolId(S.borrowPct,S.mult,gopt({collateral:w.asset}))||openable[0].id; const fp=poolById(first); w.pool=fp.id; w.rw=width(fp); }
+  list.forEach((p,i)=>{ const bps=width(p), f=fc(p); const on=w.pool===p.id;
+    const el=document.createElement("div"); el.className="pool-row"+(on?" sel":""); el.setAttribute("role","radio"); el.setAttribute("aria-checked",on); el.setAttribute("aria-disabled",!f.allowed); el.dataset.priced=f.priced?"1":"0"; el.dataset.beats=f.clears.both?"1":"0"; el.tabIndex=on||(!w.pool&&i===0)?0:-1;
+    el.innerHTML=`${coins2(p.c)}<div class="info"><div class="nm">${p.name} ${RISK_CHIP[p.tag]} <span class="faint tiny">${p.pairClass==="CORRELATED"?"correlated":""}</span></div><div class="ds">${p.note} · emissions ${f.gross.toFixed(2)}% · IL drag ${fmtDrag(ilDragPct(p.sigma,bps))} at ±${halfWidthPct(bps).toFixed(2)}%</div><div class="why">${forecastWhy(f)}</div></div><div class="apy"><div class="v num ${f.net<0?"neg":""}">${Number.isFinite(f.net)?pct(f.net):"—"}</div><div class="l">working slice</div></div>`;
+    el.addEventListener("click",()=>{ if(!f.allowed){ toast(`${p.name} cannot be opened today — ${f.why}`); return; } dispatch({type:"wiz",key:"pool",value:p.id}); });
     L.appendChild(el); });
 }
 function proj(){
@@ -2096,7 +2149,7 @@ function proj(){
     $("#pBor").textContent=`${usd(b)} USDC at ${S.borrowPct.toFixed(3)}% (${w.ltv}%)`; $("#pHf").textContent=`${fmtHf(hf)} — ${hf>=LAD.rungs.warn?"healthy":hf>=LAD.rungs.derisk?"ladder acting":"at risk"}`; $("#pHf").style.color=hf>=LAD.rungs.warn?"var(--good)":hf>=LAD.rungs.derisk?"var(--warn)":"var(--crit)"; $("#pLiq").textContent=D>0?`${usd(px*(1-drop/100))} (−${drop.toFixed(1)}%)`:"—"; }
   if(lp&&pool){ const g=gate(pool,S.borrowPct,w.rw,S.mult,gopt({collateral:w.asset})); $("#pPool").textContent=`${pool.name} · Aerodrome`; $("#pSlice").innerHTML=`<span class="${signCls(g.net)}">${Number.isFinite(g.net)?pct(g.net):"—"}</span> vs ${S.borrowPct.toFixed(3)}%`; $("#pRange").textContent=`±${halfWidthPct(w.rw).toFixed(2)}% · rebalance after ${w.rd}h`; $("#pRew").textContent=w.rew==="COMPOUND"?"Auto-compound":"Claim to wallet"; $("#pFeeEng").textContent=`${CR.snuggleEngineFeeBps/100}% of yield`; }
   $("#pFeePlat").textContent=`${FEES.performanceBps/100}% of realised yield (cap ${FEES.maxPerformanceBps/100}%)`;
-  $("#pNote").innerHTML = w.mode==="LP" ? (pool?`Emissions-only: ${pool.name} pays ${gate(pool,S.borrowPct,w.rw,S.mult,gopt({collateral:w.asset})).gross.toFixed(2)}% in AERO at this width; after the engine's ${CR.snuggleEngineFeeBps/100}% and Oilskin's ${FEES.performanceBps/100}% you keep ${(feeKeep(pool)*100).toFixed(1)}%, less IL drag ${fmtDrag(ilDragPct(pool.sigma,w.rw))} at ±${halfWidthPct(w.rw).toFixed(2)}%. Negative means the position loses money at today's rates — and it is shown that way.${S.mult!==1?` <b>WHAT-IF ×${S.mult} emissions — not today's numbers.</b>`:""}`:"No pool clears the gate today — the menu is empty by the model's verdict. Borrow & hold, Supply only and Spot remain.")
+  $("#pNote").innerHTML = w.mode==="LP" ? (pool?`Emissions-only: ${pool.name} pays ${gate(pool,S.borrowPct,w.rw,S.mult,gopt({collateral:w.asset})).gross.toFixed(2)}% in AERO at this width; after the engine's ${CR.snuggleEngineFeeBps/100}% and Oilskin's ${FEES.performanceBps/100}% you keep ${(feeKeep(pool)*100).toFixed(1)}%, less IL drag ${fmtDrag(ilDragPct(pool.sigma,w.rw))} at ±${halfWidthPct(w.rw).toFixed(2)}%. Negative means the position loses money at today's rates — and it is shown that way.${S.mult!==1?` <b>WHAT-IF ×${S.mult} emissions — not today's numbers.</b>`:""}`:"Pick a pool — every one is open. The forecast beside each says what the model expects at today's numbers, a loss included; you acknowledge it before you sign. Borrow & hold, Supply only and Spot remain.")
     : w.mode==="HOLD" ? `Negative carry: the borrowed USDC earns nothing while it sits; you pay ${S.borrowPct.toFixed(3)}% on it. Useful for liquidity without selling, not for yield.`
     : w.mode==="SUPPLY" ? `Supply only: no borrow, no liquidation risk — withdraw any time (subject to the account's HF cap if other positions borrow).`
     : `Spot swap: no loan, no position. The swap is a disposal of ${w.asset}; CoW's batch auction protects you from MEV. Demo quote.`;
@@ -2111,6 +2164,13 @@ function renderReview(){
   $("#revList").innerHTML=rows;
   const cbz = w.asset==="cbZEC"; $("#revRisks").innerHTML=RISKS.filter(r=>cbz||!/Custodial|KYC|B20|cbZEC/.test(r.t)).filter(r=>(w.mode==="LP"||w.mode==="HOLD")||!/Liquidation|Impermanent|Keeper/.test(r.t)||(w.mode==="SUPPLY"&&false)).map(r=>`<li><b>${r.t}.</b> ${r.d}</li>`).join("")+(cbz?"":`<li><b>cbZEC-specific risks</b> (custodial entry, KYC/jurisdiction, B20 powers, peg) do not apply to ${w.asset} — see Risks &amp; cbZEC.</li>`);
   const steps = flowSteps({ firstTime: !ownedBy(S,owner).length, owner, wiz: w });
+  // The acknowledgment names THIS position's numbers (BUILD-PLAN-2026-09-12 D4/D5); Confirm stays off until it is ticked.
+  { const isLp=w.mode==="LP", borrowing=isLp||w.mode==="HOLD"; const f=isLp&&pool?forecast(pool,S.borrowPct,w.rw,S.mult,gopt({collateral:w.asset})):null;
+    const b=usdIn*(w.ltv/100), D=(debtOf(S,owner))+b, W=(weightedCollOf(S,owner))+usdIn*(ltOf(w.asset)||0), drop=D>0?Math.max(0,(1-D/W)*100):100;
+    const fcPart = !f ? "" : f.priced ? `on ${pool.name} the model projects ${f.net.toFixed(2)}% a year on the deployed USDC (${Number.isFinite(f.mcNet)?`the stricter model says ${f.mcNet.toFixed(2)}%`:"the stricter model has no number for it"}); ` : `the model could not price ${pool.name} today, so I am opening it without a forecast; `;
+    const loanPart = borrowing ? `the loan costs ${S.borrowPct.toFixed(2)}% a year today and that rate moves; a ${drop.toFixed(1)}% fall in ${w.asset} would liquidate this position; ` : w.mode==="SUPPLY" ? "there is no loan and no liquidation risk from this deposit; " : "this is a spot swap with no loan; ";
+    $("#wizAckText").textContent = `I have read the ${f?"forecast":"numbers"}: ${fcPart}${loanPart}nothing here is advice or a promise. I choose to ${w.mode==="SPOT"?"sign it":"open it"}.`;
+    $("#wizAck").checked=!!w.ack; }
   $("#revTx").innerHTML = `<b>What will happen when you sign — in order</b><ol class="risks" style="margin-top:6px">${steps.map(st=>`<li><b>${st.t}.</b> ${st.plain||st.d}</li>`).join("")}</ol><div class="tiny faint" style="margin-top:6px">${w.mode==="SPOT" ? "You sign a CoW order (an off-chain signature, no gas); settlement lands on Base." : `${ownedBy(S,owner).length?"One transaction":"Two transactions (account creation, then the router call)"} — atomic: if any hop reverts, nothing moves.`}</div>`;
 }
 /* Launch — exactly one flow per confirm however the button is triggered (click, Enter, Space, double-fire). */
@@ -2141,11 +2201,11 @@ if(S.flow&&S.flow.status==="signing") runFlowUi(S.flow);
 
 /* ═══ Pools view ═══ */
 function renderPoolTable(){
-  $("#poolTable tbody").innerHTML=OIL_MODEL.pools.map(p=>{ const cell=pr=>{ const bps=presetWidthBps(pr,p.pairClass), g=gate(p,S.borrowPct,bps,S.mult,gopt({collateral:S.wiz.asset})); return `<td class="num" style="color:${g.ok?"var(--good)":"var(--crit)"}">${Number.isFinite(g.net)?pct(g.net):"—"}<div class="tiny faint">±${halfWidthPct(bps).toFixed(2)}% · ${g.gross.toFixed(2)}% emissions · ${g.ok?"offered":g.reason}</div></td>`; };
+  $("#poolTable tbody").innerHTML=OIL_MODEL.pools.map(p=>{ const cell=pr=>{ const bps=presetWidthBps(pr,p.pairClass), f=forecast(p,S.borrowPct,bps,S.mult,gopt({collateral:S.wiz.asset})); return `<td class="num" style="color:${f.clears.both?"var(--good)":"var(--crit)"}">${Number.isFinite(f.net)?pct(f.net):"—"}<div class="tiny faint">±${halfWidthPct(bps).toFixed(2)}% · ${f.gross.toFixed(2)}% emissions · ${f.clears.both?"beats the borrow":f.reason}</div></td>`; };
     return `<tr class="rowp" data-id="${p.id}" tabindex="0"><td>${coins2(p.c)} <b style="margin-left:8px">${p.name}</b><div class="tiny faint">${p.note}</div></td><td>${RISK_CHIP[p.tag]}<div class="tiny faint">${p.pairClass.toLowerCase()}${p.sigma!=null?` · σ ${p.sigma}`:" · no σ"}</div></td><td class="num">${p.emissions[presetWidthBps("CONSERVATIVE",p.pairClass)].toFixed(2)}%<div class="tiny faint">at conservative</div></td>${cell("CONSERVATIVE")}${cell("MODERATE")}${cell("AGGRESSIVE")}<td>${p.eid?`<span class="ver">✓ <span class="num">${p.eid.slice(0,6)}…${p.eid.slice(-4)}</span></span>`:`<span class="faint tiny">direct · no engine id</span>`}</td></tr>`; }).join("");
-  $$("#poolTable .rowp").forEach(r=>{ const go=()=>{ const p=poolById(r.dataset.id); if(!gate(p,S.borrowPct,presetWidthBps("CONSERVATIVE",p.pairClass),S.mult,gopt({collateral:S.wiz.asset})).ok){ toast(`${p.name} is gated at every preset today`); return; } dispatch({type:"wiz",key:"mode",value:"LP"}); dispatch({type:"wiz",key:"pool",value:p.id}); showView("wiz"); setStep(2); }; r.addEventListener("click",go); r.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();go();}}); });
-  $("#poolsMeta").textContent=`Engine registry: ${SH.ENGINE_REGISTRY_SNAPSHOT.totalPools} approved · ${SH.ENGINE_REGISTRY_SNAPSHOT.activeAerodromePools} active Aerodrome · enumerated ${SH.ENGINE_REGISTRY_SNAPSHOT.enumeratedAt} · gate at ${S.borrowPct.toFixed(3)}% borrow`;
-  $("#poolsModelSrc").textContent=`Model source: ${OIL_MODEL.source}. Gauge sample ${OIL_MODEL.sampledAt} block ${OIL_MODEL.sampleBlock}, AERO $${OIL_MODEL.aeroUsd}. lpNet = (1−e^−x)(r/x − 1), x = σ²/(4·f(w)), f(w) = 2 − √(1−w) − 1/√(1+w); fee keep ${(feeKeep()*100).toFixed(1)}% (engine ${CR.snuggleEngineFeeBps/100}% then Oilskin ${FEES.performanceBps/100}%). Verdict at ${OIL_MODEL.borrowPctAtGeneration}%: no pool × setting clears.${S.mult!==1?` WHAT-IF ×${S.mult} active — not today's numbers.`:""}`;
+  $$("#poolTable .rowp").forEach(r=>{ const go=()=>{ const p=poolById(r.dataset.id); const f=forecast(p,S.borrowPct,presetWidthBps("CONSERVATIVE",p.pairClass),S.mult,gopt({collateral:S.wiz.asset})); if(!f.allowed){ toast(`${p.name} cannot be opened today — ${f.why}`); return; } dispatch({type:"wiz",key:"mode",value:"LP"}); dispatch({type:"wiz",key:"pool",value:p.id}); showView("wiz"); setStep(2); }; r.addEventListener("click",go); r.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();go();}}); });
+  $("#poolsMeta").textContent=`Engine registry: ${SH.ENGINE_REGISTRY_SNAPSHOT.totalPools} approved · ${SH.ENGINE_REGISTRY_SNAPSHOT.activeAerodromePools} active Aerodrome · enumerated ${SH.ENGINE_REGISTRY_SNAPSHOT.enumeratedAt} · forecast at ${S.borrowPct.toFixed(3)}% borrow`;
+  $("#poolsModelSrc").textContent=`Model source: ${OIL_MODEL.source}. Gauge sample ${OIL_MODEL.sampledAt} block ${OIL_MODEL.sampleBlock}, AERO $${OIL_MODEL.aeroUsd}. lpNet = (1−e^−x)(r/x − 1), x = σ²/(4·f(w)), f(w) = 2 − √(1−w) − 1/√(1+w); fee keep ${(feeKeep()*100).toFixed(1)}% (engine ${CR.snuggleEngineFeeBps/100}% then Oilskin ${FEES.performanceBps/100}%). Forecast at ${OIL_MODEL.borrowPctAtGeneration}%: no pool × setting beats the borrow on both models — every one is shown and can be opened after the acknowledgment (BUILD-PLAN 2026-09-12, D4/D5).${S.mult!==1?` WHAT-IF ×${S.mult} active — not today's numbers.`:""}`;
 }
 
 /* ═══ Risks & cbZEC ═══ */
@@ -2165,9 +2225,9 @@ function renderDocs(){
   $("#docSettings").innerHTML=`<thead><tr><th>Setting</th><th>LTV</th><th>Entry HF cbBTC / WETH</th><th>cbBTC must fall</th><th>WETH must fall</th></tr></thead><tbody>`+ltvPresetsFor("cbBTC").map(p=>{ const l=p.ltvBps/100; return `<tr><td>${p.id==="p30"?"Sheltered":p.id==="p40"?"Steady":"Working hard (top)"}</td><td class="num">${l}%</td><td class="num">${entryHf("cbBTC",l).toFixed(2)} / ${entryHf("WETH",l).toFixed(2)}</td><td class="num">${dropPct("cbBTC",l).toFixed(1)}%</td><td class="num">${dropPct("WETH",l).toFixed(1)}%</td></tr>`; }).join("")+`</tbody>`;
   $("#docLadder").innerHTML=SH.HF_LADDER.map(r=>`<li><b>${r.label}</b> — HF &lt; ${r.hf.toFixed(2)}: ${{notify:"notify; new borrows blocked.",repay:"claimable emissions repay the debt; principal untouched.",derisk:"just enough of the pool position unwinds to restore HF "+LAD.entryHfFloor.toFixed(2)+", most out-of-range slice first.","emergency-unwind":"everything unwinds, price band still on; collateral sits plain."}[r.action]} Re-arms at HF ≥ ${r.disarmHf.toFixed(2)}.</li>`).join("");
   $("#docHys").textContent=`Hysteresis ${LAD.hysteresis.toFixed(2)}: a fired rung cannot fire again until HF has climbed back above rung + ${LAD.hysteresis.toFixed(2)}. After a full unwind, the next deposit re-arms the ladder. The keeper acts only through the permission you granted; if it is offline nothing acts — a stated risk, not a hidden one.`;
-  $("#docGateP").innerHTML=`A pool is offered at a setting only when <b>emissions × (1 − fees) − IL drag &gt; the live Aave USDC borrow rate</b> (${S.borrowPct.toFixed(3)}% at the read). Emissions-only: staked positions earn AERO in lieu of trading fees. IL drag = σ²/(4·f(w)) at the chosen width. Nothing is curated by hand, and the cbZEC/USDC pool (gauge rewardRate 0) is never offered.`;
+  $("#docGateP").innerHTML=`A pool beats the borrow at a setting when <b>emissions × (1 − fees) − IL drag &gt; the live Aave USDC borrow rate</b> (${S.borrowPct.toFixed(3)}% at the read); since 2026-09-12 that is information on the card, not a gate — every pool can be opened after you acknowledge its forecast. Emissions-only: staked positions earn AERO in lieu of trading fees. IL drag = σ²/(4·f(w)) at the chosen width. Nothing is curated by hand.`;
   $("#docPools").innerHTML=`<thead><tr><th>Pool</th><th>σ</th><th>Conservative</th><th>Moderate</th><th>Aggressive</th></tr></thead><tbody>`+OIL_MODEL.pools.map(p=>`<tr><td>${p.name}</td><td class="num">${p.sigma==null?"—":p.sigma}</td>${["CONSERVATIVE","MODERATE","AGGRESSIVE"].map(pr=>{const g=gate(p,S.borrowPct,presetWidthBps(pr,p.pairClass),S.mult,gopt({collateral:S.wiz.asset}));return `<td class="num" style="color:${g.ok?"var(--good)":"var(--crit)"}">${Number.isFinite(g.net)?pct(g.net):"—"} ${g.ok?"✓":"✕ "+g.reason}</td>`;}).join("")}</tr>`).join("")+`</tbody>`;
-  $("#docModelSrc").textContent=`Model source: ${OIL_MODEL.source}. Gate reasons in order: no_emissions → emissions_below_borrow → no_volatility_input (the gate refuses rather than guesses) → net_below_borrow → ok.`;
+  $("#docModelSrc").textContent=`Model source: ${OIL_MODEL.source}. Gate reasons in order: no_emissions → emissions_below_borrow → no_volatility_input (no σ, no forecast) → net_below_borrow → ok — information since 2026-09-12; the forecast prices every cell it can and refuses only for safety.`;
   $("#docClaimP").textContent=`The keeper claims when rewards ≥ ${SH.REWARD_CLAIM_POLICY.minCostMultiple}× the gas cost, with a $${SH.REWARD_CLAIM_POLICY.minAbsoluteUsd} floor and a ${SH.REWARD_CLAIM_POLICY.maxHoldDays}-day max hold. Fees are taken once, at that chokepoint.`;
   $("#docFees").innerHTML=`<thead><tr><th>Fee</th><th>Rate</th><th>Charged on</th></tr></thead><tbody><tr><td>Oilskin performance</td><td class="num">${FEES.performanceBps/100}%</td><td>Realised yield at claim/close — performanceBps ${FEES.performanceBps}, on-chain cap ${FEES.maxPerformanceBps/100}%</td></tr><tr><td>Engine (Snuggle)</td><td class="num">${CR.snuggleEngineFeeBps/100}%</td><td>Realised LP earnings at harvest — the venue's fee, skimmed before ours</td></tr><tr><td>Orchestration</td><td class="num">${FEES.orchestrationBps/100}%</td><td>None in v1</td></tr><tr><td>Deposit / withdrawal / principal</td><td class="num">0%</td><td>Never</td></tr></tbody>`;
   $("#docFeesP").textContent=`Example: $100 of AERO → engine $${(CR.snuggleEngineFeeBps/100).toFixed(2)}, Oilskin $${((1-CR.snuggleEngineFeeBps/10000)*FEES.performanceBps/100).toFixed(2)}, you keep $${(feeKeep()*100).toFixed(2)}. Every yield number shown is already net of both.`;
@@ -2186,13 +2246,13 @@ function renderModelDocs(){
   const bnd=OIL_MODEL.boundary;
   $("#docBoundary").innerHTML=`<thead><tr><th>Pool</th><th>Width</th><th>Emissions at the boundary</th><th>Closed form</th><th>Monte Carlo</th><th>Optimism</th><th>Served gate just above it</th></tr></thead><tbody>`+bnd.map(([id,w,gb,cl,mc])=>{
     const pl=poolById(id), g=gate(pl, OIL_MODEL.borrowPctAtGeneration, w, beMult(pl,w));
-    return `<tr><td><b>${pl.name}</b></td><td class="num">±${halfWidthPct(w).toFixed(2)}%</td><td class="num">${gb.toFixed(2)}%</td><td class="num">${pct(cl)}</td><td class="num ${signCls(mc)}">${pct(mc)}</td><td class="num">${(cl-mc>=0?"+":"")}${(cl-mc).toFixed(2)} pt</td><td>${g.ok?"✓ offered — the two forms agree here":"✕ "+g.reason}</td></tr>`; }).join("")+`</tbody>`;
+    return `<tr><td><b>${pl.name}</b></td><td class="num">±${halfWidthPct(w).toFixed(2)}%</td><td class="num">${gb.toFixed(2)}%</td><td class="num">${pct(cl)}</td><td class="num ${signCls(mc)}">${pct(mc)}</td><td class="num">${(cl-mc>=0?"+":"")}${(cl-mc).toFixed(2)} pt</td><td>${g.ok?"✓ beats the borrow on both — the two forms agree here":"✕ "+g.reason}</td></tr>`; }).join("")+`</tbody>`;
   const worst=bnd.reduce((a,b)=>(b[3]-b[4])>(a[3]-a[4])?b:a);
   const refused=bnd.filter(([id,w])=>{ const pl=poolById(id); return !gate(pl, OIL_MODEL.borrowPctAtGeneration, w, beMult(pl,w)).ok; }).length;
-  $("#docBoundaryNote").innerHTML=`Worst case <b>${poolById(worst[0]).name}</b> at ±${halfWidthPct(worst[1]).toFixed(2)}%: the closed form is <b>${(worst[3]-worst[4]).toFixed(2)} points</b> optimistic there, more than ${((worst[3]-worst[4])/OIL_MODEL.borrowPctAtGeneration).toFixed(1)}× the borrow rate its verdict is compared against. ${refused} of ${bnd.length} cells the closed form alone would have offered at their own break-even are refused; the ${bnd.length-refused===1?"one that remains is":`${bnd.length-refused} that remain are`} where the two forms genuinely agree. Calibration: ${OIL_MODEL.mc.paths} paths per cell, generated ${OIL_MODEL.mc.generatedAt.slice(0,10)}, as of ${OIL_MODEL.mc.asOf.slice(0,10)}.`;
+  $("#docBoundaryNote").innerHTML=`Worst case <b>${poolById(worst[0]).name}</b> at ±${halfWidthPct(worst[1]).toFixed(2)}%: the closed form is <b>${(worst[3]-worst[4]).toFixed(2)} points</b> optimistic there, more than ${((worst[3]-worst[4])/OIL_MODEL.borrowPctAtGeneration).toFixed(1)}× the borrow rate the comparison is made against. ${refused} of ${bnd.length} cells the closed form alone would call positive at their own break-even do not clear on the stricter form; the ${bnd.length-refused===1?"one that remains is":`${bnd.length-refused} that remain are`} where the two forms genuinely agree. Since 2026-09-12 that disagreement is printed on the cell, not used to refuse it. Calibration: ${OIL_MODEL.mc.paths} paths per cell, generated ${OIL_MODEL.mc.generatedAt.slice(0,10)}, as of ${OIL_MODEL.mc.asOf.slice(0,10)}.`;
   const order=["collateral_disabled","collateral_paused","borrow_paused","no_emissions","emissions_implausible","insufficient_samples","emissions_below_borrow","no_volatility_input","net_below_borrow","mc_calibration_unavailable","mc_calibration_stale","within_model_uncertainty","net_out_of_bounds"];
   const live={}; for(const pl of OIL_MODEL.pools){ const g=gate(pl,S.borrowPct,presetWidthBps("CONSERVATIVE",pl.pairClass),S.mult,gopt({collateral:S.wiz.asset})); live[g.reason]=(live[g.reason]||0)+1; }
-  $("#docReasons").innerHTML=`<thead><tr><th>Reason</th><th>What it means, in plain English</th><th>Pools refusing for it now</th></tr></thead><tbody>`+order.map(r=>`<tr><td class="mono">${r}</td><td>${GATE_WHY[r]}.</td><td class="num">${live[r]||0}</td></tr>`).join("")+`</tbody>`;
+  $("#docReasons").innerHTML=`<thead><tr><th>Reason</th><th>What it means, in plain English</th><th>Pools with this reason now</th></tr></thead><tbody>`+order.map(r=>`<tr><td class="mono">${r}</td><td>${GATE_WHY[r]}.</td><td class="num">${live[r]||0}</td></tr>`).join("")+`</tbody>`;
   const G=OIL_CONTRACTS.grant, P=OIL_CONTRACTS.peripheral;
   $("#docPeripheral").innerHTML=`Every call your account makes is a <b>plain call</b> by default: the target gets no rights over your account and cannot call back into it. ${P.plainCall}. Re-entry is opt-in per call (<span class="mono">${P.optIn}</span>) and only the four Oilskin peripherals — router, Aave venue, LP venue, swap adapter — ever ask for it. On the keeper path the flag on the call is ignored entirely: the account reads <span class="mono">allowCallback</span> from the grant <i>you</i> signed, so a grant can never escalate itself. Nesting is bounded at ${P.maxDepth}.`;
   $("#docGrantP").innerHTML=`One grant, and it matches what the keeper actually plans: <b>${G.rootCalls} root call</b> to <span class="mono">${G.target}.${G.selector}</span>, nothing else. The keeper no longer plans a close and then an unwind — that meant a grant wider than the plan — and a position id that goes stale between reading and dispatching is now reported instead of reverting the whole protective unwind.`;
@@ -2263,7 +2323,7 @@ function tk(k,v){ const a=S.wiz.asset;
 
 /* Demo-only test seam (stripped in production): the fuzz drives the real reducer. */
 window.__oil = { SHARED:OIL_SHARED, CHAIN_READ:OIL_CHAIN_READ, MODEL:OIL_MODEL, RISKS, LADDER:LAD, FEES, RUNGS, MAX_TICK_S, DEMO_SPEED, MIN_AMOUNT, DEMO_BAL, DEMO_WALLETS, PRICE_READ, MODES,
-  ltOf, ltBpsOf, topLtvPct, maxOfferedLtvBps, ltvPresetsFor, ltvStopsFor, entryHf, dropPct, liqPrice, halfWidthPct, feeKeep, ilDragPct, netSlicePct, gate, positionAprPct, presetWidthBps, poolById, accountOf, classifyCbZecAddress, grossEmissionsPct, lpNetPct, accrualRates, xOf, fW, GATE_WHY, firstOfferedPoolId,
+  ltOf, ltBpsOf, topLtvPct, maxOfferedLtvBps, ltvPresetsFor, ltvStopsFor, entryHf, dropPct, liqPrice, halfWidthPct, feeKeep, ilDragPct, netSlicePct, gate, forecast, forecastWhy, FORECAST_SAFETY, positionAprPct, presetWidthBps, poolById, accountOf, classifyCbZecAddress, grossEmissionsPct, lpNetPct, accrualRates, xOf, fW, GATE_WHY, firstOfferedPoolId,
   accountHf, debtOf, weightedCollOf, collUsdOf, ownedBy, ladderOf, positionApr, posValue, withdrawCapPct, wizDecision, stepGate, reduce, validateStore, serialize, freshState, freshWiz, freshSim, runLadder, accruePosition,
   CONTRACTS: OIL_CONTRACTS, mcLpNetPct, mcApply, realizedEmissionsPct, grossIfRevotedPct, minOutFor, swapLegFor, gopts, gopt, grantOf, grantFor, GRANT_EXPIRY_S, fmtDur,
   get S(){return S}, set S(v){S=v}, dispatch, renderAll, save, load, get storage(){return storage}, set storage(v){storage=v}, get bootNote(){return bootNote}, showView, setStep, launch,

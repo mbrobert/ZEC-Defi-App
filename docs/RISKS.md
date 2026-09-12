@@ -824,70 +824,94 @@ protected all of them. `PriceBand` remains a spot `slot0()` check: a same-block
 move within the tolerance is the residual. CoW orders carry the user's
 slippage; solvers settle at or better than the limit or not at all.
 
-## 14 · Yield verdict and rate drift
+## 14 · Yield forecast and rate drift
 
 **Risk.** The borrow rate moves (4.828 % on 2026-09-05, 4.5174 % on
 2026-09-12; Compound v3 USDC was at 90.05 % utilisation, above its kink, on
-2026-09-05) and so do the gauges; a position that clears today may not
-tomorrow. Today nothing clears at all — and not because of the borrow rate.
+2026-09-05) and so do the gauges; a forecast that reads one way today reads
+another way tomorrow. Today every forecast is a loss — and not because of
+the borrow rate.
 
-**The verdict on the live read of 2026-09-12** (`MODEL-NUMBERS-2026-09-12.md`;
+**What changed on 2026-09-12 (BUILD-PLAN D4/D5, step A3).** The yield model no
+longer refuses anything for profitability. It is served as a forecast
+(`/v1/forecast`): both LP-net forms with the gap between them, the drag, the
+break-evens, the net at the loan-to-value the user chose, the liquidation
+drawdown, and the borrow rate after the user's own borrow on Aave's curve
+(read live: optimal usage 90 %, slopes 4.70 % and 10 %, Addendum 13). A
+user may open any pool after ticking one sentence that states those numbers
+for their position — including a pool the model expects to lose money. The
+only refusals left are safety: the registry entry floor, a borrow the pool
+cannot fund (24.77 M USDC available on 2026-09-12), stale rates, a paused or
+inactive reserve, a disabled asset. That is the founder's decision, and the
+copy says what it means: a first-time user can now open a position the model
+forecasts at −10.92 % a year on the deployed USDC. The acknowledgment names
+that number; nothing hides it.
+
+**The forecast on the live read of 2026-09-12** (`MODEL-NUMBERS-2026-09-12.md`;
 gauge words and Aave rates read at block 51,226,072, 19:31 UTC,
 `VERIFIED-BASE-FACTS.md` Addendum 12; σ still the 2026-08-31 realized
-values). At the live USDC borrow of **4.5174 %** no pool × setting clears the
-gate, and the picture is worse than on 2026-09-05, not better: the AERO price
-rose 18 % but the gauges pay a marginal staker far less. The best cell,
-cbBTC/USDC at the sheltered width, nets **−10.92 %/yr** on the LP slice
-(−5.29 % before; gross emissions fell from 14.13 % to 6.15 %) and would need
-**4.56 ×** today's net emissions to clear (2.02 × before), or a realized σ of
-0.04 in place of 0.40 — which BTC/USD does not have. WETH/USDC at the
-sheltered width no longer even beats the borrow before impermanent loss
-(3.01 % net against 4.52 %) and is refused before pricing; its steady and
-working widths need 11.2 × and 10.9 ×. WETH/cbBTC needs 7.4 × at steady and
-7.1 × at working. **Every priced cell's LP net is negative, so no borrow
-rate — not even 0 % — would open the menu at today's emissions;** the only
-lever that flips a cell is the gauge vote, which is Aerodrome's voters', not
-ours. The cbZEC/USDC gauge received its first vote in the week (≈ 617 AERO a
-day to 2026-09-17, on about $1 M of pool liquidity): 1.06 / 3.34 / 16.99 %
-gross at the three widths, refused below the borrow at the two wider ones and
-for lack of a calibrated σ at the narrowest, where it would clear only if
-cbZEC's realized σ were under 0.08 — it is not. The boundary guard still
-does its work: at each priced cell's own break-even the closed form is 0.1 to
-**32.0 points** more optimistic than the Monte-Carlo form, and six of the
-seven cells the closed form alone would have offered there are refused
-`within_model_uncertainty`. New this read, and recorded rather than smoothed:
-at TODAY's emissions the closed form's published headline for WETH/cbBTC at
-the working width (−82.90 %) sits **5.46 points** above the Monte-Carlo form
-(−88.36 %), outside the tolerance the sim caps at 0.98 × the borrow rate; the
-gate still refuses that cell on both forms, so nothing is offered on it, but
-the published column is too optimistic there — pinned by name in
-`services/yield/test/model-pin.test.ts`, and whether the headline should
-become the Monte-Carlo number is the founder's call. For a product whose LP
-menu may be empty, this is what "may" means today: it is empty, it has been
-empty on every read since 2026-08-31, it stays empty at any borrow rate, and
-it opens only if AERO emissions on the majors' gauges rise roughly four- to
-eleven-fold or a pool with a calibrated σ well below today's arrives. Until
-then the product is hold-USDC and spot, and says so.
+values). At the live USDC borrow of **4.5174 %** no pool × setting beats the
+borrow on both models, and the picture is worse than on 2026-09-05, not
+better: the AERO price rose 18 % but the gauges pay a marginal staker far
+less. The best cell, cbBTC/USDC at the sheltered width, forecasts
+**−10.92 %/yr** on the LP slice (−5.29 % before; gross emissions fell from
+14.13 % to 6.15 %) and would need **4.56 ×** today's net emissions to break
+even (2.02 × before), or a realized σ of 0.04 in place of 0.40 — which
+BTC/USD does not have. WETH/USDC at the sheltered width no longer even beats
+the borrow before impermanent loss (3.01 % net against 4.52 %); its steady
+and working widths need 11.2 × and 10.9 ×. WETH/cbBTC needs 7.4 × at steady
+and 7.1 × at working. **Every priced cell's LP net is negative, so no borrow
+rate — not even 0 % — would turn one positive at today's emissions;** the
+only lever is the gauge vote, which is Aerodrome's voters', not ours. The
+cbZEC/USDC gauge received its first vote in the week (≈ 617 AERO a day to
+2026-09-17, on about $1 M of pool liquidity): 1.06 / 3.34 / 16.99 % gross at
+the three widths, below the borrow at the two wider ones and without a
+calibrated σ at the narrowest, where it would beat the borrow only if
+cbZEC's realized σ were under 0.08 — it is not. The two-model check still
+does its work, now as a printed gap: at each priced cell's own break-even the
+closed form is 0.1 to **32.0 points** more optimistic than the Monte-Carlo
+form, and six of the seven cells the closed form alone would call positive
+there are not, on the stricter form. Recorded rather than smoothed: at
+TODAY's emissions the closed form's published headline for WETH/cbBTC at the
+working width (−82.90 %) sits **5.46 points** above the Monte-Carlo form
+(−88.36 %), outside the tolerance the sim caps at 0.98 × the borrow rate;
+both numbers are shown on that cell, the published column is too optimistic
+there — pinned by name in `services/yield/test/model-pin.test.ts` — and
+whether the headline should become the Monte-Carlo number is the founder's
+call. For a product whose forecast may be a loss on every pool, this is what
+"may" means today: it is a loss on every pool, it has been on every read
+since 2026-08-31, it stays one at any borrow rate, and it turns positive only
+if AERO emissions on the majors' gauges rise roughly four- to eleven-fold or
+a pool with a calibrated σ well below today's arrives. Until then the
+product is a forecast that says "no" in numbers, a user who may say "yes"
+anyway, and hold-USDC and spot beside it.
 
-**Mitigates (code).** `/v1/gate` recomputes on every serve with `stale` derived
-from `sampledAt`, and now actually **sends** `stale`, `emissionsSampledAt`
-(the oldest sample behind the verdicts) and `engineFeeBps`, so the client's
-staleness guard is no longer dead code in live mode; 503 on stale rates;
-`/healthz` returns 503 with a `degraded` array when a source is dead or the MC
-calibration is missing. The UI re-derives the offer from **both** models and
-fails closed on a null calibration (`web/lib/gate.ts`, `lib/math.ts:
-clearsGate`). A reserve that Aave's guardian has paused is read
-(`getPaused`) and refused (`collateral_paused` / `borrow_paused`). An
-implausible emissions APR above 1,000 % is refused (`emissions_implausible`)
-rather than served, mirroring the 1-ray bound on the borrow side.
+**Mitigates (code).** `/v1/forecast` never 503s: missing or stale inputs
+become safety refusals inside each cell, so the site always shows the picture
+and says what may not be opened; `/v1/gate` is unchanged and its 503-on-stale
+contract still holds for the consumers that read it. Stale is derived at
+serve time from `sampledAt`, never stored; the client re-derives `allowed`
+from the refusal list and never trusts the flag; a stale payload allows
+nothing. The acknowledgment resets whenever the collateral, amount, setting or
+strategy changes, so a user cannot tick it for one position and sign
+another. A reserve that Aave's guardian has paused is read (`getPaused`) and
+refused (`collateral_paused` / `borrow_paused`); a borrow above the pool's
+lendable balance is refused (`pool_cannot_fund`) from the same
+`getReserveData` words the rate came from, on the service and again in the
+wizard from its own chain read. An implausible emissions APR above 1,000 %
+is unpriced (`emissions_implausible`), never served as a return.
 
 **Does not.** There is no auto-alert on negative carry for an open position;
-the dashboard shows the numbers, the user decides. The gate compares an annual
-outcome against a *nominal* borrow rate; the compounded debt cost is ~0.12 pt
-higher, i.e. the gate is that much permissive on the borrow side (audit
-D-LOW-3, not fixed). The gauge history that corroborates an emissions anchor is
-in-process memory, so a restart serves nothing for a pool until three refreshes
-have run — fail-closed, but a restart is a blind window.
+the dashboard shows the numbers, the user decides. The forecast compares an
+annual outcome against a *nominal* borrow rate; the compounded debt cost is
+~0.12 pt higher, i.e. the comparison is that much friendly on the borrow side
+(audit D-LOW-3, not fixed). The "after this borrow" rate is Aave's curve
+only; a `MorphoBlueVenue` position is shown at today's rate with the basis
+named, because Morpho's adaptive IRM is not modelled yet. The gauge history
+that corroborates an emissions anchor is in-process memory, so a restart
+serves no forecast for a pool until three refreshes have run — fail-closed,
+but a restart is a blind window. And a forecast is not a fence: a user who
+reads −10.92 % and ticks the box loses money the model said they would.
 
 ## 15 · Demo status
 
@@ -1166,10 +1190,12 @@ own USDC token account; a frozen account cannot repay from idle USDC.
 authority policy (`SOLANA-ARCHITECTURE.md` §12 (2)). Copy may not claim "no
 operator powers" before that.
 
-**Does not (yet).** The program is built and proven on localnet (2026-09-12,
-21/21: owner path and the keeper ladder), but no keeper process runs it yet —
-`agent/` has no Solana path — so no automated protection exists on Solana until
-that lands. The exit hatch is `close_position` + `transfer_out`; a
+**Does not (yet).** The program and the keeper process are built and proven on localnet (2026-09-12,
+26/26: the owner path, the keeper ladder, and the keeper agent itself repaying from idle USDC and selling
+inside a grant), but nothing is deployed and no keeper runs anywhere, so no automated protection exists on
+Solana until a deployment and a funded keeper key exist. On mainnet the keeper refuses to act without an
+independent ZEC price (Jupiter) agreeing with Scope within 200 bps; the localnet runs Scope-only under an
+explicit flag and says so in its log. The exit hatch is `close_position` + `transfer_out`; a
 wallet-signed hand-over of the Kamino obligation is impossible on klend (its
 transfer needs Kamino's admin and refuses CPI). The keeper's sale margin is
 bounded by the grant's allowance (≤ 5 %) and the pre-sign copy must state it. Decided 2026-09-12: the keeper **may sell collateral** to stop a

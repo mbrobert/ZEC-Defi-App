@@ -5,7 +5,7 @@
  * claims a protection the contracts do not enforce.
  *
  * Words that may NOT appear anywhere in the product copy (test/copy.test.ts
- * enforces it across app/, components/ and lib/): the four in BANNED_WORDS.
+ * enforces it across app/, components/ and lib/): the words in BANNED_WORDS.
  */
 
 // The last two entries came from audit wave 2 (G-MED-1): the keeper grant permits a collateral
@@ -54,9 +54,15 @@ export const RISKS: readonly RiskItem[] = [
   },
   {
     id: "own-market",
-    title: "Oilskin's own cbZEC market (v1.1, not live)",
-    body: "No cbZEC lending market exists today, so cbZEC cannot be collateral. If Oilskin ships its own Morpho market, Oilskin sets the risk parameters and the market's lenders — possibly including Oilskin — bear bad debt if cbZEC's exit liquidity fails.",
+    title: "No cbZEC lending market on Base",
+    body: "No Base lending market lists cbZEC today, so cbZEC cannot be collateral here, and Oilskin will not create one of its own (decided 2026-09-12). cbZEC becomes usable on Base only if a lending market lists it; until then a ZEC holder's route is bridged ZEC on Solana, where the Oilskin program is built but not deployed.",
     scope: ["review"],
+  },
+  {
+    id: "forecast",
+    title: "The yield forecast is a model, not a promise",
+    body: "Every pool is shown with the numbers two models produce for it — rewards after fees, the loss from the price moving, the net on the deployed USDC and on your whole position — and you may open any of them after reading that forecast, including one the model expects to lose money. The two models disagree by a stated gap; the rewards are AERO emissions a weekly vote can cut to zero; the borrow rate moves with the pool, including with your own borrow. Nothing here is advice. Do your own research.",
+    scope: ["review", "dashboard"],
   },
   {
     id: "liquidation",
@@ -67,7 +73,7 @@ export const RISKS: readonly RiskItem[] = [
   {
     id: "il",
     title: "Impermanent loss",
-    body: "A concentrated-liquidity position changes token mix as price moves and can be worth less than holding. The yield model applies an IL drag per width; a pool is only offered when emissions net of the performance fee still exceed the live borrow rate after that drag. The model is emissions-only — trading fees are not counted.",
+    body: "A concentrated-liquidity position changes token mix as price moves and can be worth less than holding. The yield model applies an IL drag per width and shows whether emissions net of the performance fee still exceed the live borrow rate after it; since 2026-09-12 that comparison is information you acknowledge, not a gate. The model is emissions-only — trading fees are not counted.",
     scope: ["review", "dashboard"],
   },
   {

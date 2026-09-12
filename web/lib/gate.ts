@@ -1,8 +1,9 @@
 /**
  * Client for the yield service's gate: GET /v1/gate (services/yield/src/gate.ts).
  *
- * The rule: a pool × setting is offered only when the SAME LP slice beats the
- * live Base USDC borrow rate under BOTH of the product's models —
+ * Since 2026-09-12 (BUILD-PLAN-2026-09-12 D4) the gate is INFORMATION: the wizard reads the
+ * forecast (lib/forecast.ts) and blocks on nothing here. `qualifies` still means what it meant —
+ * the SAME LP slice beats the live Base USDC borrow rate under BOTH of the product's models —
  *
  *   • `lpNetPct`, the published closed form (emissions net of the engine's cut
  *     and Oilskin's performance fee, realised on the IL-drag-shrunk base, plus
@@ -79,7 +80,7 @@ export interface GateView {
   verdicts: GateEntry[];
   source: "live" | "demo";
   stale: boolean;
-  /** Set when the service refused (503 gate_unavailable) — nothing is offered. */
+  /** Set when the service refused (503 gate_unavailable). */
   unavailableReason?: string;
 }
 
@@ -117,8 +118,8 @@ const REASON_PLAIN: Record<string, string> = {
   collateral_not_active: "Aave is not accepting this asset as collateral right now.",
   collateral_paused: "Aave has paused this collateral, so nothing can be supplied or borrowed against it until they unpause it.",
   borrow_paused: "Aave has paused USDC borrowing, so there is nothing to borrow right now.",
-  rates_unavailable: "We could not read what borrowing costs today, and we will not offer a position without it.",
-  rates_stale: "Our reading of the borrowing cost is too old to trust, so nothing is offered until it refreshes.",
+  rates_unavailable: "We could not read what borrowing costs today, so there is nothing to compare the pool against.",
+  rates_stale: "Our reading of the borrowing cost is too old to trust, so there is no comparison until it refreshes.",
   emissions_unavailable: "We could not read what this pool is paying out, so we cannot say it is worth it.",
   emissions_stale: "Our reading of what this pool pays is too old to trust.",
   no_emissions: "This pool is not paying any rewards at the moment, so there is nothing to earn.",
@@ -128,10 +129,10 @@ const REASON_PLAIN: Record<string, string> = {
   emissions_implausible: "The rewards this pool appears to pay are too high to be real, so we are treating the reading as broken rather than as a return.",
   emissions_below_borrow: "The rewards would not even cover the interest on the loan, before any other cost.",
   no_volatility_input: "We do not have a trusted volatility figure for this pair, so we cannot price the risk of the price moving.",
-  mc_calibration_unavailable: "Our second, stricter model has nothing calibrated for this pool at this width, so we cannot double-check the first one — and we will not offer what we can only price once.",
+  mc_calibration_unavailable: "Our second, stricter model has nothing calibrated for this pool at this width, so the first one's number stands alone and unchecked.",
   mc_calibration_stale: "Our second model was calibrated in calmer conditions than today's, so its answer would not be honest here.",
   net_below_borrow: "Once the loss from the price moving is priced in, it earns less than the loan costs.",
-  within_model_uncertainty: "Our two models disagree about this one: the simpler one says it clears, the stricter one — which also charges for the time your money sits outside the price range — says it does not. When they disagree we do not offer it.",
+  within_model_uncertainty: "Our two models disagree about this one: the simpler one says it clears, the stricter one — which also charges for the time your money sits outside the price range — says it does not. Both numbers are shown; the gap is the model's own uncertainty.",
   net_out_of_bounds: "The numbers came out far outside the range this model is trusted in, so we are treating them as broken rather than as a return.",
 };
 
@@ -280,12 +281,12 @@ export function verdictsFor(view: GateView, collateral: CollateralSymbol): GateE
   return view.verdicts.filter((v) => v.collateral === collateral).sort((a, b) => (b.lpNetPct ?? -Infinity) - (a.lpNetPct ?? -Infinity));
 }
 
-/** Only the rows the picker may show for a collateral. */
+/** The rows that clear the borrow on both models — information since 2026-09-12, not the picker's list. */
 export function offeredEntries(view: GateView, collateral: CollateralSymbol): GateEntry[] {
   return verdictsFor(view, collateral).filter((v) => v.qualifies);
 }
 
-/** Rows that did NOT clear for a collateral, for the "why not" list. */
+/** Rows that did NOT clear the borrow for a collateral, with the reason. */
 export function rejectedEntries(view: GateView, collateral: CollateralSymbol): GateEntry[] {
   return verdictsFor(view, collateral).filter((v) => !v.qualifies);
 }

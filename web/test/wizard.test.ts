@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ENTRY_HF_FLOOR, MAX_OFFERED_LTV_CAP_BPS, maxOfferedLtvBps } from "@zyo/shared";
-import { DEMO_MARKET, demoGate } from "../lib/demo";
+import { DEMO_MARKET, demoForecast, demoGate } from "../lib/demo";
+import { findCell } from "../lib/forecast";
 import type { MarketRead } from "../lib/reads";
 import { defaultWizardState, deriveReview, presetsFor } from "../lib/wizard";
 
@@ -53,13 +54,17 @@ test("deriveReview (hold): every number derived; problems empty for a valid sele
   assert.ok(Math.abs(d.holdCostUsdPerYear - (d.loan.borrowCostUsdPerYear - (d.loan.collateralUsd * DEMO_MARKET.reserves.cbBTC!.supplyAprPct) / 100)) < 1e-9);
 });
 
-test("deriveReview (lp): a pool that does not clear is priced from the served verdict and flagged", () => {
+test("deriveReview (lp): a pool the model forecasts at a loss is priced, flagged as not beating the borrow, and NOT a problem (D4: shown, acknowledged, allowed)", () => {
   const gate = demoGate();
+  const forecast = demoForecast();
   const entry = gate.verdicts.find((e) => e.poolId === "aero-cbbtc-usdc" && e.setting === "sheltered" && e.collateral === "cbBTC")!;
   const st = { ...defaultWizardState("cbBTC"), strategy: { kind: "lp" as const, entry } };
-  const d = deriveReview(st, DEMO_MARKET, gate)!;
-  assert.equal(d.gateOk, false);
-  assert.ok(d.problems.some((p) => /does not clear/i.test(p)));
+  const d = deriveReview(st, DEMO_MARKET, gate, forecast)!;
+  assert.equal(d.gateOk, false, "informational: it does not beat the borrow");
+  assert.deepEqual(d.problems, [], "a negative forecast is not a problem");
+  assert.equal(d.cell?.poolId, "aero-cbbtc-usdc");
+  assert.equal(d.cell?.lpNetPct, -10.92);
+  assert.equal(d.cell?.allowed, true);
   assert.equal(d.verdict?.lpNetPct, -10.92);
   assert.equal(d.lpParams?.rangeWidthBps, 4500);
   assert.equal(d.lpParams?.rebalanceDelayHours, 48);
@@ -70,6 +75,31 @@ test("deriveReview (lp): a pool that does not clear is priced from the served ve
   // Computed here from the same two inputs, never typed as a result.
   const expected = DEMO_MARKET.reserves.cbBTC!.supplyAprPct + 0.4 * (entry.lpNetPct! - DEMO_MARKET.usdcBorrowAprPct);
   assert.ok(Math.abs(d.yieldPlan!.userNetPct - expected) < 0.01, `${d.yieldPlan!.userNetPct} vs ${expected}`);
+});
+
+test("deriveReview: the acknowledgment starts un-ticked, and the liquidity hard-refusal names the pool's balance", () => {
+  assert.equal(defaultWizardState("cbBTC").acknowledged, false);
+  const gate = demoGate();
+  // The demo USDC pool holds 24,768,504 USDC (Addendum 13); a 0.5 cbBTC borrow at 40 % is ~$15.9 K — funded.
+  const ok = deriveReview({ ...defaultWizardState("cbBTC"), strategy: { kind: "hold" } }, DEMO_MARKET, gate)!;
+  assert.ok(!ok.problems.some((p) => /cannot fund/.test(p)));
+  // A pool that holds less than the borrow refuses by name — the same words for every strategy kind.
+  const thin: MarketRead = { ...DEMO_MARKET, reserves: { ...DEMO_MARKET.reserves, USDC: { ...DEMO_MARKET.reserves.USDC!, availableUnits: 10_000 } } };
+  for (const strategy of [{ kind: "hold" as const }, { kind: "spot" as const }]) {
+    const d = deriveReview({ ...defaultWizardState("cbBTC"), strategy }, thin, gate)!;
+    assert.ok(d.problems.some((p) => /cannot fund this borrow right now: it holds \$10,000 USDC to lend/.test(p)), d.problems.join(" | "));
+  }
+  // A snapshot without the field cannot refuse (it says nothing), never refuses by accident.
+  const { availableUnits: _drop, ...noField } = DEMO_MARKET.reserves.USDC!;
+  const blind: MarketRead = { ...DEMO_MARKET, reserves: { ...DEMO_MARKET.reserves, USDC: noField } };
+  assert.ok(!deriveReview({ ...defaultWizardState("cbBTC"), strategy: { kind: "hold" } }, blind, gate)!.problems.some((p) => /cannot fund/.test(p)));
+  // A forecast cell's own safety refusals become problems; its profitability never does.
+  const forecast = demoForecast();
+  const cell = findCell(forecast, { poolId: "aero-cbbtc-usdc", setting: "sheltered", collateral: "cbBTC" })!;
+  const refusing = { ...forecast, cells: forecast.cells.map((c) => (c === cell ? { ...c, refusals: ["borrow_paused" as const], allowed: false } : c)) };
+  const entry = gate.verdicts.find((e) => e.poolId === "aero-cbbtc-usdc" && e.setting === "sheltered" && e.collateral === "cbBTC")!;
+  const d = deriveReview({ ...defaultWizardState("cbBTC"), strategy: { kind: "lp", entry } }, DEMO_MARKET, gate, refusing)!;
+  assert.ok(d.problems.some((p) => /paused USDC borrowing/.test(p)));
 });
 
 test("deriveReview (lp): a clearing verdict yields a positive plan and no gate problem", () => {

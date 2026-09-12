@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { FEES } from "@zyo/shared";
-import { DEMO_GATE_RAW, DEMO_MARKET, DEMO_SNAPSHOT_BLOCK, demoGate } from "../lib/demo";
+import { DEMO_GATE_RAW, DEMO_MARKET, DEMO_SNAPSHOT_BLOCK, demoForecast, demoGate } from "../lib/demo";
 import { reasonPlain, reasonText, verdictsFor, type GateEntry } from "../lib/gate";
 import { exactHalfWidthPct, fmtHalfWidth } from "../lib/math";
 import { fmtPct, fmtSignedPct } from "../lib/format";
@@ -154,7 +154,7 @@ test("the gate's own headline numbers are the ones the product quotes", () => {
   assert.equal(gate.verdicts.length, 81, "27 pool × setting cells × 3 collaterals");
 });
 
-test("nothing is offered, in either mode, and the 'why not' list has both a code and a sentence for every row", () => {
+test("nothing beats the borrow on both models; every row has both a code and a sentence; and the forecast still recommends the least bad cell rather than refusing (D4/D5)", () => {
   assert.equal(DEMO_GATE_RAW.qualifying.length, 0);
   assert.equal(gate.verdicts.filter((v) => v.qualifies).length, 0);
   for (const collateral of ["cbBTC", "WETH", "cbZEC"] as const) {
@@ -171,12 +171,16 @@ test("nothing is offered, in either mode, and the 'why not' list has both a code
     const nets = rows.map((v) => v.lpNetPct ?? -Infinity);
     assert.deepEqual(nets, [...nets].sort((a, b) => b - a));
   }
-  const rec = recommend(gate, "cbBTC", 4000);
-  assert.equal(rec.kind, "hold");
-  if (rec.kind === "hold") {
+  const rec = recommend(demoForecast(), "cbBTC", 4000);
+  assert.equal(rec.kind, "lp", "the forecast recommends the least bad priced cell — the user decides");
+  if (rec.kind === "lp") {
+    assert.equal(rec.cell.poolId, "aero-cbbtc-usdc");
+    assert.equal(rec.cell.setting, "sheltered");
+    assert.equal(rec.positive, false);
+    assert.ok(rec.userNetPct < 0);
     assert.ok(rec.why.includes("4.52%"), rec.why);
-    assert.ok(rec.closest, "Simple mode names the closest miss");
-    assert.ok(rec.closestWhy.length > 30, rec.closestWhy);
+    assert.ok(/still a loss/.test(rec.why), rec.why);
+    assert.ok(!rec.why.includes("_"), rec.why);
   }
 });
 

@@ -858,12 +858,44 @@ about $0.97 M of pool TVL, refused below the borrow at the two wider widths and 
 the narrowest. AERO/WETH's epoch is still the one that ended 2026-05-28. The model's verdict on
 these words is `RISKS.md` §14.
 
+## Addendum 13 — slice A3, 2026-09-12: the USDC borrow curve and pool liquidity on Aave v3 Base, read live at block 51,227,701 (20:25:49 UTC)
+
+Read with `cast` against `https://base-rpc.publicnode.com`, for the forecast's two new numbers — the
+borrow rate AFTER a borrow of a given size, and the "cannot fund" hard-refusal (BUILD-PLAN-2026-09-12
+§2 item 2, step A3). Raw words are in `services/yield/samples/aave-usdc-reserve-2026-09-12.json`; the
+live service reads the same calls every sample (`services/yield/src/sources/aave.ts`) and the demo
+forecast (`samples/demo-forecast.json`) is evaluated on this file. Abbreviations: APR = annual
+percentage rate; bps = basis points (0.01 %).
+
+| Read | Value |
+|---|---|
+| `PoolDataProvider.getInterestRateStrategyAddress(USDC)` | `0x86AB1C62A8bf868E1b3E1ab87d587Aba6fbCbDC5` — `DefaultReserveInterestRateStrategyV2`, code 4,038 bytes; the address is read every sample, never pinned |
+| `strategy.getInterestRateDataBps(USDC)` | optimal usage **9000** bps, base **0**, slope 1 **470** bps (4.70 %), slope 2 **1000** bps (10 %); the ray getters agree (`getOptimalUsageRatio` 9e26, slopes 4.7e25 / 1e26) |
+| `getReserveData(USDC)` — totalAToken / totalVariableDebt | **182,806,571.520498** / **158,038,067.327137** USDC (words 2 and 4); stable debt 0; accrued to treasury 1,025.51 (scaled) |
+| `getReserveData(USDC)` — variableBorrowRate / liquidityRate | **4.5146 %** / 3.5126 % (ray words 45146359479383945382496577 / 35126312304323992397609966) |
+| `getReserveConfigurationData(USDC)` | decimals 6, LTV 7500, LT 7800, bonus 10500, reserve factor **1000** bps |
+| `getReserveTokensAddresses(USDC)` aToken; its USDC balance | `0x4e65fE4DbA92790696d040ac24Aa414708F5c0AB`; **24,769,842.218084** USDC available |
+
+**What the curve says, checked against the live word.** Utilisation U = debt ÷ supplied =
+158,038,067.33 ÷ 182,806,571.52 = 86.45 %, under the 90 % kink, so the rate is
+0 + 4.70 % × 0.8645 ÷ 0.90 = **4.5147 %** against the live **4.5146 %** — the 0.0001-point gap is the
+denominator: the strategy uses the virtual balance + debt (24,769,842.22 + 158,038,067.33 =
+182,807,909.55), which is `totalAToken` plus the treasury accrual, 0.0007 %. Above the kink the rate is
+4.70 % + 10 % × (U − 0.90) ÷ 0.10: 14.70 % at 100 %. A $1 M borrow moves utilisation by 0.55 points and
+the rate by ≈ 0.03 points; a $100 M borrow (more than the pool's cap for this product by orders of
+magnitude) would land at 97.2 % and ≈ 11.9 %. Available to lend from the totals: 24,768,504.19 USDC
+(the aToken balance less the accrual); the forecast refuses a borrow above it as `pool_cannot_fund`.
+
+Not read here, probe before use: the Morpho Blue markets' `AdaptiveCurveIRM` rate after a borrow (the
+forecast's "after" rate is Aave-only in A3; `MorphoBlueVenue` positions get today's rate with the
+basis named), and whether Aave's `reserveFactor` applies to the borrow side (it does not — it is the
+protocol's share of the supply-side interest, and the borrow rate above is what the borrower pays).
+
 ## Addendum 14 — the top ledger re-read at block 51,226,072, 2026-09-12 (19:31:31 UTC), read-only
 
 **Why.** After slice K the demo carried two dated reads: the market snapshot from 2026-09-05 (4.828 % borrow,
 0.012 % / 1.843 % supply, the 2026-09-05 prices) and the yield gate from the 2026-09-12 sample (4.5174 %). The
 snapshot is now the sample's own block, so the web demo, the prototypes and the model quote one set of digits.
-(Addendum 13, the USDC borrow curve read for slice A3, lands from another session; the numbering leaves it its slot.)
 
 **How.** A bash script of `cast call --block 51226072` / `cast code` calls, one per line and paced 0.4 s, against
 `https://mainnet.base.org` (`https://base-rpc.publicnode.com` refuses pinned-block calls without a token — HTTP 403

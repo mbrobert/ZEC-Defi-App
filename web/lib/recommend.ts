@@ -1,43 +1,49 @@
 /**
- * Simple mode's ONE recommended strategy, from the served gate verdicts —
- * never a curated pick. Rule: among verdicts that CLEAR the gate for this
- * collateral, the highest model userNet at the chosen LTV; ties → the wider
- * (calmer) band. If nothing clears, recommend holding the USDC and say why.
+ * Simple mode's recommendation, from the served FORECAST — never a curated pick, and since
+ * 2026-09-12 (BUILD-PLAN-2026-09-12 D5) never a refusal: every curated pool is open to a Simple-mode
+ * user after the acknowledgment. Rule: among the cells the forecast could price for this collateral,
+ * the highest user net at the chosen LTV; ties → the wider (calmer) band. When the best forecast is a
+ * loss the recommendation SAYS so and still names the cell — the user decides. When nothing can be
+ * priced at all, recommend holding the USDC and say why.
  */
 import type { CollateralSymbol } from "@zyo/shared";
-import { offeredEntries, reasonPlain, rejectedEntries, type GateEntry, type GateView } from "./gate";
+import { cellsFor, unpricedPlain, userNetAtLtv, type ForecastCell, type ForecastView } from "./forecast";
 
 export type Recommendation =
-  | { kind: "lp"; entry: GateEntry; userNetPct: number; why: string }
-  | { kind: "hold"; why: string; closest: GateEntry | null; closestWhy: string };
+  | { kind: "lp"; cell: ForecastCell; userNetPct: number; why: string; positive: boolean }
+  | { kind: "hold"; why: string; closest: ForecastCell | null; closestWhy: string };
 
-export function recommend(gate: GateView, collateral: CollateralSymbol, ltvBps: number): Recommendation {
-  const offered = offeredEntries(gate, collateral);
-  const scored = offered
-    .map((e) => ({ e, un: e.userNet.find((u) => u.ltvBps === ltvBps && u.offerable)?.userNetPct }))
-    .filter((x): x is { e: GateEntry; un: number } => typeof x.un === "number" && Number.isFinite(x.un));
+export function recommend(forecast: ForecastView, collateral: CollateralSymbol, ltvBps: number): Recommendation {
+  const cells = cellsFor(forecast, collateral, ltvBps);
+  const scored = cells
+    .filter((c) => c.allowed && c.lpPriced)
+    .map((c) => ({ c, un: userNetAtLtv(c, ltvBps) }))
+    .filter((x): x is { c: ForecastCell; un: number } => typeof x.un === "number" && Number.isFinite(x.un));
+  const borrow = typeof forecast.borrowAprPct === "number" ? `${forecast.borrowAprPct.toFixed(2)}%` : "today's";
   if (scored.length === 0) {
-    const borrow = Number.isFinite(gate.borrowAprPct) ? `${gate.borrowAprPct.toFixed(2)}%` : "today's";
-    // The nearest miss, so Simple mode can say WHY in one sentence instead of
-    // sending the user to Advanced to find out.
-    const closest = rejectedEntries(gate, collateral)[0] ?? null;
+    const closest = cells[0] ?? null;
     return {
       kind: "hold",
       closest,
-      closestWhy: closest ? reasonPlain(closest.reason) : "",
-      why: gate.unavailableReason
-        ? "The yield service could not produce a verdict, so no pool can be recommended right now."
-        : gate.stale
-          ? "Our reading of today's numbers is too old to trust, so nothing is offered until it refreshes — the honest recommendation is to keep the borrowed USDC in your account."
-          : `At the ${borrow} USDC borrow rate no Aerodrome pool clears the yield gate once impermanent loss is priced in, so the honest recommendation is to keep the borrowed USDC in your account (or not to borrow at all).`,
+      closestWhy: closest ? unpricedPlain(closest.lpUnpricedReason) : "",
+      why: forecast.unavailableReason
+        ? "The yield service could not be reached and no forecast could be shown, so the only thing this page can recommend is to keep the borrowed USDC in your account."
+        : forecast.stale
+          ? "Our reading of today's numbers is too old to trust, so no pool can be forecast until it refreshes — keeping the borrowed USDC in your account is the only thing this page can recommend."
+          : `The model could not price any pool for ${collateral} today, so there is no forecast to choose from — keeping the borrowed USDC in your account is the only thing this page can recommend.`,
     };
   }
-  scored.sort((a, b) => b.un - a.un || b.e.rangeWidthBps - a.e.rangeWidthBps);
+  scored.sort((a, b) => b.un - a.un || b.c.rangeWidthBps - a.c.rangeWidthBps);
   const best = scored[0];
+  const pair = `${best.c.pool.token0}/${best.c.pool.token1}`;
+  const positive = best.un > 0;
   return {
     kind: "lp",
-    entry: best.e,
+    cell: best.c,
     userNetPct: best.un,
-    why: `${best.e.pool.token0}/${best.e.pool.token1} (${best.e.preset.toLowerCase()}) has the highest model net return on your ${collateral} at ${ltvBps / 100}% LTV among the pools that clear the gate today — under both of the models we price it with, not just the friendlier one.`,
+    positive,
+    why: positive
+      ? `${pair} (${best.c.preset.toLowerCase()}) has the highest forecast net return on your ${collateral} at ${ltvBps / 100}% LTV — priced with both of the models we use, not just the friendlier one.`
+      : `${pair} (${best.c.preset.toLowerCase()}) is the least bad forecast for your ${collateral} at ${ltvBps / 100}% LTV, and it is still a loss: at the ${borrow} borrow rate the model expects this position to cost you money. You can open it after reading the forecast; keeping the borrowed USDC in your account, or not borrowing, are the other choices.`,
   };
 }

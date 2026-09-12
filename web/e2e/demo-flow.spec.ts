@@ -95,19 +95,25 @@ test.describe("Oilskin demo mode", () => {
     await expect(page.getByTestId("rung-caveat")).toContainText("expires after 30 days");
     await page.getByTestId("wizard-next").click();
 
-    // One recommendation only; at 4.52% the model says hold, and says why
-    await expect(page.getByRole("heading", { level: 2, name: "Our recommendation" })).toBeVisible();
-    await expect(page.locator('[data-testid^="strategy-"]')).toHaveCount(0);
+    // The forecast (2026-09-12, D4/D5): every pool at its best setting, the least bad named as a
+    // loss in one plain sentence, every card selectable, hold still a choice.
+    await expect(page.getByRole("heading", { level: 2, name: "The forecast" })).toBeVisible();
+    // One card per pool: the 9 curated Aerodrome pools less the direct-venue cbZEC/USDC pool the demo
+    // deployment cannot open (W3-LOW-3) — cards carry data-priced, hold and spot do not.
+    await expect(page.locator('[data-testid^="strategy-"][data-priced]')).toHaveCount(8);
     await expect(page.getByTestId("advanced-controls")).toHaveCount(0);
-    const rec = page.getByTestId("recommendation-hold");
-    await expect(rec).toContainText("recommended today");
-    await expect(rec).toContainText("4.52% USDC borrow rate");
-    // Simple mode explains the refusal in one plain sentence — no codes, no jargon.
-    const whyNot = page.getByTestId("recommendation-why-not");
-    await expect(whyNot).toContainText("The closest one was USDC/cbBTC (conservative)");
-    await expect(whyNot).toContainText("it earns less than the loan costs");
-    await expect(whyNot).not.toContainText("_");
-    await rec.click();
+    const note = page.getByTestId("recommendation-note");
+    await expect(note).toContainText("USDC/cbBTC (conservative) is the least bad forecast");
+    await expect(note).toContainText("4.52% borrow rate");
+    await expect(note).toContainText("still a loss");
+    await expect(note).not.toContainText("_");
+    const bestCard = page.getByTestId("strategy-aero-cbbtc-usdc-sheltered");
+    await expect(bestCard).toContainText("least bad forecast");
+    await expect(bestCard).toContainText("LP net -10.92% (stricter model -10.89%");
+    await expect(bestCard).toContainText("below the borrow");
+    await expect(bestCard).toBeEnabled();
+    await expect(page.getByTestId("strategy-aero-aero-weth-sheltered")).toContainText("No forecast:");
+    await page.getByTestId("strategy-hold").click();
     await page.getByTestId("wizard-next").click();
 
     const review = page.getByTestId("review");
@@ -118,8 +124,17 @@ test.describe("Oilskin demo mode", () => {
     await expect(review).toContainText("expires in 30 days unless renewed");
     await expect(review).toContainText("Net carry per year");
     await expect(page.getByTestId("review-problems")).toHaveCount(0);
+    // The acknowledgment names THIS position's numbers and holds the button until it is ticked.
+    await expect(page.getByTestId("wizard-next")).toBeDisabled();
+    const ackText = page.getByTestId("forecast-ack-text");
+    await expect(ackText).toContainText(/the loan costs \d\.\d\d% a year today and that rate moves/);
+    await expect(ackText).toContainText("48.7% fall in cbBTC would liquidate this position");
+    await expect(ackText).not.toContainText("_");
+    await expect(page.getByTestId("forecast-disclosures")).toContainText("not advice and not a promise");
+    await page.getByTestId("forecast-ack").check();
+    await expect(page.getByTestId("wizard-next")).toBeEnabled();
     const disc = page.getByTestId("disclosures-review");
-    for (const t of ["Custodial entry", "Identity verification", "Jurisdiction", "cbZEC issuer powers", "cbZEC peg", "Oilskin's own cbZEC market", "Liquidation", "Impermanent loss", "Keeper dependence", "Smart-contract risk", "Demo mode"]) {
+    for (const t of ["Custodial entry", "Identity verification", "Jurisdiction", "cbZEC issuer powers", "cbZEC peg", "No cbZEC lending market on Base", "The yield forecast is a model", "Liquidation", "Impermanent loss", "Keeper dependence", "Smart-contract risk", "Demo mode"]) {
       await expect(disc).toContainText(t);
     }
     // Every planned call carries a plain sentence; Simple hides the technical args
@@ -154,19 +169,22 @@ test.describe("Oilskin demo mode", () => {
     await expect(page.getByTestId("entry-hf")).toHaveText("1.56"); // 0.78 / 0.50
     await page.getByTestId("wizard-next").click();
 
-    await expect(page.getByTestId("gate-empty")).toContainText("No pool clears the gate for cbBTC at today’s 4.52% borrow rate");
+    // No empty-menu banner any more: every pool × setting is a card with both models' numbers.
+    await expect(page.getByTestId("gate-empty")).toHaveCount(0);
     await expect(page.getByTestId("gate-line")).toContainText("emissions sampled 2026-09-12 19:31Z");
     await expect(page.getByTestId("gate-line")).toContainText("engine fee 15%");
     await expect(page.getByTestId("gate-line")).not.toContainText("STALE");
-    await expect(page.locator('[data-testid^="strategy-aero-"]')).toHaveCount(0);
-    const rejected = page.getByTestId("gate-rejected");
-    await rejected.locator("summary").click();
-    await expect(rejected).toContainText("USDC/cbBTC conservative");
-    await expect(rejected).toContainText("LP net -10.92% vs borrow 4.52%");
-    await expect(rejected).toContainText("would clear at 4.56× today's net emissions on the closed form alone");
-    await expect(rejected).toContainText("MC net -10.89%");
-    await expect(rejected).toContainText("Once the loss from the price moving is priced in, it earns less than the loan costs.");
-    await expect(rejected).toContainText("gauge pays no AERO");
+    // Every pool × setting: 8 openable pools × 3 settings (the direct-venue cbZEC/USDC pool is filtered out on the demo deployment).
+    await expect(page.locator('[data-testid^="strategy-"][data-priced]')).toHaveCount(24);
+    const best = page.getByTestId("forecast-aero-cbbtc-usdc-sheltered");
+    await expect(best).toContainText("LP net -10.92% (stricter model -10.89%, gap -0.02 pt)");
+    await expect(best).toContainText("borrow −4.52%");
+    await expect(best).toContainText("needs 4.56× today's rewards to break even");
+    await expect(page.getByTestId("strategy-aero-cbbtc-usdc-sheltered")).toContainText("below the borrow");
+    const unpriced = page.getByTestId("forecast-aero-aero-weth-sheltered");
+    await expect(unpriced).toContainText("No forecast:");
+    await expect(unpriced).not.toContainText("_");
+    await expect(page.getByTestId("strategy-aero-aero-weth-sheltered")).toBeEnabled();
     await expect(page.getByTestId("advanced-controls")).toBeVisible();
     await page.getByTestId("band-tolerance").fill("2");
     await expect(page.getByTestId("advanced-controls")).toContainText("Above 1% a sandwich");
@@ -184,6 +202,8 @@ test.describe("Oilskin demo mode", () => {
     await expect(calls).toContainText("refuses a borrow under the registry's entry health-factor floor");
     await expect(calls).not.toContainText("execBatch([permit2");
     await expect(calls).toContainText("your Oilskin account (0x2222…2222)");
+    await expect(page.getByTestId("wizard-next")).toBeDisabled();
+    await page.getByTestId("forecast-ack").check();
     await page.getByTestId("wizard-next").click();
     await expect(page.getByTestId("sign-step-grant")).toHaveCount(0);
     await page.getByTestId("sign-run").click();
@@ -283,11 +303,11 @@ test.describe("Oilskin demo mode", () => {
       await page.getByTestId("wizard-next").click();
       await noOverflow(`/new setting (${mode})`);
       await page.getByTestId("wizard-next").click();
-      if (mode === "advanced") await page.getByTestId("gate-rejected").locator("summary").click();
       await noOverflow(`/new strategy (${mode})`);
-      await page.getByTestId(mode === "advanced" ? "strategy-hold" : "recommendation-hold").click();
+      await page.getByTestId("strategy-hold").click();
       await page.getByTestId("wizard-next").click();
       await noOverflow(`/new review (${mode})`);
+      await page.getByTestId("forecast-ack").check();
       await page.getByTestId("wizard-next").click();
       await noOverflow(`/new sign (${mode})`);
     }

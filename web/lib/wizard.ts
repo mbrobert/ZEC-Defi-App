@@ -1,11 +1,13 @@
 /**
  * Wizard state + derivations (pure). The page owns the state; everything
- * numeric on Review is produced by `deriveReview` from chain-read inputs and
- * the served gate verdict.
+ * numeric on Review is produced by `deriveReview` from chain-read inputs, the
+ * served forecast cell and the gate verdict (informational since 2026-09-12).
  */
 import { ltvPresets, presetToLpParams, validateLpParams, type CollateralSymbol, type LpParams, type LtvPreset, type LtvPresetId } from "@zyo/shared";
 import { COLLATERAL_ASSETS } from "./chain";
+import { findCell, refusalPlain, type ForecastCell, type ForecastView } from "./forecast";
 import { findVerdict, type GateEntry, type GateView } from "./gate";
+import { fmtUsd } from "./format";
 import { planLoan, planYield, type LoanPlan, type YieldPlan } from "./math";
 import { DEFAULT_BAND_TOLERANCE_BPS, MAX_BAND_TOLERANCE_BPS } from "./plan";
 import type { MarketRead } from "./reads";
@@ -24,6 +26,12 @@ export interface WizardState {
   bandToleranceBps: number;
   /** Ask for the keeper protection grant after opening (Simple: always on). */
   keeperProtection: boolean;
+  /**
+   * The user ticked the acknowledgment on Review — the sentence that names the forecast, the
+   * borrow cost and the drawdown to liquidation for THIS position (BUILD-PLAN-2026-09-12 D4/D5).
+   * Reset whenever the collateral, amount, setting or strategy changes.
+   */
+  acknowledged: boolean;
 }
 
 export const WIZARD_STEPS = ["Collateral", "Setting", "Strategy", "Review", "Sign"] as const;
@@ -38,6 +46,7 @@ export function defaultWizardState(collateral: CollateralSymbol = "cbBTC"): Wiza
     customDelayHours: null,
     bandToleranceBps: DEFAULT_BAND_TOLERANCE_BPS,
     keeperProtection: true,
+    acknowledged: false,
   };
 }
 
@@ -77,8 +86,13 @@ export interface ReviewDerivation {
   verdict: GateEntry | null;
   lpParams: LpParams | null;
   yieldPlan: YieldPlan | null;
-  /** Pool still clears the gate at review time (re-derived from served numbers). */
+  /**
+   * Informational since 2026-09-12: the chosen cell clears the borrow on BOTH models (re-derived
+   * from the served numbers). Never a problem — the forecast is shown and acknowledged, not gated.
+   */
   gateOk: boolean;
+  /** The forecast cell the chosen LP entry came from, when the forecast view carries it. */
+  cell: ForecastCell | null;
   /** Hold / spot: cost of carrying the borrow with nothing deployed, USD per year. */
   holdCostUsdPerYear: number;
   /** True when Advanced overrides moved the width away from the verdict's — the model priced the preset width, not this one. */
@@ -86,7 +100,7 @@ export interface ReviewDerivation {
   problems: string[];
 }
 
-export function deriveReview(state: WizardState, market: MarketRead, gate: GateView): ReviewDerivation | null {
+export function deriveReview(state: WizardState, market: MarketRead, gate: GateView, forecast: ForecastView | null = null): ReviewDerivation | null {
   const r = market.reserves[state.collateral];
   const presets = presetsFor(market, state.collateral);
   if (!r || !presets) return null;
@@ -111,18 +125,29 @@ export function deriveReview(state: WizardState, market: MarketRead, gate: GateV
   });
   const supplyInterest = (loan.collateralUsd * r.supplyAprPct) / 100;
   const holdCostUsdPerYear = loan.borrowCostUsdPerYear - supplyInterest;
+  // The liquidity hard-refusal (BUILD-PLAN-2026-09-12 §2 item 2): a borrow the pool cannot fund is
+  // refused by name, from the same getReserveData words the rate came from.
+  const usdc = market.reserves.USDC;
+  if (usdc?.availableUnits !== undefined && loan.borrowUsdc > usdc.availableUnits) {
+    problems.push(`The Aave USDC pool cannot fund this borrow right now: it holds ${fmtUsd(usdc.availableUnits, 0)} USDC to lend and this position would borrow ${fmtUsd(loan.borrowUsdc, 0)}.`);
+  }
 
   let verdict: GateEntry | null = null;
+  let cell: ForecastCell | null = null;
   let lpParams: LpParams | null = null;
   let yieldPlan: YieldPlan | null = null;
   let gateOk = true;
   if (state.strategy?.kind === "lp") {
     const chosen = state.strategy.entry;
+    // The chosen entry is priced from the forecast cell when the view carries it (live or demo), else
+    // from the gate verdict, else from the entry the user picked — never blocked for not clearing.
+    cell = forecast ? (findCell(forecast, { ...chosen, collateral: state.collateral }) ?? null) : null;
     const live = findVerdict(gate, { ...chosen, collateral: state.collateral }) ?? (chosen.collateral === state.collateral ? chosen : null);
     verdict = live;
     gateOk = !!live && live.qualifies;
-    if (!live) problems.push("The chosen pool has no verdict for this collateral.");
-    else if (!live.qualifies) problems.push(`${live.pool.token0}/${live.pool.token1} (${live.preset.toLowerCase()}) does not clear the gate at the current borrow rate.`);
+    if (!live) problems.push("The chosen pool has no forecast for this collateral.");
+    // The forecast's SAFETY refusals are problems; its verdict on profitability is not.
+    for (const refusal of cell?.refusals ?? []) problems.push(refusalPlain(refusal));
     if (live) {
       lpParams = { ...presetToLpParams(live.preset, live.pool.pairClass), rangeWidthBps: live.rangeWidthBps, rebalanceDelayHours: live.rebalanceDelayHours || presetToLpParams(live.preset).rebalanceDelayHours };
       if (state.customWidthBps !== null) lpParams.rangeWidthBps = state.customWidthBps;
@@ -155,6 +180,7 @@ export function deriveReview(state: WizardState, market: MarketRead, gate: GateV
     loan,
     borrowAprPct: market.usdcBorrowAprPct,
     verdict,
+    cell,
     lpParams,
     yieldPlan,
     gateOk,

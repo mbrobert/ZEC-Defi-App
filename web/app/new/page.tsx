@@ -6,7 +6,7 @@ import type { Address } from "viem";
 import { usePublicClient, useSignTypedData, useWriteContract } from "wagmi";
 import { isCollateralSymbol, lpPoolId, type CollateralSymbol } from "@zyo/shared";
 import { BASE_TOKENS, CHAIN_ID, COLLATERAL_ASSETS } from "@/lib/chain";
-import { useAccountRead, useDeployment, useGate, useMarket, useSession } from "@/lib/hooks";
+import { useAccountRead, useDeployment, useForecast, useGate, useMarket, useSession } from "@/lib/hooks";
 import { gateForDeployment } from "@/lib/gate";
 import { useMode } from "@/lib/mode";
 import { fromAtomic } from "@/lib/math";
@@ -66,7 +66,32 @@ function Wizard() {
   }, [mode, state.customWidthBps, state.customDelayHours, state.keeperProtection]);
 
   const presets = presetsFor(market, state.collateral);
-  const review = useMemo(() => deriveReview(state, market, gate), [state, market, gate]);
+  // The forecast at THIS position: the preset's entry HF and the deposit's USD value (live mode asks
+  // the service for the rate after this borrow; demo mode serves the snapshot at the floor).
+  const presetForQuery = presets?.find((p) => p.id === state.ltvPreset);
+  const depositUsdForQuery = (Number(state.amount) || 0) * (market.reserves[state.collateral]?.priceUsd ?? 0);
+  const { forecast: servedForecast } = useForecast({
+    collateral: state.collateral,
+    entryHf: presetForQuery?.entryHf ?? undefined,
+    depositUsd: depositUsdForQuery > 0 ? depositUsdForQuery : undefined,
+  });
+  // W3-LOW-3 again: a direct-venue pool is only openable where the deployment has the direct venue.
+  const forecast = useMemo(
+    () => (deployment?.lpVenueDirect ? servedForecast : { ...servedForecast, cells: servedForecast.cells.filter((c) => c.pool.protocol !== "DIRECT") }),
+    [servedForecast, deployment]
+  );
+  const review = useMemo(() => deriveReview(state, market, gate, forecast), [state, market, gate, forecast]);
+
+  // The acknowledgment names THIS position's numbers; any change to them un-ticks it.
+  const ackKey = `${state.collateral}|${state.amount}|${state.ltvPreset}|${state.strategy?.kind ?? ""}|${state.strategy?.kind === "lp" ? `${state.strategy.entry.poolId}/${state.strategy.entry.setting}` : ""}|${state.customWidthBps ?? ""}|${state.customDelayHours ?? ""}`;
+  const [ackFor, setAckFor] = useState<string | null>(null);
+  useEffect(() => {
+    if (state.acknowledged && ackFor !== ackKey) setState((st) => ({ ...st, acknowledged: false }));
+  }, [ackKey, ackFor, state.acknowledged]);
+  const acknowledge = (v: boolean) => {
+    setAckFor(v ? ackKey : null);
+    setState((st) => ({ ...st, acknowledged: v }));
+  };
 
   const balance = useMemo(() => {
     const raw = account?.walletBalances[state.collateral];
@@ -118,7 +143,7 @@ function Wizard() {
       case 2:
         return !!state.strategy;
       case 3:
-        return !!review && review.problems.length === 0 && calls.length > 0;
+        return !!review && review.problems.length === 0 && calls.length > 0 && state.acknowledged;
       default:
         return false;
     }
@@ -208,9 +233,9 @@ function Wizard() {
             />
           )}
           {step === 2 && (
-            <StrategyStep gate={gate} state={state} ltvBps={review?.preset.ltvBps ?? 0} borrowAprPct={market.usdcBorrowAprPct} onChange={patch} unsupportedVenues={deployment?.unsupportedVenues ?? []} />
+            <StrategyStep forecast={forecast} state={state} ltvBps={review?.preset.ltvBps ?? 0} borrowAprPct={market.usdcBorrowAprPct} onChange={patch} unsupportedVenues={deployment?.unsupportedVenues ?? []} />
           )}
-          {step === 3 && review && <ReviewStep state={state} d={review} calls={calls} marketSource={source} />}
+          {step === 3 && review && <ReviewStep state={state} d={review} calls={calls} marketSource={source} onAcknowledge={acknowledge} />}
           {step === 4 && review && planInput && (
             <SignStep calls={calls} mode={s.mode} flowKind="open" summary={summary} owner={s.address} demoAccount={DEMO_ACCOUNT} run={run} />
           )}
@@ -247,7 +272,7 @@ function Wizard() {
             <p className="mt-2 text-[13px] text-oil-ink3">Venue read unavailable for {state.collateral}.</p>
           )}
           <p className="mt-3 text-[11.5px] text-oil-ink3">
-            {source === "live" ? "Aave read live" : `Snapshot ${market.readAt.slice(0, 10)}`} · gate {gate.source} · {s.mode === "demo" ? "demo wallet" : "your wallet"} · {mode} mode
+            {source === "live" ? "Aave read live" : `Snapshot ${market.readAt.slice(0, 10)}`} · forecast {forecast.source} · {s.mode === "demo" ? "demo wallet" : "your wallet"} · {mode} mode
           </p>
         </aside>
       </div>

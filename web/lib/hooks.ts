@@ -10,8 +10,9 @@ import { useMemo } from "react";
 import type { Address } from "viem";
 import { useAccount, usePublicClient } from "wagmi";
 import { CHAIN_ID } from "./chain";
-import { DEMO_KEEPER_GRANT, DEMO_MARKET, DEMO_OWNER, DEMO_PENDING_VENUES, demoGate } from "./demo";
+import { DEMO_KEEPER_GRANT, DEMO_MARKET, DEMO_OWNER, DEMO_PENDING_VENUES, demoForecast, demoGate } from "./demo";
 import { ENV, contractsConfigured } from "./env";
+import { fetchForecast, type ForecastQuery, type ForecastView } from "./forecast";
 import { fetchGate, type GateView } from "./gate";
 import { fetchIndexedAccount, type IndexedAccount } from "./indexer";
 import { readAccount, readDeployment, readKeeperGrant, readMarket, readPendingVenues, type AccountRead, type MarketRead, type PendingVenueRead } from "./reads";
@@ -82,6 +83,36 @@ export function useGate() {
   });
   const gate = q.data ?? demoGate();
   return { gate, loading: q.isFetching, source: gate.source };
+}
+
+/**
+ * The forecast at the position the user is building (collateral, entry HF, deposit size). Live
+ * mode asks the service and falls back to the demo snapshot — LABELLED demo, so the wizard says
+ * which it is; demo mode uses the snapshot, evaluated at the registry floor with no deposit (the
+ * wizard re-prices user net at the chosen LTV from the cell's numbers).
+ */
+export function useForecast(q: ForecastQuery) {
+  const { offline } = useSession();
+  const key = [q.collateral ?? "", q.entryHf ?? "", q.depositUsd ?? ""].join("|");
+  const fq = useQuery<ForecastView>({
+    queryKey: ["forecast", offline, key],
+    queryFn: async () => {
+      if (offline) return demoForecast();
+      try {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 6_000);
+        const v = await fetchForecast(ENV.yieldUrl, q, ctrl.signal);
+        clearTimeout(t);
+        return v;
+      } catch {
+        return demoForecast();
+      }
+    },
+    placeholderData: demoForecast(),
+    refetchInterval: offline ? false : 120_000,
+  });
+  const forecast = fq.data ?? demoForecast();
+  return { forecast, loading: fq.isFetching, source: forecast.source };
 }
 
 export function useIndexed(owner: Address | undefined, enabled: boolean) {

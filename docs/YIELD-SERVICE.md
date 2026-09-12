@@ -30,6 +30,17 @@ every one refusing to invent data:
    uncalibrated input is a specific refusal reason. Exposed on `/v1/pools`
    (per pool, every setting × collateral) and `/v1/gate` (503 when the rates
    are absent or stale — fail closed).
+   **Since 2026-09-12 (BUILD-PLAN D4) the gate is information.** The same
+   model is served as a forecast on `/v1/forecast` (`src/forecast.ts`): every
+   cell is priced whenever emissions and σ exist — including the cells the
+   gate refuses before pricing — and the borrow comparison is reported as
+   `clearsBorrow`, never enforced; the only refusals are the safety list
+   (`ForecastRefusal`: floor, unfundable borrow, stale rates, paused or
+   inactive reserve, disabled asset, the venue's LTV). The borrow rate after
+   the user's own borrow comes from the strategy's curve, read live with the
+   rates (`sources/aave.ts`, `AaveBorrowCurve`). `samples/demo-forecast.json`
+   is `evaluateForecast()`'s own output on the recorded inputs
+   (`scripts/gen-demo-forecast.mjs`, pinned by `test/demo-forecast.test.ts`).
 4. **Empirical bands** — the flagship: instead of quoting one modeled APY,
    backtest the engine's OWN on-chain position history and serve the
    distribution of what real positions actually kept (methodology
@@ -37,7 +48,7 @@ every one refusing to invent data:
    model everywhere in the UI.
 
 Zero runtime dependencies (the keeper in `agent/` uses viem; this service does not), plain `node:http`, TypeScript,
-131-test offline suite on recorded on-chain fixtures (RPC mocked at the
+146-test offline suite on recorded on-chain fixtures (RPC mocked at the
 JSON-RPC boundary with real chain words).
 
 ## The model (`src/model.ts` — one place; the Python sim and the web pin to it)
@@ -187,7 +198,12 @@ npm run yield                  # serve http://127.0.0.1:8787
 ```
 
 Endpoints: `/healthz`, `/v1/pools`, `/v1/rates`, `/v1/gate[?pool=&setting=&collateral=]`,
-`/v1/band?ltv=0.40&mix=aweth,acbbtc&collateral=cbBTC`. Demo ids are accepted
+`/v1/band?ltv=0.40&mix=aweth,acbbtc&collateral=cbBTC`, and since 2026-09-12
+`/v1/forecast[?collateral=&entryHf=&deposit=&pool=&setting=]` — the forecast
+(`src/forecast.ts`): every pool × setting at the chosen entry health factor, both
+LP-net forms and their gap, the break-evens, the liquidation drawdown, the borrow
+rate after this borrow on Aave's live curve, user net, the safety refusals and the
+disclosure ids; never 503, a malformed query is a 400. Demo ids are accepted
 (`aweth acbbtc wbtc link lst stab aero abtc zec`).
 
 ## Security & key handling

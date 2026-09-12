@@ -52,6 +52,14 @@ export interface ReserveParams {
   supplyAprPct: number;
   /** Aave oracle price, USD. */
   priceUsd: number;
+  /**
+   * What the reserve can lend right now, in the asset's own units: getReserveData's totalAToken −
+   * totalVariableDebt (Aave's virtual balance to within the treasury accrual, < 0.001 % on
+   * 2026-09-12 — docs/VERIFIED-BASE-FACTS.md Addendum 13). For USDC this is dollars, and the wizard
+   * refuses a borrow above it by name (BUILD-PLAN-2026-09-12 §2 item 2). Absent on a snapshot that
+   * predates the field.
+   */
+  availableUnits?: number;
 }
 
 export interface MarketRead {
@@ -304,9 +312,16 @@ export function decodeReserve(symbol: CollateralSymbol | "USDC", cfg: unknown, d
     bigint, bigint, bigint, bigint, bigint, boolean, boolean, boolean, boolean, boolean,
   ];
   if (decimals === 0n && lt === 0n && ltv === 0n) return null;
+  const totalAToken = data[2] as bigint;
+  const totalVariableDebt = data[4] as bigint;
   const liquidityRate = data[5] as bigint;
   const variableBorrowRate = data[6] as bigint;
   const priceUsd = typeof price === "bigint" ? baseUnitsToUsd(price) : NaN;
+  // Debt above supply is not a state Aave can be in; read it as "unknown", never as a negative pool.
+  const availableUnits =
+    typeof totalAToken === "bigint" && typeof totalVariableDebt === "bigint" && totalAToken >= totalVariableDebt
+      ? fromAtomic(totalAToken - totalVariableDebt, Number(decimals))
+      : undefined;
   return {
     symbol,
     liquidationThresholdBps: Number(lt),
@@ -319,6 +334,7 @@ export function decodeReserve(symbol: CollateralSymbol | "USDC", cfg: unknown, d
     variableBorrowAprPct: rayToAprPct(variableBorrowRate),
     supplyAprPct: rayToAprPct(liquidityRate),
     priceUsd,
+    ...(availableUnits === undefined ? {} : { availableUnits }),
   };
 }
 

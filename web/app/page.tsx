@@ -20,7 +20,7 @@ const PATHS = [
     href: "/new",
     kicker: "I hold cbBTC or WETH on Base",
     title: "Borrow USDC, deploy it",
-    body: "Supply collateral on Aave v3, borrow USDC at the live rate, and deploy into an Aerodrome pool that clears the yield gate — or just hold the USDC.",
+    body: "Supply collateral on Aave v3, borrow USDC at the live rate, read the forecast for every Aerodrome pool — both models, the loss from the price moving, the break-evens — and deploy into one, or just hold the USDC.",
     cta: "Open a position",
   },
   {

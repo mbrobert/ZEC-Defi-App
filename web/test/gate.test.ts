@@ -133,7 +133,7 @@ test("verdictsFor sorts best lpNet first; findVerdict matches pool × setting ×
   assert.equal(findVerdict(v, { poolId: "aero-usdc-weth-5", setting: "working", collateral: "WETH" }), undefined);
 });
 
-test("demo gate = the yield model's verdict: NOTHING clears at 4.5174%; cbZEC pool refused below the borrow (its gauge is voted since 2026-09-12) or for no σ; cbZEC collateral disabled", () => {
+test("demo gate = the yield model's own output: NOTHING beats the borrow on both models at 4.5174% (information since A3, not a block); cbZEC pool refused below the borrow (its gauge is voted since 2026-09-12) or for no σ; cbZEC collateral disabled", () => {
   const g = demoGate();
   assert.equal(g.source, "demo");
   assert.equal(g.borrowAprPct, 4.5174);

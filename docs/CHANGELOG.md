@@ -3,6 +3,36 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-12 (late) — A3: the yield gate becomes a forecast (BUILD-PLAN D4/D5/D7), in two commits
+
+- **The forecast service** (`b849b17`): `GET /v1/forecast` (`services/yield/src/forecast.ts`) prices every
+  pool × setting at the entry health factor the user chose — both LP-net forms and the gap between them, the
+  impermanent-loss drag, the break-evens, user net at the chosen LTV, the drawdown to liquidation, and the
+  borrow rate AFTER this borrow on Aave's live two-slope curve (read every sample with the rates: strategy
+  `0x86AB…bDC5`, optimal usage 90 %, slopes 4.70 % / 10 %, VERIFIED-BASE-FACTS Addendum 13). Unlike the gate
+  it prices cells the gate stops at before the borrow comparison, and it refuses only for safety (the registry
+  floor, a borrow the pool cannot fund, stale rates, a paused or inactive reserve, a disabled asset, the
+  venue's LTV). `/v1/gate` is unchanged. `samples/demo-forecast.json` is the evaluator's own output on the
+  recorded inputs, pinned cell for cell. Yield 131 → **146**.
+- **The site** (this commit): the wizard reads the forecast (`web/lib/forecast.ts`, `useForecast`) and blocks
+  on nothing it says. Simple mode shows every pool at its best setting and names the least-bad one as a loss
+  when it is one; Advanced shows every pool × setting with both numbers and the gap; a card is disabled only
+  by a safety refusal, with the reason. Before any new position — LP, hold or spot — Review carries one
+  sentence the user ticks that names the forecast, the borrow cost and the drawdown for that position; it
+  resets on any change. The liquidity hard-refusal reads `totalAToken − totalVariableDebt` from the same
+  `getReserveData` words the rate comes from (`web/lib/reads.ts`; the snapshot carries the 2026-09-12 figure,
+  24,768,504 USDC). `web/lib/gate.ts` keeps its shape as information; `recommend()` is rebuilt over forecast
+  cells; the "own-market" risk item now states D3 and a "forecast" risk item joins the review list.
+- **The prototypes** (both builds, pinned block still byte-equal): `forecast()` beside the unchanged `gate()`
+  in the shared block, every card open with its forecast sentence, the acknowledgment in both review flows
+  (`#revAck` / `#wizAck`), the empty-menu and "verdict" strings gone, the docs tables re-headed, the
+  generator's comments updated and the block regenerated. The suites assert the new contract: a loss is shown
+  and allowed, safety still refuses by name, the acknowledgment gates signing, the two builds agree on every
+  forecast cell.
+- **Copy**: README "The honest yield forecast", RISKS §14 "Yield forecast and rate drift", YIELD-SERVICE.md.
+  Left on purpose: `MODEL-NUMBERS-2026-09-12.md`'s "No pool × setting clears the gate" is the generated gate
+  record three suites parse; it is re-worded at the next model run.
+
 ## 2026-09-12 (evening) — Cowork's decisions folded in: BUILD-PLAN D1–D7 is the plan of record; the tree reconciled
 
 - **New docs** from the founder's Cowork session: `docs/BUILD-PLAN-2026-09-12.md` (plan of record — §4

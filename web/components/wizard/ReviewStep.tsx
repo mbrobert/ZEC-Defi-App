@@ -3,6 +3,7 @@
 import { ENTRY_HF_FLOOR, FEES } from "@zyo/shared";
 import { fmtHalfWidth } from "@/lib/math";
 import { reasonPlain, reasonText } from "@/lib/gate";
+import { acknowledgmentText, DISCLOSURE_TEXT, type ForecastDisclosureId } from "@/lib/forecast";
 import { rungPlain } from "@/lib/keeper";
 import { KEEPER_GRANT_EXPIRY_DAYS, type PlannedCall } from "@/lib/plan";
 import type { ReviewDerivation, WizardState } from "@/lib/wizard";
@@ -11,16 +12,19 @@ import Disclosures from "@/components/Disclosures";
 import Chip from "@/components/Chip";
 import { useMode } from "@/lib/mode";
 
-export default function ReviewStep({ state, d, calls, marketSource }: { state: WizardState; d: ReviewDerivation; calls: PlannedCall[]; marketSource: "live" | "snapshot" }) {
+export default function ReviewStep({ state, d, calls, marketSource, onAcknowledge }: { state: WizardState; d: ReviewDerivation; calls: PlannedCall[]; marketSource: "live" | "snapshot"; onAcknowledge?: (v: boolean) => void }) {
   const y = d.yieldPlan;
   const { mode } = useMode();
+  const strategyKind = state.strategy?.kind ?? "hold";
+  const ack = acknowledgmentText({ strategy: strategyKind, collateral: d.asset.symbol, cell: d.cell, borrowAprPct: d.borrowAprPct, drawdownToLiquidationPct: d.loan.liquidationDropPct });
+  const disclosureIds: ForecastDisclosureId[] = d.cell?.disclosures.length ? d.cell.disclosures : ["forecast_not_advice", "borrow_rate_moves", "liquidation_at_chosen_hf"];
 
   return (
     <div className="space-y-5" data-testid="review">
       <div>
         <h2 className="text-[19px]">Review</h2>
         <p className="mt-1 text-[13.5px] text-oil-ink2">
-          Every number below is computed from the venue read ({marketSource === "live" ? "live" : "snapshot"}) and the gate. Nothing is typed in.
+          Every number below is computed from the venue read ({marketSource === "live" ? "live" : "snapshot"}) and the forecast. Nothing is typed in, and nothing here is a promise.
         </p>
       </div>
 
@@ -71,14 +75,20 @@ export default function ReviewStep({ state, d, calls, marketSource }: { state: W
             {d.customWidth && <Row k="Custom width" v={`the model priced ${fmtHalfWidth(d.verdict.rangeWidthBps)} — your ${fmtHalfWidth(d.lpParams.rangeWidthBps)} band has a different impermanent-loss drag that this page does not price`} tone="crit" />}
             <Row k="Price tolerance" v={`±${(state.bandToleranceBps / 100).toFixed(2)}% — the deposit refuses if the pool price has moved further since the quote`} />
             <Row
-              k="Gate (both models must clear)"
+              k="Forecast against the borrow (two models)"
               v={
                 d.gateOk
-                  ? `clears: LP net ${fmtSignedPct(d.verdict.lpNetPct ?? NaN, 2)} and MC net ${d.verdict.mcLpNetPct === null ? "—" : fmtSignedPct(d.verdict.mcLpNetPct, 2)}, both above borrow ${fmtPct(d.verdict.borrowAprPct ?? NaN)}`
-                  : `does NOT clear — ${reasonText(d.verdict.reason)}. ${reasonPlain(d.verdict.reason)}`
+                  ? `beats it on both: LP net ${fmtSignedPct(d.verdict.lpNetPct ?? NaN, 2)} and the stricter model's ${d.verdict.mcLpNetPct === null ? "—" : fmtSignedPct(d.verdict.mcLpNetPct, 2)}, both above borrow ${fmtPct(d.verdict.borrowAprPct ?? NaN)}`
+                  : `does not beat it — ${reasonText(d.verdict.reason)}. ${reasonPlain(d.verdict.reason)}`
               }
               tone={d.gateOk ? "good" : "crit"}
             />
+            {d.cell?.modelGapPts !== null && d.cell?.modelGapPts !== undefined && (
+              <Row k="Gap between the two models" v={`${d.cell.modelGapPts.toFixed(2)} points — the closed form is the optimistic one; the gap is the model's own uncertainty`} tone={Math.abs(d.cell.modelGapPts) > 1 ? "crit" : undefined} />
+            )}
+            {d.cell?.borrowAprAfterPct !== null && d.cell?.borrowAprAfterPct !== undefined && (
+              <Row k="Borrow rate after this borrow (venue curve)" v={`${fmtPct(d.cell.borrowAprAfterPct)} — today's ${fmtPct(d.cell.borrowAprNowPct ?? NaN)} moved by this position's own borrow`} />
+            )}
             {y && (
               <>
                 <Row k="Gross AERO emissions on deployed USDC (model)" v={`${fmtUsd(y.grossEmissionsUsd)}/yr (${fmtPct(d.verdict.emissionsGrossPct ?? NaN, 2)})`} />
@@ -89,7 +99,7 @@ export default function ReviewStep({ state, d, calls, marketSource }: { state: W
                 <Row k="LP net (published closed form)" v={`${fmtUsd(y.lpNetUsd)}/yr (${fmtSignedPct(y.lpNetPct, 2)})`} tone={y.lpNetUsd >= 0 ? "good" : "crit"} />
                 <Row
                   k="LP net (Monte-Carlo form, also charges time out of range)"
-                  v={d.verdict.mcLpNetPct === null ? "not calibrated for this pool at this width — the gate refuses a cell it can only price once" : fmtSignedPct(d.verdict.mcLpNetPct, 2)}
+                  v={d.verdict.mcLpNetPct === null ? "not calibrated for this pool at this width — the closed form's number stands alone and unchecked" : fmtSignedPct(d.verdict.mcLpNetPct, 2)}
                   tone={d.verdict.mcLpNetPct === null ? "crit" : d.verdict.mcLpNetPct >= 0 ? "good" : "crit"}
                 />
                 <Row k="Borrow cost" v={`−${fmtUsd(y.borrowCostUsd)}/yr`} />
@@ -113,6 +123,22 @@ export default function ReviewStep({ state, d, calls, marketSource }: { state: W
         ) : (
           <Row k="Strategy" v="not chosen" tone="crit" />
         )}
+      </div>
+
+      <div className="card p-5" data-testid="forecast-acknowledgment">
+        <h3 className="text-[15px]">Before you continue</h3>
+        <ul className="mt-2 space-y-1.5 text-[13px] text-oil-ink2" data-testid="forecast-disclosures">
+          {disclosureIds.map((id) => (
+            <li key={id} data-disclosure={id}>
+              {DISCLOSURE_TEXT[id]}
+            </li>
+          ))}
+        </ul>
+        <label className="mt-3 flex cursor-pointer items-start gap-2.5 text-[13.5px] text-oil-ink">
+          <input type="checkbox" className="mt-1 accent-brass" checked={state.acknowledged} onChange={(e) => onAcknowledge?.(e.target.checked)} data-testid="forecast-ack" />
+          <span data-testid="forecast-ack-text">{ack}</span>
+        </label>
+        {!state.acknowledged && <p className="mt-2 text-[12px] text-oil-ink3">Continue to sign stays off until this is ticked. It resets if you change anything above.</p>}
       </div>
 
       <Disclosures scope="review" open />

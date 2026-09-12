@@ -38,7 +38,7 @@ const fuzzSimple = ([seed, N]) => {
   const numsOk = s => { const p = s.pos; if (p) for (const k of ["coll", "debt", "lp", "lpBasis", "emis", "idle", "interest", "claimed", "ageS"]) if (!fin(p[k]) || p[k] < 0) return "pos." + k + "=" + p[k]; for (const k of ["cbBTC", "WETH", "cbZEC"]) if (!fin(s.price[k]) || s.price[k] <= 0) return "price." + k; if (!fin(s.borrowPct) || s.borrowPct < 0 || s.borrowPct > 100) return "borrowPct"; if (!fin(s.mult) || s.mult < 1) return "mult"; if (!fin(s.sel.amount) || s.sel.amount < 0) return "sel.amount"; if (![30, 40, 50].includes(s.sel.ltv)) return "sel.ltv"; return null; };
   for (let i = 0; i < N; i++) {
     const s = o.S; const before = s.pos ? JSON.parse(JSON.stringify(s.pos)) : null; const flowBefore = s.flow ? { ...s.flow } : null; const credBefore = s.credited.length;
-    const kind = pick(["connect", "connect", "disconnect", "selectAsset", "selectLtv", "selectPool", "setAmount", "setAmount", "beginDeposit", "beginDeposit", "flowAdvance", "flowAdvance", "flowAdvance", "flowComplete", "flowComplete", "flowDismiss", "tick", "tick", "tick", "setPrice", "setPrice", "setPrice", "withdraw", "claim", "setRange", "sim", "sim", "setBorrowRate", "setMult", "loadExample", "clearExample", "renewGrant", "revokeGrant", "swapReverted", "gateProbe", "storeRoundTrip"]);
+    const kind = pick(["connect", "connect", "disconnect", "selectAsset", "selectLtv", "selectPool", "setAmount", "setAmount", "ack", "ack", "beginDeposit", "beginDeposit", "flowAdvance", "flowAdvance", "flowAdvance", "flowComplete", "flowComplete", "flowDismiss", "tick", "tick", "tick", "setPrice", "setPrice", "setPrice", "withdraw", "claim", "setRange", "sim", "sim", "setBorrowRate", "setMult", "loadExample", "clearExample", "renewGrant", "revokeGrant", "swapReverted", "gateProbe", "storeRoundTrip"]);
     byType[kind] = (byType[kind] || 0) + 1;
     let a;
     switch (kind) {
@@ -48,6 +48,7 @@ const fuzzSimple = ([seed, N]) => {
       case "selectLtv": a = { type: "selectLtv", ltv: pick([30, 40, 50, 60, 0, -10, NaN, 45]) }; break;
       case "selectPool": a = { type: "selectPool", pool: pick(o.MODEL.pools.map(p => p.id).concat(["bogus"])) }; break;
       case "setAmount": a = { type: "setAmount", amount: pick([0.001, 0.02, 0.05, 0.3, 1, 12, 0.6, 0, -1, NaN, Infinity, 1e308, 1e-9, rnd()]) }; break;
+      case "ack": a = { type: "ack", on: rnd() < 0.75 }; break;
       case "beginDeposit": a = { type: "beginDeposit" }; break;
       case "flowAdvance": a = { type: "flowAdvance", id: s.flow && rnd() < 0.85 ? s.flow.id : Math.floor(rnd() * 1e9) }; break;
       case "flowComplete": a = { type: "flowComplete", id: s.flow && rnd() < 0.85 ? s.flow.id : (s.credited.length && rnd() < 0.5 ? pick(s.credited) : Math.floor(rnd() * 1e9)) }; break;
@@ -83,6 +84,16 @@ const fuzzSimple = ([seed, N]) => {
         }
         const mc = o.mcLpNetPct(pool, w, s.mult);
         if (mc !== null && !fin(mc)) fail("mcLpNetPct not finite", mc);
+        /* The forecast (D4/D5): refuses only for safety; prices whatever σ allows; `both` means both forms beat the borrow. */
+        let f; try { f = o.forecast(pool, s.borrowPct, w, s.mult, opts); } catch (e) { fail("forecast threw", e.message); n++; continue; }
+        if (f.allowed === o.FORECAST_SAFETY.includes(f.reason)) fail("forecast: allowed disagrees with the safety list", { reason: f.reason, allowed: f.allowed });
+        if (!f.allowed && (f.priced || !f.refusal)) fail("forecast: a refused cell must be unpriced and name its refusal", { reason: f.reason });
+        if (f.allowed && f.priced && !(fin(f.net))) fail("forecast: priced without a finite net");
+        if (f.allowed && !f.priced && !(typeof f.unpriced === "string" && KNOWN_REASONS.includes(f.unpriced))) fail("forecast: unpriced without a known reason", { unpriced: f.unpriced });
+        if (f.allowed && pool.sigma != null && !(g.reason === "emissions_implausible" || g.reason === "insufficient_samples") && !f.priced) fail("forecast: a σ cell with a trustworthy reading must be priced", { reason: g.reason });
+        if (f.clears.both === true && !(f.net > s.borrowPct && f.mcNet > s.borrowPct)) fail("forecast: both without both forms above the borrow");
+        if (g.ok && f.clears.both !== true) fail("forecast: the gate's ok must read as beating the borrow on both", { reason: g.reason });
+        if (!(typeof o.forecastWhy(f) === "string" && o.forecastWhy(f).length > 20 && !/^[a-z_]+$/.test(o.forecastWhy(f)))) fail("forecast: no plain sentence");
         const leg = o.swapLegFor(pool, Math.max(0, rnd() * 1e5), pick([0, 1, 50, 100, 500, 501, 10000, -1]));
         if (leg.minOut !== null) { if (!(leg.minOut > 0) || leg.minOut > leg.quotedOut + 1e-9) fail("swap: floor outside (0, quote]", leg); }
         else if (leg.legUsd > 0 && leg.maxSlippageBps >= 0 && leg.maxSlippageBps <= o.CONTRACTS.swap.maxSlippageBpsCap) fail("swap: no floor on a live quote", leg);
