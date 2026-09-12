@@ -96,6 +96,21 @@ liquidity provision; EIP = Ethereum Improvement Proposal.
   1.407), the funded sale at HF 1.16 landing inside the cap with the released ZEC collected to the unit,
   observe-only refusing by name. Not deployed; no keeper runs anywhere.
 
+## 2026-09-12 — Halmos runs: the account's four grant properties hold (4 / 4); the harness had failed on Foundry's dynamic test linking, not on a property
+
+- On `73598d9` the three contracts jobs, `contracts-build` and both seam jobs were green on the runner
+  (unit 250 / 0 / 0, audit-regressions 136 / 0 / 0, invariant 2 / 0 / 0; `nproc` 2, 7.8 GiB — the diagnosis
+  confirmed), Slither 298 results / no High, Aderyn 0 High, and halmos ran its first step: **failed in
+  `setUp()`** with `Unsupported cheat code: deployCode(string,bytes)`. Foundry 1.8 defaults
+  `dynamic_test_linking` to true, which compiles every `new X(...)` inside a test contract into
+  `vm.deployCode` (the `VmContractHelper*` artifacts); halmos has no such cheat. Bisected locally with
+  three throw-away harnesses and halmos's own call stack. `[profile.halmos] dynamic_test_linking = false`
+  (`contracts/foundry.toml`); with it `AccountGrantHalmos` is **4 passed / 0 failed** locally (halmos
+  0.3.3, `--loop 4`, 33 paths, 0.9 s) — the grant budget cannot be exceeded through any calldata shape the
+  parser recognises, and what it cannot budget is refused — and `RouterBalanceHalmos` (bounded `--loop 3`)
+  is **1 passed / 0 failed**, 293 paths, 33 s (`AUDIT-2026-09-12.md`, "Halmos"). The run of this commit is
+  the first CI execution of both.
+
 ## 2026-09-12 — CI: the contracts suite as three jobs, halmos on its own profile — the runner is 2 cores / 7 GB and a whole-tree via-IR compile never finishes on it
 
 - The previous entry's theory (partial recompiles) was wrong: with the exact-key cache the cold compile of

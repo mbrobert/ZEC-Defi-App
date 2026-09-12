@@ -41,6 +41,11 @@ base_sepolia = "${BASE_SEPOLIA_RPC_URL}"
 # inherits from the default profile.
 [profile.halmos]
 test = "test/halmos"
+# Foundry 1.8 defaults `dynamic_test_linking` to true (`forge config` on the default profile: True),
+# which compiles every `new X(...)` in a test contract into `vm.deployCode("X", args)`; halmos has no
+# deployCode cheat and its first CI run failed in setUp() on exactly that ("Unsupported cheat code:
+# deployCode(string,bytes)", 2026-09-12). Off here, the harnesses compile with plain CREATE.
+dynamic_test_linking = false
 
 [profile.local]
 solc = "/root/.solc/solc-0.8.24"
