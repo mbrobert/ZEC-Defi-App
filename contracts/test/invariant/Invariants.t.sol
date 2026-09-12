@@ -105,7 +105,9 @@ contract InvariantsTest is Fixture {
     /// `unwind(ids, repay max, withdraw max)`; on an account with collateral on both venues the
     /// withdraw leg now visits EVERY venue holding the account's collateral, so after that one call,
     /// funded with every book's debt, no venue the registry names for cbBTC still holds any — and
-    /// the call never reverts on such an account.
+    /// the call never reverts on such an account, with one named exception: an id both LP venues
+    /// claim is W3-LOW-1's `AmbiguousPositionId`, which the probe resolves the documented way (the
+    /// direct twin closed through its own venue) before asking again (`g_singleCloseAmbiguous`).
     function invariant_singleCloseClearsEveryBook() public view {
         assertFalse(
             handler.g_singleCloseUnexpected(),

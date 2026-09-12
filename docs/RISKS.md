@@ -422,7 +422,10 @@ what the caller sees. The `unwind` selector (`0x08435e75`), `UnwindParams`
 and the keeper's grant did not move; the keeper's plans keep `withdrawAmount
 = 0` and its receipts carry no `VenueWithdrawn`. The invariant flipped:
 `invariant_singleCloseClearsEveryBook` asserts a two-book account funded to
-cover every book strands nothing and never reverts (256 runs × depth 40,
+cover every book strands nothing and never reverts — with one named
+exception since wave 3: an id both LP venues claim is W3-LOW-1's
+`AmbiguousPositionId`, which the probe resolves the documented way (the direct
+twin closed through its own venue) before asking again (256 runs × depth 40,
 10,240 calls, 0 reverts); `VenueSwitch.t.sol` M1m–M1q pin one Close clearing
 both venues, the per-venue gate, the fixed-amount rule, the Aave-only shape
 plus its one event, and the unchanged selector; the web's Close says "your
@@ -786,9 +789,11 @@ Chainlink price Aave uses, and refuses a pool more than 3 % off the oracle
 (`web/lib/quote.ts`); the keeper builds its quote from the same live pool price
 (`agent/src/dispatch/quote.ts`). The cbZEC/USDC leg (2026-09-11) goes through
 `SlipstreamPoolSwapAdapter`, the pool's own `swap`: the same quote-plus-capped-
-tolerance floor, but checked against the account's BALANCE DELTA rather than
-a return value, with a partial fill refused by name and the callback accepting
-only the bound pool while a swap is in flight; the venue's own to-ratio swap on
+tolerance floor, checked against the account's BALANCE DELTA, with a partial
+fill refused by name and the callback accepting only the bound pool while a
+swap is in flight; since the wave-3 W3-LOW-6 fix `AerodromeSwapAdapter` measures
+the delta the same way (its floor used to be checked on the SwapRouter's return
+value while its NatSpec claimed otherwise); the venue's own to-ratio swap on
 open takes its tolerance from the caller's band, capped at the same 5 %.
 
 **Does not.** The quote is still caller-supplied: a dishonest quote still gives

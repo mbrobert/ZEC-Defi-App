@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Peripheral} from "../account/Peripheral.sol";
 import {Call} from "../interfaces/IOilskinAccount.sol";
 import {ISwapAdapter} from "../interfaces/ISwapAdapter.sol";
@@ -63,8 +64,10 @@ contract AerodromeSwapAdapter is ISwapAdapter, Peripheral {
 
     /// @inheritdoc ISwapAdapter
     /// @dev Invariant: recipient = calling account; the floor is `minOutFor(...)` and is compared to
-    ///      the amount the account actually received, so a router that lies about its return value
-    ///      does not help; the allowance is exact and reset; a deadline is mandatory.
+    ///      the amount the account ACTUALLY received — its `tokenOut` balance delta across the call
+    ///      — so a router that lies about its return value does not help (until wave 3's W3-LOW-6
+    ///      the comparison was on the return value, and this sentence was not true); the allowance
+    ///      is exact and reset; a deadline is mandatory.
     function swap(
         address tokenIn,
         address tokenOut,
@@ -93,7 +96,8 @@ contract AerodromeSwapAdapter is ISwapAdapter, Peripheral {
             amountOutMinimum: minOut,
             sqrtPriceLimitX96: 0
         });
-        bytes memory ret = _approveCallReset(
+        uint256 outBefore = IERC20(tokenOut).balanceOf(msg.sender);
+        _approveCallReset(
             tokenIn,
             address(ROUTER),
             amountIn,
@@ -104,7 +108,10 @@ contract AerodromeSwapAdapter is ISwapAdapter, Peripheral {
                 callback: false
             })
         );
-        amountOut = abi.decode(ret, (uint256));
+        // What the account holds now minus what it held before is the swap's output; the router's
+        // return value is not consulted (W3-LOW-6).
+        uint256 outAfter = IERC20(tokenOut).balanceOf(msg.sender);
+        amountOut = outAfter > outBefore ? outAfter - outBefore : 0;
         if (amountOut < minOut) revert InsufficientOutput(amountOut, minOut);
         emit Swapped(msg.sender, tokenIn, tokenOut, amountIn, amountOut, minOut);
     }

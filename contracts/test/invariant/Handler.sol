@@ -105,6 +105,9 @@ contract Handler is Test {
     uint256 public g_singleCloseProbes;
     uint256 public g_singleCloseTwoBook;
     uint256 public g_singleCloseStranded;
+    /// Two-book closes that first met W3-LOW-1's `AmbiguousPositionId` and were resolved the
+    /// documented way (the direct twin closed through its own venue, then asked again).
+    uint256 public g_singleCloseAmbiguous;
     bool public g_singleCloseUnexpected;
     uint256 public g_calls;
     /// Direct venue (W3-MED-3): opens that landed staked in the gauge, owner closes, keeper unwinds.
@@ -632,7 +635,23 @@ contract Handler is Test {
             withdrawAmount: type(uint256).max,
             deadline: block.timestamp + 1
         });
-        (ok,) = _exec(address(router), abi.encodeCall(StrategyRouter.unwind, (u)));
+        bytes memory data = abi.encodeCall(StrategyRouter.unwind, (u));
+        bytes memory ret;
+        (ok, ret) = _exec(address(router), data);
+        // Wave 3, W3-LOW-1: an id BOTH venues claim (the engine's and the NPM's counters are
+        // independent, and both mocks start at 1) is refused by name, `AmbiguousPositionId(id)`;
+        // the documented resolution is the venue's own `close` on the twin, and the probe follows
+        // it — closes the direct twin through the direct venue, then asks the router again.
+        for (uint256 hop = 0; !ok && hop < 3 && bytes4(ret) == StrategyRouter.AmbiguousPositionId.selector; hop++) {
+            g_singleCloseAmbiguous++;
+            uint256 twin;
+            assembly {
+                twin := mload(add(ret, 36))
+            }
+            (bool closed,) = _exec(address(directVenue), abi.encodeCall(ILpVenue.close, (twin, _bandDirect())));
+            if (!closed) return (true, false, false);
+            (ok, ret) = _exec(address(router), data);
+        }
         if (!ok) return (true, false, false);
         // Debt cleared everywhere (the repay leg reaches every book) but collateral left on a
         // venue the withdraw leg did not visit: that would be the strand slice D recorded.

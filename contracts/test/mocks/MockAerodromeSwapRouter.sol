@@ -21,9 +21,17 @@ contract MockAerodromeSwapRouter is IAerodromeSwapRouter {
     }
 
     mapping(address => mapping(address => Rate)) public rates;
+    /// @dev Basis points of `amountOut` the router RETURNS but does not PAY — a router that lies
+    ///      about what it delivered (wave 3, W3-LOW-6). The verified SwapRouter does not; a floor
+    ///      checked on a return value would not know.
+    uint256 public shortPayBps;
 
     function setRate(address tokenIn, address tokenOut, uint256 num, uint256 den) external {
         rates[tokenIn][tokenOut] = Rate(num, den);
+    }
+
+    function setShortPayBps(uint256 bps) external {
+        shortPayBps = bps;
     }
 
     function quote(address tokenIn, address tokenOut, uint256 amountIn) public view returns (uint256) {
@@ -41,6 +49,6 @@ contract MockAerodromeSwapRouter is IAerodromeSwapRouter {
         amountOut = quote(p.tokenIn, p.tokenOut, p.amountIn);
         if (amountOut < p.amountOutMinimum) revert TooLittleReceived();
         IERC20(p.tokenIn).safeTransferFrom(msg.sender, address(this), p.amountIn);
-        IERC20(p.tokenOut).safeTransfer(p.recipient, amountOut);
+        IERC20(p.tokenOut).safeTransfer(p.recipient, amountOut - (amountOut * shortPayBps) / 10_000);
     }
 }

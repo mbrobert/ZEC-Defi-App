@@ -142,7 +142,9 @@ invariant, and re-run in the fix round at 1,500 × 120 (180,000 calls each,
    (`invariant_userCanAlwaysExitViaRouter`), **the repay reaches every book**
    (`invariant_repayReachesEveryBook`), and since 2026-09-11 **one Close
    clears every book** — a two-book account funded to cover every book strands
-   no collateral and the call never reverts (`invariant_singleCloseClearsEveryBook`).
+   no collateral and the call never reverts (`invariant_singleCloseClearsEveryBook`;
+   the one named exception, W3-LOW-1's `AmbiguousPositionId` on an id both LP venues
+   claim, the probe resolves the documented way before asking again).
 
 Plus `invariant_callSummary` (coverage reporting only) and
 `test_handlerPathsAreLive` (asserts every handler path is reachable, so none of

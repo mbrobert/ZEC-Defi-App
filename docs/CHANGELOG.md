@@ -29,6 +29,14 @@ liquidity provision; EIP = Ethereum Improvement Proposal.
   account)` (fails closed by name), the position read and card carry it, the Close plan says what is
   forfeited and until when. `audit-regressions/DirectVenuePenalty.t.sol` (4), `plan` and `reads` (+1
   each). ABI 422 → 423.
+- **W3-LOW-6** — `AerodromeSwapAdapter.swap` compares its floor to the account's `tokenOut` balance
+  delta, not the SwapRouter's return value (its NatSpec had claimed the delta all along; a probe on
+  the unfixed adapter showed a router paying 2 % short of its return value passing a 1 % floor).
+  `audit-regressions/SwapAdapterFloor.t.sol` (3); `MockAerodromeSwapRouter.setShortPayBps`. On this
+  run the fuzzer built W3-LOW-1's collision (engine id 1 and Slipstream token 1, both mocks minting
+  from 1) inside `invariant_singleCloseClearsEveryBook`; the probe now follows LOW-1's documented
+  resolution (direct twin closed through its own venue, router asked again) instead of counting the
+  named refusal as a failed Close.
 
 ## 2026-09-11 — Slice H: static analysis and symbolic execution wired into CI; nothing ran locally
 
