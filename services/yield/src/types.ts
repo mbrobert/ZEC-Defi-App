@@ -1,5 +1,5 @@
 /**
- * Yield-service domain types (Base-first v1).
+ * Yield-service domain types (Base module v1).
  *
  * Terminology used throughout (defined once, here):
  *

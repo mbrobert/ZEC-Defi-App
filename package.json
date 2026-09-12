@@ -2,7 +2,7 @@
   "name": "zec-yield-orchestrator",
   "version": "0.1.0",
   "private": true,
-  "description": "Oilskin \u2014 a Base-chain DeFi app for ZEC holders: use cbBTC, WETH or (when a market exists) cbZEC as collateral on Aave v3, borrow USDC, and deploy it into Aerodrome liquidity, with every position owned by the user's own smart account.",
+  "description": "Oilskin — a chain-agnostic, ZEC-holder-centric DeFi app. Base module: cbBTC, WETH or cbZEC as collateral on Aave v3 (or a Morpho Blue cbZEC/USDC market), borrow USDC, deploy it into Aerodrome liquidity, every position owned by the user's own smart account. Solana module (designed, not built): bridged ZEC on Kamino's ZCASH market, USDC borrowed, the same ladder run by an Anchor program + PDA the user's wallet owns. A loan never crosses a chain.",
   "workspaces": [
     "packages/shared",
     "agent",

@@ -5,13 +5,30 @@ override convenience every time.
 
 ## What this is
 
-Oilskin: a Base-chain DeFi app for ZEC holders. Users deposit cbBTC, WETH or
-(when a lending market exists) cbZEC into their OWN smart account
-(`OilskinAccount`, EIP-1167 clone, owner = their wallet), borrow USDC on Aave v3,
-and deploy it into Aerodrome Slipstream liquidity through the MaxFi/Snuggle
-engine. A keeper (`agent/`) protects health inside a signed, scoped grant.
+Oilskin: a chain-agnostic, ZEC-holder-centric DeFi app (founder's direction,
+2026-09-11/12: wherever a market for ZEC exists, a ZEC holder can deploy it
+there through Oilskin). Two modules, both built in full — never a "lite"
+notify-only variant:
+
+- **Base module** (this repo today): users deposit cbBTC, WETH or cbZEC into
+  their OWN smart account (`OilskinAccount`, EIP-1167 clone, owner = their
+  wallet), borrow USDC on Aave v3 — or, for cbZEC, on a Morpho Blue
+  cbZEC/USDC market the founder creates (Chainlink ZEC/USD is live on Base) —
+  and deploy it into Aerodrome Slipstream liquidity through the MaxFi/Snuggle
+  engine when the yield gate clears. A keeper (`agent/`) protects health inside
+  a signed, scoped grant.
+- **Solana module** (designed 2026-09-12, no handlers yet): bridged ZEC
+  (NEAR Intents / OmniBridge) as collateral on Kamino's ZCASH market, USDC
+  borrowed, the same ladder run by an Anchor program + PDA the user's wallet
+  owns. Facts in `docs/VERIFIED-SOLANA-FACTS.md`; design in
+  `docs/SOLANA-ARCHITECTURE.md`; direction in `docs/DIRECTION-2026-09-11.md`.
+  No instruction handlers are written until the founder has read the design.
+
+A loan never crosses a chain. Shared across chains: the health ladder, the
+entry rule, the yield-gate math, the copy rules, the one website.
 Nothing is deployed yet. Start with `README.md`, `SETUP.md`,
-`docs/BASE-PIVOT-2026-09.md`, `docs/VERIFIED-BASE-FACTS.md`,
+`docs/DIRECTION-2026-09-11.md`, `docs/BASE-PIVOT-2026-09.md`,
+`docs/VERIFIED-BASE-FACTS.md`, `docs/VERIFIED-SOLANA-FACTS.md`,
 `docs/AUDIT-2026-09-06.md`, `docs/TESTING.md`.
 
 ## Hard rules (never break these)
@@ -54,7 +71,13 @@ Nothing is deployed yet. Start with `README.md`, `SETUP.md`,
 ## Working conventions
 
 - Node ≥ 22, npm workspaces (`packages/shared`, `agent`, `services/yield`,
-  `web`). Build `packages/shared` first; every consumer imports its `dist/`.
+  `web`, `solana`). Build `packages/shared` first; every consumer imports its `dist/`.
+- `solana/` is an Anchor workspace (Rust + Solana CLI + Anchor 1.2.0, installed
+  by the founder per `solana/SETUP.md`); the ladder constants in
+  `solana/programs/oilskin/src/generated/ladder.rs` are generated from
+  `packages/shared` (`node solana/scripts/gen-ladder.mjs`) and pinned by
+  `npm test -w @zyo/solana`. Never commit or read `target/deploy/*.json`,
+  `~/.config/solana/`, or `solana/fixtures/*.json`.
 - Foundry for `contracts/` (solc 0.8.24, via-IR, EVM cancun). Libraries are
   cloned into `contracts/lib/` and are NOT committed (see `SETUP.md`).
 - Before claiming anything is done, run the suite that proves it and quote the

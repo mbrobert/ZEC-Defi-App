@@ -1,4 +1,4 @@
-# Audit status — Base-first v1 (2026-09-06)
+# Audit status — Base module v1 (2026-09-06)
 
 **No external audit has been performed on this code.** What has happened is an
 internal adversarial audit — wave 1, four independent lenses, every Medium+

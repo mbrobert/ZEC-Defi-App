@@ -1,4 +1,4 @@
-# Oilskin Base-first v1 — contract ABI (the seam the keeper and the web encode from)
+# Oilskin Base module v1 — contract ABI (the seam the keeper and the web encode from)
 
 **Source of truth is the compiled artifact, not this page.** `contracts/abi/oilskin-abi.json` is
 generated from `contracts/out` by `node scripts/verify-abi.mjs --write` and carries the full ABI plus

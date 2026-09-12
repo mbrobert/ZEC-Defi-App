@@ -2,7 +2,7 @@
   "name": "@zyo/web",
   "version": "0.2.0",
   "private": true,
-  "description": "Oilskin web — Base-first front end: wallet connect, cbZEC onboarding, leveraged-LP wizard over the user's OilskinAccount, chain-read dashboard, CoW spot.",
+  "description": "Oilskin web — Base module front end: wallet connect, cbZEC onboarding, leveraged-LP wizard over the user's OilskinAccount, chain-read dashboard, CoW spot.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

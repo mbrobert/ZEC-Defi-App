@@ -1,4 +1,21 @@
-# Oilskin — Base-first v1
+# Oilskin — chain-agnostic, ZEC-holder-centric
+
+Wherever a market for ZEC exists, a ZEC holder can deploy it there through
+Oilskin (founder's direction, `docs/DIRECTION-2026-09-11.md`). Two modules under
+one policy layer — the health ladder, the entry rule, the copy rules and the one
+website live in `packages/shared` and `web/`; the account container and the venue
+adapters are built per chain:
+
+- **Base module (v1, this tree):** everything below this paragraph.
+- **Solana module (designed 2026-09-12, no instruction handlers yet):** bridged
+  ZEC on Kamino's ZCASH market, USDC borrowed, the same ladder run by an Anchor
+  program + program-derived account the wallet owns — `docs/VERIFIED-SOLANA-FACTS.md`
+  (read live), `docs/SOLANA-ARCHITECTURE.md` (the design and the founder's open
+  decisions), `solana/` (the scaffold and the localnet harness).
+
+A loan never crosses a chain.
+
+## Base module — v1
 
 Oilskin lets a wallet on Base (Coinbase Wallet, MetaMask, WalletConnect, or any
 EIP-6963 wallet — EIP is an Ethereum Improvement Proposal) deposit **cbBTC or

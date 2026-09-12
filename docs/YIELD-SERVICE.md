@@ -1,6 +1,6 @@
 # The yield service — live Base rates, gauge emissions, the gate, and empirical bands
 
-`services/yield` is the backend behind the app's yield numbers (Base-first
+`services/yield` is the backend behind the app's yield numbers (Base module
 v1, 2026-09-05). Four jobs, every one stamped with a sample timestamp and
 every one refusing to invent data:
 

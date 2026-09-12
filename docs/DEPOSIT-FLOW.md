@@ -1,4 +1,4 @@
-# How a deposit flows — Oilskin v1 (Base-first)
+# How a deposit flows — Oilskin v1 (Base module)
 
 Written 2026-09-07 against the ABI (application binary interface) bundle at
 `contracts/abi/oilskin-abi.json` (327 selectors / topics / errors as of 2026-09-09). **Every box below that names a

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Oilskin yield service (Base-first): live Aave v3 USDC borrow + collateral supply/LT from the PoolDataProvider, Aerodrome gauge emissions per range width, the IL-drag yield gate, and empirical realized-APR bands from the Snuggle engine's on-chain history \u2014 served over a small HTTP API. Zero runtime dependencies by design.",
+  "description": "Oilskin yield service (Base module): live Aave v3 USDC borrow + collateral supply/LT from the PoolDataProvider, Aerodrome gauge emissions per range width, the IL-drag yield gate, and empirical realized-APR bands from the Snuggle engine's on-chain history \u2014 served over a small HTTP API. Zero runtime dependencies by design.",
   "main": "./dist/src/index.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",

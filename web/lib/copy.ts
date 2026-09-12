@@ -1,6 +1,6 @@
 /**
  * Disclosures and risk copy — BASE-PIVOT-2026-09.md §4 item 19, rewritten for
- * the Base-first reality. One list, rendered on Review, the dashboard and the
+ * the Base module's reality. One list, rendered on Review, the dashboard and the
  * footer. Every sentence here is a fact about the code or the venues; nothing
  * claims a protection the contracts do not enforce.
  *

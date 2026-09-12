@@ -1,4 +1,4 @@
-# Verified Base mainnet facts for the Base-first build (read live 2026-09-05 ~01:00 UTC, chain id 8453)
+# Verified Base mainnet facts for the Base module (read live 2026-09-05 ~01:00 UTC, chain id 8453)
 
 Method: `eth_getCode` / `eth_call` against public Base RPCs from a networked sandbox, selectors computed with
 `cast sig`. **Every address below has been confirmed to hold code and to answer the calls stated.** Anything not
