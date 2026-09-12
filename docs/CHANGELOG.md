@@ -3,6 +3,27 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-12 — Slice J: the Base Sepolia rehearsal package, nothing signed
+
+- **Slice J** — `docs/DEPLOYMENTS.md` is the template a testnet deployment fills in (chain id,
+  block, date, deployer / treasury / registry owner and the hand-off state, the eight Oilskin
+  addresses, the five substitutes `deploySubstitutes` prints, the logged tick, the pool id, the tx
+  hashes) and the ONE file everything else reads an address from: `deploy/sepolia/
+  keeper.observe-only.env.example` (no `KEEPER_PRIVATE_KEY` line by design; `CBZEC_ADDRESS` /
+  `AERO_ADDRESS` are the MockB20 / MockERC20 doubles, required on 84532 by name and refused on
+  8453) and `deploy/sepolia/web.env.example` (their `NEXT_PUBLIC_` twins); `scripts/
+  sepolia-postdeploy-check.sh` runs `DEPLOY-SEPOLIA.md` §5.1–§5.4 read-only in one go (exit 2
+  with the reason while the table is empty); `scripts/sepolia-feed-policy.mjs` prints the per-feed
+  staleness bounds the keeper WILL derive, computed by the keeper's own `buildFeedPolicies`
+  against the live Sepolia aggregators — **2,460 s** for BTC/USD and ETH/USD (1,230 s max gap × 2
+  on a 1,200 s heartbeat), **172,848 s** for USDC/USD (daily), at block 46,734,590
+  (`VERIFIED-BASE-FACTS.md` Addendum 11); `web/playwright.sepolia.config.ts` + `web/e2e/
+  sepolia.spec.ts` run the web against the LIVE testnet deployment, no wallet, no yield service,
+  and are **skipped by name** until `DEPLOYMENTS.md` has addresses (3 skipped today; the CI
+  `prototypes` job runs the config); `web/test/sepolia-deployment.test.ts` (+4, web 167 → **171**)
+  pins the parser; `docs/SEPOLIA-REHEARSAL.md` is the one-page proves / cannot-prove / checklist;
+  `DEPLOY-SEPOLIA.md` §6 is now the founder's signed steps only.
+
 ## 2026-09-12 — Slice I: CI that proves what it claims (`c7d90f1`), and what its nightly found (NI-HIGH-1, the commit after it)
 
 - **Slice I** — `.github/workflows/ci.yml` has ten jobs: `shared`, `web` (typecheck + unit with

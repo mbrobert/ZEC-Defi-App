@@ -193,6 +193,12 @@ jobs:
           mkdir -p /tmp/build
           cp services/yield/samples/MODEL-NUMBERS.md /tmp/build/MODEL-NUMBERS.md
           CHROMIUM_PATH="$(node -e "console.log(require('playwright').chromium.executablePath())")" node prototype/test/run-all.mjs
+      # Slice J: the web against a LIVE Base Sepolia deployment. Skips BY NAME (3 skipped, exit 0)
+      # while docs/DEPLOYMENTS.md holds no addresses; the day the table is filled this step starts
+      # `next dev` on 84532 with those addresses and runs the three rehearsal checks for real.
+      - name: Sepolia rehearsal suite (skips by name until DEPLOYMENTS.md has addresses)
+        run: npx playwright test -c playwright.sepolia.config.ts
+        working-directory: web
 
   # Base mainnet at the pinned block: the tests that can only be true against the chain. The RPC is
   # `secrets.BASE_RPC_URL` (never printed; GitHub masks it in logs). Without it every test is

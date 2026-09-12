@@ -777,3 +777,26 @@ product code changed. Everything else passed unchanged.
 Not verified here, still gated: everything Addendum 9 lists — the cbZEC/USDC pool's own mint has
 never executed anywhere (the B20 precompile), and the gauge factory's early-withdraw penalty for
 the cbZEC pool was not read.
+
+## Addendum 11 — slice J, 2026-09-12: the Base Sepolia feeds re-measured, and the bounds the keeper derives from them
+
+Purpose: the per-feed staleness bounds the observe-only keeper will enforce on Base Sepolia,
+computed by the keeper's own `buildFeedPolicies` (`agent/src/engine/feeds.ts`) against the live
+aggregators, before any deployment exists there (`scripts/sepolia-feed-policy.mjs`). Method:
+`https://sepolia.base.org`, read-only, 18:20–18:24 UTC, blocks 46,734,469 → 46,734,590; ten
+historical rounds per feed read with `cast` first (`getRoundData`), then the keeper's six-round
+window through its own code. Nothing was signed.
+
+| Feed (keeper symbol) | Address | Latest at the read | Gaps between the last 10 rounds (s, newest first) | Keeper's 6-round window: max gap → bound (× 2, floor 300) |
+|---|---|---|---|---|
+| BTC / USD (cbBTC) | `0x0FB99723Aee6f420beAD13e6bBB79b7E6F034298` | 77,172.94 at 18:05:32 UTC | 1222, 1230, 542, 1230, 1222, 1220, 1222, 1230, 1212, 1220 | 1,230 → **2,460 s** |
+| ETH / USD (WETH) | `0x4aDC67696bA383F43DD60A9e78F2C97Fbbfc7cb1` | 2,524.98 at 18:13:36 UTC | 1202, 1230, 770, 1222, 1220, 1222, 1222, 1230, 68, 1230 | 1,230 → **2,460 s** |
+| USDC / USD (USDC) | `0xd30e2101a97dcbAeBCBC04F14C3f624E67A35165` | 0.99981758 at 13:32:04 UTC | 86416, 86416, 86424, 86404, 86418, 86402, 86422, 86420, 86414, 86408 | 86,424 → **172,848 s** |
+
+The 1,200-second heartbeat recorded from Chainlink's reference data on 2026-09-07 is what the
+chain shows: consecutive rounds 1,212–1,230 s apart, with deviation-triggered rounds inside the
+window (542 s, 770 s, 68 s). USDC/USD publishes once a day (86,402–86,424 s). None of the three was
+stale against its own bound at the read (ages 1,136 / 652 / 17,544 s). The bounds move a little
+from read to read because the largest gap in the window does; the rule (`max gap × slack`,
+floored) does not. `docs/SEPOLIA-REHEARSAL.md` carries the same table as the rehearsal's
+reference; the keeper logs its own at startup for comparison.
