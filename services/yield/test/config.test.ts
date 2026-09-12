@@ -17,6 +17,11 @@ test("loadConfig: defaults, numeric validation, no NEAR/Rhea knobs remain", () =
   assert.throws(() => loadConfig({ YIELD_PORT: "abc" }), /YIELD_PORT/);
   assert.throws(() => loadConfig({ YIELD_STALE_AFTER_MS: "1" }), /must be ≥/);
   assert.throws(() => loadConfig({ ENGINE_VAULT_ADDRESS: "nope" }), /not an address/);
+  // A4.4: the registry is optional (nothing is deployed yet); when given it must be an address, and it is lower-cased.
+  assert.equal(loadConfig({}).collateralRegistry, undefined);
+  assert.equal(loadConfig({ COLLATERAL_REGISTRY_ADDRESS: "0x5555555555555555555555555555555555555555" }).collateralRegistry, "0x5555555555555555555555555555555555555555");
+  assert.equal(loadConfig({ COLLATERAL_REGISTRY_ADDRESS: "0xABCDEF0000000000000000000000000000000001" }).collateralRegistry, "0xabcdef0000000000000000000000000000000001");
+  assert.throws(() => loadConfig({ COLLATERAL_REGISTRY_ADDRESS: "nope" }), /COLLATERAL_REGISTRY_ADDRESS: not an address/);
   assert.equal(loadConfig({ YIELD_COHORT_WINDOWS: "7, 14,x" }).cohortWindows.join(","), "7,14");
 });
 

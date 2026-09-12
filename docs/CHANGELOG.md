@@ -3,6 +3,18 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-12 (later) — A4.4: the forecast judges the floor the chain enforces (BUILD-PLAN D7 §2b)
+
+- `services/yield/src/sources/registry.ts`: `RegistrySource.entryHfFloor()` reads `CollateralRegistry.entryHfFloorWad()`
+  (one `eth_call`, selector `0xe2baeb4e`) and truncates it to four decimals like every other wad the product reads;
+  a zero, short, sub-1 or failed read throws by name. The server samples it with the rates when
+  `COLLATERAL_REGISTRY_ADDRESS` is set (new, optional — nothing is deployed yet) and `/v1/forecast` judges
+  `entry_hf_below_floor` against it, defaults `entryHf` to it, and says where the number came from:
+  `entryHfFloorSource: "registry" | "shared"` and `entryHfFloorReadAt`. A read that fails keeps the last good
+  one; past `staleAfterMs` the shared constant is served and said, the last read time kept — fail closed on
+  the higher floor, never on a floor the chain may have raised since. `/v1/gate` is unchanged. Yield 146 → **149**.
+- Left: A4.3, both prototypes; the founder's floor number (and the 50 % cap that binds above any floor on Base).
+
 ## 2026-09-12 (later) — A4.2: the risk slider on the site (BUILD-PLAN D7 §2b, the web half)
 
 - **The setting is a health factor.** `web/components/wizard/SettingStep.tsx` is a slider from the lowest

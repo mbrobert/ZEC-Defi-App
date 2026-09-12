@@ -188,6 +188,7 @@ signature in the test suite. After any engine upgrade run
 # .env (repo root, gitignored):
 #   BASE_RPC_URL=…            # any Base RPC url — needed for Aave rates + gauges
 #   BLOCKSCOUT_PRO_API_KEY=…  # optional; enables decoded-transfer receipts + verify-events
+#   COLLATERAL_REGISTRY_ADDRESS=…  # optional; when set, /v1/forecast judges the entry floor from the registry (else shared's, said)
 
 set -a; . ./.env; set +a
 
@@ -204,7 +205,14 @@ Endpoints: `/healthz`, `/v1/pools`, `/v1/rates`, `/v1/gate[?pool=&setting=&colla
 LP-net forms and their gap, the break-evens, the liquidation drawdown, the borrow
 rate after this borrow on Aave's live curve, user net, the safety refusals and the
 disclosure ids; never 503, a malformed query is a 400. Demo ids are accepted
-(`aweth acbbtc wbtc link lst stab aero abtc zec`).
+(`aweth acbbtc wbtc link lst stab aero abtc zec`). Since A4.4 (2026-09-12) the
+floor every cell's `entry_hf_below_floor` is judged against — and the default
+`entryHf` — is the registry's when `COLLATERAL_REGISTRY_ADDRESS` is set and
+`entryHfFloorWad()` was read fresh (`src/sources/registry.ts`, sampled with the
+rates), else the shared constant; `entryHfFloorSource` ("registry" | "shared")
+and `entryHfFloorReadAt` say which and when. A read that fails keeps the last
+good one; past `YIELD_STALE_AFTER_MS` the shared constant is served and said —
+fail closed on the higher floor, never on a floor the chain may have raised.
 
 ## Security & key handling
 

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { ENTRY_HF_FLOOR, poolById } from "@zyo/shared";
+import { ENTRY_HF_FLOOR, hfFromWad, poolById } from "@zyo/shared";
 import {
   aaveBorrowAprAfterPct,
   aaveVariableBorrowAprPct,
@@ -21,6 +21,7 @@ import type { YieldConfig } from "../src/config.js";
 import type { AaveSource } from "../src/sources/aave.js";
 import type { GaugeSource } from "../src/sources/gauges.js";
 import type { GeckoSource } from "../src/sources/gecko.js";
+import type { RegistrySource } from "../src/sources/registry.js";
 import type { EmissionsSample, ForecastCell, ForecastResponse } from "../src/types.js";
 import { borrowCurveFixture, emissionsFixture, mcCalibrationDocFixture, mcCalibrationFixture, NOW_MS, NOW_S, ratesFixture, reserve, volatilityFixture } from "./fixtures/model.js";
 
@@ -183,7 +184,7 @@ test("the slider's ends: the floor is the default, the top is 'borrow nothing', 
   assert.throws(() => evaluateForecast(inputs({ entryHf: MAX_ENTRY_HF + 1 })), RangeError);
   assert.throws(() => evaluateForecast(inputs({ entryHf: 0.5 })), RangeError);
   assert.throws(() => evaluateForecast(inputs({ depositUsd: 0 })), RangeError);
-  assert.equal(evaluateForecast(inputs()).entryHfFloor, ENTRY_HF_FLOOR, "the floor is shared's until A4 reads the registry");
+  assert.equal(evaluateForecast(inputs()).entryHfFloor, ENTRY_HF_FLOOR, "the evaluator's default is shared's; the server passes the registry's when it has read one (the route test below)");
 });
 
 test("evaluateForecastPool: every setting × collateral, in the gate's order", () => {
@@ -238,12 +239,21 @@ async function get(port: number, path: string): Promise<{ status: number; body: 
   const res = await fetch(`http://127.0.0.1:${port}${path}`);
   return { status: res.status, body: await res.json() };
 }
-async function boot(fail = { v: false }) {
+/** A registry whose floor is `floorWad`; `fail` makes the read throw (the server keeps the last good one). */
+function registryStub(floorWad: bigint, c: ReturnType<typeof clock>, fail: { v: boolean } = { v: false }): RegistrySource {
+  return {
+    entryHfFloor: async () => {
+      if (fail.v) throw new Error("rpc down");
+      return { floor: hfFromWad(floorWad), wad: floorWad.toString(), sampledAt: new Date(c.now()).toISOString() };
+    },
+  } as unknown as RegistrySource;
+}
+async function boot(fail = { v: false }, registry: RegistrySource | null = null) {
   const dir = mkdtempSync(join(tmpdir(), "yield-forecast-"));
   writeFileSync(join(dir, "volatility.json"), JSON.stringify(volatilityFixture()));
   writeFileSync(join(dir, "mc-calibration.json"), JSON.stringify(mcCalibrationDocFixture()));
   const c = clock();
-  const srv = new YieldServer(cfg(dir), { gecko: geckoStub, aave: aaveStub(c, fail), gauges: gaugesStub(c), now: c.now });
+  const srv = new YieldServer(cfg(dir), { gecko: geckoStub, aave: aaveStub(c, fail), gauges: gaugesStub(c), registry, now: c.now });
   const http = await srv.start();
   const port = (http.address() as { port: number }).port;
   return { srv, http, port, dir, c, close: async () => { srv.stop(); await new Promise<void>((r) => http.close(() => r())); rmSync(dir, { recursive: true, force: true }); } };
@@ -257,6 +267,8 @@ test("GET /v1/forecast: defaults to the floor, filters by pool/setting/collatera
     const body = all.body as ForecastResponse;
     assert.equal(body.entryHf, ENTRY_HF_FLOOR);
     assert.equal(body.entryHfFloor, ENTRY_HF_FLOOR);
+    assert.equal(body.entryHfFloorSource, "shared", "no registry configured: the deploy-default constant, said");
+    assert.equal(body.entryHfFloorReadAt, null);
     assert.equal(body.borrowAprPct, 4.828);
     assert.equal(body.stale, false);
     assert.ok(body.cells.length > 0);
@@ -273,7 +285,7 @@ test("GET /v1/forecast: defaults to the floor, filters by pool/setting/collatera
     assert.equal(c.collateralPriceUsd, 115_000, "read from the live sample, never typed");
     assert.equal(c.liquidationPriceUsd, Math.round((115_000 / 1.3) * 10_000) / 10_000);
     assert.equal(c.userNetBorrowBasis, "after");
-    assert.deepEqual(c.refusals, ["entry_hf_below_floor"], "1.30 is under the 1.55 floor until A4 moves it");
+    assert.deepEqual(c.refusals, ["entry_hf_below_floor"], "1.30 is under the shared 1.55 floor this server runs without a registry; with one it is judged against the chain's (the next test)");
     assert.equal(c.lpPriced, true);
     // Malformed queries are 400s, never a guess.
     for (const q of ["entryHf=0.9", "entryHf=abc", "entryHf=1001", "deposit=-1", "deposit=0", "pool=nope", "setting=nope", "collateral=DOGE"]) {
@@ -314,5 +326,40 @@ test("GET /v1/forecast with no rates or stale rates still answers 200: the refus
     assert.equal((r.body as ForecastResponse).stale, true);
   } finally {
     await b2.close();
+  }
+});
+
+test("GET /v1/forecast with a registry (A4.4): the floor is the chain's, said so; 1.30 on cbBTC is allowed at a 1.25 floor; a read that fails past staleness falls back to shared's and says so, with the last read time kept", async () => {
+  const fail = { v: false };
+  const c0 = clock();
+  const b = await boot({ v: false }, registryStub(1_250_000_000_000_000_000n, c0, fail));
+  try {
+    const first = await get(b.port, "/v1/forecast?collateral=cbBTC&entryHf=1.3&pool=acbbtc&setting=sheltered&deposit=250000");
+    assert.equal(first.status, 200);
+    const body = first.body as ForecastResponse;
+    assert.equal(body.entryHfFloor, 1.25);
+    assert.equal(body.entryHfFloorSource, "registry");
+    assert.ok(body.entryHfFloorReadAt, "the read time is carried");
+    const cell = body.cells.find((x) => x.collateral === "cbBTC")!;
+    assert.deepEqual(cell.refusals, [], "1.30 ≥ 1.25: allowed");
+    assert.equal(cell.bindingCap, "chosen_hf");
+    // The default entry HF is the served floor, not the constant.
+    const dflt = (await get(b.port, "/v1/forecast")).body as ForecastResponse;
+    assert.equal(dflt.entryHf, 1.25);
+    // Under the chain's floor: refused by name against 1.25.
+    const under = (await get(b.port, "/v1/forecast?collateral=cbBTC&entryHf=1.2&pool=acbbtc&setting=sheltered")).body as ForecastResponse;
+    assert.deepEqual(under.cells[0]!.refusals, ["entry_hf_below_floor"]);
+
+    // The read fails and the clock passes staleAfterMs: the shared constant is served, said, the old read time still shown.
+    fail.v = true;
+    b.c.advance(STALE_AFTER + 1);
+    await b.srv.refresh();
+    const stale = (await get(b.port, "/v1/forecast?collateral=cbBTC&entryHf=1.3&pool=acbbtc&setting=sheltered")).body as ForecastResponse;
+    assert.equal(stale.entryHfFloor, ENTRY_HF_FLOOR);
+    assert.equal(stale.entryHfFloorSource, "shared");
+    assert.equal(stale.entryHfFloorReadAt, body.entryHfFloorReadAt, "the last good read's time, so the staleness is visible");
+    assert.deepEqual(stale.cells[0]!.refusals, ["entry_hf_below_floor"], "judged against 1.55 again — fail closed on the higher floor");
+  } finally {
+    await b.close();
   }
 });

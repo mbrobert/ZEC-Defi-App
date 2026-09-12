@@ -54,22 +54,12 @@ import { evaluatePool, evaluateGate } from "./gate.js";
 import { calibrationIndex, loadMcCalibration, type McCalibration, type McCalibrationCell } from "./mc-calibration.js";
 import { ENGINE_FEE_BPS, SETTINGS, type Setting } from "./model.js";
 import { AaveSource } from "./sources/aave.js";
+import { RegistrySource, type EntryHfFloorSample } from "./sources/registry.js";
 import { BlockscoutSource } from "./sources/blockscout.js";
 import { GeckoSource } from "./sources/gecko.js";
 import { AERO_ADDRESS, GaugeSource, onchainToken1 } from "./sources/gauges.js";
 import { RpcClient } from "./sources/rpc.js";
-import type {
-  AaveRatesSample,
-  Address,
-  EmissionsSample,
-  ForecastCell,
-  ForecastResponse,
-  GateVerdict,
-  PoolBands,
-  PoolLiveSample,
-  PoolPayload,
-  PoolsResponse,
-} from "./types.js";
+import type { AaveRatesSample, Address, EmissionsSample, ForecastCell, ForecastResponse, GateVerdict, PoolBands, PoolLiveSample, PoolPayload, PoolsResponse } from "./types.js";
 
 /** Demo-prototype pool ids ↔ curated registry ids (the demo abbreviates). */
 export const DEMO_ID_MAP: Record<string, string> = {
@@ -141,6 +131,9 @@ export class YieldServer {
   private readonly gecko: GeckoSource;
   private readonly aave?: AaveSource;
   private readonly gauges?: GaugeSource;
+  /** The registry's entry floor, read with the rates (A4.4); absent = no registry configured. */
+  private readonly registry?: RegistrySource;
+  private floor: CacheEntry<EntryHfFloorSample> = { value: null, at: 0 };
   private readonly now: () => number;
 
   constructor(
@@ -149,6 +142,8 @@ export class YieldServer {
       gecko?: GeckoSource;
       aave?: AaveSource;
       gauges?: GaugeSource;
+      /** The registry floor source; null = none (tests), undefined = build one from the config when it names a registry. */
+      registry?: RegistrySource | null;
       volatility?: VolatilityInputs;
       /** MC calibration of the closed form; null = every cell refuses (fail closed). */
       mcCalibration?: McCalibration | null;
@@ -167,6 +162,12 @@ export class YieldServer {
         : undefined;
     this.aave = deps?.aave ?? (rpc ? new AaveSource(rpc, this.now) : undefined);
     this.gauges = deps?.gauges ?? (rpc ? new GaugeSource(rpc) : undefined);
+    this.registry =
+      deps?.registry === undefined
+        ? rpc && cfg.collateralRegistry
+          ? new RegistrySource(rpc, cfg.collateralRegistry as Address, this.now)
+          : undefined
+        : (deps.registry ?? undefined);
     this.volatility = deps?.volatility ?? loadVolatility(join(cfg.samplesDir, VOLATILITY_FILE));
     this.mcCalibration =
       deps?.mcCalibration !== undefined
@@ -232,6 +233,16 @@ export class YieldServer {
         }
       }
 
+      // The registry's entry floor rides the same cadence as the rates (A4.4): a failed read keeps the
+      // last good one (stale past staleAfterMs, when the shared constant is served and said).
+      if (!deadline.aborted && this.registry) {
+        try {
+          this.floor = { value: await this.registry.entryHfFloor(), at: this.now() };
+        } catch (e) {
+          this.floor = { ...this.floor, error: (e as Error).message };
+        }
+      }
+
       await this.refreshEmissions(deadline);
 
       this.loadBandsFromDisk(); // pick up fresh backfills without restart
@@ -289,6 +300,18 @@ export class YieldServer {
 
   private ratesForServe(): (AaveRatesSample & { stale: boolean }) | null {
     return this.rates.value ? { ...this.rates.value, stale: this.isStale(this.rates) } : null;
+  }
+
+  /**
+   * The floor `/v1/forecast` judges `entry_hf_below_floor` against: the registry's, when a read is
+   * fresh; otherwise the shared constant — the deploy default — with the source said. A stale read is
+   * not served: a floor the chain may have RAISED since would let the forecast allow what the venue
+   * refuses. The last read time is carried either way so a stale read is visible.
+   */
+  private entryHfFloorForServe(): { floor: number; source: "registry" | "shared"; readAt: string | null } {
+    const v = this.floor.value;
+    if (v && !this.isStale(this.floor)) return { floor: v.floor, source: "registry", readAt: v.sampledAt };
+    return { floor: ENTRY_HF_FLOOR, source: "shared", readAt: v?.sampledAt ?? null };
   }
 
   private emissionsForServe(poolId: string): (EmissionsSample & { stale: boolean }) | null {
@@ -438,7 +461,8 @@ export class YieldServer {
   private forecastPayload(url: URL): (ForecastResponse & { status?: number }) | (Record<string, unknown> & { status: number }) {
     const q = url.searchParams;
     const entryHfParam = q.get("entryHf");
-    const entryHf = entryHfParam === null ? ENTRY_HF_FLOOR : Number(entryHfParam);
+    const floor = this.entryHfFloorForServe();
+    const entryHf = entryHfParam === null ? floor.floor : Number(entryHfParam);
     if (!(Number.isFinite(entryHf) && entryHf >= MIN_ENTRY_HF && entryHf <= MAX_ENTRY_HF)) {
       return { error: `entryHf must be a number in [${MIN_ENTRY_HF}, ${MAX_ENTRY_HF}]`, status: 400 };
     }
@@ -482,7 +506,7 @@ export class YieldServer {
               mcCalibration: this.mcIndex,
               nowSeconds,
               entryHf,
-              entryHfFloor: ENTRY_HF_FLOOR,
+              entryHfFloor: floor.floor,
               depositUsd,
               collateralPriceUsd: priceOf(collateral),
             }).filter((c) => c.setting === setting.id)
@@ -497,7 +521,9 @@ export class YieldServer {
     const emissionsSampledAt = consumed.length ? consumed.map((e) => e.sampledAt).sort()[0]! : null;
     return {
       entryHf,
-      entryHfFloor: ENTRY_HF_FLOOR,
+      entryHfFloor: floor.floor,
+      entryHfFloorSource: floor.source,
+      entryHfFloorReadAt: floor.readAt,
       depositUsd,
       borrowAprPct: rates && !rates.stale ? rates.borrow.variableBorrowAprPct : null,
       ratesSampledAt: rates?.sampledAt ?? null,

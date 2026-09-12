@@ -570,7 +570,12 @@ export interface ForecastCell {
 
 export interface ForecastResponse {
   entryHf: number;
+  /** The floor every cell's `entry_hf_below_floor` was judged against: the registry's when read, else shared's. */
   entryHfFloor: number;
+  /** "registry" = `CollateralRegistry.entryHfFloorWad` read live and fresh; "shared" = the deploy-default constant (no registry configured, no read yet, or the last read stale). */
+  entryHfFloorSource: "registry" | "shared";
+  /** When the registry was last read successfully, or null. Present even when the served floor fell back to shared's, so a stale read is visible. */
+  entryHfFloorReadAt: string | null;
   depositUsd: number | null;
   borrowAprPct: number | null;
   ratesSampledAt: string | null;

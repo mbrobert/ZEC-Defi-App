@@ -17,6 +17,13 @@ export interface YieldConfig {
   blockscoutKey?: string;
   /** Snuggle engine vault proxy on Base (backfill/indexer only). */
   engineVault: string;
+  /**
+   * Oilskin's `CollateralRegistry` on Base (`COLLATERAL_REGISTRY_ADDRESS`), lower-cased. When set and an
+   * RPC is configured, `/v1/forecast` refuses `entry_hf_below_floor` against the floor read from it
+   * (`entryHfFloorWad`, BUILD-PLAN-2026-09-12 D7); unset — nothing is deployed yet — the shared constant
+   * is served and the payload says so (`entryHfFloorSource: "shared"`).
+   */
+  collateralRegistry?: string;
   port: number;
   /** Where backfill JSONL + state live. */
   dataDir: string;
@@ -84,10 +91,16 @@ function packageRelative(dir: string): string {
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): YieldConfig {
   const vault = str(env, "ENGINE_VAULT_ADDRESS", ENGINE_VAULT_DEFAULT).toLowerCase();
   if (!/^0x[0-9a-f]{40}$/.test(vault)) throw new ConfigError("ENGINE_VAULT_ADDRESS", "not an address");
+  const registryRaw = opt(env, "COLLATERAL_REGISTRY_ADDRESS");
+  const collateralRegistry = registryRaw === undefined ? undefined : registryRaw.toLowerCase();
+  if (collateralRegistry !== undefined && !/^0x[0-9a-f]{40}$/.test(collateralRegistry)) {
+    throw new ConfigError("COLLATERAL_REGISTRY_ADDRESS", "not an address");
+  }
   return {
     baseRpcUrl: opt(env, "BASE_RPC_URL"),
     blockscoutKey: opt(env, "BLOCKSCOUT_PRO_API_KEY"),
     engineVault: vault,
+    collateralRegistry,
     port: num(env, "YIELD_PORT", 8787, 1),
     dataDir: str(env, "YIELD_DATA_DIR", packageRelative("data")),
     samplesDir: str(env, "YIELD_SAMPLES_DIR", packageRelative("samples")),
