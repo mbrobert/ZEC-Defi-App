@@ -1,7 +1,7 @@
 // Read-only Solana facts read — the reader behind docs/VERIFIED-SOLANA-FACTS.md.
 // Nothing here signs, builds, or sends a transaction. Public RPC, finalized commitment.
 //
-//   SOLANA_RPC_URL=<rpc> BASE_AAVE_USDC_BORROW_APR_PCT=<pct> node solana/scripts/read-facts.mjs
+//   SOLANA_RPC_URL=<rpc> BASE_AAVE_USDC_BORROW_APR_PCT=<pct> npm run facts -w @zyo/solana   (= node solana/readers/read-facts.mjs)
 //
 // Writes solana/.facts/facts.json (gitignored). Re-run it before any number in the facts file is relied on;
 // paste the deltas into a dated addendum of docs/VERIFIED-SOLANA-FACTS.md, never edit the table in place.

@@ -1,7 +1,7 @@
 // Read-only: who mints bridged ZEC (the bridge program, through its PDA authority), and who can upgrade each
 // program in the trust path (klend, Scope, Farms, Wormhole core, the bridge program). Nothing signed.
 //
-//   SOLANA_RPC_URL=<rpc> node solana/scripts/read-authorities.mjs     → solana/.facts/authorities.json
+//   SOLANA_RPC_URL=<rpc> npm run authorities -w @zyo/solana   (= node solana/readers/read-authorities.mjs)     → solana/.facts/authorities.json
 import { PublicKey } from "@solana/web3.js";
 const RPC_URL = process.env.SOLANA_RPC_URL ?? "https://api.mainnet-beta.solana.com";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

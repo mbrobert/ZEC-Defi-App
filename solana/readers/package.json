@@ -1,0 +1,19 @@
+{
+  "name": "oilskin-solana-readers",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Read-only chain readers behind docs/VERIFIED-SOLANA-FACTS.md. Deliberately NOT an npm workspace: the Kamino SDKs pin an old @solana/kit line whose peer graph fights the root tree. Installed on its own with legacy peer resolution (.npmrc).",
+  "scripts": {
+    "facts": "node read-facts.mjs",
+    "authorities": "node read-authorities.mjs"
+  },
+  "dependencies": {
+    "@kamino-finance/klend-sdk": "12.0.0",
+    "@kamino-finance/scope-sdk": "^10.1.0",
+    "@solana-program/compute-budget": "0.8.0",
+    "@solana/kit": "^2.3.0",
+    "@solana/web3.js": "1.99.0",
+    "decimal.js": "^10.4.3"
+  }
+}

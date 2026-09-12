@@ -35,15 +35,12 @@ describe("localnet world (cloned from mainnet, fixtures applied)", () => {
     }
   });
 
-  it("Scope OraclePrices entry 430 carries the far-future timestamp the fixture wrote", async () => {
+  it("Scope OraclePrices is owned by Scope's id — which the localnet mock now is — with the mainnet size", async () => {
     const a = await connection.getAccountInfo(SCOPE_PRICES);
     expect(a!.owner.equals(SCOPE)).to.equal(true);
     expect(a!.data.length).to.equal(28712);
-    const o = 40 + 430 * 56;
-    const ts = a!.data.readBigUInt64LE(o + 24);
-    expect(ts).to.equal(4_102_444_800n);
-    const exp = a!.data.readBigUInt64LE(o + 8);
-    expect(Number(exp)).to.equal(8);
+    const prog = await connection.getAccountInfo(SCOPE);
+    expect(prog!.executable, "the Scope mock is loaded at Scope's program id").to.equal(true);
   });
 
   it("the ZEC mint's authority is the local test key, not the bridge PDA", async () => {

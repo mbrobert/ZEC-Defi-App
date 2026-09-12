@@ -8,6 +8,8 @@ skip-lint = false
 
 [programs.localnet]
 oilskin = "Gw2UE3MixYgA8c7nLZC9UF2z3z5dWfzrFW7ESmi5Scog"
+# mock_scope (LOCALNET ONLY) is NOT listed: scripts/localnet.sh loads target/deploy/mock_scope.so at Scope's own id
+# HFn8GnPADiny6XqUoWE8uRPPxb29ikn4yTuPa9MF2fWJ at genesis; the tests open it from target/idl/mock_scope.json.
 
 [provider]
 cluster = "localnet"
@@ -34,12 +36,6 @@ address = "KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD"
 
 [[test.validator.clone]]
 address = "9uSbGW1y9H5Av6H5TKxQ1wnFApSq2t3oEpfF2YfjDQGA"
-
-[[test.validator.clone]]
-address = "HFn8GnPADiny6XqUoWE8uRPPxb29ikn4yTuPa9MF2fWJ"
-
-[[test.validator.clone]]
-address = "DuKtB88SQGJbow5jxmUSwgJWmC7zma8mX3Nodz1Gsjs2"
 
 [[test.validator.clone]]
 address = "FarmsPZpWu9i7Kky8tPN37rs2TpmMrAZrC7S7vJa91Hr"

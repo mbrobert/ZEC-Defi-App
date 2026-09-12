@@ -1,32 +1,46 @@
 #!/usr/bin/env bash
-# Start a local validator with the ZCASH-market world cloned from mainnet and the two fixtures applied.
-# Read-only against mainnet (clone); nothing is signed or sent anywhere. Run from the repo root or solana/.
+# Start a local validator with the ZCASH-market world cloned from mainnet, Scope replaced by the localnet mock,
+# and the two mint fixtures applied. Read-only against mainnet (clone); nothing is sent anywhere real.
 #
-#   SOLANA_RPC_URL=<keyed rpc, optional>  bash solana/scripts/localnet.sh
+#   bash solana/scripts/localnet.sh                       # default ports (RPC 8899), ledger .anchor/test-ledger
+#   RPC_PORT=8999 FAUCET_PORT=9901 GOSSIP_PORT=8101 LEDGER=.anchor/test-ledger-2 bash solana/scripts/localnet.sh
+#   SOLANA_RPC_URL=<keyed rpc>  …                         # kinder to the clone than the public endpoint
 #
-# Then, in another terminal:  cd solana && anchor test --skip-local-validator
+# Then:  cd solana && anchor test --skip-local-validator [--provider.cluster http://127.0.0.1:8999]
 #
-# Why not Anchor.toml's [test.validator] alone: two cloned accounts must be REPLACED by patched copies —
-# Scope's OraclePrices (its prices go stale in 180 s; see docs/SOLANA-ARCHITECTURE.md §11) and the ZEC mint
-# (its authority is the bridge program's PDA, so nothing can mint ZEC locally). solana-test-validator applies
-# --account after --clone for the same address, which is what this script relies on.
+# Why Scope is a mock here: Kamino's refresh_reserve refuses a Scope price older than 180 s and OVERFLOWS on a
+# future-dated one (klend last_update.rs:96), so a static fixture cannot keep prices fresh. `programs/mock_scope`
+# is loaded AT SCOPE'S PROGRAM ID; the cloned OraclePrices account (owner = that id) is then writable by the
+# tests, which stamp it fresh before every Kamino-touching call and move the ZEC price to walk the ladder.
+# Kamino never CPIs into Scope, so nothing else changes. See docs/SOLANA-ARCHITECTURE.md §11.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 RPC="${SOLANA_RPC_URL:-https://api.mainnet-beta.solana.com}"
+RPC_PORT="${RPC_PORT:-8899}"
+FAUCET_PORT="${FAUCET_PORT:-9900}"
+GOSSIP_PORT="${GOSSIP_PORT:-8001}"
+LEDGER="${LEDGER:-.anchor/test-ledger}"
+# klend's refresh_reserve computes `current_slot − reserve.last_update.slot` with a checked subtraction, and the
+# cloned reserves carry MAINNET slot numbers (~446 M), so a validator that starts at slot 0 overflows
+# (last_update.rs:96 MathOverflow). Start above mainnet's current slot instead.
+WARP_SLOT="${WARP_SLOT:-$(node -e 'fetch(process.argv[1],{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({jsonrpc:"2.0",id:1,method:"getSlot"})}).then(r=>r.json()).then(j=>console.log(j.result+1000000))' "$RPC")}"
 
 command -v solana-test-validator >/dev/null || { echo "solana-test-validator not on PATH — see solana/SETUP.md"; exit 1; }
+[ -f target/deploy/mock_scope.so ] || { echo "target/deploy/mock_scope.so missing — run: anchor build"; exit 1; }
 
-# Fixtures (written to solana/fixtures/, gitignored). A throwaway mint authority is generated per run and
-# printed; it is a TEST key for a local ledger and is never written anywhere persistent.
-node scripts/patch-scope-fixture.mjs --out fixtures --future-timestamps
-MINT_AUTH_PUBKEY="$(node -e 'const {Keypair}=require("@solana/web3.js");const k=Keypair.generate();require("fs").writeFileSync("fixtures/local-mint-authority.json",JSON.stringify(Array.from(k.secretKey)));console.log(k.publicKey.toBase58())')"
-node scripts/patch-scope-fixture.mjs --out fixtures --zec-mint-authority "$MINT_AUTH_PUBKEY"
-echo "local ZEC mint authority (test only): $MINT_AUTH_PUBKEY  (secret in solana/fixtures/local-mint-authority.json, gitignored)"
+# Mint fixtures (solana/fixtures/, gitignored). Throwaway mint authorities are generated per run and printed;
+# they are TEST keys for a local ledger and are never written anywhere persistent.
+mkdir -p fixtures
+gen_key() { node -e 'const {Keypair}=require("@solana/web3.js");const k=Keypair.generate();require("fs").writeFileSync(process.argv[1],JSON.stringify(Array.from(k.secretKey)));console.log(k.publicKey.toBase58())' "$1"; }
+ZEC_AUTH="$(gen_key fixtures/local-mint-authority.json)"
+USDC_AUTH="$(gen_key fixtures/local-usdc-mint-authority.json)"
+node scripts/patch-scope-fixture.mjs --out fixtures --zec-mint-authority "$ZEC_AUTH" --usdc-mint-authority "$USDC_AUTH"
+echo "local ZEC mint authority (test only):  $ZEC_AUTH"
+echo "local USDC mint authority (test only): $USDC_AUTH"
 
 PROGRAMS=(
-  KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD
-  HFn8GnPADiny6XqUoWE8uRPPxb29ikn4yTuPa9MF2fWJ
-  FarmsPZpWu9i7Kky8tPN37rs2TpmMrAZrC7S7vJa91Hr
+  KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD   # Kamino Lend (with its programdata)
+  FarmsPZpWu9i7Kky8tPN37rs2TpmMrAZrC7S7vJa91Hr   # Kamino Farms
 )
 ACCOUNTS=(
   GBJ3bzUiMfwC9ugaF3MM68EXMDyTUb5UryRRAcVjEowd
@@ -34,16 +48,18 @@ ACCOUNTS=(
   FQc32zaNbQnUZmQxd3Fqhg3enqfozyX6K74xcCCHw4NU 8yr67socgzkzXYPMPC8KNCh8eLDPjGvqucLGXmCGdwq4
   EW9vT7g2VH2aTFfcbaXRUCbF7jEfaLwMiJpckwDZwUZd C7ipQ9XPEncrVhCLXfHE4aCXPSk1HpPQUr127RwgVG9h HwgFUiBaEHv2QnrpgVxPmWuUC5nqt7iGSna99ZQL8oTB
   HfwrP5s6bL8pGuqAQUGr6S79AEfyWm2F8W6WJkuXmT53 GV12UJQSNK3cQPAGea9bHXcu7STuAadaCLeSwEKirWtQ
+  3t4JZcueEzTbVP6kLxXrL3VpWx45jDer4eqysweBchNH   # Scope OraclePrices — owner HFn8…, which the mock below now is
   4zh6bmb77qX2CL7t5AJYCqa6YqFafbz3QJNeFvZjLowg 6cMwdbrJ95D7v5655Zsoe7oXmjQJMnagWK8EcdG6qmGM
-  EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v 5mRY96MiFac9DBToh16j5dgq6kiJCPqhPXPzpoNNtxmw
+  5mRY96MiFac9DBToh16j5dgq6kiJCPqhPXPzpoNNtxmw   # ZEC Metaplex metadata
 )
 
-ARGS=(--reset --url "$RPC" --ledger .anchor/test-ledger --bind-address 127.0.0.1)
+ARGS=(--reset --url "$RPC" --ledger "$LEDGER" --bind-address 127.0.0.1 --rpc-port "$RPC_PORT" --faucet-port "$FAUCET_PORT" --gossip-port "$GOSSIP_PORT" --dynamic-port-range "${PORT_RANGE:-8000-10000}" --warp-slot "$WARP_SLOT")
 for p in "${PROGRAMS[@]}"; do ARGS+=(--clone-upgradeable-program "$p"); done
 for a in "${ACCOUNTS[@]}"; do ARGS+=(--clone "$a"); done
-# Patched replacements (same addresses as on mainnet):
-ARGS+=(--account 3t4JZcueEzTbVP6kLxXrL3VpWx45jDer4eqysweBchNH fixtures/scope-oracle-prices.json)
+ARGS+=(--bpf-program HFn8GnPADiny6XqUoWE8uRPPxb29ikn4yTuPa9MF2fWJ target/deploy/mock_scope.so)   # the Scope mock, at Scope's id
 ARGS+=(--account A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS fixtures/zec-mint.json)
+ARGS+=(--account EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v fixtures/usdc-mint.json)
 
-echo "starting solana-test-validator with ${#PROGRAMS[@]} programs and ${#ACCOUNTS[@]}+2 accounts cloned from $RPC"
+echo "warp slot $WARP_SLOT (above mainnet, so cloned last_update slots are in the past)"
+echo "starting solana-test-validator on :$RPC_PORT — ${#PROGRAMS[@]} programs + Scope mock, ${#ACCOUNTS[@]}+2 accounts cloned from $RPC"
 exec solana-test-validator "${ARGS[@]}"

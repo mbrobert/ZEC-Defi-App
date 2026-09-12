@@ -1,0 +1,4 @@
+{
+  "type": "commonjs",
+  "_why": "The workspace is ESM; the mocha specs are compiled by ts-mocha (ts-node, CommonJS) and import the CommonJS Anchor client, so this directory opts out of ESM."
+}
