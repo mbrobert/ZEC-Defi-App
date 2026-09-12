@@ -7,9 +7,14 @@ import {
   decodeReserve,
   RESERVE_CONFIG_WORDS,
   RESERVE_DATA_WORDS,
+  SEL_GET_INTEREST_RATE_DATA_BPS,
+  SEL_GET_INTEREST_RATE_STRATEGY_ADDRESS,
   SEL_GET_PAUSED,
   SEL_GET_RESERVE_CONFIGURATION_DATA,
   SEL_GET_RESERVE_DATA,
+  RATE_DATA_WORDS,
+  decodeBorrowCurve,
+  decodeStrategyAddress,
   strictWords,
 } from "../src/sources/aave.js";
 import { RpcClient } from "../src/sources/rpc.js";
@@ -77,20 +82,44 @@ interface TransportOverrides {
   break?: (sel: string, asset: string) => string | undefined;
 }
 
+/**
+ * The USDC strategy on Base, read 2026-09-12 at block 51,227,701 (docs/VERIFIED-BASE-FACTS.md
+ * Addendum 13): DefaultReserveInterestRateStrategyV2 0x86AB…bDC5 answering
+ * getInterestRateDataBps(USDC) = (9000, 0, 470, 1000).
+ */
+const STRATEGY = "0x86ab1c62a8bf868e1b3e1ab87d587aba6fbcbdc5";
+const CURVE_WORDS = [9000n, 0n, 470n, 1000n];
+function rateDataWords(): string {
+  assert.equal(CURVE_WORDS.length, RATE_DATA_WORDS);
+  return "0x" + CURVE_WORDS.map(word).join("");
+}
+const STRATEGY_WORD = "0x" + STRATEGY.slice(2).padStart(64, "0");
+
 function makeTransport(overrides?: TransportOverrides) {
-  const counts = { calls: 0 };
+  const counts = { calls: 0, strategyCalls: 0 };
   const answer = (params: unknown[]): string => {
     const { to, data } = params[0] as { to: string; data: string };
     counts.calls++;
-    assert.equal(to.toLowerCase(), AAVE_V3.poolDataProvider.toLowerCase(), "every read targets the verified PoolDataProvider");
     const sel = data.slice(0, 10);
     const asset = ("0x" + data.slice(10).slice(24)).toLowerCase();
     const broken = overrides?.break?.(sel, asset);
     if (broken !== undefined) return broken;
+    if (to.toLowerCase() === STRATEGY) {
+      // The one call that leaves the PoolDataProvider: the strategy's own curve, for the borrow asset only.
+      counts.strategyCalls++;
+      assert.equal(sel, SEL_GET_INTEREST_RATE_DATA_BPS, "the strategy is asked only for its rate data");
+      assert.equal(asset, BASE_TOKENS.USDC.address.toLowerCase(), "the curve is read for the borrow asset");
+      return rateDataWords();
+    }
+    assert.equal(to.toLowerCase(), AAVE_V3.poolDataProvider.toLowerCase(), "every other read targets the verified PoolDataProvider");
     const f = { ...FIX[asset]!, ...(overrides?.reserves?.[asset] ?? {}) };
     if (sel === SEL_GET_RESERVE_DATA) return reserveDataWords(f);
     if (sel === SEL_GET_RESERVE_CONFIGURATION_DATA) return configWords(f);
     if (sel === SEL_GET_PAUSED) return pausedWord(f);
+    if (sel === SEL_GET_INTEREST_RATE_STRATEGY_ADDRESS) {
+      assert.equal(asset, BASE_TOKENS.USDC.address.toLowerCase(), "the strategy is looked up for the borrow asset");
+      return STRATEGY_WORD;
+    }
     throw new Error(`unexpected selector ${sel}`);
   };
   const fetchImpl = (async (_url: unknown, init?: { body?: string }) => {
@@ -110,6 +139,8 @@ function source(t: ReturnType<typeof makeTransport>): AaveSource {
 test("selectors are keccak prefixes of the PoolDataProvider signatures (vendored keccak)", () => {
   assert.equal(SEL_GET_RESERVE_DATA, "0x" + keccak256Hex("getReserveData(address)").slice(0, 8));
   assert.equal(SEL_GET_RESERVE_CONFIGURATION_DATA, "0x" + keccak256Hex("getReserveConfigurationData(address)").slice(0, 8));
+  assert.equal(SEL_GET_INTEREST_RATE_STRATEGY_ADDRESS, "0x" + keccak256Hex("getInterestRateStrategyAddress(address)").slice(0, 8));
+  assert.equal(SEL_GET_INTEREST_RATE_DATA_BPS, "0x" + keccak256Hex("getInterestRateDataBps(address)").slice(0, 8));
 });
 
 test("sample reproduces the verified 2026-09-05 facts: USDC borrow 4.828 %, cbBTC LT 7800, WETH LT 8300", async () => {
@@ -133,7 +164,7 @@ test("sample reproduces the verified 2026-09-05 facts: USDC borrow 4.828 %, cbBT
   // no `stale` field is ever stored on a sample
   assert.equal("stale" in s, false);
   // 3 calls per reserve (data + config + getPaused) × 3 reserves, one batch
-  assert.equal(t.counts.calls, 9);
+  assert.equal(t.counts.calls, 11, "3 reserves × 3 reads + the strategy address + its rate data (A3, 2026-09-12)");
   assert.equal(s.borrow.isPaused, false);
 });
 
@@ -185,4 +216,26 @@ test("an RPC transport error propagates (the server keeps the previous sample, s
   const fetchImpl = (async () => new Response("nope", { status: 502 })) as typeof fetch;
   const src = new AaveSource(new RpcClient("http://mock.invalid", { fetchImpl, retries: 0 }));
   await assert.rejects(() => src.sample());
+});
+
+test("A3: the sample carries the borrow reserve's curve and totals — read from the strategy the Pool names, strictly", async () => {
+  const t = makeTransport();
+  const s = await source(t).sample();
+  assert.equal(t.counts.strategyCalls, 1, "one call to the strategy, after its address came from the PoolDataProvider");
+  assert.deepEqual(s.borrowCurve, { strategy: STRATEGY, optimalUsageBps: 9000, baseVariableBorrowRateBps: 0, variableRateSlope1Bps: 470, variableRateSlope2Bps: 1000 });
+  // getReserveData words 2 and 4 from the fixture, and the config's decimals word.
+  assert.equal(s.borrow.totalATokenUnits, (10n ** 12n).toString());
+  assert.equal(s.borrow.totalVariableDebtUnits, (5n * 10n ** 11n).toString());
+  assert.equal(s.borrow.decimals, 6);
+  // Strict decoding: a short curve, a zero optimal usage, a zero strategy address, debt above supply — all refuse.
+  assert.throws(() => decodeBorrowCurve(STRATEGY as Address, "0x" + [9000n, 0n, 470n].map(word).join("")), AaveDecodeError);
+  assert.throws(() => decodeBorrowCurve(STRATEGY as Address, "0x" + [0n, 0n, 470n, 1000n].map(word).join("")), AaveDecodeError);
+  assert.throws(() => decodeStrategyAddress("0x" + word(0n)), AaveDecodeError);
+  const debtAboveSupply = makeTransport({ break: (sel, asset) => (sel === SEL_GET_RESERVE_DATA && asset === BASE_TOKENS.USDC.address.toLowerCase()
+    ? "0x" + [0n, 0n, 10n ** 12n, 0n, 2n * 10n ** 12n, pctToRay(3.9), pctToRay(4.8), 0n, 0n, RAY, RAY, 1_757_030_400n].map(word).join("")
+    : undefined) });
+  await assert.rejects(source(debtAboveSupply).sample(), AaveDecodeError);
+  // A strategy that does not answer fails the WHOLE sample: the gate keeps serving the previous one, stale.
+  const mute = makeTransport({ break: (sel) => (sel === SEL_GET_INTEREST_RATE_DATA_BPS ? "0x" : undefined) });
+  await assert.rejects(source(mute).sample(), AaveDecodeError);
 });

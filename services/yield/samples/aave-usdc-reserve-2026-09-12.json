@@ -1,0 +1,31 @@
+{
+  "_about": "Aave v3 Base USDC reserve — the borrow side's curve and totals, read live with cast against base-rpc.publicnode.com (docs/VERIFIED-BASE-FACTS.md Addendum 13). Feeds the demo forecast's post-borrow rate and liquidity refusal; the live service reads the same words every sample.",
+  "readAt": "2026-09-12T20:25:49Z",
+  "block": 51227701,
+  "poolDataProvider": "0x0F43731EB8d45A581f4a36DD74F5f358bc90C73A",
+  "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  "decimals": 6,
+  "strategy": "0x86AB1C62A8bf868E1b3E1ab87d587Aba6fbCbDC5",
+  "strategyCodeBytes": 4038,
+  "getInterestRateDataBps": { "optimalUsageBps": 9000, "baseVariableBorrowRateBps": 0, "variableRateSlope1Bps": 470, "variableRateSlope2Bps": 1000 },
+  "getReserveData": {
+    "unbacked": "0",
+    "accruedToTreasuryScaled": "1025512274",
+    "totalAToken": "182806571520498",
+    "totalStableDebt": "0",
+    "totalVariableDebt": "158038067327137",
+    "liquidityRateRay": "35126312304323992397609966",
+    "variableBorrowRateRay": "45146359479383945382496577",
+    "lastUpdateTimestamp": 1789244655
+  },
+  "aToken": "0x4e65fE4DbA92790696d040ac24Aa414708F5c0AB",
+  "aTokenUsdcBalance": "24769842218084",
+  "reserveFactorBps": 1000,
+  "derived": {
+    "utilizationPct": 86.45,
+    "variableBorrowAprPct": 4.5146,
+    "curveAtUtilizationPct": 4.5147,
+    "availableFromTotalsUsdc": 24768504.193361,
+    "note": "available = totalAToken − totalVariableDebt = 24,768,504.19; the aToken's USDC balance is 24,769,842.22 — the 1,338 USDC gap is the treasury accrual the strategy counts and totalAToken does not (< 0.001 %)."
+  }
+}

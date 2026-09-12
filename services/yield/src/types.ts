@@ -330,6 +330,41 @@ export interface AaveReserve {
    * (wave-1 lens D LOW-1).
    */
   isPaused: boolean;
+  /** getReserveConfigurationData word 0: the asset's decimals. */
+  decimals: number;
+  /**
+   * getReserveData word 2: totalAToken — everything supplied to the reserve,
+   * lent out or idle, in base units (decimal string; a bigint in JSON is not
+   * portable). With `totalVariableDebtUnits` this is what the forecast's
+   * liquidity hard-refusal and post-borrow rate are computed from
+   * (2026-09-12, BUILD-PLAN A3): available ≈ totalAToken − totalVariableDebt.
+   * The strategy's own denominator is the virtual balance + debt, which
+   * differs from totalAToken by the treasury accrual (< 0.001 % on
+   * 2026-09-12, block 51,227,701: 182,806,571.52 vs 182,807,909.55 USDC).
+   */
+  totalATokenUnits: string;
+  /** getReserveData word 4: totalVariableDebt, base units (decimal string). */
+  totalVariableDebtUnits: string;
+}
+
+/**
+ * The borrow reserve's interest-rate curve, read live from the Pool's
+ * strategy (`PoolDataProvider.getInterestRateStrategyAddress(USDC)` →
+ * `DefaultReserveInterestRateStrategyV2.getInterestRateDataBps(USDC)`), so the
+ * forecast can price the borrow rate AFTER a borrow of a given size instead
+ * of quoting today's. Aave v3.2+ two-slope curve, all in bps:
+ *   U ≤ Uopt: base + slope1 × U / Uopt
+ *   U > Uopt: base + slope1 + slope2 × (U − Uopt) / (1 − Uopt)
+ * Read 2026-09-12 at block 51,227,701 (docs/VERIFIED-BASE-FACTS.md
+ * Addendum 13): Uopt 9000, base 0, slope1 470, slope2 1000 — which reproduces
+ * the live 4.5146 % from the reserve's 86.45 % utilisation exactly.
+ */
+export interface AaveBorrowCurve {
+  strategy: Address;
+  optimalUsageBps: number;
+  baseVariableBorrowRateBps: number;
+  variableRateSlope1Bps: number;
+  variableRateSlope2Bps: number;
 }
 
 /**
@@ -344,6 +379,8 @@ export interface AaveRatesSample {
   borrow: AaveReserve;
   /** cbBTC / WETH (v1 collateral), keyed by symbol. */
   collateral: Record<string, AaveReserve>;
+  /** The borrow reserve's rate curve (see AaveBorrowCurve). Read with every sample; never defaulted. */
+  borrowCurve: AaveBorrowCurve;
   sampledAt: string;
 }
 
@@ -419,6 +456,133 @@ export interface GateVerdict {
   /** Multiple of today's net emissions at which this pool/width would clear the borrow. */
   breakEvenEmissionsMultiple: number | null;
   userNet: GateUserNet[];
+}
+
+// ---------------------------------------------------------------------------
+// Forecast (BUILD-PLAN-2026-09-12 D4/D5, step A3) — the same model as the
+// gate, served as information at the entry HF the user chose. Nothing here
+// is a profitability refusal; the only refusals are the safety ones in
+// ForecastRefusal. The GateVerdict above is unchanged and /v1/gate still
+// serves it (its tests pin the refusal order); the site no longer blocks on it.
+// ---------------------------------------------------------------------------
+
+/** Safety-only hard refusals (BUILD-PLAN §2). A cell with any of these may not be opened. */
+export type ForecastRefusal =
+  | "entry_hf_below_floor"
+  | "collateral_disabled"
+  | "rates_unavailable"
+  | "rates_stale"
+  | "collateral_not_active"
+  | "collateral_paused"
+  | "borrow_paused"
+  | "venue_ltv_exceeded"
+  | "pool_cannot_fund";
+
+/** Why the LP slice could not be priced — shown, never a refusal. */
+export type ForecastUnpricedReason =
+  | "rates_unavailable"
+  | "rates_stale"
+  | "emissions_unavailable"
+  | "emissions_stale"
+  | "no_emissions"
+  | "staked_liquidity_outlier"
+  | "insufficient_samples"
+  | "no_staked_liquidity"
+  | "emissions_implausible"
+  | "no_volatility_input"
+  | "net_out_of_bounds";
+
+/** Which limit decides the borrow at the chosen entry HF. */
+export type ForecastBindingCap = "entry_hf_floor" | "venue_max_ltv" | "pool_liquidity" | "chosen_hf";
+
+/** Ids of the disclosures the site must show with this cell; the words live in web/lib (copy rules apply there). */
+export type ForecastDisclosureId =
+  | "forecast_not_advice"
+  | "model_uncertainty"
+  | "no_forecast"
+  | "emissions_dilutable"
+  | "borrow_rate_moves"
+  | "liquidation_at_chosen_hf"
+  | "impermanent_loss";
+
+export interface ForecastCell {
+  poolId: string;
+  setting: string;
+  preset: string;
+  collateral: string;
+  rangeWidthBps: number;
+  halfWidth: number;
+
+  // --- the position at the chosen entry HF (the identity debt = collateral × LT ÷ HF) ---
+  entryHf: number;
+  entryHfFloor: number;
+  liquidationThresholdBps: number | null;
+  /** floor(LT / HF) in bps; null without a live LT. */
+  ltvAtEntryBps: number | null;
+  /** The venue's own maximum LTV for this collateral (Aave `ltv`), bps; null without rates. */
+  venueMaxLtvBps: number | null;
+  bindingCap: ForecastBindingCap | null;
+  /** 100 × (1 − 1 / HF): the collateral price fall that reaches HF 1. */
+  drawdownToLiquidationPct: number;
+  /** USD price of the collateral behind `liquidationPriceUsd`, and where it came from. */
+  collateralPriceUsd: number | null;
+  liquidationPriceUsd: number | null;
+  depositUsd: number | null;
+  borrowUsd: number | null;
+
+  // --- the borrow side ---
+  borrowAprNowPct: number | null;
+  /** The venue curve re-priced with this borrow added (Aave strategy V2); null without the curve or a deposit size. */
+  borrowAprAfterPct: number | null;
+  /** Which borrow rate `userNetPct` uses: "after" when a deposit size was given, else "now". */
+  userNetBorrowBasis: "after" | "now" | null;
+  /** USDC the pool can lend right now (totalAToken − totalVariableDebt), whole units. */
+  poolAvailableUsd: number | null;
+  collateralSupplyAprPct: number | null;
+
+  // --- the LP slice, priced whenever the inputs exist (the gate stops earlier) ---
+  lpPriced: boolean;
+  lpUnpricedReason: ForecastUnpricedReason | null;
+  emissionsGrossPct: number | null;
+  emissionsNetPct: number | null;
+  emissionsRealizedPct: number | null;
+  dragPct: number | null;
+  lpNetPct: number | null;
+  mcLpNetPct: number | null;
+  mcUnavailableReason: "mc_calibration_unavailable" | "mc_calibration_stale" | null;
+  /** lpNetPct − mcLpNetPct, points: how optimistic the closed form is on this cell. */
+  modelGapPts: number | null;
+  sigma: number | null;
+  breakEvenSigma: number | null;
+  breakEvenEmissionsMultiple: number | null;
+  /** supply + LTV × (lpNet − borrow) at the chosen LTV, closed form / Monte-Carlo form. */
+  userNetPct: number | null;
+  mcUserNetPct: number | null;
+  /** Does the LP slice beat the borrow it is funded with? Information, not a gate. */
+  clearsBorrow: { closedForm: boolean | null; monteCarlo: boolean | null; both: boolean | null };
+
+  // --- what the site must do with it ---
+  refusals: ForecastRefusal[];
+  /** True when `refusals` is empty: the position may be opened after the acknowledgment. */
+  allowed: boolean;
+  disclosures: ForecastDisclosureId[];
+}
+
+export interface ForecastResponse {
+  entryHf: number;
+  entryHfFloor: number;
+  depositUsd: number | null;
+  borrowAprPct: number | null;
+  ratesSampledAt: string | null;
+  emissionsSampledAt: string | null;
+  volatilityAsOf: string;
+  engineFeeBps: number;
+  stale: boolean;
+  mcCalibrationGeneratedAt: string | null;
+  settings: { id: string; preset: string; rebalanceDelayHours: number }[];
+  cells: ForecastCell[];
+  generatedAt: string;
+  methodologyUrl: string;
 }
 
 // ---------------------------------------------------------------------------

@@ -25,18 +25,14 @@
  * `--as-of` instant the gate is evaluated at, which must sit inside the gauge
  * epoch the sample recorded — the same instant `npm run model` uses.
  */
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { writeFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  BASE_TOKENS,
-  COLLATERAL_SYMBOLS,
-  CURATED_POOLS,
-  poolById,
-} from "@zyo/shared";
-import { evaluateGate, MIN_GATE_STAKED_SAMPLES } from "../dist/src/gate.js";
+import { COLLATERAL_SYMBOLS, CURATED_POOLS } from "@zyo/shared";
+import { evaluateGate } from "../dist/src/gate.js";
 import { calibrationIndex, loadMcCalibration } from "../dist/src/mc-calibration.js";
-import { ENGINE_FEE_BPS, emissionsAprPct, modelWidthsBps, priceHalfWidth, round2, SETTINGS } from "../dist/src/model.js";
+import { ENGINE_FEE_BPS, SETTINGS } from "../dist/src/model.js";
+import { emissionsFromSample, ratesFromModel, readJson, relSample, STAKED_LIQUIDITY_PROVENANCE } from "./demo-inputs.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const samples = resolve(here, "../samples");
@@ -51,9 +47,9 @@ const volPath = resolve(arg("vol", join(samples, "volatility.json")));
 const calPath = resolve(arg("calibration", join(samples, "mc-calibration.json")));
 const outPath = resolve(arg("out", join(samples, "demo-gate.json")));
 
-const sample = JSON.parse(readFileSync(samplePath, "utf8"));
-const model = JSON.parse(readFileSync(modelPath, "utf8"));
-const volatility = JSON.parse(readFileSync(volPath, "utf8"));
+const sample = readJson(samplePath);
+const model = readJson(modelPath);
+const volatility = readJson(volPath);
 const mcCalibration = loadMcCalibration(calPath);
 if (!mcCalibration) throw new Error(`no MC calibration at ${calPath} — run \`npm run model\` first`);
 const mcIndex = calibrationIndex(mcCalibration);
@@ -64,104 +60,10 @@ const nowSeconds = Math.floor(Date.parse(asOfIso) / 1000);
 if (!Number.isFinite(nowSeconds)) throw new Error(`--as-of is not a timestamp: ${asOfIso}`);
 
 const borrowAprPct = model.inputs?.borrowAprPct;
-if (typeof borrowAprPct !== "number") throw new Error("lp-model inputs.borrowAprPct missing");
 const collateralInputs = model.inputs?.collateral ?? {};
-
-/** The Aave sample the gate reads, rebuilt from the recorded live figures. */
-const reserve = (symbol, over) => ({
-  symbol,
-  address: BASE_TOKENS[symbol]?.address?.toLowerCase() ?? "0x",
-  supplyAprPct: 0,
-  variableBorrowAprPct: 0,
-  ltvBps: 0,
-  liquidationThresholdBps: 0,
-  liquidationBonusBps: 0,
-  usageAsCollateralEnabled: true,
-  borrowingEnabled: true,
-  isActive: true,
-  isFrozen: false,
-  isPaused: false,
-  ...over,
-});
-const rates = {
-  source: "aave-v3-base",
-  dataProvider: model.inputs?.dataProvider ?? "0x",
-  borrow: reserve("USDC", { variableBorrowAprPct: borrowAprPct }),
-  collateral: Object.fromEntries(
-    Object.entries(collateralInputs).map(([symbol, c]) => [
-      symbol,
-      reserve(symbol, {
-        supplyAprPct: c.supplyAprPct,
-        liquidationThresholdBps: c.liquidationThresholdBps,
-      }),
-    ])
-  ),
-  sampledAt: model.inputs?.ratesSampledAt ?? asOfIso,
-  stale: false,
-};
-
-/**
- * The emissions sample the gate reads, rebuilt from the raw chain words with
- * the SAME formula `sources/gauges.ts` uses (`emissionsAprPct` per width) —
- * never the sample's own precomputed `aprByWidthPct` table, whose keys are
- * half-widths rather than the bps the gate looks up.
- *
- * `corroborated`/`samples`: the recorded words are one verified block read, so
- * there is no rolling history to corroborate against. Demo mode is a recording
- * of a warm service, so the sample is marked corroborated and the provenance
- * below says exactly what that means. A LIVE service still has to earn it.
- */
-function emissionsFor(pool) {
-  const s = sample.pools?.[pool.id];
-  if (!s) return null;
-  const rewardRate = BigInt(s.rewardRateWeiPerSec);
-  const sqrtPriceX96 = BigInt(s.sqrtPriceX96);
-  const periodFinish = Number(s.periodFinish ?? 0);
-  const epochActive = rewardRate > 0n && periodFinish > nowSeconds;
-  const staked = Number(s.stakedLiquidity ?? 0);
-  let aprByWidthPct = {};
-  if (epochActive && staked > 0) {
-    for (const bps of modelWidthsBps()) {
-      const apr = emissionsAprPct({
-        rewardRateWeiPerSec: rewardRate,
-        aeroUsd: sample.aeroUsd,
-        stakedLiquidity: staked,
-        sqrtPriceX96,
-        token1Decimals: s.dec1,
-        token1Usd: s.token1Usd,
-        halfWidth: priceHalfWidth(bps),
-      });
-      if (apr === null) {
-        aprByWidthPct = null;
-        break;
-      }
-      aprByWidthPct[String(bps)] = round2(apr);
-    }
-  } else if (!epochActive) {
-    for (const bps of modelWidthsBps()) aprByWidthPct[String(bps)] = 0;
-  } else {
-    aprByWidthPct = null;
-  }
-  return {
-    poolId: pool.id,
-    pool: s.pool,
-    gauge: s.gauge,
-    rewardRateWeiPerSec: s.rewardRateWeiPerSec,
-    periodFinish,
-    epochActive,
-    wholePoolAprPct: aprByWidthPct === null ? null : round2(s.wholePoolAprPct ?? 0),
-    aprByWidthPct,
-    stakedLiquidity: String(s.stakedLiquidity ?? "0"),
-    samples: MIN_GATE_STAKED_SAMPLES,
-    corroborated: true,
-    outlier: false,
-    sqrtPriceX96: s.sqrtPriceX96,
-    feePips: Math.round(s.feeBpsLive * 100),
-    aeroUsd: sample.aeroUsd,
-    sampledAt: sample.sampledAt,
-    stale: false,
-  };
-}
+// The rates and emissions rebuilds live in demo-inputs.mjs, shared with gen-demo-forecast.mjs.
+const rates = ratesFromModel(model, asOfIso);
+const emissionsFor = (pool) => emissionsFromSample(sample, pool, nowSeconds);
 
 const verdicts = [];
 for (const pool of CURATED_POOLS.filter((p) => p.dex === "AERODROME")) {
@@ -179,15 +81,13 @@ const emissionsSampledAt = sample.sampledAt;
 const out = {
   generatedBy: "services/yield/scripts/gen-demo-gate.mjs — evaluateGate() on the recorded inputs, not a reformat of lp-model",
   pinnedFrom: {
-    gaugeSample: samplePath.replace(/^.*\/(services\/yield\/samples\/[^/]+)$/, "$1"),
-    volatility: volPath.replace(/^.*\/(services\/yield\/samples\/[^/]+)$/, "$1"),
-    mcCalibration: calPath.replace(/^.*\/(services\/yield\/samples\/[^/]+)$/, "$1"),
-    lpModel: modelPath.replace(/^.*\/(services\/yield\/samples\/[^/]+)$/, "$1"),
+    gaugeSample: relSample(samplePath),
+    volatility: relSample(volPath),
+    mcCalibration: relSample(calPath),
+    lpModel: relSample(modelPath),
   },
   asOf: asOfIso,
-  stakedLiquidityProvenance:
-    "one verified block read; marked corroborated because demo mode records a warm service. " +
-    "A live sample must earn corroboration from MIN_STAKED_SAMPLES independent readings.",
+  stakedLiquidityProvenance: STAKED_LIQUIDITY_PROVENANCE,
   modelGeneratedAt: model.generatedAt,
   mcCalibrationGeneratedAt: mcCalibration.generatedAt,
   borrowAprPct,

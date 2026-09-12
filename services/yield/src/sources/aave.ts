@@ -6,6 +6,10 @@
  *   getReserveConfigurationData(address) → LTV / liquidation threshold / bonus (bps),
  *                                          collateral + borrowing flags
  *   getPaused(address)                   → the guardian pause flag
+ *   getInterestRateStrategyAddress(USDC) → the borrow reserve's strategy, then on it
+ *   getInterestRateDataBps(USDC)         → the two-slope curve (forecast: rate after a borrow)
+ *   and, from getReserveData's words 2 and 4, totalAToken / totalVariableDebt (forecast:
+ *   pool liquidity, the "cannot fund" hard-refusal). Added 2026-09-12, BUILD-PLAN A3.
  *
  * `getPaused` is a SEPARATE call on purpose: the 10-word configuration tuple
  * carries isActive and isFrozen but NOT isPaused, so before it was read a
@@ -31,7 +35,7 @@
 
 import { AAVE_V3, BASE_TOKENS, COLLATERAL_SYMBOLS, COLLATERAL_ASSETS, BORROW_ASSET } from "@zyo/shared";
 import type { RpcClient } from "./rpc.js";
-import type { AaveRatesSample, AaveReserve, Address } from "../types.js";
+import type { AaveBorrowCurve, AaveRatesSample, AaveReserve, Address } from "../types.js";
 
 /** keccak("getReserveData(address)")[:4] — pinned in test/aave.test.ts. */
 export const SEL_GET_RESERVE_DATA = "0x35ea6a75";
@@ -39,11 +43,28 @@ export const SEL_GET_RESERVE_DATA = "0x35ea6a75";
 export const SEL_GET_RESERVE_CONFIGURATION_DATA = "0x3e150141";
 /** keccak("getPaused(address)")[:4] — pinned in test/aave.test.ts. */
 export const SEL_GET_PAUSED = "0xb55d9904";
+/**
+ * keccak("getInterestRateStrategyAddress(address)")[:4] — pinned in test/aave.test.ts.
+ * The Pool's per-reserve strategy; on Base USDC it is DefaultReserveInterestRateStrategyV2
+ * 0x86AB1C62A8bf868E1b3E1ab87d587Aba6fbCbDC5 (read 2026-09-12, block 51,227,701,
+ * docs/VERIFIED-BASE-FACTS.md Addendum 13) — read live every sample, never pinned.
+ */
+export const SEL_GET_INTEREST_RATE_STRATEGY_ADDRESS = "0x6744362a";
+/**
+ * keccak("getInterestRateDataBps(address)")[:4] — pinned in test/aave.test.ts. On the V2
+ * strategy: (uint16 optimalUsageRatio, uint32 baseVariableBorrowRate, uint32 variableRateSlope1,
+ * uint32 variableRateSlope2), all bps, ABI-encoded as four words.
+ */
+export const SEL_GET_INTEREST_RATE_DATA_BPS = "0xc79ce42e";
 
-/** Word counts the two calls MUST return (strict decoding). */
+/** Word counts the calls MUST return (strict decoding). */
 export const RESERVE_DATA_WORDS = 12;
 export const RESERVE_CONFIG_WORDS = 10;
 export const PAUSED_WORDS = 1;
+export const STRATEGY_ADDRESS_WORDS = 1;
+export const RATE_DATA_WORDS = 4;
+/** A slope or base above this (bps) is not a plausible Aave curve — refuse rather than quote. */
+export const MAX_CURVE_BPS = 1_000_000;
 
 const RAY = 10n ** 27n;
 /** ray → percent with 4-decimal precision (4.828% ↔ 0.04828 ray-fraction). */
@@ -104,8 +125,14 @@ export function decodeReserve(
   //   totalStableDebt, totalVariableDebt, liquidityRate, variableBorrowRate,
   //   stableBorrowRate, averageStableBorrowRate, liquidityIndex,
   //   variableBorrowIndex, lastUpdateTimestamp)
+  const totalAToken = BigInt(`0x${wordAt(rd, 2)}`);
+  const totalVariableDebt = BigInt(`0x${wordAt(rd, 4)}`);
   const liquidityRate = BigInt(`0x${wordAt(rd, 5)}`);
   const variableBorrowRate = BigInt(`0x${wordAt(rd, 6)}`);
+  // Debt above supply is not a state Aave can be in; a decode that says so is a wrong address or ABI.
+  if (totalVariableDebt > totalAToken) {
+    throw new AaveDecodeError(`${symbol}.getReserveData`, `totalVariableDebt ${totalVariableDebt} > totalAToken ${totalAToken}`);
+  }
   // A rate above 100% APR (1 ray) is not a plausible Aave reserve state —
   // refuse rather than quote it.
   if (liquidityRate > RAY || variableBorrowRate > RAY) {
@@ -120,11 +147,16 @@ export function decodeReserve(
   if (bonusRaw !== 0n && (bonusRaw < 10_000n || bonusRaw > 20_000n)) {
     throw new AaveDecodeError(`${symbol}.config`, `liquidationBonus word ${bonusRaw} out of range`);
   }
+  const decimals = Number(BigInt(`0x${w(0)}`));
+  if (!(decimals >= 0 && decimals <= 36)) throw new AaveDecodeError(`${symbol}.config`, `decimals word ${decimals} out of range`);
   return {
     symbol,
     address,
     supplyAprPct: rayToPct(liquidityRate),
     variableBorrowAprPct: rayToPct(variableBorrowRate),
+    decimals,
+    totalATokenUnits: totalAToken.toString(),
+    totalVariableDebtUnits: totalVariableDebt.toString(),
     ltvBps: bpsWord(w(1), `${symbol}.ltv`),
     liquidationThresholdBps: bpsWord(w(2), `${symbol}.liquidationThreshold`),
     liquidationBonusBps: bonusRaw === 0n ? 0 : Number(bonusRaw - 10_000n),
@@ -134,6 +166,34 @@ export function decodeReserve(
     isFrozen: boolWord(w(9), `${symbol}.isFrozen`),
     isPaused: boolWord(pz, `${symbol}.getPaused`),
   };
+}
+
+/** The strategy's four-word rate data, strictly decoded and bounded. */
+export function decodeBorrowCurve(strategy: Address, rateDataRaw: string | undefined): AaveBorrowCurve {
+  const rd = strictWords(rateDataRaw, RATE_DATA_WORDS, "USDC.getInterestRateDataBps");
+  const n = (i: number, what: string, max: bigint): number => {
+    const v = BigInt(`0x${wordAt(rd, i)}`);
+    if (v > max) throw new AaveDecodeError("USDC.getInterestRateDataBps", `${what} ${v} > ${max}`);
+    return Number(v);
+  };
+  const optimalUsageBps = n(0, "optimalUsageRatio", 10_000n);
+  if (optimalUsageBps === 0) throw new AaveDecodeError("USDC.getInterestRateDataBps", "optimalUsageRatio is 0");
+  return {
+    strategy,
+    optimalUsageBps,
+    baseVariableBorrowRateBps: n(1, "baseVariableBorrowRate", BigInt(MAX_CURVE_BPS)),
+    variableRateSlope1Bps: n(2, "variableRateSlope1", BigInt(MAX_CURVE_BPS)),
+    variableRateSlope2Bps: n(3, "variableRateSlope2", BigInt(MAX_CURVE_BPS)),
+  };
+}
+
+/** One address word → checksum-free lowercase address; the zero address is a wrong ABI, not a strategy. */
+export function decodeStrategyAddress(raw: string | undefined): Address {
+  const w = strictWords(raw, STRATEGY_ADDRESS_WORDS, "USDC.getInterestRateStrategyAddress");
+  if (!/^0{24}[0-9a-fA-F]{40}$/.test(w)) throw new AaveDecodeError("USDC.getInterestRateStrategyAddress", "not an address word");
+  const addr = `0x${w.slice(24).toLowerCase()}` as Address;
+  if (addr === `0x${"0".repeat(40)}`) throw new AaveDecodeError("USDC.getInterestRateStrategyAddress", "zero address");
+  return addr;
 }
 
 export class AaveSource {
@@ -181,6 +241,14 @@ export class AaveSource {
         params: [{ to: this.dataProvider, data: SEL_GET_PAUSED + encodeAddressArg(r.address) }, "latest"],
       },
     ]);
+    // The borrow reserve's strategy address rides in the same round; its rate data needs a second
+    // round because the target is the strategy itself. Both are strict: a sample without the curve
+    // would let the forecast quote "the rate after this borrow" from nothing.
+    const borrowAddress = reserves[0]!.address;
+    calls.push({
+      method: "eth_call",
+      params: [{ to: this.dataProvider, data: SEL_GET_INTEREST_RATE_STRATEGY_ADDRESS + encodeAddressArg(borrowAddress) }, "latest"],
+    });
     const results = await this.rpc.callMany<string>(calls);
     if (results.length !== calls.length) {
       throw new AaveDecodeError("batch", `expected ${calls.length} results, got ${results.length}`);
@@ -192,6 +260,12 @@ export class AaveSource {
     if (!borrow.borrowingEnabled || !borrow.isActive || borrow.isFrozen) {
       throw new AaveDecodeError(BORROW_ASSET, "reserve is not borrowable (flags) — refusing to quote a borrow rate");
     }
+    const strategy = decodeStrategyAddress(results[calls.length - 1]);
+    const rateData = await this.rpc.callMany<string>([
+      { method: "eth_call", params: [{ to: strategy, data: SEL_GET_INTEREST_RATE_DATA_BPS + encodeAddressArg(borrowAddress) }, "latest"] },
+    ]);
+    if (rateData.length !== 1) throw new AaveDecodeError("batch", `expected 1 strategy result, got ${rateData.length}`);
+    const borrowCurve = decodeBorrowCurve(strategy, rateData[0]);
     const collateral: Record<string, AaveReserve> = {};
     for (const r of decoded.slice(1)) collateral[r.symbol] = r;
     return {
@@ -199,6 +273,7 @@ export class AaveSource {
       dataProvider: this.dataProvider,
       borrow,
       collateral,
+      borrowCurve,
       sampledAt: new Date(this.now()).toISOString(),
     };
   }

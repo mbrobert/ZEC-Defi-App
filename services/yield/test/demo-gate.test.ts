@@ -26,7 +26,7 @@ import { evaluateGate } from "../src/gate.js";
 import { emissionsAprPct, ENGINE_FEE_BPS, modelWidthsBps, priceHalfWidth, round2, SETTINGS } from "../src/model.js";
 import { MIN_STAKED_SAMPLES } from "../src/sources/gauges.js";
 import type { AaveRatesSample, AaveReserve, Address, EmissionsSample, GateVerdict } from "../src/types.js";
-import { mcCalibrationFixture, volatilityFixture } from "./fixtures/model.js";
+import { borrowCurveFixture, mcCalibrationFixture, volatilityFixture } from "./fixtures/model.js";
 
 const read = (rel: string) => JSON.parse(readFileSync(new URL(rel, import.meta.url), "utf8"));
 const DEMO = read("../../samples/demo-gate.json") as {
@@ -62,6 +62,9 @@ function reserveOf(symbol: string, over: Partial<AaveReserve> = {}): AaveReserve
     address: (BASE_TOKENS[symbol as keyof typeof BASE_TOKENS]?.address?.toLowerCase() ?? "0x") as Address,
     supplyAprPct: 0, variableBorrowAprPct: 0, ltvBps: 0, liquidationThresholdBps: 0, liquidationBonusBps: 0,
     usageAsCollateralEnabled: true, borrowingEnabled: true, isActive: true, isFrozen: false, isPaused: false,
+    // The gate reads none of these three (they feed the forecast's liquidity refusal and post-borrow
+    // rate only); the demo file predates them. Stand-ins, labelled as such.
+    decimals: 0, totalATokenUnits: "1", totalVariableDebtUnits: "0",
     ...over,
   };
 }
@@ -76,6 +79,7 @@ const rates: AaveRatesSample & { stale: boolean } = {
       reserveOf(s, { supplyAprPct: c.supplyAprPct, liquidationThresholdBps: c.liquidationThresholdBps }),
     ])
   ),
+  borrowCurve: borrowCurveFixture(),
   sampledAt: DEMO.asOf,
   stale: false,
 };

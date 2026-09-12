@@ -13,7 +13,7 @@ const server = new YieldServer(cfg);
 
 const httpServer = await server.start();
 console.log(
-  `oilskin yield api listening on :${cfg.port} — /healthz /v1/pools /v1/rates /v1/gate /v1/band`
+  `oilskin yield api listening on :${cfg.port} — /healthz /v1/pools /v1/rates /v1/gate /v1/band /v1/forecast`
 );
 console.log(
   `sources: gecko(live) aave(${AAVE_V3.poolDataProvider}) gauges(${cfg.baseRpcUrl ? "rpc" : cfg.blockscoutKey ? "blockscout" : "OFF — set BASE_RPC_URL"}) bands(${cfg.dataDir}/bands.json)`

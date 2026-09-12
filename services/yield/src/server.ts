@@ -13,6 +13,14 @@
  *                    refuse anyway.
  *   GET /v1/band?ltv=0.40&mix=aweth,acbbtc&collateral=cbBTC
  *                  → empirical user-net band for a mix at an LTV
+ *   GET /v1/forecast?collateral=cbBTC&entryHf=1.55&deposit=10000[&pool=&setting=]
+ *                  → the forecast (src/forecast.ts): every pool × setting at the
+ *                    chosen entry HF — both LP-net forms and their gap, the
+ *                    break-evens, liquidation price and drawdown, the borrow
+ *                    rate AFTER this borrow on the venue's curve, user net, the
+ *                    safety refusals and the disclosure ids. Never 503: missing
+ *                    or stale inputs are reported inside each cell (BUILD-PLAN
+ *                    2026-09-12 D4/D5, step A3). 400 on a malformed query.
  *
  * STALENESS CONTRACT (audit Lens F, round 3): every sample is stored with
  * its `sampledAt` only. `stale` is DERIVED at serve time from the sample's
@@ -31,14 +39,17 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  COLLATERAL_ASSETS,
   COLLATERAL_SYMBOLS,
   CURATED_POOLS,
+  ENTRY_HF_FLOOR,
   isCollateralSymbol,
   type CollateralSymbol,
   type CuratedPool,
 } from "@zyo/shared";
 import { mixUserBand } from "./bands.js";
 import { loadVolatility, type VolatilityInputs, type YieldConfig } from "./config.js";
+import { evaluateForecastPool, MAX_ENTRY_HF, MIN_ENTRY_HF } from "./forecast.js";
 import { evaluatePool, evaluateGate } from "./gate.js";
 import { calibrationIndex, loadMcCalibration, type McCalibration, type McCalibrationCell } from "./mc-calibration.js";
 import { ENGINE_FEE_BPS, SETTINGS, type Setting } from "./model.js";
@@ -51,6 +62,8 @@ import type {
   AaveRatesSample,
   Address,
   EmissionsSample,
+  ForecastCell,
+  ForecastResponse,
   GateVerdict,
   PoolBands,
   PoolLiveSample,
@@ -416,6 +429,90 @@ export class YieldServer {
     };
   }
 
+  /**
+   * The forecast: the same inputs as the gate, evaluated by src/forecast.ts at the entry HF the
+   * user chose. Fails open on the numbers and closed on safety: missing or stale rates become a
+   * refusal INSIDE each cell (the site must show why nothing may be opened), never a 503 that
+   * hides the picture. Malformed query → 400.
+   */
+  private forecastPayload(url: URL): (ForecastResponse & { status?: number }) | (Record<string, unknown> & { status: number }) {
+    const q = url.searchParams;
+    const entryHfParam = q.get("entryHf");
+    const entryHf = entryHfParam === null ? ENTRY_HF_FLOOR : Number(entryHfParam);
+    if (!(Number.isFinite(entryHf) && entryHf >= MIN_ENTRY_HF && entryHf <= MAX_ENTRY_HF)) {
+      return { error: `entryHf must be a number in [${MIN_ENTRY_HF}, ${MAX_ENTRY_HF}]`, status: 400 };
+    }
+    const depositParam = q.get("deposit");
+    const depositUsd = depositParam === null ? null : Number(depositParam);
+    if (depositUsd !== null && !(Number.isFinite(depositUsd) && depositUsd > 0 && depositUsd <= 1e12)) {
+      return { error: "deposit must be a positive USD amount", status: 400 };
+    }
+    const poolParam = q.get("pool");
+    const settingParam = q.get("setting");
+    const collateralParam = q.get("collateral");
+    const poolId = poolParam ? (DEMO_ID_LOOKUP.get(poolParam) ?? poolParam) : null;
+    if (poolId !== null && !CURATED_IDS.has(poolId)) return { error: "unknown pool id", status: 400 };
+    let settings: readonly Setting[] = SETTINGS;
+    if (settingParam !== null) {
+      const st = SETTINGS.find((x) => x.id === settingParam || x.preset === settingParam);
+      if (!st) return { error: "unknown setting", status: 400 };
+      settings = [st];
+    }
+    let collaterals: readonly CollateralSymbol[] = COLLATERAL_SYMBOLS;
+    if (collateralParam !== null) {
+      if (!isCollateralSymbol(collateralParam)) return { error: "unknown collateral", status: 400 };
+      collaterals = [collateralParam];
+    }
+    const rates = this.ratesForServe();
+    const pools = CURATED_POOLS.filter((p) => p.dex === "AERODROME" && (poolId === null || p.id === poolId));
+    const nowSeconds = Math.floor(this.now() / 1000);
+    const priceOf = (c: CollateralSymbol): number | null =>
+      this.tokenUsdFromLiveSamples(COLLATERAL_ASSETS[c].address.toLowerCase() as Address) ?? null;
+    const cells: ForecastCell[] = [];
+    for (const pool of pools) {
+      const emissions = this.emissionsForServe(pool.id);
+      for (const setting of settings) {
+        if (!settings.includes(setting)) continue;
+        for (const collateral of collaterals) {
+          cells.push(
+            ...evaluateForecastPool(pool, [collateral], {
+              rates,
+              emissions,
+              volatility: this.volatility,
+              mcCalibration: this.mcIndex,
+              nowSeconds,
+              entryHf,
+              entryHfFloor: ENTRY_HF_FLOOR,
+              depositUsd,
+              collateralPriceUsd: priceOf(collateral),
+            }).filter((c) => c.setting === setting.id)
+          );
+        }
+      }
+    }
+    const consumed = [...new Set(pools.map((p) => p.id))]
+      .map((id) => this.emissionsForServe(id))
+      .filter((e): e is EmissionsSample & { stale: boolean } => e !== null);
+    const emissionsStale = consumed.some((e) => e.stale);
+    const emissionsSampledAt = consumed.length ? consumed.map((e) => e.sampledAt).sort()[0]! : null;
+    return {
+      entryHf,
+      entryHfFloor: ENTRY_HF_FLOOR,
+      depositUsd,
+      borrowAprPct: rates && !rates.stale ? rates.borrow.variableBorrowAprPct : null,
+      ratesSampledAt: rates?.sampledAt ?? null,
+      emissionsSampledAt,
+      volatilityAsOf: this.volatility.asOf,
+      engineFeeBps: ENGINE_FEE_BPS,
+      stale: !rates || rates.stale || emissionsStale,
+      mcCalibrationGeneratedAt: this.mcCalibration?.generatedAt ?? null,
+      settings: settings.map((st) => ({ id: st.id, preset: st.preset, rebalanceDelayHours: st.rebalanceDelayHours })),
+      cells,
+      generatedAt: new Date(this.now()).toISOString(),
+      methodologyUrl: "https://github.com/mbrobert/ZEC-Defi-App/blob/main/docs/YIELD-SERVICE.md",
+    };
+  }
+
   private bandPayload(url: URL): Record<string, unknown> & { status?: number } {
     const ltv = Number(url.searchParams.get("ltv"));
     // Lower bound 0.01: an ltv like 1e-300 is either a typo or a probe, and
@@ -579,6 +676,8 @@ export class YieldServer {
           return sendPayload(this.gatePayload(url));
         case "/v1/band":
           return sendPayload(this.bandPayload(url));
+        case "/v1/forecast":
+          return sendPayload(this.forecastPayload(url) as Record<string, unknown> & { status?: number });
         default:
           return send(404, { error: "not found" });
       }

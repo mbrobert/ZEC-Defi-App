@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { AAVE_V3, BASE_TOKENS } from "@zyo/shared";
 import { calibrationIndex, loadMcCalibration, type McCalibration, type McCalibrationCell } from "../../src/mc-calibration.js";
 import type { VolatilityInputs } from "../../src/config.js";
-import type { AaveRatesSample, AaveReserve, Address, EmissionsSample } from "../../src/types.js";
+import type { AaveBorrowCurve, AaveRatesSample, AaveReserve, Address, EmissionsSample } from "../../src/types.js";
 
 export const NOW_MS = Date.UTC(2026, 8, 5, 1, 0, 0);
 export const NOW_S = Math.floor(NOW_MS / 1000);
@@ -20,8 +20,18 @@ export function reserve(symbol: string, over: Partial<AaveReserve> = {}): AaveRe
     WETH: { address: BASE_TOKENS.WETH.address.toLowerCase() as Address, supplyAprPct: 1.843, variableBorrowAprPct: 2.454, ltvBps: 8000, liquidationThresholdBps: 8300, liquidationBonusBps: 500 },
   };
   const base = table[symbol] as Omit<AaveReserve, "symbol" | "usageAsCollateralEnabled" | "borrowingEnabled" | "isActive" | "isFrozen">;
+  // Reserve totals from PoolDataProvider.getReserveData at Base block 51,227,701 (2026-09-12 20:25 UTC,
+  // docs/VERIFIED-BASE-FACTS.md Addendum 13): USDC supplied 182,806,571.520498, variable debt
+  // 158,038,067.327137 (86.45 % utilisation, live rate 4.5146 %). The collateral reserves carry
+  // stand-in totals — nothing in the model reads them.
+  const totals: Record<string, { decimals: number; totalATokenUnits: string; totalVariableDebtUnits: string }> = {
+    USDC: { decimals: 6, totalATokenUnits: "182806571520498", totalVariableDebtUnits: "158038067327137" },
+    cbBTC: { decimals: 8, totalATokenUnits: "100000000000", totalVariableDebtUnits: "1000000000" },
+    WETH: { decimals: 18, totalATokenUnits: "10000000000000000000000", totalVariableDebtUnits: "1000000000000000000000" },
+  };
   return {
     ...base,
+    ...totals[symbol]!,
     symbol,
     usageAsCollateralEnabled: true,
     borrowingEnabled: true,
@@ -32,12 +42,29 @@ export function reserve(symbol: string, over: Partial<AaveReserve> = {}): AaveRe
   };
 }
 
+/**
+ * The USDC strategy's curve read live 2026-09-12 at block 51,227,701 (Addendum 13):
+ * DefaultReserveInterestRateStrategyV2 0x86AB…bDC5, optimal usage 90 %, base 0, slope1 4.70 %,
+ * slope2 10 % — which reproduces the live 4.5146 % from the totals above.
+ */
+export function borrowCurveFixture(over: Partial<AaveBorrowCurve> = {}): AaveBorrowCurve {
+  return {
+    strategy: "0x86ab1c62a8bf868e1b3e1ab87d587aba6fbcbdc5" as Address,
+    optimalUsageBps: 9000,
+    baseVariableBorrowRateBps: 0,
+    variableRateSlope1Bps: 470,
+    variableRateSlope2Bps: 1000,
+    ...over,
+  };
+}
+
 export function ratesFixture(over: Partial<AaveRatesSample> = {}, sampledAtMs = NOW_MS): AaveRatesSample {
   return {
     source: "aave-v3-base",
     dataProvider: AAVE_V3.poolDataProvider.toLowerCase() as Address,
     borrow: reserve("USDC"),
     collateral: { cbBTC: reserve("cbBTC"), WETH: reserve("WETH") },
+    borrowCurve: borrowCurveFixture(),
     sampledAt: new Date(sampledAtMs).toISOString(),
     ...over,
   };

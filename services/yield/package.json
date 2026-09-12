@@ -14,7 +14,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "model-inputs": "tsc -p tsconfig.json && node scripts/model-inputs.mjs",
     "model": "npm run model-inputs && node scripts/run-model.mjs --sample samples/gauge-emissions-2026-09-12.json",
-    "demo-gate": "npm run build && node scripts/gen-demo-gate.mjs"
+    "demo-gate": "npm run build && node scripts/gen-demo-gate.mjs",
+    "demo-forecast": "npm run build && node scripts/gen-demo-forecast.mjs"
   },
   "dependencies": {
     "@zyo/shared": "*"
