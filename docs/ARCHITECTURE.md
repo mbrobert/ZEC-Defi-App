@@ -664,7 +664,8 @@ published break-even are refused by the guard (`RISKS.md` §14).
 null`; `MORPHO_BLUE.marketIds` = the two chain-verified Base market ids (2026-09-07);
 `COW_PROTOCOL.vaultRelayer = null` on purpose — unverified), `health.ts` (`ENTRY_HF_FLOOR`, `ladderFor(entryHf)`
 and its floor instance `HF_LADDER`, `hfFromWad` for the router's record, `rungFor` throws on NaN — fail closed), `collateral.ts` (`COLLATERAL_ASSETS`, cbZEC
-`enabled: false` + reason; `maxOfferedLtvBps`, `ltvPresets` 30 / 40 / top),
+`enabled: false` + reason; `maxOfferedLtvBps` and `offeredLtvBounds` — the slider's stop with the cap that
+set it named; `ltvPresets` 30 / 40 / top survive for the yield gate's user-net rows only),
 `fees.ts` (`FEES.performanceBps = 1000`, `maxPerformanceBps = 2000`,
 `orchestrationBps = 0`; the performance fee is applied to **gains only** —
 losses and zero pass through untouched), `width.ts` (`RANGE_WIDTH_BOUNDS
