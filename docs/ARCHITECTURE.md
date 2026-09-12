@@ -345,7 +345,11 @@ actually sticks to the router still reverts.
   owner's raw `exec` to the protocol remains the escape) → the batch's pool is
   derived from the first id the account actually owns → `closeMany(ids, band)`
   → any non-USDC leg is swapped to USDC through the adapter under a
-  `SwapQuote{quotedIn, quotedOut, maxSlippageBps ≤ 500, routeData}` → repay
+  `SwapQuote{quotedIn, quotedOut, maxSlippageBps ≤ 500, routeData}` — unless the
+  adapter's floor for that leg is zero USDC (a fee too small for the quote to
+  price), in which case the leg stays in the account and `DustLegKept` says so
+  (NI-HIGH-1, 2026-09-12; before that, 6,192 wei of WETH reverted the whole
+  unwind as `ZeroQuote`) → repay
   (`max` = `min(debt, USDC held)`; **a fixed repay against zero debt is a
   no-op, not a revert**, so a racing rung no longer loses the withdraw as well)
   → withdraw (`max` = all) → if a withdrawal happened and any debt remains, the

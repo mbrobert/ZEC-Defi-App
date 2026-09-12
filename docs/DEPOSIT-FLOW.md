@@ -172,8 +172,11 @@ flowchart TD
         X["venues = registry.venueOf(asset), then registry.previousVenues(asset)<br/>withdraw venue = the first of them holding the account's position"] --> X1{"positionIds?"}
         X1 -- some --> X2["SnuggleLpVenue.closeMany(ids, band)<br/>per-id try/catch — one bad id does not block the rest<br/>engine.withdraw(id) → tokens to the account"]
         X2 --> X3{"non-USDC leg paid out?"}
-        X3 -- yes --> X4["AerodromeSwapAdapter.swap(…, quotedIn, quotedOut, maxSlippageBps)<br/>quote must imply a price inside the close's band (QuoteOutsideBand)<br/>floor = quote − tolerance, hard cap 500 bps"]
+        X3 -- yes --> X3a{"adapter floor for this leg &gt; 0?<br/>(minOutFor at the caller's quote)"}
+        X3a -- yes --> X4["AerodromeSwapAdapter.swap(…, quotedIn, quotedOut, maxSlippageBps)<br/>quote must imply a price inside the close's band (QuoteOutsideBand)<br/>floor = quote − tolerance, hard cap 500 bps"]
         X3 -- no --> X5
+        X3a -- "no (dust)" --> X4b["leg kept in the account, still the user's<br/>DustLegKept(account, token, amount) — NI-HIGH-1, 2026-09-12"]
+        X4b --> X5
         X4 --> X5
         X1 -- none --> X5
         X5{"repayAmount?"} -- "&gt; 0" --> X6["venue.repay(USDC, min(owed, held)) on EVERY venue the account owes,<br/>lowest health factor first, until the amount is spent<br/>one VenueRepaid(account, venue, repaid) each"]

@@ -7742,6 +7742,14 @@
             false
           ]
         },
+        "DustLegKept(address,address,uint256)": {
+          "topic0": "0xac2f9283088c51eb17a07b62fc748de0f6d5514a584106cfef45c4692ad36489",
+          "indexed": [
+            true,
+            true,
+            false
+          ]
+        },
         "LeveragedLpOpened(address,address,uint256,uint256,bytes32,uint256,uint256)": {
           "topic0": "0x6c145e8b27174ce6f96d2431e77de7a899e44cb9cad929d273bbf0be62d64bb9",
           "indexed": [
@@ -8286,6 +8294,31 @@
             },
             {
               "name": "healthFactor",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "event",
+          "name": "DustLegKept",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "token",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "amount",
               "type": "uint256",
               "indexed": false,
               "internalType": "uint256"

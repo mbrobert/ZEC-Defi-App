@@ -3,6 +3,39 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-12 — Slice I: CI that proves what it claims (`c7d90f1`), and what its nightly found (NI-HIGH-1, the commit after it)
+
+- **Slice I** — `.github/workflows/ci.yml` has ten jobs: `shared`, `web` (typecheck + unit with
+  `VERIFY_ABI_STRICT=1` and the model doc published to `/tmp/build/` so both pins run), `prototypes`
+  (Playwright's Chromium), `contracts-build` → `abi-seam` (the root bundle against the artifacts, the
+  keeper's seam STRICT — it had printed `SKIP` on every CI run and stayed green) and `agent` (strict
+  seam + yield), `fork` (the 11 fork tests at a pinned `FORK_BLOCK` = 51,222,568 with
+  `secrets.BASE_RPC_URL`; **without the secret the job fails and its summary line reads
+  `fork: 11 skipped = NOT VERIFIED`**), `static-analysis` and `solana-seam` unchanged.
+  `nightly-invariants.yml` runs the invariant suite at 1500 × 120 with Foundry's call summary in
+  the run summary and as an artifact. `scripts/check-cbzec-b20.sh` replaces
+  `test_fork_cbzecIsAB20WithLiveMultiplier` (no fork EVM executes cbZEC's code `0xef`); the fork
+  suite went **11 / 11** at block 51,222,568 once a harness defect was fixed (the direct-venue
+  close's band was read after the prank). `verify-toggle` had died since 2026-09-07 on a `bigint`
+  in `@zyo/shared`; bigint-safe now, and both prototypes' `MORPHO_BLUE` block synced (56 / 56).
+  Counts: contracts 380 / 0 / 11 of 391; ABI seam 424; shared 75; Solana seam 4; keeper 110/110 +
+  242; yield 131; web 167 (166 + 1 skipped); prototypes 118 · 109 · 56 · 6. Chain reads at
+  51,222,568 in `VERIFIED-BASE-FACTS.md` Addendum 10 — the cbZEC/USDC gauge now has an emissions
+  vote (≈ 617 AERO / day to 2026-09-17) and USDC borrows at 4.5205 %.
+- **NI-HIGH-1** — found by the nightly invariant configuration (1500 × 120) on its first local run:
+  `invariant_singleCloseClearsEveryBook` broke because the LP close paid the account 6,192 wei of
+  WETH fee and `StrategyRouter._toUsdc` swapped it with the caller's honest quote, whose floor for a
+  leg that small is zero — `AerodromeSwapAdapter.swap` refused `ZeroQuote()` and the whole unwind
+  (the web's Close and the keeper's protective one alike) reverted for a fee worth less than one
+  USDC unit. The router now asks the adapter for `minOutFor` on the actual leg first; a real quote
+  whose floor is zero keeps the leg in the account and emits `DustLegKept(account, token, amount)`;
+  an empty quote is still `ZeroQuote`. `audit-regressions/DustLegClose.t.sol` (4, three failing
+  first on `c7d90f1`); the nightly configuration re-run green, 10 / 10 at 180,000 calls each.
+  Contracts 380 → **384** passed; ABI 424 → **425**; keeper seam 110/110 unchanged; web ABI
+  regenerated. `AUDIT-2026-09-12.md`, `RISKS.md` §13, `CONTRACT-ABI.md`, `ARCHITECTURE.md`,
+  `DEPOSIT-FLOW.md`. Open: the keeper does not read the event; the Close plan's copy does not yet
+  say a dust leg may be kept.
+
 ## 2026-09-11 — Wave-3 Lows, fixed in order (one commit each; `AUDIT-2026-09-11.md` carries each status)
 
 - **W3-LOW-1** — `StrategyRouter._lpVenueForIds` asks both LP venues about the first owned id and

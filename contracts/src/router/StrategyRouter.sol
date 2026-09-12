@@ -150,6 +150,12 @@ contract StrategyRouter is Peripheral {
     ///         (`RISKS.md` §8 "two-book Close", option (1), decided 2026-09-10). `LeveragedLpUnwound
     ///         .withdrawn` is the sum.
     event VenueWithdrawn(address indexed account, address indexed venue, uint256 withdrawn);
+    /// @notice A non-USDC leg the LP close paid out was smaller than the caller's quote can price:
+    ///         the adapter's floor for it (`minOutFor`) is zero USDC, so a swap could not be
+    ///         protected at all. The leg stays in the account, still the user's, and the unwind
+    ///         goes on (NI-HIGH-1, 2026-09-12: the deep invariant run found a 6,192-wei WETH fee
+    ///         reverting the whole Close — and the keeper's protection with it — as `ZeroQuote`).
+    event DustLegKept(address indexed account, address indexed token, uint256 amount);
     event Swept(address indexed account, address indexed token, address indexed to, uint256 amount);
 
     error ZeroAddress();
@@ -428,6 +434,16 @@ contract StrategyRouter is Peripheral {
         if (amount == 0) return 0;
         if (token == USDC) return amount;
         _requireQuoteInBand(tokenIsToken0, p.swap, p.band);
+        // The adapter's own floor for THIS leg, computed by the code that enforces it. A quote with
+        // no numbers is still the adapter's `ZeroQuote` (it reverts here, as it did inside `swap`);
+        // a real quote whose floor for a tiny leg rounds to zero USDC means the swap could not be
+        // protected — the adapter would refuse it by name and the whole unwind, the keeper's
+        // protective one included, would revert for a fee worth less than one USDC unit. The leg
+        // is left in the account instead, reported, and the unwind carries on (NI-HIGH-1).
+        if (adapter.minOutFor(amount, p.swap.quotedIn, p.swap.quotedOut, p.swap.maxSlippageBps) == 0) {
+            emit DustLegKept(msg.sender, token, amount);
+            return 0;
+        }
         return abi.decode(
             _nested(
                 address(adapter),

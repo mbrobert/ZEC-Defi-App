@@ -799,6 +799,19 @@ the delta the same way (its floor used to be checked on the SwapRouter's return
 value while its NatSpec claimed otherwise); the venue's own to-ratio swap on
 open takes its tolerance from the caller's band, capped at the same 5 %.
 
+**A leg the quote cannot price (NI-HIGH-1, `AUDIT-2026-09-12.md`, 2026-09-12).** The
+floor above is relative to the caller's quote, so for a leg small enough it rounds to
+ZERO USDC — and a zero floor is a swap the adapter refuses by name (`ZeroQuote`).
+Until 2026-09-12 the router sent that swap anyway, so 6,192 wei of WETH fee paid
+out by the close reverted the whole unwind, the keeper's protective one included
+(found by the nightly invariant configuration, 180,000 calls per invariant, on its
+first local run). `StrategyRouter._toUsdc` now asks the adapter for `minOutFor` on
+the actual leg first: zero under a real quote means the leg stays in the account,
+`DustLegKept(account, token, amount)` says so, and the unwind goes on; an empty
+quote is still `ZeroQuote`. "Dust" is therefore whatever the enforcing code could
+not protect at the caller's own quote and tolerance — no threshold was typed.
+Regression: `contracts/test/audit-regressions/DustLegClose.t.sol`.
+
 **Does not.** The quote is still caller-supplied: a dishonest quote still gives
 a bad floor. What changed is that the lie is an explicit number in calldata
 that a reviewer, a simulation, an event reader or a UI can compare against the
