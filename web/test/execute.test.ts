@@ -449,7 +449,7 @@ test("W3-MED-1: a pool token Aave does not list is refused without a pool price 
   assert.equal(zec.amountPerPeriod, BigInt(Math.ceil(((30_000 * 2) / 1_075.5) * 1e8)));
   // An Aave price, when there is one, still wins over the pool's.
   const both = grantPoolTokenPricing(["cbBTC"], DEMO_MARKET, { cbBTC: 1 });
-  assert.ok(Math.abs(both[0].priceUsd - 79_630.89) < 1e-6);
+  assert.ok(Math.abs(both[0].priceUsd - DEMO_MARKET.reserves.cbBTC!.priceUsd) < 1e-6);
 });
 
 test("W3-MED-1: poolImpliedUsdPrices reads the pool's slot0 and token order; an unreadable pool contributes nothing", async () => {

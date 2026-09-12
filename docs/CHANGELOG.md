@@ -42,6 +42,24 @@ liquidity provision; EIP = Ethereum Improvement Proposal.
   1.407), the funded sale at HF 1.16 landing inside the cap with the released ZEC collected to the unit,
   observe-only refusing by name. Not deployed; no keeper runs anywhere.
 
+## 2026-09-12 — Ledger re-read: the demo's market snapshot is the yield sample's block, so the demo is one read
+
+- `docs/VERIFIED-BASE-FACTS.md`'s top ledger re-read read-only at block **51,226,072** (2026-09-12T19:31:31Z,
+  the block slice K's gauge sample was taken at; `cast call --block` against mainnet.base.org, paced), the
+  2026-09-05 figures kept as a drift column; Addendum 14 carries the raw words. A week's drift: USDC borrow
+  4.828 → **4.5174 %**, cbBTC 79,630.89 → **77,140.83**, ETH 2,453.45 → 2,520.38, the cbZEC pool 1,020 →
+  ≈ 1,125 USDC while Pyth's ZEC/USD is still the 2026-09-04 update (8.0 days old); the pool's active
+  liquidity fell 155× within the hour after the read when the tick crossed a spacing boundary.
+  `web/lib/demo.ts` (`DEMO_SNAPSHOT_AT`, `DEMO_SNAPSHOT_BLOCK`, `DEMO_CBZEC_PRICE_USDC`, `DEMO_MARKET` at
+  the yield service's 4-dp digits), the demo banner, the spot page's cbZEC literal and both prototypes'
+  `OIL_CHAIN_READ` (byte-equal) moved; every test that had typed the old digits derives them now
+  (`reads.test.ts`'s fake account, W3-MED-1, the wizard carry, `verify-toggle`'s facts checks, the
+  hold and spot checks in `verify-simple` / `verify-advanced`); the simple page's disagreement-band lever
+  is ×12.2 at this borrow (×12.33 at 4.828 %). Measured in a clean worktree on HEAD (another session was
+  mid-edit in the same files; nothing of theirs is here): web typecheck clean, unit **171** (170 + 1
+  skipped), e2e **14 / 0 / 6**, prototypes **118 · 109 · 56 · 6**. Yield not re-run (untouched by this
+  commit). `docs/TESTING.md` has the section.
+
 ## 2026-09-12 — Static analysis, second pass: the swap adapters' High is Slither's `reentrancy-balance`, not `reentrancy-eth`
 
 - The triage commit (`485b3ff`) suppressed the five swap-adapter findings as `reentrancy-eth`; Slither

@@ -2,8 +2,10 @@
  * DEMO MODE — shown only when no wallet is connected (or NEXT_PUBLIC_FORCE_DEMO=1).
  *
  * Nothing here is a product constant. `DEMO_MARKET` is a SNAPSHOT of the chain
- * reads recorded in docs/VERIFIED-BASE-FACTS.md (Base mainnet, 2026-09-05
- * ~01:00 UTC) so the demo can run where no RPC is reachable; live mode
+ * reads recorded in docs/VERIFIED-BASE-FACTS.md (Base mainnet block 51,226,072,
+ * 2026-09-12 19:31:31 UTC — the block the demo gate's yield sample was read at,
+ * so the snapshot and the gate are one read; Addendum 14) so the demo can run
+ * where no RPC is reachable; live mode
  * performs the same reads through lib/reads.ts and never consults this file.
  * Every derived number (presets, HF, liquidation price, net yield) is still
  * computed through the shared functions from these inputs.
@@ -22,7 +24,11 @@ import { DEMO_DEPLOYMENT, UNWIND_SELECTOR } from "./plan";
 import { normalizeGate, type GateView } from "./gate";
 import DEMO_GATE_RAW from "./demo-gate.json";
 
-export const DEMO_SNAPSHOT_AT = "2026-09-05T01:00:00Z";
+export const DEMO_SNAPSHOT_AT = "2026-09-12T19:31:31Z";
+/** The pinned block every DEMO_MARKET number was read at (VERIFIED-BASE-FACTS.md, Addendum 14). */
+export const DEMO_SNAPSHOT_BLOCK = 51_226_072;
+/** cbZEC/USDC Slipstream pool at that block: slot0 tick −24,205 → 100 × 1.0001^24,205 USDC per cbZEC. Demo spot quotes only. */
+export const DEMO_CBZEC_PRICE_USDC = 1125.01;
 export const DEMO_SNAPSHOT_SOURCE = "docs/VERIFIED-BASE-FACTS.md";
 
 /** The model that produced demo-gate.json states these same inputs; the pin test cross-checks them. */
@@ -31,7 +37,7 @@ export { DEMO_GATE_RAW };
 export const DEMO_MARKET: MarketRead = {
   readAt: DEMO_SNAPSHOT_AT,
   source: "snapshot",
-  usdcBorrowAprPct: 4.828,
+  usdcBorrowAprPct: 4.5174,
   reserves: {
     cbBTC: {
       symbol: "cbBTC",
@@ -42,9 +48,9 @@ export const DEMO_MARKET: MarketRead = {
       borrowingEnabled: true,
       isActive: true,
       isFrozen: false,
-      variableBorrowAprPct: 0.673,
-      supplyAprPct: 0.012,
-      priceUsd: 79630.89,
+      variableBorrowAprPct: 0.6716,
+      supplyAprPct: 0.0115,
+      priceUsd: 77140.83,
     },
     WETH: {
       symbol: "WETH",
@@ -55,9 +61,9 @@ export const DEMO_MARKET: MarketRead = {
       borrowingEnabled: true,
       isActive: true,
       isFrozen: false,
-      variableBorrowAprPct: 2.454,
-      supplyAprPct: 1.843,
-      priceUsd: 2453.45,
+      variableBorrowAprPct: 2.3861,
+      supplyAprPct: 1.7422,
+      priceUsd: 2520.38,
     },
     /** Not listed on Aave (config returns zeros) → null, exactly as a live read would decode it. */
     cbZEC: null,
@@ -70,8 +76,8 @@ export const DEMO_MARKET: MarketRead = {
       borrowingEnabled: true,
       isActive: true,
       isFrozen: false,
-      variableBorrowAprPct: 4.828,
-      supplyAprPct: 3.921,
+      variableBorrowAprPct: 4.5174,
+      supplyAprPct: 3.5169,
       priceUsd: 1.0,
     },
   },

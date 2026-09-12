@@ -1076,7 +1076,7 @@ button:focus-visible,[tabindex]:focus-visible,a:focus-visible,input:focus-visibl
 /* ── OIL_SHARED — mirrors packages/shared (@zyo/shared) byte-for-byte on
    every value it exports; prototype/index.html carries the identical block
    and test/verify-toggle.mjs diffs both against the built package. Source:
-   docs/VERIFIED-BASE-FACTS.md (read 2026-09-05 ~01:00 UTC). shared carries
+   docs/VERIFIED-BASE-FACTS.md (top ledger re-read 2026-09-12 at block 51,226,072). shared carries
    NO liquidation thresholds / rates — those live in OIL_CHAIN_READ below. ── */
 const OIL_SHARED = Object.freeze({
   CHAIN_ID: 8453,
@@ -1143,22 +1143,29 @@ const OIL_SHARED = Object.freeze({
 
 /* ── OIL_CHAIN_READ — the live reads the product parameterises on (never
    constants in production: PoolDataProvider / feeds / gauges at call time).
-   Values are the 2026-09-05 read in docs/VERIFIED-BASE-FACTS.md. ── */
+   Values are the 2026-09-12 re-read at block 51,226,072 (19:31:31 UTC) in
+   docs/VERIFIED-BASE-FACTS.md — the block the yield sample behind OIL_MODEL
+   was taken at, so the page's chain read and its model are one read. ── */
 const OIL_CHAIN_READ = Object.freeze({
-  readAt: "2026-09-05T01:00:00Z",
+  readAt: "2026-09-12T19:31:31Z",
+  readBlock: 51226072,
   aaveReserves: {
     /* `isPaused` is Aave's GUARDIAN PAUSE — a separate getPaused(asset) read
        (selector 0xb55d9904), not a field of the config tuple. A paused reserve
        still quotes a rate and still reads active, but every supply and borrow
-       reverts on chain; false on all three at the 2026-09-05 read. */
-    cbBTC: { ltvBps: 7300, liquidationThresholdBps: 7800, liquidationBonusBps: 750, supplyAprPct: 0.012, borrowAprPct: 0.673, isPaused: false },
-    WETH:  { ltvBps: 8000, liquidationThresholdBps: 8300, liquidationBonusBps: 500, supplyAprPct: 1.843, borrowAprPct: 2.454, isPaused: false },
-    USDC:  { ltvBps: 7500, liquidationThresholdBps: 7800, liquidationBonusBps: 500, supplyAprPct: 3.921, borrowAprPct: 4.828, isPaused: false },
+       reverts on chain; false on all three at the 2026-09-12 read. Rates are
+       the ray words truncated at 1e-4 % (the yield service's rayToPct), so the
+       page, the model and the ledger carry the same digits. */
+    cbBTC: { ltvBps: 7300, liquidationThresholdBps: 7800, liquidationBonusBps: 750, supplyAprPct: 0.0115, borrowAprPct: 0.6716, isPaused: false },
+    WETH:  { ltvBps: 8000, liquidationThresholdBps: 8300, liquidationBonusBps: 500, supplyAprPct: 1.7422, borrowAprPct: 2.3861, isPaused: false },
+    USDC:  { ltvBps: 7500, liquidationThresholdBps: 7800, liquidationBonusBps: 500, supplyAprPct: 3.5169, borrowAprPct: 4.5174, isPaused: false },
     cbZEC: null,
   },
-  feeds: { cbBTC: 79630.89, WETH: 2453.45, USDC: 1.00, BTC: 79593.77 },
-  pythZecUsd: { price: 1035.20, ageS: 19779, stale: true },
-  cbzecUsdcPool: { priceUsdc: 1020, gaugeRewardRate: 0, gaugePeriodFinish: 0 },
+  feeds: { cbBTC: 77140.83, WETH: 2520.38, USDC: 1.00, BTC: 77165.17 },
+  /* The same posted update the 2026-09-05 read saw (publishTime 1788550194): 691,297 s old at block 51,226,072. */
+  pythZecUsd: { price: 1035.20, ageS: 691297, stale: true },
+  /* slot0 tick −24,205 → 100 × 1.0001^24,205 USDC per cbZEC; the gauge's rewardRate (wei/s) and periodFinish (unix s). */
+  cbzecUsdcPool: { priceUsdc: 1125.01, gaugeRewardRate: 7140520125989201, gaugePeriodFinish: 1789603200 },
   /* The Snuggle engine's own performance fee on LP earnings (verified on the deployed vault in the pre-pivot tree). A venue fee, not an Oilskin fee. */
   snuggleEngineFeeBps: 1500,
 });

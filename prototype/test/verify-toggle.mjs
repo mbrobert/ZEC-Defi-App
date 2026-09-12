@@ -60,11 +60,18 @@ if (shared) {
   const pct = s => parseFloat(String(s).replace("%", ""));
   const cr = P.OIL_CHAIN_READ.aaveReserves;
   const cb = row("cbBTC"), we = row("WETH"), us = row("USDC");
-  check("facts: cbBTC LTV 73 / LT 78 / bonus 7.5 / borrow 0.673 / supply 0.012 match the ledger", cb && pct(cb[0]) * 100 === cr.cbBTC.ltvBps && pct(cb[1]) * 100 === cr.cbBTC.liquidationThresholdBps && near(pct(cb[2]) * 100, cr.cbBTC.liquidationBonusBps, 1e-9) && near(pct(cb[5]), cr.cbBTC.borrowAprPct, 1e-9) && near(pct(cb[6]), cr.cbBTC.supplyAprPct, 1e-9), JSON.stringify(cb));
-  check("facts: WETH LTV 80 / LT 83 / bonus 5 / borrow 2.454 / supply 1.843 match the ledger", we && pct(we[0]) * 100 === cr.WETH.ltvBps && pct(we[1]) * 100 === cr.WETH.liquidationThresholdBps && near(pct(we[5]), cr.WETH.borrowAprPct, 1e-9) && near(pct(we[6]), cr.WETH.supplyAprPct, 1e-9), JSON.stringify(we));
-  check("facts: USDC borrow 4.828 / supply 3.921 match the ledger", us && near(pct(us[5]), cr.USDC.borrowAprPct, 1e-9) && near(pct(us[6]), cr.USDC.supplyAprPct, 1e-9), JSON.stringify(us));
-  check("facts: Chainlink answers (cbBTC 79,630.89 · ETH 2,453.45) and Pyth ZEC (1,035.20, 19,779 s stale) match the ledger", /79,630\.89/.test(facts) && near(P.OIL_CHAIN_READ.feeds.cbBTC, 79630.89, 1e-9) && /2,453\.45/.test(facts) && near(P.OIL_CHAIN_READ.feeds.WETH, 2453.45, 1e-9) && /1,035\.20/.test(facts) && /19,779 s/.test(facts) && P.OIL_CHAIN_READ.pythZecUsd.ageS === 19779);
-  check("facts: cbZEC not listed on Aave; gauge rewardRate 0; ≈1,020 USDC per cbZEC", cr.cbZEC === null && /NOT LISTED/.test(facts) && /rewardRate\(\) = 0/.test(facts) && P.OIL_CHAIN_READ.cbzecUsdcPool.gaugeRewardRate === 0 && /1,020 USDC per cbZEC/.test(facts) && P.OIL_CHAIN_READ.cbzecUsdcPool.priceUsdc === 1020);
+  /* Every literal below is derived from the page's OIL_CHAIN_READ and looked up in the ledger's text —
+     nothing typed twice (the 2026-09-12 re-read at block 51,226,072 replaced the 2026-09-05 digits). */
+  const R = P.OIL_CHAIN_READ;
+  const fmt2 = n => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtInt = n => Math.round(n).toLocaleString("en-US");
+  const esc = t => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const has = t => new RegExp(esc(t)).test(facts);
+  check(`facts: cbBTC LTV ${cr.cbBTC.ltvBps / 100} / LT ${cr.cbBTC.liquidationThresholdBps / 100} / bonus ${cr.cbBTC.liquidationBonusBps / 100} / borrow ${cr.cbBTC.borrowAprPct} / supply ${cr.cbBTC.supplyAprPct} match the ledger`, cb && pct(cb[0]) * 100 === cr.cbBTC.ltvBps && pct(cb[1]) * 100 === cr.cbBTC.liquidationThresholdBps && near(pct(cb[2]) * 100, cr.cbBTC.liquidationBonusBps, 1e-9) && near(pct(cb[5]), cr.cbBTC.borrowAprPct, 1e-9) && near(pct(cb[6]), cr.cbBTC.supplyAprPct, 1e-9), JSON.stringify(cb));
+  check(`facts: WETH LTV ${cr.WETH.ltvBps / 100} / LT ${cr.WETH.liquidationThresholdBps / 100} / bonus ${cr.WETH.liquidationBonusBps / 100} / borrow ${cr.WETH.borrowAprPct} / supply ${cr.WETH.supplyAprPct} match the ledger`, we && pct(we[0]) * 100 === cr.WETH.ltvBps && pct(we[1]) * 100 === cr.WETH.liquidationThresholdBps && near(pct(we[5]), cr.WETH.borrowAprPct, 1e-9) && near(pct(we[6]), cr.WETH.supplyAprPct, 1e-9), JSON.stringify(we));
+  check(`facts: USDC borrow ${cr.USDC.borrowAprPct} / supply ${cr.USDC.supplyAprPct} match the ledger`, us && near(pct(us[5]), cr.USDC.borrowAprPct, 1e-9) && near(pct(us[6]), cr.USDC.supplyAprPct, 1e-9), JSON.stringify(us));
+  check(`facts: Chainlink answers (cbBTC ${fmt2(R.feeds.cbBTC)} · ETH ${fmt2(R.feeds.WETH)}) and Pyth ZEC (${fmt2(R.pythZecUsd.price)}, ${fmtInt(R.pythZecUsd.ageS)} s stale) match the ledger, dated ${R.readAt} at block ${fmtInt(R.readBlock)}`, has(fmt2(R.feeds.cbBTC)) && has(fmt2(R.feeds.WETH)) && has(fmt2(R.pythZecUsd.price)) && has(`${fmtInt(R.pythZecUsd.ageS)} s`) && R.pythZecUsd.stale === true && has(`re-read ${R.readAt.slice(0, 10)}`) && has(`block ${fmtInt(R.readBlock)}`));
+  check(`facts: cbZEC not listed on Aave; gauge rewardRate ${fmtInt(R.cbzecUsdcPool.gaugeRewardRate)} wei/s to periodFinish ${fmtInt(R.cbzecUsdcPool.gaugePeriodFinish)}; ≈ ${fmtInt(R.cbzecUsdcPool.priceUsdc)} USDC per cbZEC`, cr.cbZEC === null && /NOT LISTED/.test(facts) && has(`\`rewardRate()\` ${fmtInt(R.cbzecUsdcPool.gaugeRewardRate)} wei/s`) && has(`\`periodFinish()\` ${fmtInt(R.cbzecUsdcPool.gaugePeriodFinish)}`) && has(`≈ ${fmtInt(R.cbzecUsdcPool.priceUsdc)} USDC per cbZEC`));
 }
 
 /* ── 4. OIL_MODEL against MODEL-NUMBERS.md (when present) ── */

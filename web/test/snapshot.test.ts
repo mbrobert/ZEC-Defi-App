@@ -85,8 +85,8 @@ test("demo-gate.json is pinned to MODEL-NUMBERS.md (every served lpNet, drag, em
   assert.equal(Number(borrow![1]), DEMO_GATE_RAW.borrowAprPct);
   // The demo is two dated reads: the market snapshot (DEMO_MARKET, the ledger read of
   // DEMO_SNAPSHOT_AT) and the gate (the model, at its own live borrow read). They may differ only
-  // when the gate is the FRESHER read, and both carry their dates (slice K, 2026-09-12: the model
-  // moved to a 2026-09-12 borrow read while the ledger snapshot is still 2026-09-05).
+  // when the gate is the FRESHER read, and both carry their dates. Since the ledger re-read of
+  // 2026-09-12 both are block 51,226,072 and equal; the rule stays for the day one moves alone.
   if (DEMO_GATE_RAW.borrowAprPct !== DEMO_MARKET.usdcBorrowAprPct) {
     assert.ok(
       Date.parse(DEMO_GATE_RAW.emissionsSampledAt) > Date.parse(DEMO_MARKET.readAt),
@@ -145,7 +145,7 @@ test("demo-gate.json states the same liquidation thresholds and supply rates as 
   assert.equal(DEMO_GATE_RAW.liquidationThresholdBps.WETH, DEMO_MARKET.reserves.WETH!.liquidationThresholdBps);
   const v = DEMO_GATE_RAW.verdicts.find((x) => x.collateral === "cbBTC" && x.collateralSupplyAprPct !== null)!;
   // The supply rate follows the same rule as the borrow (snapshot pin above): equal, or the gate's
-  // read is the fresher one — both dated (2026-09-12: gate 0.0115 % vs the 2026-09-05 snapshot's 0.012 %).
+  // read is the fresher one — both dated (equal since the 2026-09-12 ledger re-read: 0.0115 % on both sides).
   if (v.collateralSupplyAprPct !== DEMO_MARKET.reserves.cbBTC!.supplyAprPct) {
     assert.ok(Date.parse(DEMO_GATE_RAW.emissionsSampledAt) > Date.parse(DEMO_MARKET.readAt), "a differing supply rate must be the fresher read");
   }

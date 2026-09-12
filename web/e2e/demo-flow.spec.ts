@@ -86,7 +86,7 @@ test.describe("Oilskin demo mode", () => {
     await expect(page.getByTestId("preset-top")).toHaveAttribute("data-ltv", "5000");
     await page.getByTestId("preset-p40").click();
     await expect(page.getByTestId("entry-hf")).toHaveText("1.95");
-    await expect(page.getByTestId("borrow-usdc")).toContainText("15,926.18");
+    await expect(page.getByTestId("borrow-usdc")).toContainText("15,428.17");
     // The ladder says what actually happens, and that the first rung is a message.
     const ladder = page.getByTestId("rung-ladder");
     await expect(ladder).toContainText("a message, not a transaction");
@@ -95,7 +95,7 @@ test.describe("Oilskin demo mode", () => {
     await expect(page.getByTestId("rung-caveat")).toContainText("expires after 30 days");
     await page.getByTestId("wizard-next").click();
 
-    // One recommendation only; at 4.828% the model says hold, and says why
+    // One recommendation only; at 4.52% the model says hold, and says why
     await expect(page.getByRole("heading", { level: 2, name: "Our recommendation" })).toBeVisible();
     await expect(page.locator('[data-testid^="strategy-"]')).toHaveCount(0);
     await expect(page.getByTestId("advanced-controls")).toHaveCount(0);
@@ -253,7 +253,7 @@ test.describe("Oilskin demo mode", () => {
     await page.getByTestId("sell-token").selectOption("cbBTC");
     await page.getByTestId("buy-token").selectOption("USDC");
     await page.getByTestId("sell-amount").fill("0.1");
-    await expect(page.getByTestId("quote")).toContainText("7,963");
+    await expect(page.getByTestId("quote")).toContainText("7,714");
     await expect(page.getByTestId("disclosures-spot")).toContainText("Spot orders via CoW");
     expect(errors).toEqual([]);
   });

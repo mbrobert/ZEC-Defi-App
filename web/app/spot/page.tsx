@@ -13,6 +13,7 @@ import { ERC20_ABI } from "@/lib/abi/aave";
 import { SPOT_TOKENS, getSpotQuote, makeTradingSdk, readAllowance, readOrderStatus, readVaultRelayer, type SpotOrderStatus, type SpotQuote, type SpotToken } from "@/lib/cow";
 import { toAtomic } from "@/lib/math";
 import { fmtAmount, fmtUsd } from "@/lib/format";
+import { DEMO_CBZEC_PRICE_USDC } from "@/lib/demo";
 import Chip from "@/components/Chip";
 import Disclosures from "@/components/Disclosures";
 import { TokenMark } from "@/components/TokenMark";
@@ -105,7 +106,7 @@ export default function SpotPage() {
   // Demo quote: illustrative, from snapshot prices; the real quote comes from the CoW API.
   const demoQuote = useMemo(() => {
     if (s.mode !== "demo") return null;
-    const px = (t: SpotToken) => (t === "USDC" ? 1 : t === "cbBTC" ? market.reserves.cbBTC?.priceUsd ?? NaN : t === "WETH" ? market.reserves.WETH?.priceUsd ?? NaN : 1020);
+    const px = (t: SpotToken) => (t === "USDC" ? 1 : t === "cbBTC" ? market.reserves.cbBTC?.priceUsd ?? NaN : t === "WETH" ? market.reserves.WETH?.priceUsd ?? NaN : DEMO_CBZEC_PRICE_USDC);
     const a = Number(amount) || 0;
     const out = (a * px(sell)) / px(buy);
     return { sell, buy, sellAmount: a, expectedBuy: out, minBuy: out * 0.995, networkCostSell: 0.4 / px(sell), slippageBps: 50, validForSeconds: 1800 };
@@ -321,7 +322,7 @@ export default function SpotPage() {
               <dt className="text-oil-ink2">Expires unfilled after</dt>
               <dd className="text-right">{Math.round(shown.validForSeconds / 60)} min</dd>
             </dl>
-            {s.mode === "demo" && <p className="mt-2 text-[12px] text-oil-ink3">Illustrative: {source === "live" ? "live oracle" : "snapshot"} prices for cbBTC/WETH, {fmtUsd(1020)}/cbZEC from the Aerodrome pool tick at snapshot time. A real quote comes from the CoW order book.</p>}
+            {s.mode === "demo" && <p className="mt-2 text-[12px] text-oil-ink3">Illustrative: {source === "live" ? "live oracle" : "snapshot"} prices for cbBTC/WETH, {fmtUsd(DEMO_CBZEC_PRICE_USDC)}/cbZEC from the Aerodrome pool tick at snapshot time. A real quote comes from the CoW order book.</p>}
           </div>
         )}
 

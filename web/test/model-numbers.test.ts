@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { FEES } from "@zyo/shared";
-import { demoGate, DEMO_GATE_RAW, DEMO_MARKET } from "../lib/demo";
+import { DEMO_GATE_RAW, DEMO_MARKET, DEMO_SNAPSHOT_BLOCK, demoGate } from "../lib/demo";
 import { reasonPlain, reasonText, verdictsFor, type GateEntry } from "../lib/gate";
 import { exactHalfWidthPct, fmtHalfWidth } from "../lib/math";
 import { fmtPct, fmtSignedPct } from "../lib/format";
@@ -139,9 +139,11 @@ test("…and matches the round's MODEL-NUMBERS-v2 handover doc", (t) => {
 
 test("the gate's own headline numbers are the ones the product quotes", () => {
   assert.equal(gate.borrowAprPct, 4.5174);
-  // The gate is the fresher of the demo's two dated reads (the market snapshot is the 2026-09-05
-  // ledger read; the gate the 2026-09-12 model) — the rule is pinned in snapshot.test.ts.
-  assert.ok(Date.parse(gate.emissionsSampledAt) > Date.parse(DEMO_MARKET.readAt));
+  // The gate and the market snapshot are ONE read since the ledger re-read of 2026-09-12: the same
+  // block (51,226,072) and the same borrow digits. snapshot.test.ts keeps the freshness rule for the
+  // day one of them moves without the other.
+  assert.equal(gate.borrowAprPct, DEMO_MARKET.usdcBorrowAprPct);
+  assert.match(DEMO_GATE_RAW.borrowSource, new RegExp(`at block ${DEMO_SNAPSHOT_BLOCK}\\b`));
   // Advanced mode prints the engine's cut and Oilskin's fee side by side.
   assert.equal(gate.engineFeeBps, 1500);
   assert.equal(gate.engineFeeBps! / 100, 15);
