@@ -150,6 +150,13 @@ the market". This is the Base-side ZEC path; it uses the existing
 
 ## 5 · What changes in the existing artefacts (order chosen: both, in full)
 
+> **Superseded in part, 2026-09-12 evening.** `BUILD-PLAN-2026-09-12.md` is the plan of
+> record. Its D3 drops the Base cbZEC-market track named below (no Morpho cbZEC/USDC
+> market is created; cbZEC stays registered-disabled until a Base market lists it), and
+> its D4–D7 replace the yield gate with a forecast and the fixed 1.55 entry floor with a
+> user-chosen health factor above one registry floor. The bullets stand as the record of
+> what was planned on the morning of 2026-09-12.
+
 - `README.md` and `CLAUDE.md` "What this is": from "Base-first v1" to
   "chain-agnostic, ZEC-holder-centric; Base module and Solana module" — grep
   for every "Base-first" and fix it in the same commit.

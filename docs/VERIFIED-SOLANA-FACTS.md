@@ -9,10 +9,11 @@ chain and to answer the reads stated.** Nothing here was signed or sent. The rea
 `docs/research/solana-facts-2026-09-12.json`, so every number can be traced to the bytes it came from.
 
 A note on provenance. The handoff and `DIRECTION-2026-09-11.md` cite a research file
-`docs/research/SOLANA-ZEC-KAMINO-2026-09.md`. **That file does not exist in the repository or anywhere on the
-founder's Mac** (searched 2026-09-12). The direction memo carries its headline numbers, and this file re-reads each
-of them from the chain; the "Drift" section at the end says where the memo's numbers have moved. This file, not
-the missing research file, is what code pins to.
+`docs/research/SOLANA-ZEC-KAMINO-2026-09.md`. **That file did not exist in the repository or on the founder's Mac when this file was written**
+(searched 2026-09-12 00:36 UTC); it arrived with Cowork's bundle on the evening of 2026-09-12 and now sits at that
+path (its numbers were read 2026-09-11 10:06–10:08 UTC). The direction memo carries its headline numbers, and this
+file re-reads each of them from the chain; the "Drift" section at the end says where the memo's numbers have
+moved. This file, not the research file, is what code pins to.
 
 Abbreviations: LTV = loan-to-value; LT = liquidation threshold; HF = health factor; APR = annual percentage rate;
 APY = annual percentage yield (compounded); PDA = program-derived address (an account a program, not a key,
@@ -258,3 +259,56 @@ above. None of the words in `web/lib/copy.ts` `BANNED_WORDS` may be used to desc
    measured on the local validator, `SOLANA-ARCHITECTURE.md` §11.
 7. Anything about Solana devnet: the ZCASH market exists on mainnet only; localnet with cloned accounts is the
    test surface.
+
+## Addendum 1 (2026-09-12 20:10 UTC) · CCTP V2 — the Solana → Base USDC rail, probed live
+
+Cowork's draft of this file (bundle `docs/handoff/2026-09-12-cowork/VERIFIED-SOLANA-FACTS.md`, rows dated slot
+446,507,284 / Base block 51,225,715 / 19:19 UTC) carried the CCTP rows below. Every one was re-read here,
+read-only, at a fresher slot and block; where the two reads differ the fresher value is kept and the draft's is
+noted. CCTP = Circle's Cross-Chain Transfer Protocol; bp = basis point (0.01 %).
+
+### Solana programs (`getMultipleAccounts`, `finalized`, slot **446,516,913**, `api.mainnet-beta.solana.com`)
+
+| Program | Id | Probe |
+|---|---|---|
+| CCTP V2 TokenMessengerMinterV2 | `CCTPV2vPZJS2u2BBsUoscuikbYjnpFmbFsvVuJdgUMQe` | executable; owner BPF upgradeable loader (36-byte program account → a live upgrade authority, not identified) |
+| CCTP V2 MessageTransmitterV2 | `CCTPV2Sm4AdWt5296sk4P66VBZ7bEhcARwFaaS9YPbeC` | executable; BPF upgradeable loader |
+| Base–Solana bridge, Solana side (**not** this loop's rail — it mints a wrapped ERC-20, `CROSSCHAIN-LOOP-2026-09-12.md` §1) | `HNCne2FkVaNghhjKXapxJzPaBvAKDG1Ge3gqhZyfVWLM` | executable; BPF upgradeable loader |
+| ZCASH market address-lookup table (the Kamino API's market entry) | `4X1udqAdw8912WyBUfUFnpkNTsiL2YSNRgXevWKowxu2` | exists; owner `AddressLookupTab1e…`; 728 bytes = 56-byte header + 21 addresses |
+
+### Base contracts (`cast` against `base-rpc.publicnode.com`, block **51,227,239**, 2026-09-12 20:10 UTC)
+
+| Contract | Address | Probe (a real selector answered) |
+|---|---|---|
+| TokenMessengerV2 | `0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d` | code 2,175 bytes (a proxy); `localMessageTransmitter()` → `0x81D4…4B64`; `localMinter()` → `0xfd78…D002` |
+| MessageTransmitterV2 | `0x81D40F21F12A8F0E3252Bccb954D722d4c464B64` | code 2,175 bytes (a proxy); `localDomain()` → **6**; `version()` → **1** |
+| TokenMinterV2 | `0xfd78EE919681417d192449715b2594ab58f5D002` | code 9,295 bytes; `localTokenMessenger()` → `0x28b5…cf5d`; `burnLimitsPerMessage(USDC 0x8335…2913)` → **10,000,000 USDC per message** |
+
+The three answer with each other's addresses (messenger → transmitter and minter, minter → messenger), which is
+the probe that they are one deployment and not three look-alikes. `localDomain()` reverts on TokenMessengerV2 —
+that selector is not on it; the domain is read from the transmitter.
+
+### Circle's fee and allowance API (`iris-api.circle.com`, 2026-09-12 20:10:38 UTC)
+
+| Item | Value | Endpoint |
+|---|---|---|
+| Fast Transfer minimum fee, Solana (domain 5) → Base (domain 6) | **1 bp** (`finalityThreshold` 1000) | `/v2/burn/USDC/fees/5/6` |
+| Standard fee, Solana → Base | 0 (`finalityThreshold` 2000) | same |
+| Fast Transfer minimum fee, Base → Solana | **1.3 bp** | `/v2/burn/USDC/fees/6/5` |
+| Standard fee, Base → Solana | 0 | same |
+| Fast-burn allowance, one pool shared by every Fast route | **$53,140,871.26** at 2026-09-12T20:10:04Z (Cowork's read at 19:19:03Z: $52,510,328) | `/v2/fastBurn/USDC/allowance` |
+| CCTP domain ids | Solana **5**, Base **6** | the fee-endpoint paths; `localDomain()` above |
+
+The allowance moved by ≈ $630 K in 51 minutes. A busy day elsewhere can push a rung's transfer onto the Standard
+path (source-chain finality, minutes); the keeper must handle both, and the cross-chain position class holds its
+Solana-side reserve for exactly that reason (`CROSSCHAIN-LOOP-2026-09-12.md` §3, `BUILD-PLAN-2026-09-12.md` A5).
+
+### Not verified by this addendum (probe before code depends on it)
+
+1. Circle's published "~8 s" Fast Transfer time — measure one real transfer on Solana devnet ↔ Base Sepolia and
+   record it here.
+2. The `depositForBurn` account layout on Solana and the `mintRecipient` encoding of a Base `OilskinAccount`
+   (bytes32, the 20-byte address left-padded) — decode from the program's own IDL, not from documentation.
+3. The upgrade authorities of the two CCTP programs and the admins of the Base proxies.
+4. Whether Base's `TokenMinterV2` maps Solana USDC (`EPjF…Dt1v`) as domain 5's remote token
+   (`remoteTokensToLocalTokens`) — a read, not yet done.

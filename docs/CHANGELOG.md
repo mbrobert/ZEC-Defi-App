@@ -3,6 +3,27 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-12 (evening) — Cowork's decisions folded in: BUILD-PLAN D1–D7 is the plan of record; the tree reconciled
+
+- **New docs** from the founder's Cowork session: `docs/BUILD-PLAN-2026-09-12.md` (plan of record — §4
+  rewritten here to the tree's true state, commit hash per step, and the S3 finding's consequences for the
+  Solana lane), `docs/CROSSCHAIN-LOOP-2026-09-12.md`, `docs/AUDIT-SHORTLIST-2026-09.md`,
+  `docs/research/SOLANA-ZEC-KAMINO-2026-09.md` (the 2026-09-11 read the facts file's provenance note had
+  reported missing; the note now says when it arrived).
+- **`CLAUDE.md` "What this is"** carries D3–D7: no cbZEC market on Base; the yield model a forecast, never a
+  refusal; Simple mode allows every curated pool after acknowledgment; the cross-chain loop in v1 in both
+  modes; a continuous health-factor slider above one registry floor (proposed 1.25, not pinned). Hard rules,
+  conventions and `.claude/settings.json` unchanged.
+- **`docs/DIRECTION-2026-09-11.md`** already carried the "Decided 2026-09-12" block, §3b and the revised §5
+  (byte-identical to the bundle); §5 now says its cbZEC-market track is superseded by D3.
+- **`docs/VERIFIED-SOLANA-FACTS.md` Addendum 1**: the CCTP V2 programs on Solana, the three Base contracts
+  (each answering a selector with the others' addresses), Circle's fees 1 bp / 1.3 bp, the $53.1 M shared Fast
+  allowance and the domain ids — every row re-probed read-only at slot 446,516,913 / Base block 51,227,239 /
+  20:10 UTC, fresher than the draft's.
+- **Stale phrases inventoried** (BUILD-PLAN §6): README, RISKS §14, web, the prototypes and the yield service
+  still speak the gate's language; they are rewritten with A3 (gate → forecast) and A4 (the slider), one
+  commit each, with the grep repeated in those commits.
+
 ## 2026-09-12 — Solana slice S4: the keeper agent on Solana
 
 - **The keeper's Solana path** (`agent/src/solana/`, `docs/SOLANA-ARCHITECTURE.md` §5): discovery by
@@ -20,6 +41,18 @@ liquidity provision; EIP = Ethereum Improvement Proposal.
   and `solana/tests/keeper.spec.ts` on localnet (+5, **26/26**): repay-only at HF 1.30 (294.19 USDC → HF
   1.407), the funded sale at HF 1.16 landing inside the cap with the released ZEC collected to the unit,
   observe-only refusing by name. Not deployed; no keeper runs anywhere.
+
+## 2026-09-12 — CI, first real runs: the fork job says NOT VERIFIED (no secret exists yet), Slither's Highs triaged, the nightly invariants green on the runner
+
+- Eight of ten `ci.yml` jobs green on the first push. `fork`: `11 skipped = NOT VERIFIED` — the
+  repository has no Actions secret; `BASE_RPC_URL` is the founder's to create. `static-analysis`:
+  Slither's three High detectors (`arbitrary-send-eth` on the account's own raw call,
+  `reentrancy-eth` on the batch executor and the two swap adapters' balance-delta floors,
+  `uninitialized-state` on a pushed-to array mapping) are by design and proved by existing tests —
+  suppressed at their sites with the proof named, the Mediums and Lows recorded with verdicts
+  (`AUDIT-2026-09-12.md`, "Static analysis"); one Medium left open for the founder: the Pyth
+  adapter ignores `conf`. `nightly-invariants.yml` run by hand: 10 / 10 at 1500 × 120 in 4 min 58 s,
+  artifact uploaded. Contracts 384 / 0 / 11 unchanged.
 
 ## 2026-09-12 — Slice K: the yield gate on fresh chain reads
 

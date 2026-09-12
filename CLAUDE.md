@@ -7,27 +7,48 @@ override convenience every time.
 
 Oilskin: a chain-agnostic, ZEC-holder-centric DeFi app (founder's direction,
 2026-09-11/12: wherever a market for ZEC exists, a ZEC holder can deploy it
-there through Oilskin). Two modules, both built in full — never a "lite"
-notify-only variant:
+there through Oilskin). The plan of record is `docs/BUILD-PLAN-2026-09-12.md`
+(decisions D1–D7, 2026-09-12); read it before `README.md`. Two modules, both
+built in full — never a "lite" notify-only variant — and launched together:
 
-- **Base module** (this repo today): users deposit cbBTC, WETH or cbZEC into
-  their OWN smart account (`OilskinAccount`, EIP-1167 clone, owner = their
-  wallet), borrow USDC on Aave v3 — or, for cbZEC, on a Morpho Blue
-  cbZEC/USDC market the founder creates (Chainlink ZEC/USD is live on Base) —
-  and deploy it into Aerodrome Slipstream liquidity through the MaxFi/Snuggle
-  engine when the yield gate clears. A keeper (`agent/`) protects health inside
-  a signed, scoped grant.
-- **Solana module** (designed 2026-09-12, no handlers yet): bridged ZEC
-  (NEAR Intents / OmniBridge) as collateral on Kamino's ZCASH market, USDC
-  borrowed, the same ladder run by an Anchor program + PDA the user's wallet
-  owns. Facts in `docs/VERIFIED-SOLANA-FACTS.md`; design in
-  `docs/SOLANA-ARCHITECTURE.md`; direction in `docs/DIRECTION-2026-09-11.md`.
-  No instruction handlers are written until the founder has read the design.
+- **Base module** (this repo today): users deposit cbBTC or WETH into their
+  OWN smart account (`OilskinAccount`, EIP-1167 clone, owner = their wallet),
+  borrow USDC on Aave v3 (or Morpho Blue, same two assets) and may deploy it
+  into Aerodrome Slipstream liquidity through the MaxFi/Snuggle engine. cbZEC
+  stays registered-disabled until a Base lending market lists it — **no
+  Morpho market is created for it** (D3). A keeper (`agent/`) protects health
+  inside a signed, scoped grant.
+- **Solana module** (program and keeper path built 2026-09-12, proven on
+  localnet, not deployed): bridged ZEC (NEAR Intents / OmniBridge) as
+  collateral on Kamino's ZCASH market, USDC borrowed, the same ladder run by
+  an Anchor program + PDA (program-derived address) the user's wallet owns,
+  protected by the keeper's Solana path (`agent/src/solana/`). Facts in
+  `docs/VERIFIED-SOLANA-FACTS.md`; design and what the localnet runs proved in
+  `docs/SOLANA-ARCHITECTURE.md`. A PDA-owned Kamino obligation cannot be
+  handed to the wallet (klend refuses it); the exit is always through the
+  program.
+- **Cross-chain loop** (v1, Simple and Advanced — D6): USDC borrowed on Kamino
+  crosses to the user's own Base account by Circle's CCTP V2 (Cross-Chain
+  Transfer Protocol; mintRecipient = the user's `OilskinAccount`) and goes
+  into Aerodrome; a Solana-side USDC reserve keeps the repay rung atomic on
+  Solana. Not built yet (BUILD-PLAN A5, B3's burn, Stream C).
 
-A loan never crosses a chain. Shared across chains: the health ladder, the
-entry rule, the yield-gate math, the copy rules, the one website.
-Nothing is deployed yet. Start with `README.md`, `SETUP.md`,
-`docs/DIRECTION-2026-09-11.md`, `docs/BASE-PIVOT-2026-09.md`,
+The yield model is a **forecast, not a gate** (D4, D5): every curated pool is
+depositable in both modes after the user sees the forecast and acknowledges
+it. Hard refusals are safety only: the registry entry floor, a borrow the
+pool cannot fund, a stale oracle, a paused venue, a disabled asset, an
+unfunded cross-chain reserve. Risk is the user's choice on a continuous
+health-factor (HF) slider — HF ↔ borrow amount, both directions — above one
+registry floor (proposed 1.25; the founder's number, not pinned until he
+confirms it); "Sheltered" 1.55 and "Expert" 1.30 are quick-click marks, not
+modes; the ladder's rungs derive from the entry HF the user chose (BUILD-PLAN
+§2b, D7). Until steps A3 and A4 land, the code still carries the gate and the
+fixed 1.55 floor; BUILD-PLAN §6 names the stale phrases to strip with them.
+
+A loan never crosses a chain. Shared across chains: the ladder, the slider
+rules, the forecast math, the copy rules, the one website. Nothing is
+deployed yet. Start with `docs/BUILD-PLAN-2026-09-12.md`, then `README.md`,
+`SETUP.md`, `docs/DIRECTION-2026-09-11.md`, `docs/CROSSCHAIN-LOOP-2026-09-12.md`,
 `docs/VERIFIED-BASE-FACTS.md`, `docs/VERIFIED-SOLANA-FACTS.md`,
 `docs/AUDIT-2026-09-06.md`, `docs/TESTING.md`.
 
