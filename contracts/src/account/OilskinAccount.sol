@@ -265,6 +265,8 @@ contract OilskinAccount is IOilskinAccount, IERC721Receiver, IERC1155Receiver {
     /// @inheritdoc IOilskinAccount
     /// @dev Invariant: only the currently active peripheral, only while an exec is in flight; the
     ///      targets called here get NO callback rights; keeper budgets apply if a keeper is the actor.
+    /// @dev Slither `reentrancy-eth` / `reentrancy-no-eth`, triaged 2026-09-12 (AUDIT-2026-09-12.md): only the one active peripheral (T_ACTIVE == msg.sender) can enter while a root call is in flight, its calls are charged against the root grant before they run, and nesting is depth-bounded — audit-regressions/PeripheralCallback.t.sol.
+    // slither-disable-next-line reentrancy-eth,reentrancy-no-eth
     function execFromPeripheral(Call[] calldata calls)
         external
         override
@@ -468,6 +470,8 @@ contract OilskinAccount is IOilskinAccount, IERC721Receiver, IERC1155Receiver {
 
     // ---------------------------------------------------------------- internal
 
+    /// @dev Slither `reentrancy-eth` / `reentrancy-no-eth`, triaged 2026-09-12 (AUDIT-2026-09-12.md): the budget is charged BEFORE each call it bounds; what Slither sees written after a call is the next call's charge in the same batch. Re-entry into any root door is `Reentrancy()` (T_LOCK) — Account.t.sol `test_reentrancy_*`.
+    // slither-disable-next-line reentrancy-eth,reentrancy-no-eth
     function _runRootCalls(Call[] calldata calls, address actor, bool keeper)
         internal
         returns (bytes[] memory results)
@@ -505,6 +509,13 @@ contract OilskinAccount is IOilskinAccount, IERC721Receiver, IERC1155Receiver {
         emit Executed(actor, target, value, _selector(data));
     }
 
+    /// @dev Slither `arbitrary-send-eth`, triaged 2026-09-12 (AUDIT-2026-09-12.md, static analysis):
+    ///      this IS the owner's own account sending what it was told to send. Every path here is
+    ///      the owner's (`exec*`, owner-only), a keeper's inside its grant (`execAsKeeper`, value
+    ///      charged against `maxValuePerPeriod` before the call — `ValueBudgetExceeded`), or the one
+    ///      active peripheral's (`execFromPeripheral`, charged against the root grant). Proved by
+    ///      Account.t.sol (owner-only doors, value budget) and audit-regressions/GrantEscape.t.sol.
+    // slither-disable-next-line arbitrary-send-eth
     function _rawCall(address target, uint256 value, bytes calldata data)
         internal
         returns (bytes memory result)

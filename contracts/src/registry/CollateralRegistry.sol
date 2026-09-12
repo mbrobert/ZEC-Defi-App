@@ -67,6 +67,9 @@ contract CollateralRegistry is Ownable2Step, ICollateralRegistry {
     ///      M-HIGH-1). The router's EXIT path walks this list so a position opened on a previous
     ///      venue can still be repaid and withdrawn through the product after a switch. A venue
     ///      that becomes current again leaves the list; nothing is ever listed twice.
+    /// @dev Slither `uninitialized-state`, triaged 2026-09-12: a mapping of arrays is only ever
+    ///      `push`ed to (`_rememberPrevious`), which the detector does not count as a write.
+    // slither-disable-next-line uninitialized-state
     mapping(address => address[]) internal _previousVenues;
     address[] internal _assets;
 

@@ -98,6 +98,11 @@ contract SlipstreamPoolSwapAdapter is ISwapAdapter, ICLSwapCallback, Peripheral 
     ///      pool, only during this call, only once; no allowance is ever granted to anyone.
     ///      `routeData` = `abi.encode(int24 tickSpacing)`, the same shape the SwapRouter adapter
     ///      takes, and it must be this pool's.
+    /// @dev Slither `reentrancy-eth` ("stale balance used after the call"), triaged 2026-09-12
+    ///      (AUDIT-2026-09-12.md): the balance DELTA across the swap is the floor check by design —
+    ///      read before, read after, compare — and this adapter holds nothing of its own between
+    ///      calls. Proved by SlipstreamLpVenue.t.sol and the T_PAID in-flight guard on the callback.
+    // slither-disable-next-line reentrancy-eth
     function swap(
         address tokenIn,
         address tokenOut,

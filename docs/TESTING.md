@@ -325,9 +325,24 @@ have five fields), and every command each job runs was run locally, with the
 counts in the Summary table. The first execution is the push that carries
 this file.
 
-Static analysis (slice H) is unchanged and still has not run locally — none of
-the three tools is installed on the founder's Mac (`AUDIT-2026-09-11.md` §Slice
-H has the commands); the first CI run's findings are still to be triaged.
+**What the first real runs showed (2026-09-12, runs on `c7d90f1` … `d2f7760`).**
+Eight of the ten jobs went green on the first push: `contracts`,
+`contracts-build`, `abi-seam`, `agent`, `shared`, `web`, `prototypes`,
+`solana-seam`. `fork` failed exactly as designed — its summary line reads
+`fork: 11 skipped = NOT VERIFIED (secrets.BASE_RPC_URL is not available to this
+run)` — because **the repository has no Actions secret at all** (`gh api
+…/actions/secrets` → `total_count: 0`); the founder must create
+`BASE_RPC_URL` under Settings → Secrets and variables → Actions → Repository
+secrets, and the next push proves the fork at block 51,222,568.
+`static-analysis` failed on Slither's `--fail-high`: 305 results over 54
+contracts, three High detectors, every one a pattern this codebase chose and
+tests — triaged in `AUDIT-2026-09-12.md` ("Static analysis") and suppressed at
+its site with the proof named; Aderyn and halmos run for the first time on the
+push that carries that triage. The nightly workflow was run once by hand
+(`workflow_dispatch`, run 34716244208): **10 / 10 invariants at 1500 × 120 in
+4 min 58 s on the GitHub runner**, the call summary in the run summary and
+uploaded as `invariant-call-summary-34716244208`. None of the three static
+tools has run on the founder's Mac.
 
 ## 2026-09-12 — Step 7: the Solana module, design before code
 
