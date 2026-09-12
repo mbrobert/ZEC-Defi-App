@@ -132,8 +132,9 @@ liquidity provision; EIP = Ethereum Improvement Proposal.
   (`contracts/foundry.toml`); with it `AccountGrantHalmos` is **4 passed / 0 failed** locally (halmos
   0.3.3, `--loop 4`, 33 paths, 0.9 s) — the grant budget cannot be exceeded through any calldata shape the
   parser recognises, and what it cannot budget is refused — and `RouterBalanceHalmos` (bounded `--loop 3`)
-  is **1 passed / 0 failed**, 293 paths, 33 s (`AUDIT-2026-09-12.md`, "Halmos"). The run of this commit is
-  the first CI execution of both.
+  is **1 passed / 0 failed**, 293 paths, 33 s (`AUDIT-2026-09-12.md`, "Halmos"). On the runner (`ceb976b`):
+  4 / 4 (151 paths, 3.8 s) and 1 / 1 (406 paths, 114 s); eleven of twelve jobs green, `fork` NOT VERIFIED
+  until the `BASE_RPC_URL` secret exists (`TESTING.md` "CI").
 
 ## 2026-09-12 — CI: the contracts suite as three jobs, halmos on its own profile — the runner is 2 cores / 7 GB and a whole-tree via-IR compile never finishes on it
 

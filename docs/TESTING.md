@@ -353,6 +353,14 @@ run)` — because **the repository has no Actions secret at all** (`gh api
 …/actions/secrets` → `total_count: 0`); the founder must create
 `BASE_RPC_URL` under Settings → Secrets and variables → Actions → Repository
 secrets, and the next push proves the fork at block 51,222,568.
+
+**What the evening's runs showed (2026-09-12, run on `ceb976b`).** Eleven of the twelve jobs green
+on the runner: `contracts (unit)` 250 / 0 / 0, `contracts (audit-regressions)` 136 / 0 / 0,
+`contracts (invariant)` 2 / 0 / 0 (each ≈ 20 s on a warm per-group cache; 2–7 min cold),
+`contracts-build`, `abi-seam`, `agent`, `shared`, `web`, `prototypes`, `solana-seam`, and
+`static-analysis` — Slither 298 results / no High, Aderyn 0 High, halmos `AccountGrantHalmos`
+4 / 4 (151 paths, 3.8 s) and `RouterBalanceHalmos` 1 / 1 (406 paths, 114 s). The one red job is
+`fork`: `11 skipped = NOT VERIFIED`, because the `BASE_RPC_URL` secret still does not exist.
 `static-analysis` failed on Slither's `--fail-high`: 305 results over 54
 contracts, three High detectors, every one a pattern this codebase chose and
 tests — triaged in `AUDIT-2026-09-12.md` ("Static analysis") and suppressed at
