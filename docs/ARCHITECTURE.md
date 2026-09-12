@@ -675,7 +675,7 @@ never-offered cbZEC/USDC pool), `keccak.ts`. The prototypes carry a byte-equal
 copy that `prototype/test/verify-toggle.mjs` deep-equals against the built
 package.
 
-## Solana module (design record, 2026-09-12 — nothing built)
+## Solana module (built 2026-09-12 and proven on localnet; not deployed)
 
 The Solana twin of the account + grant: an Anchor program whose **Account PDA**
 (program-derived address) owns a Kamino obligation on the ZCASH market; typed
@@ -685,10 +685,15 @@ owner instructions (`deposit`, `borrow` with the entry floor, `repay`,
 chain itself gates on the refreshed health factor being below the named rung
 and on the action lifting it to the rung's disarm level; ladder constants
 generated from `packages/shared` and pinned by a seam test; a pool-size gate in
-the yield service instead of the yield gate. The design, its departures from
-the Base module and their reasons, and the seven decisions the founder must make
-before a handler is written are in `SOLANA-ARCHITECTURE.md`; the chain-verified
-inputs are in `VERIFIED-SOLANA-FACTS.md`.
+the yield service instead of the yield gate. The keeper's Solana path
+(`agent/src/solana/`) reuses this module's ladder engine, store (generic over an
+id codec), notifier and watchdog, and adds discovery by program-account scan,
+valuation from one simulated Kamino refresh, and a dispatcher that repays from
+the Account's idle USDC or funds a sale inside the grant. The design, its
+departures from the Base module and their reasons, the founder's decisions, and
+what the localnet runs proved (26/26) are in `SOLANA-ARCHITECTURE.md`; the
+chain-verified inputs are in `VERIFIED-SOLANA-FACTS.md`. The pool-size gate and
+the web flow are not built; nothing is deployed.
 
 ## What owns what — the trust model in one paragraph
 

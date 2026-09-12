@@ -55,12 +55,13 @@ is the short version; encode from the JSON, never from prose.
 
 See `README.md` ("Run every suite") for the commands and `docs/TESTING.md`
 for what each suite proves. Summary for this tree, all counted by running them
-on 2026-09-12: contracts **380** pass / 11 fork tests skipped without `FORK_URL`
-(**11 / 11** pass against Base at block 51,222,568, plus `scripts/check-cbzec-b20.sh`);
-keeper **242** tests + ABI seam **110/110**; yield **131**; web **167** unit (165 + 2
-skipped; the **12** Playwright scenarios were last run 2026-09-06); shared **75**;
-Solana seam **4**; prototypes **118 + 109 + 56** checks + **6** fuzz; root ABI seam
-**424**. CI runs every one of these on push (`docs/TESTING.md` "CI").
+on 2026-09-12 (the counts `docs/TESTING.md` records, evening tree): contracts **388** pass / 0 fail /
+11 fork tests skipped without `FORK_URL` (**11 / 11** pass against Base at block 51,222,568, plus
+`scripts/check-cbzec-b20.sh`); keeper **269** tests / 52 suites + ABI seam **113/113** + Solana IDL seam
+**77/77**; yield **146**; web **180** unit (179 + 1 skipped) and **14 / 0 / 6** Playwright scenarios; shared
+**85**; Solana seam **7** (program unit **7**, localnet **26**, toolchain needed — `solana/SETUP.md`);
+prototypes **126 + 114 + 57** checks + **6** fuzz; root ABI seam **425**. CI runs every one of these on push
+(`docs/TESTING.md` "CI"; the contracts suite as three jobs).
 
 ## Run
 
