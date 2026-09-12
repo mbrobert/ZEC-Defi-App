@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Address, Hex } from "viem";
 import { BASE_TOKENS, CHAIN_ID, PERMIT2 } from "@zyo/shared";
-import { grantPoolTokenPricing, grantTokenLimits, runClaim, runGrant, runOpen, runRevokeAll, runUnwind, type RunContext, type StepEvent } from "../lib/execute";
+import { grantPoolTokenPricing, grantTokenLimits, poolImpliedUsdPrices, runClaim, runGrant, runOpen, runRevokeAll, runUnwind, type RunContext, type StepEvent } from "../lib/execute";
 import { MAX_QUOTE_DIVERGENCE } from "../lib/quote";
 import { buildOpenPlan, DEMO_DEPLOYMENT, type Deployment, type OpenPlanInput } from "../lib/plan";
 import { assessGas, estimateForWrite } from "../lib/gas";
@@ -426,4 +426,56 @@ test("recommend: with the model's verdict nothing clears → hold, with the reas
     assert.equal(r2.entry.poolId, "aero-cbbtc-usdc");
     assert.equal(r2.userNetPct, 2.9);
   }
+});
+
+/**
+ * Audit wave 3, W3-MED-1. cbZEC has no Aave reserve, so `grantPoolTokenPricing` priced it NaN and
+ * `grantTokenLimits` threw: a cbZEC/USDC position could never get a keeper grant — at open ("grant it
+ * later") and later from the dashboard alike — while the keeper's unwind for that pool needs a cbZEC
+ * budget (the pool-direct callback pays the pool by `transfer`; `SlipstreamLpVenue.t.sol`
+ * `test_keeperUnwindOnTheDirectPoolIsBudgeted`). The pool's own USDC price now sizes that line.
+ */
+test("W3-MED-1: a pool token Aave does not list is refused without a pool price (the pre-fix product outcome), and sized from the pool's own price with one", () => {
+  const cbbtc = { address: BASE_TOKENS.cbBTC.address, symbol: "cbBTC", decimals: 8, priceUsd: 79_593.77 };
+  // Before the fix this is the only path: cbZEC → NaN → the grant cannot be built.
+  const noPrice = grantPoolTokenPricing(["USDC", "cbZEC"], DEMO_MARKET);
+  assert.ok(Number.isNaN(noPrice.find((t) => t.symbol === "cbZEC")!.priceUsd));
+  assert.throws(() => grantTokenLimits(30_000, cbbtc, noPrice), /no USD price for cbZEC/);
+  // With the pool-implied price (1,075.5 USDC per cbZEC on 2026-09-10) the line is sized in cbZEC's 8 decimals.
+  const priced = grantPoolTokenPricing(["USDC", "cbZEC"], DEMO_MARKET, { cbZEC: 1_075.5 });
+  const l = grantTokenLimits(30_000, cbbtc, priced);
+  const zec = l.find((x) => x.token.toLowerCase() === BASE_TOKENS.cbZEC.address.toLowerCase())!;
+  assert.ok(zec, "a cbZEC line exists");
+  assert.equal(zec.amountPerPeriod, BigInt(Math.ceil(((30_000 * 2) / 1_075.5) * 1e8)));
+  // An Aave price, when there is one, still wins over the pool's.
+  const both = grantPoolTokenPricing(["cbBTC"], DEMO_MARKET, { cbBTC: 1 });
+  assert.ok(Math.abs(both[0].priceUsd - 79_630.89) < 1e-6);
+});
+
+test("W3-MED-1: poolImpliedUsdPrices reads the pool's slot0 and token order; an unreadable pool contributes nothing", async () => {
+  const POOL = "0x0fc47c17af86078d809358db1b4db2debc988566" as const;
+  // sqrtPriceX96 at tick −23,756 (2026-09-10 read): ≈ 1,075.5 USDC per cbZEC with USDC as token0.
+  const sqrtP = 24_158_478_068_572_882_064_475_621_010n;
+  const read = {
+    async multicall({ contracts }: { contracts: readonly { address: string; functionName: string }[] }) {
+      return contracts.map((c) => {
+        if (c.address.toLowerCase() !== POOL) return { status: "failure" as const };
+        if (c.functionName === "slot0") return { status: "success" as const, result: [sqrtP, -23_756, 0, 1, 1, true] };
+        if (c.functionName === "token0") return { status: "success" as const, result: BASE_TOKENS.USDC.address };
+        return { status: "failure" as const };
+      });
+    },
+    async readContract() {
+      throw new Error("unused");
+    },
+    async getCode() {
+      return "0x";
+    },
+  };
+  const prices = await poolImpliedUsdPrices(read as never, [
+    { poolAddress: POOL, token0: "USDC", token1: "cbZEC" },
+    { poolAddress: "0x1111111111111111111111111111111111111111", token0: "WETH", token1: "USDC" },
+  ]);
+  assert.ok(prices.cbZEC !== undefined && Math.abs(prices.cbZEC - 1_075.5) < 1, `pool-implied cbZEC price ${prices.cbZEC}`);
+  assert.equal(prices.WETH, undefined, "an unreadable pool contributes nothing — the grant refuses that token by name");
 });

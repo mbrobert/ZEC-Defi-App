@@ -60,6 +60,16 @@ contract MockSlipstreamNpm is ERC721Enumerable {
         return _nextId;
     }
 
+    /// @dev Tokens `owner` holds that carry a standing `approve` — the venue approves the gauge
+    ///      only inside the batch that deposits, so a staked token is the gauge's (no approval)
+    ///      and a held token has none.
+    function getApprovedCount(address owner) external view returns (uint256 n) {
+        uint256 bal = balanceOf(owner);
+        for (uint256 i = 0; i < bal; i++) {
+            if (getApproved(tokenOfOwnerByIndex(owner, i)) != address(0)) n++;
+        }
+    }
+
     // ------------------------------------------------------------ NPM surface
 
     function positions(uint256 tokenId)

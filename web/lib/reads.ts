@@ -224,6 +224,12 @@ export interface AccountRead {
   lpUnreadable: string | null;
   /** The direct venue's `positionsOf` refused (`PositionsUnreadable`, or a read failure); mirrored into `lpUnreadable` when the engine read was fine. */
   lpUnreadableDirect: string | null;
+  /**
+   * The direct venue's `unstakedOverflow(account)`: unstaked Slipstream tokens the account holds
+   * (any pool) versus how many `positionsOf` scans. `held > scanned` = tokens beyond the window are
+   * not listed — a stranger may have sent them (audit wave 3, W3-MED-2). Staked positions are whole.
+   */
+  lpDirectOverflow: { held: number; scanned: number } | null;
   /** USDC held in the account (hold strategy / un-swept proceeds), base units. */
   accountUsdc: bigint;
   /**
@@ -758,6 +764,7 @@ export async function readAccount(
     lpPositions: [],
     lpUnreadable: null,
     lpUnreadableDirect: null,
+    lpDirectOverflow: null,
     accountUsdc: 0n,
     debtIsDust: false,
     walletEth,
@@ -820,6 +827,11 @@ export async function readAccount(
     }
   }
   if (lpUnreadable === null && lpUnreadableDirect !== null) lpUnreadable = lpUnreadableDirect;
+  let lpDirectOverflow: AccountRead["lpDirectOverflow"] = null;
+  if (opts.lpVenueDirect && lpUnreadableDirect === null) {
+    const [ov] = await safeMulticall(client, [{ address: opts.lpVenueDirect, abi: DIRECT_LP_VENUE_ABI, functionName: "unstakedOverflow", args: [account] }]);
+    if (Array.isArray(ov) && typeof ov[0] === "bigint" && typeof ov[1] === "bigint") lpDirectOverflow = { held: Number(ov[0]), scanned: Number(ov[1]) };
+  }
 
   const acct = out[0];
   const usdcRow = out[1 + COLLATERAL_SYMBOLS.length];
@@ -895,7 +907,7 @@ export async function readAccount(
   }
 
   const debtIsDust = aaveDebtIsDust && (venues === null || venues.venues.every((v) => v.debtIsDust));
-  return { ...base, account, deployed, aave, venues, collateral, debtUsdc, lpPositionIds, lpPositionIdsDirect, lpPositions, lpUnreadable, lpUnreadableDirect, accountUsdc, debtIsDust };
+  return { ...base, account, deployed, aave, venues, collateral, debtUsdc, lpPositionIds, lpPositionIdsDirect, lpPositions, lpUnreadable, lpUnreadableDirect, lpDirectOverflow, accountUsdc, debtIsDust };
 }
 
 /** The custom error a viem read rejected with, by name, or null when it was not a decoded revert. */

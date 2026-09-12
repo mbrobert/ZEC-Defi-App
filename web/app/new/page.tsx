@@ -10,7 +10,7 @@ import { useAccountRead, useDeployment, useGate, useMarket, useSession } from "@
 import { useMode } from "@/lib/mode";
 import { fromAtomic } from "@/lib/math";
 import { buildOpenPlan, deadlineFromNow, type OpenPlanInput } from "@/lib/plan";
-import { grantPoolTokenPricing, grantTokenLimits, runOpen, type Emit } from "@/lib/execute";
+import { grantPoolTokenPricing, grantTokenLimits, poolImpliedUsdPrices, runOpen, type Emit } from "@/lib/execute";
 import { WIZARD_STEPS, defaultWizardState, deriveReview, presetsFor, type WizardState } from "@/lib/wizard";
 import { DEMO_ACCOUNT } from "@/lib/demo";
 import { fmtUsd } from "@/lib/format";
@@ -135,10 +135,13 @@ function Wizard() {
     // grant step with the reason instead of signing a wrong line (audit wave 2, G-HIGH-1).
     let limits: ReturnType<typeof grantTokenLimits> | Error;
     try {
+      const lpPool = state.strategy?.kind === "lp" ? state.strategy.entry.pool : null;
+      // A pool token Aave does not list (cbZEC) is sized at the pool's own USDC price (W3-MED-1).
+      const implied = lpPool?.poolAddress ? await poolImpliedUsdPrices(publicClient as never, [{ poolAddress: lpPool.poolAddress as Address, token0: lpPool.token0, token1: lpPool.token1 }]) : {};
       limits = grantTokenLimits(
         planInput.borrowUsdc,
         { address: BASE_TOKENS[state.collateral].address, symbol: state.collateral, decimals: BASE_TOKENS[state.collateral].decimals, priceUsd: r?.priceUsd ?? NaN },
-        state.strategy?.kind === "lp" ? grantPoolTokenPricing([state.strategy.entry.pool.token0, state.strategy.entry.pool.token1], market) : [],
+        lpPool ? grantPoolTokenPricing([lpPool.token0, lpPool.token1], market, implied) : [],
       );
     } catch (e) {
       limits = e as Error;

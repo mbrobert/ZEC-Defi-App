@@ -36,12 +36,15 @@ contract InvariantsTest is Fixture {
             poolWethUsdc,
             [usdc, weth, cbbtc, aero],
             POOL_WETH_USDC,
-            [alice, keeper, registryOwner, treasury]
+            [alice, keeper, registryOwner, treasury],
+            [address(directVenue), address(poolSwapAdapter), address(cbzec)],
+            gaugeCbzec,
+            npmCbzec
         );
         handler.grantKeeper();
 
         targetContract(address(handler));
-        bytes4[] memory sel = new bytes4[](21);
+        bytes4[] memory sel = new bytes4[](25);
         sel[0] = Handler.supplyAndBorrow.selector;
         sel[1] = Handler.openLp.selector;
         sel[2] = Handler.accrueYield.selector;
@@ -63,6 +66,11 @@ contract InvariantsTest is Fixture {
         sel[18] = Handler.supplyAndBorrowOnCurrentVenue.selector;
         sel[19] = Handler.repayAcrossProbe.selector;
         sel[20] = Handler.singleCloseProbe.selector;
+        // W3-MED-3 (2026-09-11): the direct Slipstream venue joins the surface.
+        sel[21] = Handler.openDirectLp.selector;
+        sel[22] = Handler.accrueDirectReward.selector;
+        sel[23] = Handler.ownerCloseDirect.selector;
+        sel[24] = Handler.keeperUnwindDirect.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: sel}));
     }
 
@@ -116,13 +124,19 @@ contract InvariantsTest is Fixture {
             acct.tokenBudgetOf(keeper, address(router), StrategyRouter.unwind.selector, address(usdc));
         (uint256 limitW, uint256 spentW) =
             acct.tokenBudgetOf(keeper, address(router), StrategyRouter.unwind.selector, address(weth));
+        (uint256 limitZ, uint256 spentZ) =
+            acct.tokenBudgetOf(keeper, address(router), StrategyRouter.unwind.selector, address(cbzec));
         assertLe(spentU, limitU, "USDC budget overspent");
         assertLe(spentW, limitW, "WETH budget overspent");
+        assertLe(spentZ, limitZ, "cbZEC budget overspent (the pool-direct callback's payment)");
         assertEq(usdc.balanceOf(keeper), 0, "keeper holds USDC");
         assertEq(weth.balanceOf(keeper), 0, "keeper holds WETH");
         assertEq(cbbtc.balanceOf(keeper), 0, "keeper holds cbBTC");
         assertEq(aero.balanceOf(keeper), 0, "keeper holds AERO");
+        assertEq(cbzec.balanceOf(keeper), 0, "keeper holds cbZEC");
         assertEq(aaveVenue.collateral(keeper, address(cbbtc)), 0);
+        assertEq(gaugeCbzec.stakedLength(keeper), 0, "keeper staked nothing of its own");
+        assertEq(npmCbzec.balanceOf(keeper), 0, "keeper holds no Slipstream NFT");
     }
 
     function invariant_feeNeverTouchesPrincipal() public view {
@@ -130,6 +144,9 @@ contract InvariantsTest is Fixture {
         assertLe(weth.balanceOf(treasury), (handler.g_yieldWeth() * PERF_BPS) / 10_000, "WETH fee > 10% of yield");
         assertLe(aero.balanceOf(treasury), (handler.g_yieldAero() * PERF_BPS) / 10_000, "AERO fee > 10% of yield");
         assertEq(cbbtc.balanceOf(treasury), 0, "collateral is never yield");
+        // The direct venue's principal comes back as USDC and cbZEC; neither is ever yield in this
+        // model (the gauge pays AERO; no trading fees accrue on the mock while staked).
+        assertEq(cbzec.balanceOf(treasury), 0, "direct-venue principal (cbZEC) is never yield");
     }
 
     /// A peripheral never ACQUIRES a balance: whatever it holds is exactly what was donated to it
@@ -137,11 +154,18 @@ contract InvariantsTest is Fixture {
     /// action that could transfer a token to a peripheral, so the vacuous assertion looked strong
     /// while one base unit of USDC would have bricked the protocol for everyone, permanently.
     function invariant_peripheralsAcquireNothing() public view {
-        address[5] memory peripherals =
-            [address(router), address(aaveVenue), address(lpVenue), address(swapAdapter), address(morphoVenue)];
-        MockERC20[4] memory toks = [usdc, weth, cbbtc, aero];
-        for (uint256 i = 0; i < 5; i++) {
-            for (uint256 j = 0; j < 4; j++) {
+        address[7] memory peripherals = [
+            address(router),
+            address(aaveVenue),
+            address(lpVenue),
+            address(swapAdapter),
+            address(morphoVenue),
+            address(directVenue),
+            address(poolSwapAdapter)
+        ];
+        MockERC20[5] memory toks = [usdc, weth, cbbtc, aero, MockERC20(address(cbzec))];
+        for (uint256 i = 0; i < 7; i++) {
+            for (uint256 j = 0; j < 5; j++) {
                 assertEq(
                     toks[j].balanceOf(peripherals[i]),
                     handler.g_donated(peripherals[i], address(toks[j])),
@@ -160,13 +184,17 @@ contract InvariantsTest is Fixture {
     }
 
     function invariant_noStandingAllowances() public view {
-        address[4] memory spenders = [address(aave), address(engine), address(aeroRouter), address(morpho)];
-        MockERC20[3] memory toks = [usdc, weth, cbbtc];
-        for (uint256 i = 0; i < 4; i++) {
-            for (uint256 j = 0; j < 3; j++) {
+        // …including the direct deployment: the position manager (approved for the mint, reset
+        // after) and the pool itself (never approved — the callback pays by transfer).
+        address[6] memory spenders =
+            [address(aave), address(engine), address(aeroRouter), address(morpho), address(npmCbzec), address(poolCbzecUsdc)];
+        MockERC20[4] memory toks = [usdc, weth, cbbtc, MockERC20(address(cbzec))];
+        for (uint256 i = 0; i < 6; i++) {
+            for (uint256 j = 0; j < 4; j++) {
                 assertEq(toks[j].allowance(address(acct), spenders[i]), 0, "allowance left behind");
             }
         }
+        assertEq(npmCbzec.getApprovedCount(address(acct)), 0, "no NFT approval left behind");
     }
 
     function invariant_callSummary() public view {
@@ -250,5 +278,31 @@ contract InvariantsTest is Fixture {
         handler.switchVenue(false);
         assertEq(registry.venueOf(address(cbbtc)), address(aaveVenue));
         assertEq(handler.g_switches(), 2);
+
+        // W3-MED-3 (2026-09-11): the direct Slipstream venue is reachable — opened from idle USDC,
+        // rewarded by the gauge, closed by the keeper inside its grant (the cbZEC callback payment
+        // charged), and by the owner; the raw exit clears it at the gauge and the position manager.
+        handler.supplyAndBorrow(1e8, 4000); // idle USDC to deploy
+        handler.openDirectLp(type(uint256).max);
+        assertEq(handler.g_directOpens(), 1, "the direct open landed");
+        assertEq(directVenue.positionsOf(address(acct)).length, 1);
+        handler.accrueDirectReward(0, 50e18);
+        uint256 aeroFeeBefore = aero.balanceOf(treasury);
+        handler.keeperUnwindDirect(5_000e6);
+        assertEq(handler.g_keeperDirectUnwinds(), 1, "the keeper's direct unwind succeeds within its grant");
+        assertEq(directVenue.positionsOf(address(acct)).length, 0, "closed through the router");
+        assertGt(aero.balanceOf(treasury), aeroFeeBefore, "the fee was taken on the gauge's AERO");
+        (, uint256 spentZ) = acct.tokenBudgetOf(keeper, address(router), StrategyRouter.unwind.selector, address(cbzec));
+        assertGt(spentZ, 0, "the callback's cbZEC payment was charged to the grant");
+        handler.openDirectLp(type(uint256).max);
+        handler.ownerCloseDirect(0);
+        assertEq(handler.g_directCloses(), 1);
+        handler.openDirectLp(type(uint256).max);
+        handler.donate(5, 1); // the direct venue
+        handler.donate(6, 1); // the pool-direct adapter
+        handler.rawExitProbe();
+        assertFalse(handler.g_exitProbeFailed(), "the raw exit clears the direct position at the gauge and the NPM");
+        handler.routerExitProbe();
+        assertFalse(handler.g_routerExitProbeFailed(), "the router exit clears the direct position too");
     }
 }

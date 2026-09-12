@@ -5612,6 +5612,11 @@
           "selector": "0x61d027b3",
           "stateMutability": "view",
           "outputs": "address"
+        },
+        "unstakedOverflow(address)": {
+          "selector": "0xed7ef4b4",
+          "stateMutability": "view",
+          "outputs": "uint256,uint256"
         }
       },
       "events": {
@@ -6494,6 +6499,30 @@
               "name": "",
               "type": "address",
               "internalType": "address"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "unstakedOverflow",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "held",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "scanned",
+              "type": "uint256",
+              "internalType": "uint256"
             }
           ],
           "stateMutability": "view"

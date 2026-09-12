@@ -3,7 +3,9 @@
 What an auditor is asked to read, what it must guarantee, and what we have
 not verified ourselves. Line counts are `wc -l` on this tree. The ABI seam
 (selectors, errors, events) is `CONTRACT-ABI.md` and the generated
-`contracts/abi/oilskin-abi.json` (419 entries across 19 contracts as of 2026-09-11); read the code, not the tables.
+`contracts/abi/oilskin-abi.json` (420 entries across 19 contracts as of 2026-09-11); read the code, not the tables.
+Wave 3 of the internal audit (slice F's surface and what wave 2 left) and its fix round are in
+`AUDIT-2026-09-11.md`.
 Wave 1 of the internal audit and the fix round it produced are in
 `AUDIT-2026-09-06.md`.
 
@@ -102,8 +104,10 @@ bands (informational), `contracts/test/mocks` (test doubles).
 
 From `contracts/test/invariant/Invariants.t.sol` — a Handler with **21
 actions** (the 16 below plus `switchVenue`, `routerExitProbe`,
-`supplyAndBorrowOnCurrentVenue`, `repayAcrossProbe`, `singleCloseProbe`; the
-direct venue is NOT yet a Handler action — a slice-G item) (`supplyAndBorrow`, `openLp`, `accrueYield`, `ownerClaim`,
+`supplyAndBorrowOnCurrentVenue`, `repayAcrossProbe`, `singleCloseProbe`, and
+since wave 3 (W3-MED-3) `openDirectLp`, `accrueDirectReward`,
+`ownerCloseDirect`, `keeperUnwindDirect` — 25 in all; `donate` now targets
+seven peripherals × five tokens) (`supplyAndBorrow`, `openLp`, `accrueYield`, `ownerClaim`,
 `ownerCloseOne`, `keeperUnwind`, `keeperAttack`, `rekey`, `toggleAsset`,
 `revokeAll`, `regrant`, `warp`, `glitchEnumeration`, `rawExitProbe`,
 `ownerExit`, **`donate`**), at the default profile 256 runs × depth 40 per
@@ -122,7 +126,9 @@ invariant, and re-run in the fix round at 1,500 × 120 (180,000 calls each,
    collateral (`invariant_feeNeverTouchesPrincipal`).
 4. **A peripheral never acquires a balance of its own** — its balance equals
    exactly what the Handler donated to it, for every token × peripheral pair
-   (`invariant_peripheralsAcquireNothing`). This **replaces** the old
+   (`invariant_peripheralsAcquireNothing`; seven peripherals including
+   `SlipstreamLpVenue` and `SlipstreamPoolSwapAdapter`, five tokens including
+   cbZEC, since wave 3). This **replaces** the old
    `balanceOf(peripheral) == 0` assertion, which passed only because the
    Handler had no way to send a peripheral a token: it was vacuous while a
    one-wei donation would have bricked the protocol permanently.
@@ -142,7 +148,7 @@ Plus `invariant_callSummary` (coverage reporting only) and
 `test_handlerPathsAreLive` (asserts every handler path is reachable, so none of
 the above is vacuous).
 
-Unit-level properties (360 passed on 2026-09-11, 12 fuzz tests at 512 runs by
+Unit-level properties (363 passed on 2026-09-11 after wave 3, 12 fuzz tests at 512 runs by
 default, 5,000 in the wave-1 fix round): only the factory initialises an account, exactly once; only
 the owner can `exec`; a plain call grants nothing and `execFromPeripheral`
 refuses a call that asks for rights; reentrancy through every door reverts;
@@ -182,8 +188,9 @@ chain / missing env / no code / Aave provider drift.
 | **The live engine's revert shape under `claim` / `closeMany` failure** | **Measured 2026-09-10 (slice B, Addendum 5)** on the live engine at block 51,127,409: `NotPositionOwner()` for a foreign and a never-minted id on `withdraw` / `harvest` / `claimStakingRewards`, `MinimumHoldTimeNotMet()` inside the hold, `NoFeesToHarvest()`, `NoRewardAdapter()`, `UseClaimStakingRewards()`; `closeMany` and `claim` report each and revert on none; the mocks carry the same selectors. Not exercisable on demand: `NotStaked()`, the deposit-side errors and the pause (source-derived). | which ids come back in `failed` |
 | **Gauge-emission words** | 2026-08-31 block 50675328, not a fresh read; the MC calibration is derived from those same words | the yield verdict's inputs, not its logic |
 | **The emissions anchor across restarts** | Corroboration history is in-process memory; a restart serves nothing for a pool until three refreshes have run | a blind window after every yield-service restart, fail-closed |
-| **Static analysis / formal** | No Slither, Aderyn, Halmos or Tenderly run recorded | — |
-| **External audit** | None. Wave 1 was internal, four lenses, with executed proofs of concept | everything |
+| **Static analysis / formal** | See slice H in `CHANGELOG.md` / `AUDIT-2026-09-11.md`: what ran on this Mac, what could not, and the install commands | — |
+| **A stranger's tokens and the direct venue's list** | **Fixed 2026-09-11 (wave 3, W3-MED-2)**: the staked list is always whole, unstaked tokens are scanned through a window, `unstakedOverflow` names the rest. Residual: the account's OWN unstaked position (a gauge-dead open, a half-failed `closeMany`) can sit beyond the window while a stranger pads the holdings | keeper protection on a direct-venue account |
+| **External audit** | None. Waves 1–3 were internal, with executed proofs of concept for every Medium or worse | everything |
 
 **Resolved since the 2026-09-05 scope** and no longer on this list: the
 Aerodrome Slipstream SwapRouter (`0xBE6D8f0d05cC4be24d5167a3eF062215bE6D18a5`,

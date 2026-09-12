@@ -2,7 +2,7 @@
 
 **Source of truth is the compiled artifact, not this page.** `contracts/abi/oilskin-abi.json` is
 generated from `contracts/out` by `node scripts/verify-abi.mjs --write` and carries the full ABI plus
-every selector / topic / error for 19 contracts and interfaces — **419 entries** as of 2026-09-11 (248 functions, 44 events, 127 errors). 2026-09-11 (slice F) added `SlipstreamLpVenue` and `SlipstreamPoolSwapAdapter` (§4b, §6b), `StrategyRouter.LP_VENUE_DIRECT` / `SWAP_DIRECT` / `VenueWithdrawn` / `UnknownPool` / `CollateralShort`, `ILpVenue.ownedPool` on both venues, and two more router constructor arguments (330 across 17 on 2026-09-10 after slice C's `InsufficientLoanToken`; 327 before it). 2026-09-09 added `StrategyRouter.VenueRepaid` (`RISKS.md` §8 residual (a): the repay reaches every venue the account owes and the receipt says which; 326 before it). The wave-2 fix round (`AUDIT-2026-09-07.md`) added `CollateralRegistry.previousVenues`, `ICollateralVenue.borrowAgainst` on both venues, `MorphoBlueVenue.NoMarketCanFill` and `StrategyRouter.QuoteOutsideBand`, and dropped `PythOracleAdapter.NoUpdateInTx` (321 before it; 303 before `MorphoBlueVenue` was built).
+every selector / topic / error for 19 contracts and interfaces — **420 entries** as of 2026-09-11 (249 functions, 44 events, 127 errors; slice G added `SlipstreamLpVenue.unstakedOverflow`, 419 after slice F). 2026-09-11 (slice F) added `SlipstreamLpVenue` and `SlipstreamPoolSwapAdapter` (§4b, §6b), `StrategyRouter.LP_VENUE_DIRECT` / `SWAP_DIRECT` / `VenueWithdrawn` / `UnknownPool` / `CollateralShort`, `ILpVenue.ownedPool` on both venues, and two more router constructor arguments (330 across 17 on 2026-09-10 after slice C's `InsufficientLoanToken`; 327 before it). 2026-09-09 added `StrategyRouter.VenueRepaid` (`RISKS.md` §8 residual (a): the repay reaches every venue the account owes and the receipt says which; 326 before it). The wave-2 fix round (`AUDIT-2026-09-07.md`) added `CollateralRegistry.previousVenues`, `ICollateralVenue.borrowAgainst` on both venues, `MorphoBlueVenue.NoMarketCanFill` and `StrategyRouter.QuoteOutsideBand`, and dropped `PythOracleAdapter.NoUpdateInTx` (321 before it; 303 before `MorphoBlueVenue` was built).
 Import that JSON; run `node scripts/verify-abi.mjs` in your area's test script — it exits 1 on any
 drift. The previous project lost this seam twice by encoding from a written document
 (AUDIT-FINDINGS Part 4); this document is a *reading aid* and every selector below was read out of
@@ -315,7 +315,11 @@ selectors as §4 — `open` `0x641b9c30`, `increase` `0x02efe039`, `close` `0x26
 (on BOTH venues and on `ILpVenue`: a staked NFT is the GAUGE's on the NFT's books and the account's
 on the gauge's, so `poolOf` alone cannot answer "does this account own it") and
 `positionRange(uint256 positionId,address account) → (int24 tickLower,int24 tickUpper,uint128
-liquidity,bool staked)` `0x599b84b1` (the static range the dashboard shows). Its ONE pool id is
+liquidity,bool staked)` `0x599b84b1` (the static range the dashboard shows) and
+`unstakedOverflow(address account) → (uint256 held,uint256 scanned)` `0xed7ef4b4` (wave 3,
+W3-MED-2: how many unstaked Slipstream tokens the account holds versus how many `positionsOf`
+scans — `held > scanned` means tokens beyond the window are not listed; the staked list is never
+truncated). Its ONE pool id is
 `POOL_ID()` `0xe0d7d0e9` = `bytes32(uint256(uint160(pool)))` (`@zyo/shared` `directPoolId`);
 `poolTokens` of any other id returns zeros. Views: `POOL()` `0x7535d246`, `NPM()` `0x82ff8414`,
 `GAUGE()` `0x7651b1e6`, `VOTER()` `0x8ebf2fd6`, `SWAP()` `0x04d84108`, `TOKEN0()` / `TOKEN1()` /

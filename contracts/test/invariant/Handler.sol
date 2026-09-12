@@ -21,9 +21,17 @@ import {MockAave} from "../mocks/MockAave.sol";
 import {MockMorpho} from "../mocks/MockMorpho.sol";
 import {MockCLPool} from "../mocks/MockCLPool.sol";
 import {MockSnuggleVault} from "../mocks/MockSnuggleVault.sol";
+import {MockCLGauge, MockSlipstreamNpm} from "../mocks/MockSlipstream.sol";
+import {SlipstreamLpVenue} from "../../src/venues/SlipstreamLpVenue.sol";
+import {SlipstreamPoolSwapAdapter} from "../../src/swap/SlipstreamPoolSwapAdapter.sol";
+import {ISlipstreamGauge, ISlipstreamNpm} from "../../src/interfaces/ISlipstream.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @notice Drives the whole surface with owner, keeper and adversarial actions, and keeps the
-///         ghost accounting the invariants are checked against.
+///         ghost accounting the invariants are checked against. Since 2026-09-11 (audit wave 3,
+///         W3-MED-3) the direct Slipstream venue and its pool-direct adapter are part of the
+///         surface: opened, rewarded, closed by the owner and by the keeper, donated to, and held
+///         to the same peripheral, allowance and fee properties as the engine venue.
 contract Handler is Test {
     OilskinAccount immutable acct;
     AaveV3Venue immutable aaveVenue;
@@ -41,6 +49,14 @@ contract Handler is Test {
     MockERC20 immutable cbbtc;
     MockERC20 immutable aero;
     bytes32 immutable poolId;
+    // the direct Slipstream venue (cbZEC/USDC) and what it binds to
+    SlipstreamLpVenue immutable directVenue;
+    SlipstreamPoolSwapAdapter immutable poolSwapAdapter;
+    MockCLGauge immutable gauge;
+    MockSlipstreamNpm immutable npm;
+    MockCLPool immutable poolDirect;
+    MockERC20 immutable cbzec;
+    bytes32 immutable poolIdDirect;
     address immutable alice;
     address immutable keeper;
     address immutable registryOwner;
@@ -49,6 +65,8 @@ contract Handler is Test {
     uint256 constant KEEPER_USDC_BUDGET = 100_000e6;
     uint256 constant KEEPER_WETH_BUDGET = 10e18;
     uint256 constant KEEPER_AERO_BUDGET = 1_000e18;
+    uint256 constant KEEPER_CBZEC_BUDGET = 100e8;
+    uint256 constant Q96 = 2 ** 96;
 
     // ghosts
     uint256 public g_yieldUsdc;
@@ -89,6 +107,10 @@ contract Handler is Test {
     uint256 public g_singleCloseStranded;
     bool public g_singleCloseUnexpected;
     uint256 public g_calls;
+    /// Direct venue (W3-MED-3): opens that landed staked in the gauge, owner closes, keeper unwinds.
+    uint256 public g_directOpens;
+    uint256 public g_directCloses;
+    uint256 public g_keeperDirectUnwinds;
     /// Donations pushed at a peripheral — the invariant asserts they are INERT, not that they are
     /// impossible: anyone can transfer to any address, and a contract that treats that as fatal is
     /// a one-base-unit denial of service.
@@ -108,8 +130,18 @@ contract Handler is Test {
         MockCLPool pool_,
         MockERC20[4] memory tokens,
         bytes32 poolId_,
-        address[4] memory actors
+        address[4] memory actors,
+        address[3] memory direct, // directVenue, poolSwapAdapter, cbZEC
+        MockCLGauge gauge_,
+        MockSlipstreamNpm npm_
     ) {
+        directVenue = SlipstreamLpVenue(direct[0]);
+        poolSwapAdapter = SlipstreamPoolSwapAdapter(direct[1]);
+        cbzec = MockERC20(direct[2]);
+        gauge = gauge_;
+        npm = npm_;
+        poolDirect = MockCLPool(address(SlipstreamLpVenue(direct[0]).POOL()));
+        poolIdDirect = SlipstreamLpVenue(direct[0]).POOL_ID();
         acct = acct_;
         aaveVenue = aaveVenue_;
         morphoVenue = morphoVenue_;
@@ -153,6 +185,29 @@ contract Handler is Test {
         } catch {
             return new uint256[](0);
         }
+    }
+
+    /// The account's ids on the direct venue (staked, plus any unstaked in the window).
+    function _directIds() internal view returns (uint256[] memory) {
+        try directVenue.positionsOf(address(acct)) returns (uint256[] memory ids) {
+            return ids;
+        } catch {
+            return new uint256[](0);
+        }
+    }
+
+    /// ±10 % of the direct pool's live sqrt price.
+    function _bandDirect() internal view returns (PriceBand memory) {
+        uint256 p = poolDirect.sqrtPriceX96();
+        return PriceBand(uint160((p * 9_000) / 10_000), uint160((p * 11_000) / 10_000));
+    }
+
+    /// An honest quote for the cbZEC leg (token1 → USDC) at the direct pool's price, net of its fee.
+    function _directSwapQuote() internal view returns (StrategyRouter.SwapQuote memory) {
+        uint256 sqrtP = poolDirect.sqrtPriceX96();
+        uint256 net = Math.mulDiv(1e8, 1_000_000 - poolDirect.fee(), 1_000_000);
+        uint256 out = Math.mulDiv(Math.mulDiv(net, Q96, sqrtP), Q96, sqrtP);
+        return StrategyRouter.SwapQuote({quotedIn: 1e8, quotedOut: out, maxSlippageBps: 100, routeData: abi.encode(int24(200))});
     }
 
     // ------------------------------------------------------------- actions
@@ -282,6 +337,73 @@ contract Handler is Test {
         vm.prank(keeper);
         (bool ok,) = address(acct).call(abi.encodeCall(OilskinAccount.execAsKeeper, (calls)));
         if (ok) g_keeperUnwinds++;
+    }
+
+    /// Owner deploys idle USDC into the DIRECT venue (W3-MED-3): swapped to ratio through the pool,
+    /// minted centred, staked in the gauge.
+    function openDirectLp(uint256 amount) external {
+        g_calls++;
+        uint256 idle = usdc.balanceOf(address(acct));
+        if (idle < 10e6) return;
+        amount = bound(amount, 10e6, idle);
+        LpOpenParams memory p = LpOpenParams({
+            poolId: poolIdDirect,
+            amount0: amount,
+            amount1: 0,
+            rangeWidthBps: 1500,
+            rebalanceDelay: 12 hours,
+            autoCompound: true,
+            band: _bandDirect(),
+            deadline: block.timestamp + 1
+        });
+        (bool ok,) = _exec(address(directVenue), abi.encodeCall(ILpVenue.open, (p)));
+        if (ok) g_directOpens++;
+    }
+
+    /// The gauge accrues AERO on a random staked direct id (the same yield ghost the fee invariant
+    /// bounds: the treasury's AERO never exceeds performanceBps of what any gauge or the engine paid).
+    function accrueDirectReward(uint256 seed, uint256 a) external {
+        g_calls++;
+        uint256[] memory ids = _directIds();
+        if (ids.length == 0) return;
+        uint256 id = ids[seed % ids.length];
+        if (!gauge.stakedContains(address(acct), id)) return;
+        a = bound(a, 1, 100e18);
+        aero.mint(address(gauge), a);
+        gauge.setPending(id, gauge.rewards(id) + a);
+        g_yieldAero += a;
+    }
+
+    function ownerCloseDirect(uint256 seed) external {
+        g_calls++;
+        uint256[] memory ids = _directIds();
+        if (ids.length == 0) return;
+        (bool ok,) = _exec(address(directVenue), abi.encodeCall(ILpVenue.close, (ids[seed % ids.length], _bandDirect())));
+        if (ok) g_directCloses++;
+    }
+
+    /// Keeper runs the repay rung on the DIRECT pool's ids within its grant: the router resolves
+    /// the ids to the direct venue, closes through it, swaps the cbZEC leg through the pool-direct
+    /// adapter (the callback's payment charged to the cbZEC budget) and repays.
+    function keeperUnwindDirect(uint256 repay) external {
+        g_calls++;
+        uint256[] memory ids = _directIds();
+        if (ids.length == 0) return;
+        repay = bound(repay, 0, 50_000e6);
+        StrategyRouter.UnwindParams memory u = StrategyRouter.UnwindParams({
+            collateralAsset: address(cbbtc),
+            positionIds: ids,
+            band: _bandDirect(),
+            swap: _directSwapQuote(),
+            repayAmount: repay,
+            withdrawAmount: 0,
+            deadline: block.timestamp + 1
+        });
+        Call[] memory calls = new Call[](1);
+        calls[0] = Call(address(router), 0, abi.encodeCall(StrategyRouter.unwind, (u)), true);
+        vm.prank(keeper);
+        (bool ok,) = address(acct).call(abi.encodeCall(OilskinAccount.execAsKeeper, (calls)));
+        if (ok) g_keeperDirectUnwinds++;
     }
 
     /// A compromised keeper tries every door it was not given.
@@ -536,6 +658,17 @@ contract Handler is Test {
         });
         (bool ok,) = _exec(address(router), abi.encodeCall(StrategyRouter.unwind, (u)));
         if (!ok) return false;
+        // The direct pool's ids are a second unwind (one call per pool, as the web plans it).
+        uint256[] memory dids = _directIds();
+        if (dids.length != 0) {
+            StrategyRouter.UnwindParams memory ud = u;
+            ud.positionIds = dids;
+            ud.band = _bandDirect();
+            ud.swap = _directSwapQuote();
+            (ok,) = _exec(address(router), abi.encodeCall(StrategyRouter.unwind, (ud)));
+            if (!ok) return false;
+            if (_directIds().length != 0) return false;
+        }
         uint256 debtAfter = _totalDebt();
         // The repay must have reached the debt on EVERY book: whatever the account holds AFTER is
         // only what was left once every venue was cleared. Debt remaining on any venue next to
@@ -626,6 +759,9 @@ contract Handler is Test {
                 if (!ok) return false;
             }
         }
+        // 1b. Every direct-venue id straight at the gauge and the position manager (no venue):
+        //     unstake, decrease, collect, burn — the owner's raw door for that venue too.
+        if (!_rawExitDirect()) return false;
         // 2b. The Morpho book, raw at Morpho (2026-09-10, once the handler could open there): repay
         //     by SHARES when the account holds enough USDC (Morpho's rounding cannot leave a wei of
         //     debt that way), else whatever it holds; withdraw the collateral once nothing is owed.
@@ -635,6 +771,45 @@ contract Handler is Test {
             uint256 bal = IERC20(toks[i]).balanceOf(address(acct));
             if (bal == 0) continue;
             (bool ok,) = _execPlain(toks[i], abi.encodeCall(IERC20.transfer, (alice, bal)));
+            if (!ok) return false;
+        }
+        return true;
+    }
+
+    function _rawExitDirect() internal returns (bool) {
+        uint256[] memory ids = _directIds();
+        for (uint256 i = 0; i < ids.length; i++) {
+            uint256 id = ids[i];
+            if (gauge.stakedContains(address(acct), id)) {
+                (bool okW,) = _execPlain(address(gauge), abi.encodeCall(ISlipstreamGauge.withdraw, (id)));
+                if (!okW) return false;
+            }
+            (,,,,,,, uint128 liq,,,,) = npm.positions(id);
+            Call[] memory calls = new Call[](liq != 0 ? 3 : 2);
+            uint256 k;
+            if (liq != 0) {
+                calls[k++] = Call(
+                    address(npm),
+                    0,
+                    abi.encodeCall(
+                        ISlipstreamNpm.decreaseLiquidity,
+                        (ISlipstreamNpm.DecreaseLiquidityParams({tokenId: id, liquidity: liq, amount0Min: 0, amount1Min: 0, deadline: block.timestamp}))
+                    ),
+                    false
+                );
+            }
+            calls[k++] = Call(
+                address(npm),
+                0,
+                abi.encodeCall(
+                    ISlipstreamNpm.collect,
+                    (ISlipstreamNpm.CollectParams({tokenId: id, recipient: address(acct), amount0Max: type(uint128).max, amount1Max: type(uint128).max}))
+                ),
+                false
+            );
+            calls[k++] = Call(address(npm), 0, abi.encodeCall(ISlipstreamNpm.burn, (id)), false);
+            vm.prank(alice);
+            (bool ok,) = address(acct).call(abi.encodeCall(OilskinAccount.execBatch, (calls)));
             if (!ok) return false;
         }
         return true;
@@ -674,10 +849,13 @@ contract Handler is Test {
     function _grant() internal {
         // Every token the unwind call tree may move: the USDC repay approval, the WETH swap
         // approval, and the performance-fee transfers in USDC / WETH / AERO.
-        TokenLimit[] memory limits = new TokenLimit[](3);
+        TokenLimit[] memory limits = new TokenLimit[](4);
         limits[0] = TokenLimit(address(usdc), KEEPER_USDC_BUDGET);
         limits[1] = TokenLimit(address(weth), KEEPER_WETH_BUDGET);
         limits[2] = TokenLimit(address(aero), KEEPER_AERO_BUDGET);
+        // The direct pool's other leg: the pool-direct adapter's callback pays the pool from the
+        // account by `transfer`, which the keeper path charges here (W3-MED-3).
+        limits[3] = TokenLimit(address(cbzec), KEEPER_CBZEC_BUDGET);
         Permission memory p = Permission({
             target: address(router),
             selector: StrategyRouter.unwind.selector,
@@ -702,11 +880,18 @@ contract Handler is Test {
     /// service on an immutable contract. After this runs, every other action must still work.
     function donate(uint256 seed, uint256 amount) external {
         g_calls++;
-        address[5] memory peripherals =
-            [address(router), address(aaveVenue), address(lpVenue), address(swapAdapter), address(morphoVenue)];
-        MockERC20[4] memory toks = [usdc, weth, cbbtc, aero];
-        address to = peripherals[seed % 5];
-        MockERC20 t = toks[(seed / 5) % 4];
+        address[7] memory peripherals = [
+            address(router),
+            address(aaveVenue),
+            address(lpVenue),
+            address(swapAdapter),
+            address(morphoVenue),
+            address(directVenue),
+            address(poolSwapAdapter)
+        ];
+        MockERC20[5] memory toks = [usdc, weth, cbbtc, aero, cbzec];
+        address to = peripherals[seed % 7];
+        MockERC20 t = toks[(seed / 7) % 5];
         amount = bound(amount, 1, 1_000e6);
         t.mint(to, amount);
         g_donated[to][address(t)] += amount;

@@ -38,8 +38,9 @@ import {
   type WriteSpec,
 } from "./plan";
 import { QuoteRefused, quoteUnwindSwap } from "./quote";
-import type { MarketRead, ReadClient } from "./reads";
-import { bandFromSqrtPrice, type PriceBand } from "./tickmath";
+import { safeMulticall, type MarketRead, type ReadClient } from "./reads";
+import { AERODROME_CLPOOL_ABI } from "./abi/oilskin";
+import { bandFromSqrtPrice, priceFromSqrtPriceX96, type PriceBand } from "./tickmath";
 import { toAtomic } from "./math";
 
 export interface WalletLike {
@@ -356,13 +357,44 @@ export function grantTokenLimits(debtUsdc: number, collateral: GrantTokenPricing
  * refused by name — the keeper budget for it cannot be sized, so no grant is
  * built rather than a wrong one.
  */
-export function grantPoolTokenPricing(symbols: readonly string[], market: MarketRead): GrantTokenPricing[] {
+export function grantPoolTokenPricing(symbols: readonly string[], market: MarketRead, poolImplied: Readonly<Partial<Record<string, number>>> = {}): GrantTokenPricing[] {
   return symbols.map((sym) => {
     const t = (BASE_TOKENS as Record<string, { address: Address; decimals: number } | undefined>)[sym];
     if (!t) throw new Error(`pool token ${sym} is not a token this app knows (BASE_TOKENS) — refusing to size a keeper budget for it`);
-    const priceUsd = sym === "USDC" ? 1 : ((market.reserves as Record<string, { priceUsd: number } | null | undefined>)[sym]?.priceUsd ?? NaN);
+    const aave = (market.reserves as Record<string, { priceUsd: number } | null | undefined>)[sym]?.priceUsd;
+    // Audit wave 3, W3-MED-1: cbZEC has no Aave reserve, so a cbZEC/USDC position could never get a
+    // keeper grant (its cbZEC line — the pool-direct callback's payment — could not be sized) and
+    // the wizard's "grant it later" was a promise nothing could keep. A budget line is a CAP in the
+    // token's own units, so the pool's own USDC price is an honest size for it when Aave has none.
+    const priceUsd = sym === "USDC" ? 1 : Number.isFinite(aave) && (aave as number) > 0 ? (aave as number) : (poolImplied[sym] ?? NaN);
     return { address: t.address, symbol: sym as TokenSymbol, decimals: t.decimals, priceUsd };
   });
+}
+
+/**
+ * USD price of each pool's non-USDC token implied by the pool's own live price (USDC = $1), for
+ * `grantPoolTokenPricing` when Aave has no reserve for the token (W3-MED-1). Read from `slot0`,
+ * `token0`, `token1` and the token's `decimals`; a pool that cannot be read contributes nothing,
+ * and the grant sizing then refuses that token by name as before — never a guessed line.
+ */
+export async function poolImpliedUsdPrices(read: ReadClient, pools: readonly { poolAddress: Address; token0: string; token1: string }[]): Promise<Partial<Record<string, number>>> {
+  const out: Partial<Record<string, number>> = {};
+  for (const p of pools) {
+    const nonUsdc = p.token0 === "USDC" ? p.token1 : p.token1 === "USDC" ? p.token0 : null;
+    if (!nonUsdc || out[nonUsdc] !== undefined) continue;
+    const tok = (BASE_TOKENS as Record<string, { address: Address; decimals: number } | undefined>)[nonUsdc];
+    if (!tok) continue;
+    const [slot0, t0] = await safeMulticall(read, [
+      { address: p.poolAddress, abi: AERODROME_CLPOOL_ABI, functionName: "slot0" },
+      { address: p.poolAddress, abi: AERODROME_CLPOOL_ABI, functionName: "token0" },
+    ]);
+    if (!Array.isArray(slot0) || typeof slot0[0] !== "bigint" || slot0[0] <= 0n || typeof t0 !== "string") continue;
+    const usdcIsToken0 = t0.toLowerCase() === BASE_TOKENS.USDC.address.toLowerCase();
+    const p01 = priceFromSqrtPriceX96(slot0[0] as bigint, usdcIsToken0 ? BASE_TOKENS.USDC.decimals : tok.decimals, usdcIsToken0 ? tok.decimals : BASE_TOKENS.USDC.decimals);
+    const price = usdcIsToken0 ? (p01 > 0 ? 1 / p01 : NaN) : p01;
+    if (Number.isFinite(price) && price > 0) out[nonUsdc] = price;
+  }
+  return out;
 }
 
 /** Re-export so callers do not need to know where the deployment type lives. */

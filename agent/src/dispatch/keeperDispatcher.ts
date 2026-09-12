@@ -739,6 +739,25 @@ export class KeeperDispatcher implements Dispatcher {
           (rv?.name === "PositionsUnreadable" ? `${label}: the gauge or the position manager did not answer (PositionsUnreadable)` : null);
         throw named ? new Error(`positionsOf refused — ${named}`) : e;
       }
+      if (direct) {
+        // Audit wave 3, W3-MED-2: unstaked tokens beyond the venue's window are not listed (a
+        // stranger can pad an account's holdings; the account's own staked list is always whole).
+        // Named here so a plan that closes only what is visible is never mistaken for the whole.
+        try {
+          const [held, scanned] = await this.call("unstakedOverflow", signal, () =>
+            this.d.client.readContract({ address: venue, abi: directLpVenueAbi, functionName: "unstakedOverflow", args: [account] })
+          );
+          if (held > scanned) {
+            this.d.log.warn("direct venue: unstaked Slipstream tokens beyond the enumeration window are not listed — the staked positions are whole; the rest may be a stranger's", {
+              account,
+              held: held.toString(),
+              scanned: scanned.toString(),
+            });
+          }
+        } catch (e) {
+          this.d.log.warn("direct venue: unstakedOverflow unreadable", { account, error: errMsg(e) });
+        }
+      }
       for (const id of ids) {
         let poolId: Hex;
         if (direct) {

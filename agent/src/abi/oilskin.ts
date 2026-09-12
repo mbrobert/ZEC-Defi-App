@@ -473,6 +473,16 @@ export const directLpVenueAbi = [
       { name: "staked", type: "bool" },
     ],
   },
+  {
+    type: "function",
+    name: "unstakedOverflow",
+    stateMutability: "view",
+    inputs: [{ name: "account", type: "address" }],
+    outputs: [
+      { name: "held", type: "uint256" },
+      { name: "scanned", type: "uint256" },
+    ],
+  },
   { type: "error", name: "PositionsUnreadable", inputs: [{ name: "reason", type: "bytes" }] },
   { type: "error", name: "PriceUnreadable", inputs: [{ name: "pool", type: "address" }] },
   { type: "error", name: "PriceOutOfBand", inputs: [{ name: "sqrtPriceX96", type: "uint256" }, { name: "min", type: "uint160" }, { name: "max", type: "uint160" }] },

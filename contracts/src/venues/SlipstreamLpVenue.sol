@@ -328,9 +328,15 @@ contract SlipstreamLpVenue is ILpVenue, Peripheral {
     // ----------------------------------------------------------------- views
 
     /// @inheritdoc ILpVenue
-    /// @dev The gauge's `stakedValues(account)` plus every NPM token the account holds that sits in
-    ///      this pool (ERC-721 Enumerable, filtered by `positions(id)`). Fails closed by name when
-    ///      either cannot be read — never "owns nothing".
+    /// @dev The gauge's `stakedValues(account)` — the account's OWN deposits, in full: the gauge
+    ///      stakes for `msg.sender`, so nobody else can pad that list — plus the NPM tokens the
+    ///      account holds that sit in this pool, scanned through a window of `MAX_ENUMERATION`
+    ///      (ERC-721 transfers are permissionless, so a stranger CAN pad the account's holdings;
+    ///      audit wave 3, W3-MED-2: counting them against the cap let 512 dust tokens switch the
+    ///      keeper's protection off). `unstakedOverflow` says what the window did not reach; the
+    ///      keeper and the dashboard name it. Fails closed by name when the gauge or the NPM cannot
+    ///      be read — never "owns nothing" — and still refuses a staked list past the cap, which
+    ///      only the account itself can produce.
     function positionsOf(address account) external view override returns (uint256[] memory ids) {
         uint256[] memory staked;
         try GAUGE.stakedValues(account) returns (uint256[] memory s) {
@@ -338,19 +344,14 @@ contract SlipstreamLpVenue is ILpVenue, Peripheral {
         } catch (bytes memory r) {
             revert PositionsUnreadable(r);
         }
-        uint256 held;
-        try NPM.balanceOf(account) returns (uint256 n) {
-            held = n;
-        } catch (bytes memory r) {
-            revert PositionsUnreadable(r);
-        }
-        if (staked.length + held > MAX_ENUMERATION) revert TooManyPositions(MAX_ENUMERATION);
-        uint256[] memory buf = new uint256[](staked.length + held);
+        if (staked.length > MAX_ENUMERATION) revert TooManyPositions(MAX_ENUMERATION);
+        (uint256 held, uint256 window) = _unstakedWindow(account);
+        uint256[] memory buf = new uint256[](staked.length + window);
         uint256 kept;
         for (uint256 i = 0; i < staked.length; i++) {
             buf[kept++] = staked[i];
         }
-        for (uint256 i = 0; i < held; i++) {
+        for (uint256 i = 0; i < window; i++) {
             uint256 id;
             try NPM.tokenOfOwnerByIndex(account, i) returns (uint256 t) {
                 id = t;
@@ -363,6 +364,24 @@ contract SlipstreamLpVenue is ILpVenue, Peripheral {
         for (uint256 i = 0; i < kept; i++) {
             ids[i] = buf[i];
         }
+        held; // the overflow, if any, is reported by `unstakedOverflow`
+    }
+
+    /// @notice How many Slipstream tokens the account holds unstaked on this deployment (any pool)
+    ///         and how many of them `positionsOf` scans: `held > scanned` means tokens beyond the
+    ///         window are not listed — a stranger may have sent them, or the account holds more
+    ///         unstaked positions than the window. The staked list is never truncated.
+    function unstakedOverflow(address account) external view returns (uint256 held, uint256 scanned) {
+        (held, scanned) = _unstakedWindow(account);
+    }
+
+    function _unstakedWindow(address account) internal view returns (uint256 held, uint256 window) {
+        try NPM.balanceOf(account) returns (uint256 n) {
+            held = n;
+        } catch (bytes memory r) {
+            revert PositionsUnreadable(r);
+        }
+        window = held > MAX_ENUMERATION ? MAX_ENUMERATION : held;
     }
 
     /// @inheritdoc ILpVenue

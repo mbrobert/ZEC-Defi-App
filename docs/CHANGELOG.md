@@ -3,6 +3,38 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-11 — Slice G: wave-3 adversarial audit with executed proofs of concept (`AUDIT-2026-09-11.md`)
+
+**Scope.** What wave 2 did not cover — `SnuggleLpVenue` beyond `closeMany` / `_takeFee` /
+`_tryWithdraw`, `AerodromeSwapAdapter` beyond `minOutFor` / `swap`, the account's parser beyond the
+unwind tree, the Pyth adapter's TWAP arithmetic, `web/lib/quote.ts`, the yield gate's decision path,
+the invariant Handler's blind spots — and everything slice F changed. **Count: 0 Critical, 0 High,
+3 Medium, 7 Low, 10 Info.** Every Medium fixed in the same commit with a PoC that failed first.
+
+**Fixed.** W3-MED-1: keeper protection could never be granted for a cbZEC/USDC position (no Aave
+price for cbZEC) — the pool's own USDC price now sizes that budget line (`poolImpliedUsdPrices`,
+wizard and dashboard). W3-MED-2: anyone could make the direct venue's `positionsOf` revert by
+sending the account 512 Slipstream NFTs, switching the keeper off for it — the staked list is now
+always whole, unstaked tokens are scanned through a window, `unstakedOverflow(account)` names the
+rest, the keeper warns and the dashboard shows it. W3-MED-3: the invariant suite did not exercise
+the direct venue or the pool-direct adapter — four Handler actions, the keeper's direct unwind with
+its cbZEC budget, seven peripherals × five tokens under `donate`, both new contracts under the
+peripheral, allowance, fee and grant properties (256 × 40, 10,240 calls, 0 reverts).
+
+**Listed, not fixed (the founder chooses; costs in the doc).** W3-LOW-1 same numeric id on both LP
+venues routes to the engine's; W3-LOW-2 the to-ratio swap's tolerance is zero at the band's edge;
+W3-LOW-3 the wizard offers a direct pool on a deployment without the direct venue; W3-LOW-4 the
+cbZEC leg's Close has no oracle cross-check and does not say so; W3-LOW-5 the gauge's early-withdraw
+penalty is not read; W3-LOW-6 `AerodromeSwapAdapter` checks its floor on the router's return value
+while its NatSpec claims the balance delta; W3-LOW-7 the grant's spend carry-forward is one hop deep.
+
+**Counts.** Contracts 360 → **363 passed, 0 failed, 12 skipped** (26 suites; invariants 256 × 40,
+10,240 calls, 0 reverts); root ABI 419 → **420**; keeper seam 108 → **109**, tests **242**; web 161 →
+**163** (161 passed, 2 skipped); shared **69**; yield **131**.
+
+**Not done.** No `acceptVenue`, `Deploy.s.sol` untouched, nothing broadcast; the fork tests were not
+re-run against Base in this session.
+
 ## 2026-09-11 — Slice F: the two decisions implemented — one Close clears every book; cbZEC/USDC held directly on Slipstream
 
 **Two-book Close (RISKS §8, option 1).** `StrategyRouter.unwind`'s withdraw leg now visits every

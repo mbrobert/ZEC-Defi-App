@@ -337,7 +337,7 @@ export class MockOilskin {
     });
     if (this.opts.lpVenueDirect) {
       c.set(this.opts.lpVenueDirect.toLowerCase(), (data) => {
-        const { functionName, args } = decodeFunctionData({ abi: lpVenueAbi, data });
+        const { functionName, args } = decodeFunctionData({ abi: directLpVenueAbi, data });
         if (functionName === "positionsOf") {
           const [acct] = args as [Address];
           const fault = this.directFault.get(acct.toLowerCase());
@@ -349,6 +349,10 @@ export class MockOilskin {
           const [id, acct] = args as [bigint, Address];
           const p = (this.positions.get(acct.toLowerCase()) ?? []).find((x) => x.id === id && this.directIds.has(id));
           return encodeFunctionResult({ abi: lpVenueAbi, functionName, result: p ? [p.poolId, true] : [("0x" + "00".repeat(32)) as Hex, false] });
+        }
+        if (functionName === "unstakedOverflow") {
+          // Every direct id here is staked; the mock never pads an account with a stranger's tokens.
+          return encodeFunctionResult({ abi: directLpVenueAbi, functionName, result: [0n, 0n] });
         }
         if (functionName === "poolOf") {
           // The NFT's owner: the GAUGE for a staked id — never the account. `ownedPool` is the question.

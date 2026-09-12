@@ -530,15 +530,16 @@ storage; the router's balance of every token it touches is unchanged across
 every call; no standing allowances (`_approveCallReset`;
 `invariant_noStandingAllowances`); reentrancy lock in transient storage;
 peripheral rights opt-in per call and bounded in depth; revert data bubbled
-untouched; **360 unit / fuzz / invariant tests green** (2026-09-11, slice F;
+untouched; **363 unit / fuzz / invariant tests green** (2026-09-11, slice G;
 plus 12 fork tests skipped without `FORK_URL`), with 10 invariants including the user-can-always-exit (raw and via the
 router), repay-reaches-every-book, one-Close-clears-every-book,
 fee-never-touches-principal and the two donation properties.
 The one owned contract is the registry, which cannot touch an account — but
 see §16 for what it *can* do.
 
-**Does not.** **No external audit has been done.** Wave 1 was an internal
-adversarial audit (four lenses), not an external one. The fork suite (10 tests
+**Does not.** **No external audit has been done.** Waves 1–3 were internal
+adversarial audits with executed proofs of concept (`AUDIT-2026-09-06.md`,
+`AUDIT-2026-09-07.md`, `AUDIT-2026-09-11.md`), not external ones. The fork suite (10 tests
 since slice D) was run against Base mainnet on 2026-09-10 at block 51,127,409:
 4 passed, 4 failed of 8 on the first run, 7 / 2 after slices A and B, 8 / 1
 after slice C, 9 / 1 of 10 after slice D (the cbZEC B20 harness limit is the
@@ -734,10 +735,21 @@ not checked — Addendum 9); the pool IS the depth (≈ $0.9M on 2026-09-10); th
 second factory's fee manager `0xE6A4…2075` sets the pool's swap fee (§16); the
 callback is a new door — accepted only from the bound pool, only while a swap
 is in flight, only once, paying exactly the pool's positive delta and never
-the other token (`SlipstreamLpVenue.t.sol`, the adapter tests). *Residuals:*
+the other token (`SlipstreamLpVenue.t.sol`, the adapter tests); and, since
+the wave-3 audit (`AUDIT-2026-09-11.md` W3-MED-2), enumeration that a stranger
+cannot switch off — the gauge's staked list (the account's own deposits) is
+always returned whole, the account's unstaked Slipstream tokens are scanned
+through a window of `MAX_ENUMERATION`, and `unstakedOverflow(account)` names
+what the window did not reach (the keeper warns, the dashboard says so);
+before that, 512 dust NFTs sent by anyone made `positionsOf` revert and the
+keeper refuse every rung for the account. *Residuals:*
 (a) the engine's and the NPM's id spaces are independent counters, so an
 account owning the SAME number on both venues has the engine's closed through
-`unwind` and the direct one through the direct venue's own `close`; (b) the
+`unwind` and the direct one through the direct venue's own `close`
+(W3-LOW-1, listed with its cost); (a′) an unstaked position the account
+itself holds can sit beyond the window when a stranger pads the holdings, and
+is then invisible to the keeper and the dashboard until the padding is
+cleared — the owner's raw exec reaches it; (b) the
 pool-direct swap has no price limit beyond the tick bounds — the floor is the
 protection, and a partial fill (liquidity running out) is refused by name
 (`PartialFill`), never half-done; (c) mint and decrease minimums are zero

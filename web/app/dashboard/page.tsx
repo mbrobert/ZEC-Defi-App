@@ -12,7 +12,7 @@ import { DEMO_ACCOUNT, DEMO_ACCOUNT_STATE, DEMO_SNAPSHOT_AT } from "@/lib/demo";
 import { accountHf, currentLtvBps, hfBand, liveLiquidationPrice } from "@/lib/math";
 import { fromDemo, mergePositions, type PositionView } from "@/lib/positions";
 import { buildClaimPlan, buildGrantPlan, buildRevokeAllPlan, buildUnwindPlan, deadlineFromNow, DEFAULT_BAND_TOLERANCE_BPS, type PlannedCall, type QuotedSwap } from "@/lib/plan";
-import { grantPoolTokenPricing, grantTokenLimits, runClaim, runGrant, runRevokeAll, runUnwind, type Emit, type RunContext } from "@/lib/execute";
+import { grantPoolTokenPricing, grantTokenLimits, poolImpliedUsdPrices, runClaim, runGrant, runRevokeAll, runUnwind, type Emit, type RunContext } from "@/lib/execute";
 import { fmtAgo, fmtAmount, fmtHf, fmtPct, fmtUsd, fmtUsd0 } from "@/lib/format";
 import StatTile from "@/components/StatTile";
 import HealthBand from "@/components/HealthBand";
@@ -114,6 +114,7 @@ export default function DashboardPage() {
       // as cache, and the page says why; it never says "No LP positions".
       positions: mergePositions(account && !account.lpUnreadable ? account.lpPositions : null, indexed),
       lpUnreadable: account?.lpUnreadable ?? null,
+      lpDirectOverflow: account?.lpDirectOverflow ?? null,
       // Slice C (RISKS §8): "no debt" is decided by the shared dust threshold on the USDC amounts the
       // read returned, never by a USD figure being exactly zero.
       hasDebt: account ? !account.debtIsDust && debtUsd > 0 : debtUsd > 0,
@@ -222,7 +223,12 @@ export default function DashboardPage() {
       // the account's live positions can pay out, each in its own units.
       let limits: ReturnType<typeof grantTokenLimits>;
       try {
-        limits = grantTokenLimits(view.debtUsd, { address: BASE_TOKENS[sym].address, symbol: sym, decimals: BASE_TOKENS[sym].decimals, priceUsd: r?.priceUsd ?? NaN }, grantPoolTokenPricing(livePoolSymbols, market));
+        // A pool token Aave does not list (cbZEC) is sized at its pool's own USDC price (W3-MED-1).
+        const implied = await poolImpliedUsdPrices(
+          c.read,
+          view.positions.flatMap((p) => (p.pool?.poolAddress ? [{ poolAddress: p.pool.poolAddress as Address, token0: p.pool.token0, token1: p.pool.token1 }] : [])),
+        );
+        limits = grantTokenLimits(view.debtUsd, { address: BASE_TOKENS[sym].address, symbol: sym, decimals: BASE_TOKENS[sym].decimals, priceUsd: r?.priceUsd ?? NaN }, grantPoolTokenPricing(livePoolSymbols, market, implied));
       } catch (e) {
         emit({ type: "blocked", step: 1, reason: `The keeper permission was not built: ${(e as Error).message}` });
         return null;
@@ -408,6 +414,11 @@ export default function DashboardPage() {
                   <div className="font-semibold">Positions could not be read.</div>
                   <p className="mt-1 text-oil-ink3">{view.lpUnreadable}. The keeper reads the same list and does not act on it either. You can still close a position by its id from your account.</p>
                 </div>
+              )}
+              {view.lpDirectOverflow && view.lpDirectOverflow.held > view.lpDirectOverflow.scanned && (
+                <p className="mt-1 text-[12.5px] text-oil-ink3" data-testid="lp-direct-overflow">
+                  Your account holds {view.lpDirectOverflow.held} unstaked Aerodrome Slipstream tokens; only the first {view.lpDirectOverflow.scanned} are listed. Every position you staked through Oilskin is shown; the rest may have been sent by someone else.
+                </p>
               )}
               {view.positions.length === 0 && !view.lpUnreadable && <div className="card p-8 text-center text-[13.5px] text-oil-ink3">No LP positions under this account.</div>}
               {view.positions.map((p) => (
