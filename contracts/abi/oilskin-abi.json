@@ -5608,6 +5608,11 @@
           "stateMutability": "view",
           "outputs": "uint256[]"
         },
+        "toRatioToleranceBps((uint160,uint160))": {
+          "selector": "0xd956e520",
+          "stateMutability": "view",
+          "outputs": "uint256"
+        },
         "treasury()": {
           "selector": "0x61d027b3",
           "stateMutability": "view",
@@ -6486,6 +6491,37 @@
               "name": "ids",
               "type": "uint256[]",
               "internalType": "uint256[]"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "toRatioToleranceBps",
+          "inputs": [
+            {
+              "name": "band",
+              "type": "tuple",
+              "internalType": "struct PriceBand",
+              "components": [
+                {
+                  "name": "minSqrtPriceX96",
+                  "type": "uint160",
+                  "internalType": "uint160"
+                },
+                {
+                  "name": "maxSqrtPriceX96",
+                  "type": "uint160",
+                  "internalType": "uint160"
+                }
+              ]
+            }
+          ],
+          "outputs": [
+            {
+              "name": "tol",
+              "type": "uint256",
+              "internalType": "uint256"
             }
           ],
           "stateMutability": "view"

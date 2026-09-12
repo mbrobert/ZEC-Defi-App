@@ -502,20 +502,12 @@ contract SlipstreamLpVenue is ILpVenue, Peripheral {
         out = Math.mulDiv(out, PIPS - fee, PIPS);
     }
 
-    /// @dev The to-ratio swap through the pool-direct adapter. The tolerance is the worst price the
-    ///      caller's band allows, in output terms — (min / P)² selling token0, (P / max)² selling
-    ///      token1 — capped at the adapter's own ceiling: the user's stated tolerance, never more.
+    /// @dev The to-ratio swap through the pool-direct adapter, under `toRatioToleranceBps(band)`.
     function _swap(address tokenIn, address tokenOut, uint256 x, uint256 quotedOut, PriceBand calldata band, uint256 deadline)
         internal
         returns (uint256 got)
     {
-        (uint160 sqrtP,) = _readSlot0();
-        uint256 keepBps = tokenIn == TOKEN0
-            ? Math.mulDiv(Math.mulDiv(BPS, band.minSqrtPriceX96, sqrtP), band.minSqrtPriceX96, sqrtP)
-            : Math.mulDiv(Math.mulDiv(BPS, sqrtP, band.maxSqrtPriceX96), sqrtP, band.maxSqrtPriceX96);
-        uint256 tol = keepBps >= BPS ? 0 : BPS - keepBps;
-        uint16 cap = SWAP.MAX_SLIPPAGE_BPS();
-        if (tol > cap) tol = cap;
+        uint256 tol = toRatioToleranceBps(band);
         bytes memory ret = _nested(
             address(SWAP),
             abi.encodeCall(
@@ -524,6 +516,20 @@ contract SlipstreamLpVenue is ILpVenue, Peripheral {
         );
         got = abi.decode(ret, (uint256));
         emit SwappedToRatio(msg.sender, tokenIn, x, got);
+    }
+
+    /// @notice The slippage tolerance (bps of the quoted output) the to-ratio swap on open runs
+    ///         under: HALF the caller's band in price terms — `(1 − (min / max)²) / 2`, the window
+    ///         the user signed, whatever point inside it the price sits at — capped at the adapter's
+    ///         ceiling. Until the wave-3 fix (W3-LOW-2) it was measured from the band's edge to the
+    ///         CURRENT price, so a price that had drifted to the edge swapped with zero tolerance
+    ///         and any impact refused the open. A zero-width band still means an exact fill.
+    function toRatioToleranceBps(PriceBand calldata band) public view returns (uint256 tol) {
+        if (band.minSqrtPriceX96 == 0 || band.maxSqrtPriceX96 == 0 || band.minSqrtPriceX96 > band.maxSqrtPriceX96) return 0;
+        uint256 keepBps = Math.mulDiv(Math.mulDiv(BPS, band.minSqrtPriceX96, band.maxSqrtPriceX96), band.minSqrtPriceX96, band.maxSqrtPriceX96);
+        tol = keepBps >= BPS ? 0 : (BPS - keepBps) / 2;
+        uint16 cap = SWAP.MAX_SLIPPAGE_BPS();
+        if (tol > cap) tol = cap;
     }
 
     function _mint(int24 lower, int24 upper, uint256 a0, uint256 a1, uint256 deadline)

@@ -11,6 +11,11 @@ liquidity provision; EIP = Ethereum Improvement Proposal.
   through the venue's own `close`. `audit-regressions/LpVenueRouting.t.sol` (3) collides engine id 1
   with Slipstream token 1 on a fresh fixture. ABI 420 → 421; keeper seam 109 → 110; contracts 363 →
   366 passed.
+- **W3-LOW-2** — `SlipstreamLpVenue.toRatioToleranceBps(band)`: the to-ratio swap's tolerance is
+  half the band's own price span, capped at the adapter's 500 bps, wherever inside the band the price
+  sits — before, it was measured from the band's edge to the current price and a price that had
+  drifted to the edge swapped with zero tolerance. `audit-regressions/DirectVenueBandEdge.t.sol` (4);
+  the pre-fix refusal was reproduced first. ABI 421 → 422.
 
 ## 2026-09-11 — Slice H: static analysis and symbolic execution wired into CI; nothing ran locally
 
