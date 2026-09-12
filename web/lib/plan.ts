@@ -526,8 +526,16 @@ export function buildUnwindPlan(i: UnwindPlanInput): PlannedCall[] {
   const abiOk = ABI_STATUS === "verified" && !!d && !d.demo && !refused;
   const q = i.quote;
   const quoteOk = !!q && validateSwapQuote(q).length === 0;
+  // W3-LOW-4: the pool price is cross-checked against the Chainlink price Aave uses when Aave has
+  // one for the token; for a token it does not list (cbZEC) there is no second opinion, and the
+  // plan says so instead of reading as if there were.
+  const crossCheckText = q
+    ? q.crossCheckDelta === null
+      ? ` — no oracle cross-check was possible: Aave has no price for ${q.tokenSymbol}, so the pool's own price is the only one this quote rests on`
+      : ` — within ${(q.crossCheckDelta * 100).toFixed(2)}% of the Chainlink price Aave uses`
+    : "";
   const quoteText = q
-    ? `1 ${q.tokenSymbol} → ${human(q.quotedOut, BASE_TOKENS.USDC.decimals, 2)} USDC (${q.source === "aave-oracle" ? "Aave oracle price" : "the pool's own live price"}), accepted down to ${human(q.minOutForQuotedIn, BASE_TOKENS.USDC.decimals, 2)} USDC per ${q.tokenSymbol} — a ${(q.maxSlippageBps / 100).toFixed(2)}% tolerance`
+    ? `1 ${q.tokenSymbol} → ${human(q.quotedOut, BASE_TOKENS.USDC.decimals, 2)} USDC (${q.source === "aave-oracle" ? "Aave oracle price" : "the pool's own live price"}${crossCheckText}), accepted down to ${human(q.minOutForQuotedIn, BASE_TOKENS.USDC.decimals, 2)} USDC per ${q.tokenSymbol} — a ${(q.maxSlippageBps / 100).toFixed(2)}% tolerance`
     : "quoted from the live price just before you sign";
   return [
     {

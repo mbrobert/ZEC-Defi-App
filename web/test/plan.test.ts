@@ -370,14 +370,14 @@ test("a claim on a direct position targets the direct venue, not the engine's; a
   assert.ok(plan[0].args.some((a) => a.name === "band" && /swaps nothing/.test(a.value)));
   const w = encodeClaimWrite(input, BAND);
   const d = decodeFunctionData({ abi: ACCOUNT_ABI, data: w.data });
-  const calls = d.args[0] as { target: string; callback: boolean }[];
+  const calls = d.args[0] as unknown as readonly { target: string; callback: boolean }[];
   assert.equal(calls[0].target.toLowerCase(), DIRECT);
   assert.equal(calls[0].callback, true);
   assert.equal(calls[1].target, live.router);
   // The engine claim still targets the engine venue.
   const engine = encodeClaimWrite({ ...input, venue: "engine" }, BAND);
   const e = decodeFunctionData({ abi: ACCOUNT_ABI, data: engine.data });
-  assert.equal((e.args[0] as { target: string }[])[0].target, live.lpVenue);
+  assert.equal((e.args[0] as unknown as readonly { target: string }[])[0].target, live.lpVenue);
   // No direct venue on the deployment: not signable, and the encoder refuses by name.
   const none = buildClaimPlan({ ...input, deployment: LIVE });
   assert.equal(none[0].encodable, false);
@@ -397,4 +397,18 @@ test("an open on a direct pool says the position is held directly, part-swapped 
   const inner = decodeFunctionData({ abi: ROUTER_ABI, data: (d.args as unknown as [unknown, unknown, Hex])[2] });
   assert.equal(inner.functionName, "openLeveragedLp");
   assert.equal((inner.args[0] as Record<string, unknown>).poolId, poolId);
+});
+
+// W3-LOW-4 (wave 3): the Close plan says when no oracle cross-check was possible for the leg.
+test("W3-LOW-4: a quote with an oracle cross-check says how close; a quote without one says Aave has no price for the token", () => {
+  const checked = buildUnwindPlan({ account: ACCOUNT, positionIds: [42n], collateral: "WETH", deployment: LIVE, deadline: 1_800_000_000, bandToleranceBps: 100, quote: QUOTE });
+  const withCheck = checked[0].args.find((a) => a.name === "swap quote")!.value;
+  assert.match(withCheck, /within 0\.10% of the Chainlink price Aave uses/);
+  assert.doesNotMatch(withCheck, /no oracle cross-check/);
+  const cbzec: QuotedSwap = { ...QUOTE, tokenSymbol: "cbZEC", tokenAddress: BASE_TOKENS.cbZEC.address, tokenDecimals: 8, tickSpacing: 200, quotedIn: 10n ** 8n, quotedOut: 1_075_500_000n, minOutForQuotedIn: 1_064_745_000n, crossCheckDelta: null };
+  const unchecked = buildUnwindPlan({ account: ACCOUNT, positionIds: [7n], collateral: "cbBTC", deployment: LIVE, deadline: 1_800_000_000, bandToleranceBps: 100, quote: cbzec, positionVenue: "direct" });
+  const noCheck = unchecked[0].args.find((a) => a.name === "swap quote")!.value;
+  assert.match(noCheck, /no oracle cross-check was possible: Aave has no price for cbZEC/);
+  assert.match(noCheck, /the pool's own price is the only one this quote rests on/);
+  assert.equal(unchecked[0].encodable, true, "still signable: the floor binds, the wording is honest");
 });

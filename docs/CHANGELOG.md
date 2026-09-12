@@ -20,6 +20,10 @@ liquidity provision; EIP = Ethereum Improvement Proposal.
   when the deployment names no direct venue, so the wizard never offers a pool it cannot open there
   (before, the Permit2 signature was collected and only the band quote refused). `web/test/gate.test.ts`
   (+1); two web test fixtures updated for the slice-F types.
+- **W3-LOW-4** — the Close plan's `swap quote` line says "within N% of the Chainlink price Aave uses"
+  when a cross-check was possible and "no oracle cross-check was possible: Aave has no price for
+  <token>, so the pool's own price is the only one this quote rests on" when it was not (cbZEC); the
+  plan stays signable. `web/test/plan.test.ts` (+1). Web 163 → **165** (163 passed, 2 skipped).
 
 ## 2026-09-11 — Slice H: static analysis and symbolic execution wired into CI; nothing ran locally
 
