@@ -240,8 +240,8 @@ serve-time. New verdict `evaluateSolanaBorrowGate({ amountUsdc, collateralZec })
 | `venue_paused` / `borrow_disabled` | reserve status ≠ 0 or market `borrowDisabled` |
 | `deposit_cap_reached` | `collateralZec` > remaining deposit limit (13,000 − 1,192 ZEC) or > remaining 24-h cap |
 | `pool_depth_insufficient` | `amountUsdc` > available − reserve buffer (available $358,199) |
-| `borrow_rate_above_threshold` | `kaminoCurveAprBps(curve, utilAfter)` > threshold (**decision** §12 (4); if the threshold is "Base's Aave USDC rate read live", today's limit is **+$84 K**) |
-| `market_concentration` | the account's debt after the borrow would exceed `MAX_POOL_SHARE_BPS` of total borrowed (**decision**; one obligation is 58.8 % today) |
+| *(shown, not a refusal — decision 4)* `projectedBorrowAprPct` | `kaminoCurveAprBps(curve, utilAfter)`: the rate the depositor will pay after this borrow (+$84 K takes it past Base's Aave rate today); displayed beside the amount |
+| *(shown, not a refusal — decision 4)* `poolSharePct` | the account's share of the pool's debt after the borrow (one obligation is 58.8 % today) |
 | `rates_stale` / `oracle_stale` | as on Base |
 
 Served at `/v1/solana/gate`; the web refuses to offer an amount the gate refused and shows the reason in plain
@@ -260,8 +260,8 @@ One decision per screen, the risk stated before the button:
 3. **LTV preset** — 30 % / 40 % / Top, where Top = 40 % today (shared rule 41 %, Kamino's cap 40 %); entry HF
    and the drop-to-liquidation shown from live LT, never typed.
 4. **Protection grant** — what the keeper may do, in the words of §3: repay from idle USDC up to N per day;
-   **sell up to M ZEC per day if you allow it** (off by default — **decision**); never move funds anywhere else;
-   you can cancel in one transaction.
+   **sell up to M ZEC per day to stop a liquidation** (on by default — decision 1; Advanced mode can set M to
+   zero); never move funds anywhere else; you can cancel in one transaction.
 5. **Review** — the risk list (§9 items), the exact instruction the wallet will sign, the account address.
 
 Copy rules: `BANNED_WORDS` apply ("private", "shielded", "non-custodial", …); "self-custodial" is not claimed
@@ -319,7 +319,21 @@ tests (Rust, `proptest`): the keeper never exceeds the grant under random sequen
 HF after any owner instruction ≥ floor or debt is dust. CU is metered per instruction and recorded in
 `TESTING.md`; if `keeper_protect` with a sale exceeds the limit, §12 (1)'s two-instruction variant is taken.
 
-## 12 · Decisions for the founder (nothing below is built until decided)
+## 12 · Decisions for the founder — DECIDED 2026-09-12
+
+The founder answered all seven on 2026-09-12 after reading this document; the build proceeds on these.
+
+| # | Decision | What it changes below and in the code |
+|---|---|---|
+| 1 | **Yes — the keeper may sell collateral to repay when liquidation threatens**, to prevent liquidation of the whole position. | `keeper_protect` sells only at repay / de-risk / emergency, only up to what lifts HF to the rung's disarm level, under the grant's per-period ZEC cap and the Scope-priced slippage floor (§3 step 6). The Simple-mode grant enables it by default; the pre-sign copy says "may sell up to M ZEC per day to stop a liquidation". |
+| 2 | **Squads multisig** holds the program's upgrade authority. | Deploy hands the authority to a Squads v4 multisig with a published delay and a watcher; until that handover the deployer key holds it and the copy says so (`RISKS.md` §22). |
+| 3 | **Yes** — `release_obligation` exists. | Owner instruction: CPI `initiateObligationOwnershipTransfer(new_owner = wallet)` when no live Grant exists; the wallet accepts with Kamino directly. Whether klend accepts a PDA initiator is verified on localnet before the handler is kept. |
+| 4 | **The depositor decides.** Oilskin shows what the borrow rate will be; it does not refuse on rate. | §7's gate refuses only what cannot be funded (`pool_depth_insufficient`, `deposit_cap_reached`, `venue_paused`, staleness); the projected borrow APR after the borrow and the market's concentration are **shown**, never a refusal. Founder's framing: once ZEC can be bridged to Solana and borrowed against there, this is the best Solana-native option. |
+| 5 | **No performance fees yet.** | No fee logic in the program or the flow. |
+| 6 | Free RPC while building. | Localnet needs none; the public `api.mainnet-beta.solana.com` serves the readers and the clone; a free keyed tier (Helius, QuickNode, Alchemy) goes into `.env` as `SOLANA_RPC_URL` when the keeper needs `getProgramAccounts` reliability. |
+| 7 | **One audit, both modules together.** | `AUDIT-SCOPE.md` will list `solana/` alongside `contracts/` when the Solana module reaches parity; the RFP names an EVM firm and a Solana firm, or one that does both. |
+
+The original questions, kept for the record:
 
 1. **May the keeper sell collateral to repay?** Base never withdraws collateral in a keeper plan because USDC
    comes from closing LP. On Solana a hold position has no USDC source but (a) idle USDC the user left in the

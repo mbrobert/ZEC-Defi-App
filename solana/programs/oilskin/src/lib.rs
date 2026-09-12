@@ -16,7 +16,7 @@ use anchor_lang::prelude::*;
 
 pub mod generated;
 
-declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
+declare_id!("Gw2UE3MixYgA8c7nLZC9UF2z3z5dWfzrFW7ESmi5Scog");
 
 #[program]
 pub mod oilskin {
