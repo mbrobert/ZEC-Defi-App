@@ -1,0 +1,354 @@
+# Solana module — architecture (design record, 2026-09-12; nothing built)
+
+What the Solana module is, account by account and instruction by instruction, before a line of handler code
+exists. Every number here comes from `VERIFIED-SOLANA-FACTS.md` (read live 2026-09-12) or from
+`packages/shared`; anything labelled **decision** is the founder's to make and is collected in §12. The Base
+module's design (`ARCHITECTURE.md`) is the reference for every choice below: where the Solana design departs from
+it, the departure and its reason are stated.
+
+**Status.** The founder's direction (`DIRECTION-2026-09-11.md`): build the Solana module in full, with the
+ladder as an *action*, never the "lite" wallet-signed, notify-only variant. Handoff Step 7c: scaffold only, no
+instruction handlers until this document has been committed and read. That is the state of `solana/` today.
+
+Abbreviations: HF = health factor; LT = liquidation threshold; LTV = loan-to-value; PDA = program-derived address
+(an account controlled by a program rather than a key); CPI = cross-program invocation (one Solana program
+calling another); ATA = associated token account (the canonical token account for a wallet and a mint); SPL =
+Solana Program Library (the token standard); CU = compute units (Solana's gas); APR = annual percentage rate;
+TWAP = time-weighted average price; RPC = remote procedure call; MPC = multi-party computation.
+
+## 0 · What it is, and what it is not
+
+It is the Solana twin of `OilskinAccount` + its keeper grant: a **program-owned Kamino obligation** whose
+authority is a PDA the user's wallet owns, so that (a) the user, and only the user, can deposit, borrow, repay,
+withdraw and leave, and (b) a keeper the user delegated can act *inside the ladder's rungs only*, with amounts
+bounded per period, revocable in one transaction. The venue is Kamino Lend's **ZCASH market**; the collateral is
+**bridged ZEC** (NEAR Intents / OmniBridge); the debt is **USDC**.
+
+It is **borrow-and-hold**. There is no liquidity-provision leg on Solana: no Aerodrome, no Snuggle engine, and
+nothing modelled for Orca / Meteora (`DIRECTION-2026-09-11.md` §2). The yield gate does not apply; the
+**pool-size gate** (§7) does. A loan never crosses a chain.
+
+It is **not a port**. Solidity clones with `exec(target, data)` passthroughs do not map onto Solana, where every
+instruction names its accounts and the program must know each CPI it makes. The consequence is stated in §3: the
+program exposes a *typed* instruction for every Kamino operation the user needs, and the "user can always leave"
+guarantee (`FLOWS.md` §8) is delivered by two always-available owner instructions rather than by a generic call.
+
+## 1 · The shape
+
+```mermaid
+flowchart LR
+    subgraph User
+        W[Wallet<br/>Phantom · Solflare · Backpack · Ledger]
+        UI[web/ Next.js<br/>Simple ⇄ Advanced · one decision per screen]
+    end
+
+    subgraph Sol["Solana mainnet — Oilskin program (Anchor)"]
+        P[oilskin program<br/>typed owner instructions · keeper_protect<br/>ladder constants generated from packages/shared]
+        A[(Account PDA<br/>seeds account · wallet<br/>owner = wallet, immutable)]
+        G[(Grant PDA<br/>seeds grant · account · keeper<br/>expiry · epoch · per-period budgets · rung mask)]
+        TA[(Account ATAs<br/>ZEC · USDC, owner = Account PDA)]
+    end
+
+    subgraph Kamino["Kamino Lend — ZCASH market GBJ3…Eowd"]
+        UM[(UserMetadata PDA<br/>user_meta · Account PDA)]
+        OB[(Obligation PDA<br/>owner = Account PDA)]
+        RZ[ZEC reserve 6e8X…<br/>LTV 40 · LT 65 · cap 13,000]
+        RU[USDC reserve EW9v…<br/>curve · $2 M limit]
+        SC[Scope OraclePrices 3t4J…<br/>430 MostRecentOf Pyth Lazer + Chainlink]
+    end
+
+    subgraph Off["Off-chain"]
+        K[agent/ keeper<br/>discover · value fail-closed · ladder · keeper_protect · notify]
+        Y[services/yield<br/>Kamino reserve reader · pool-size gate]
+    end
+
+    W -- signs --> UI
+    UI -- "init_account · deposit · borrow · repay · withdraw · grant · revoke" --> P
+    P -- "invoke_signed (Account PDA)" --> A
+    A --> TA
+    P -- "CPI: initUserMetadata · initObligation · deposit… · borrow… · repay… · withdraw…" --> OB & UM
+    P -- "CPI: refreshReserve → refreshObligation (same tx)" --> RZ & RU
+    RZ & RU -- "price chain 430 / 13" --> SC
+    K -- "getProgramAccounts (Account PDAs) · obligation · Scope 430/429 · independent price" --> P & OB & SC
+    K -- "keeper_protect(rung, amounts)" --> P
+    P -- "grant checks + HF on chain" --> G
+    UI -- "/v1/solana/gate" --> Y
+    Y -- "getAccountInfo (USDC reserve · ZEC reserve · Scope)" --> RU & RZ & SC
+```
+
+Two facts about the shape carry over from Base unchanged, and one is new:
+
+1. **The entry floor lives where the debt is created.** `borrow` and `withdraw` in the Oilskin program enforce
+   HF ≥ `ENTRY_HF_FLOOR` after the operation (Kamino's own LTV check runs too; ours is stricter). No sequence
+   through the program can open debt below the floor. The twin of `AaveV3Venue.borrow` → `EntryHfTooLow`.
+2. **The keeper's whole surface is one instruction** (`keeper_protect`), the twin of "one root
+   `StrategyRouter.unwind` per pool" — and the web asks the user to sign a `grant` whose shape the keeper's own
+   test pins.
+3. **New: the ladder is in the program, not only in the keeper.** `keeper_protect` refuses to act unless the
+   refreshed on-chain HF is below the rung the keeper names, and refuses to "succeed" unless the action lifted
+   HF to the rung's disarm level or exhausted its budget. On Base the rung is decided off-chain and the grant
+   bounds only *amounts*; on Solana the chain also checks the *reason*. This is possible because Kamino's
+   `refreshObligation` gives the program the venue's own HF inputs inside the same transaction.
+
+## 2 · Accounts (all PDAs of the Oilskin program unless stated)
+
+| Account | Seeds | Fields | Who can change it |
+|---|---|---|---|
+| **Account** | `["account", wallet]` | `owner` (wallet, set once), `bump`, `grant_epoch: u64`, `obligation`, `created_slot`, `version: u8`, reserved | owner-only instructions; `grant_epoch` bumps on `revoke_all` |
+| **Grant** | `["grant", account, keeper]` | `keeper`, `expiry_ts`, `epoch` (must equal `account.grant_epoch` to be live), `period_secs`, `period_start_ts`, `repay_usdc_per_period`, `repay_usdc_spent`, `sell_zec_per_period` (0 = the keeper may never sell collateral), `sell_zec_spent`, `max_sell_slippage_bps`, `allowed_rungs: u8` (bitmask over ladder ids), `bump` | owner: `grant` (create/overwrite), `revoke`; owner: `revoke_all` kills every grant at once |
+| Account ATAs | canonical ATA(Account PDA, mint) for ZEC and USDC | SPL token accounts | only the Account PDA signs transfers out, only via owner instructions |
+| Kamino **UserMetadata** | `["user_meta", account]` under klend | Kamino's | created once by `init_account` via CPI |
+| Kamino **Obligation** | `[tag=0, id=0, owner=account, lending_market, seed1=default, seed2=default]` under klend | Kamino's; `owner` = Account PDA | every mutation is a CPI signed with the Account PDA's seeds |
+
+Rules that carry over from `OilskinAccount`:
+
+- **The owner is immutable.** No transfer-ownership instruction. A lost wallet is a lost account, as on Base.
+- **No admin, no fee logic in the account.** The program has no global config account in v1; the ladder and
+  the entry rule are compile-time constants generated from `packages/shared` (§6). Changing a rung is a program
+  upgrade, which is visible on chain and governed by the policy in §12 (2).
+- **Per-call context does not survive the transaction.** Solana has no reentrancy across a transaction boundary
+  in the EVM sense, and a CPI cannot re-enter the caller with the same signer (the runtime refuses program
+  reentrancy except for self-recursion, which the program does not use). No transient-storage twin is needed.
+- **Budgets are charged from instruction arguments, never balance snapshots** — the twin of "calldata amounts,
+  never balances": `keeper_protect` charges `repay_usdc` and `sell_zec` from its arguments before any CPI. The
+  cToken/liquidity exchange rate that Kamino applies on withdraw is not a rebasing surprise for the budget
+  because the budget is in ZEC liquidity units the instruction names.
+
+What is different, and why:
+
+- **USDC has a freeze authority on Solana** (`7dGbd2…Crar`, Circle). A frozen Account ATA cannot repay from idle
+  USDC; the ladder's fallback is collateral sale if the grant allows it (§12 (1)). Copy states it.
+- **The obligation belongs to the PDA, not the wallet**, so Kamino's own UI will not show the position as the
+  user's. The Oilskin dashboard is the user's view; §3 "release" is the exit hatch that hands the obligation to
+  the wallet if the founder decides to offer it.
+
+## 3 · Instruction set
+
+Every owner instruction requires `signer == account.owner`. Every instruction that touches the obligation runs
+Kamino's `refreshReserve` (ZEC, USDC) and `refreshObligation` CPIs **first, in the same transaction**, so the HF
+the program checks is the HF Kamino would liquidate against at that slot.
+
+### Owner
+
+| Instruction | Args | What it does | Floor / guard |
+|---|---|---|---|
+| `init_account` | — | creates the Account PDA and its two ATAs; CPI `initUserMetadata` and `initObligation` (tag 0, id 0) with the Account PDA as `obligationOwner` via `invoke_signed` | idempotent by PDA existence; refuses a wallet that is itself a PDA |
+| `deposit` | `amount_zec: u64` | wallet ATA → Account ATA; CPI `depositReserveLiquidityAndObligationCollateralV2` | Kamino's deposit limit and 24-h withdrawal cap apply; nothing to add |
+| `borrow` | `amount_usdc: u64` | CPI `borrowObligationLiquidityV2` to the Account USDC ATA | **after the borrow: HF ≥ ENTRY_HF_FLOOR (1.55) and LTV ≤ min(MAX_OFFERED_LTV_CAP 50 %, reserve LTV 40 %)** — today that is 40 % and HF 1.625 at the top preset |
+| `repay` | `amount_usdc: u64` or `u64::MAX` | CPI `repayObligationLiquidityV2` from the Account USDC ATA | — |
+| `withdraw` | `amount_zec: u64` or `u64::MAX` | CPI `withdrawObligationCollateralAndRedeemReserveCollateralV2` to the Account ZEC ATA | **after the withdraw: HF ≥ ENTRY_HF_FLOOR unless debt ≤ LOAN_DUST_UNITS** (the twin of the router's exit floor and slice C's one dust threshold) |
+| `transfer_out` | `mint, amount: u64` | Account ATA → wallet ATA | owner-only; this plus `repay`/`withdraw` is the always-exit path — no grant, no keeper, no Oilskin off-chain component needed |
+| `close_position` | `min_zec_out: u64` | `repay(MAX)` then `withdraw(MAX)` in one instruction; the "unwind" | refuses if the Account USDC ATA cannot cover the debt (the user tops up first) |
+| `grant` | `keeper, expiry_ts, period_secs, repay_usdc_per_period, sell_zec_per_period, max_sell_slippage_bps, allowed_rungs` | creates or overwrites the Grant; **a re-grant inside a live period carries spend forward** (Base's rule) | refuses `expiry ≤ now`, `period == 0`, an empty rung mask, a zero repay budget, slippage > 500 bps |
+| `revoke` | `keeper` | kills that Grant (`expiry = 0`); refuses a Grant that never existed, so a watcher can tell a kill switch from a no-op | — |
+| `revoke_all` | — | `account.grant_epoch += 1`: every Grant issued before is dead | — |
+| `release_obligation` (**decision**, §12 (3)) | — | CPI `initiateObligationOwnershipTransfer` to the wallet; the wallet then calls Kamino's `acceptObligationOwnership` itself | only when no live Grant exists; whether klend permits a PDA-initiated transfer is **not verified** |
+
+### Keeper — one instruction
+
+`keeper_protect { rung_id: u8, repay_usdc: u64, sell_zec: u64, min_usdc_out: u64 }`, signer = `grant.keeper`.
+
+Checks, in order, each a named error:
+
+1. Grant live: `epoch == account.grant_epoch`, `now < expiry`, `rung_id` set in `allowed_rungs`.
+2. Period roll: if `now ≥ period_start + period`, spent counters reset and `period_start = now` (the view the
+   keeper reads applies the same roll, as `grantOf` does on Base).
+3. Budgets, charged from the arguments before any CPI: `repay_usdc ≤ remaining`, `sell_zec ≤ remaining`;
+   `sell_zec > 0` refused when `sell_zec_per_period == 0`.
+4. Refresh: CPI `refreshReserve` ×2, `refreshObligation`; refuse if the obligation's `lastUpdate.stale` or the
+   ZEC reserve's price status is not fully checked (`priceStatus` bits, `VERIFIED-SOLANA-FACTS.md`).
+5. **The rung is real:** HF (computed in §4) `< LADDER[rung_id].hf_bps`. A keeper cannot act on a healthy
+   account; it cannot name a milder rung than the one crossed to shrink its own obligations, either — the
+   program also requires that no *more severe* rung is crossed than the one named unless the named one is the
+   most severe the grant allows.
+6. Action: (a) repay `repay_usdc` from the Account USDC ATA (CPI); (b) if `sell_zec > 0`: withdraw `sell_zec`
+   (CPI) → swap to USDC → repay the proceeds. The swap is the one open design point (§12 (1)); the guard on it
+   is fixed either way: `usdc_received ≥ scope_price(430) × sell_zec × (1 − max_sell_slippage_bps)`, with the
+   Scope price read from the same `OraclePrices` account Kamino just refreshed against, and `min_usdc_out`
+   from the keeper may only *raise* that floor.
+7. **Outcome check:** HF after ≥ `LADDER[rung_id].disarm_hf_bps`, **or** the relevant budget is now exhausted,
+   **or** the debt is dust. Otherwise the instruction fails — an action that changed nothing cannot be recorded
+   as a success (Base's "a confirmed action that did not clear its rung re-arms it" becomes a chain-level
+   refusal).
+8. Event `KeeperProtected { account, keeper, rung, repaid, sold, hf_before, hf_after }`.
+
+What the keeper can never do, by construction: move any token to any account but the Account's own ATAs and
+Kamino; change a Grant; withdraw collateral except into a sale whose proceeds repay in the same instruction;
+act above the rung; act after `revoke`/`revoke_all`/expiry.
+
+## 4 · Health on chain
+
+After `refreshObligation`, Kamino's obligation carries `depositedValueSf`, `borrowedAssetsMarketValueSf`,
+`allowedBorrowValueSf` (LTV-weighted) and `unhealthyBorrowValueSf` (LT-weighted), all in Kamino's 2^60
+scaled-fraction `Fraction`. The program defines
+
+> `HF = unhealthyBorrowValueSf / borrowedAssetsMarketValueSf` (∞ when debt is zero or dust),
+
+which for one collateral and one debt reduces to `deposited × LT / debt` — the same definition as Base's Aave
+HF, with Kamino's own price and LT, so a position Kamino would liquidate at HF < 1 is the position the ladder
+sees at 1.0. Kamino's borrow factor (150 % on ZEC, 100 % on USDC) affects only borrowing *ZEC*, which this
+market disables; the program still uses Kamino's field rather than recomputing, so any future parameter change
+is inherited, not typed. Arithmetic is integer on the `Fraction` bits; HF is compared in basis points against the
+generated constants (§6).
+
+Fail-closed twins of Base's G-rules, for the **off-chain** keeper valuation (`agent/`): Scope entry 430 and its
+two sources read directly; an independent price (Pyth Hermes ZEC/USD or a Jupiter quote) must agree within
+`ORACLE_DEVIATION_BPS`; staleness is measured per source (430's two sources publish every few seconds; USDC's
+13 is heartbeat-driven); reserve `priceStatus` must be all-checked; obligation `stale` must be 0; the keeper's
+recomputed HF must reproduce Kamino's within rounding. Any failure → `UNKNOWN` → the ladder never runs, exactly as
+on Base.
+
+## 5 · The keeper (`agent/`) on Solana
+
+Reused as is: `engine/ladder.ts` (pure, shape-only), the store, the notifier and owner-history channel, the
+health monitor's episode/re-arm logic, the grant-expiry warnings. New, under `agent/src/solana/`: discovery
+(`getProgramAccounts` on the Oilskin program filtered by the Account discriminator, cursor by slot),
+valuation (§4), dispatch (build `keeper_protect`, `simulateTransaction` with the keeper as fee payer, persist
+`account:episode:seq:action` before send, confirm by signature status), and feeds. Observe-only mode without
+`KEEPER_SOLANA_PRIVATE_KEY` is the only mode a Claude session ever runs (`CLAUDE.md`). Plan sizing follows Base:
+`repay` targets the rung's disarm HF, capped at ⅓ of the position's value in USDC terms; `derisk` ⅔;
+`emergency` everything; sale amounts, if enabled, are priced off Scope 430 and the live Jupiter quote and pass
+`min_usdc_out` down.
+
+## 6 · What is shared, and how it is consumed
+
+| Shared source | Solana consumer | Seam that fails on drift |
+|---|---|---|
+| `health.ts` `ENTRY_HF_FLOOR`, `HF_LADDER`, `HF_HYSTERESIS`; `collateral.ts` `MAX_OFFERED_LTV_CAP_BPS`; `dust.ts` `LOAN_DUST_UNITS` | `solana/programs/oilskin/src/generated/ladder.rs` — u64 basis points, generated by `solana/scripts/gen-ladder.mjs` (committed, like the ABI bundle) | `solana/test/ladder-seam.test.mjs` (node:test, no toolchain; runs in CI) and `gen-ladder.mjs --check` |
+| `collateral.ts` `maxOfferedLtvBps(LT)` | web and yield service compute the offer as `min(maxOfferedLtvStopBps(LT_live), reserveLtv_live)`; the program enforces the same bound in `borrow` | `packages/shared/test/solana.test.ts` pins 6500 → 4193 → 4100 → 4000 |
+| `solana.ts` (new): programs, mints, the market, reserves, vaults, Scope indices, klend seeds, a dated snapshot | keeper, yield service, web, `Anchor.toml` clone list, localnet fixtures | `packages/shared/test/solana.test.ts`; the facts reader compares a fresh read against the snapshot and reports drift |
+| `web/lib/copy.ts` `BANNED_WORDS`, the acronym rule, the risk list | the Solana onboarding and review copy (§8) | `web/test/copy.test.ts` (extended to the Solana surfaces) |
+
+The keeper and the web select every address by **network**, never by a fallback: `chains.ts`'s
+`SupportedChainId` (8453 | 84532) gains a sibling `SolanaCluster` ("mainnet-beta" | "localnet"); a localnet
+table exists only so the harness cannot silently read mainnet.
+
+## 7 · The pool-size gate (yield service)
+
+Base's yield gate answers "does this pool clear the borrow rate?" Solana's question is "can this pool fund this
+borrow at a rate below the threshold, without the borrower *becoming* the market?" — fail-closed, live inputs,
+same shape as `gate.ts`.
+
+New source `services/yield/src/sources/kamino.ts`: strict byte decode of the USDC reserve (available,
+borrowed, total supply, curve points, borrow limit, 24-h caps, `status`, `borrowDisabled`), the ZEC reserve (LT,
+LTV, deposit limit, remaining cap, oracle max ages), and Scope 430/13 (price, age). `sampledAt` only; `stale` is
+serve-time. New verdict `evaluateSolanaBorrowGate({ amountUsdc, collateralZec })` with reasons added to
+`GateReason`:
+
+| Reason | Rule (today's numbers) |
+|---|---|
+| `venue_paused` / `borrow_disabled` | reserve status ≠ 0 or market `borrowDisabled` |
+| `deposit_cap_reached` | `collateralZec` > remaining deposit limit (13,000 − 1,192 ZEC) or > remaining 24-h cap |
+| `pool_depth_insufficient` | `amountUsdc` > available − reserve buffer (available $358,199) |
+| `borrow_rate_above_threshold` | `kaminoCurveAprBps(curve, utilAfter)` > threshold (**decision** §12 (4); if the threshold is "Base's Aave USDC rate read live", today's limit is **+$84 K**) |
+| `market_concentration` | the account's debt after the borrow would exceed `MAX_POOL_SHARE_BPS` of total borrowed (**decision**; one obligation is 58.8 % today) |
+| `rates_stale` / `oracle_stale` | as on Base |
+
+Served at `/v1/solana/gate`; the web refuses to offer an amount the gate refused and shows the reason in plain
+words. The projection table in `VERIFIED-SOLANA-FACTS.md` is what this code recomputes live.
+
+## 8 · The deposit flow and what it must say (web, Simple mode; Advanced adds the choices)
+
+One decision per screen, the risk stated before the button:
+
+1. **"Your ZEC on Solana is a bridged token."** Kamino's wording verbatim (the floor, `VERIFIED-SOLANA-FACTS.md`),
+   then Oilskin's three additions in plain words: the bridge program can be upgraded by its operators and is
+   the only thing that mints this ZEC; Circle can freeze USDC; Kamino's market owner can change every parameter
+   (LTV, threshold, caps, rate curve) at any time. Link to `RISKS.md` §22 and `PRIVACY.md` §6.
+2. **Amount**, with the pool-size gate's verdict live ("this pool can fund up to $X today below the rate we
+   publish").
+3. **LTV preset** — 30 % / 40 % / Top, where Top = 40 % today (shared rule 41 %, Kamino's cap 40 %); entry HF
+   and the drop-to-liquidation shown from live LT, never typed.
+4. **Protection grant** — what the keeper may do, in the words of §3: repay from idle USDC up to N per day;
+   **sell up to M ZEC per day if you allow it** (off by default — **decision**); never move funds anywhere else;
+   you can cancel in one transaction.
+5. **Review** — the risk list (§9 items), the exact instruction the wallet will sign, the account address.
+
+Copy rules: `BANNED_WORDS` apply ("private", "shielded", "non-custodial", …); "self-custodial" is not claimed
+for a bridged asset; acronyms spelled out on first use.
+
+## 9 · Risks specific to this module (for `RISKS.md` §22 and `web/lib/copy.ts`)
+
+1. **Bridge trust path.** Zcash → NEAR (OmniBridge, MPC/TSS custody of the locked ZEC) → Wormhole messaging →
+   the Solana bridge program `dahP…CPxe`, whose PDA `["authority"]` is the only minter. Upgradeable by
+   `5kx8…Web6` (a PDA; controller not identified).
+2. **No shielded privacy** on Solana; the entry from Zcash is transparent at the bridge's deposit address
+   (`INFRA-2026-09.md` on NEAR Intents' t-address deposits).
+3. **Kamino market owner powers.** `A11E…zMeR` can change LTV/LT/caps/curve/oracle instantly; no timelock is
+   visible on chain. Kamino, Scope and Farms are all upgradeable.
+4. **Pool depth and concentration.** $358 K borrowable; one borrower is 59 % of the debt; a liquidation of that
+   one obligation is a $260 K sale.
+5. **Liquidation depth.** $4.5 M across 30 pools; a 400 ZEC sale moves price 0.56 % today; Kamino's bonus 2–7 %
+   plus a 50 % protocol cut of it.
+6. **Oracle.** MostRecentOf(Pyth Lazer, Chainlink) with a 15 % divergence gate and a two-hour source age;
+   reserve max age 180 s; heuristic band $400–$2,000 — a ZEC price outside the band halts the reserve.
+7. **USDC freeze authority.**
+8. **Keeper dependence** (Base §10 applies) and, new, **compute budget**: a `keeper_protect` with a sale may not
+   fit one transaction (§11 measures it).
+9. **Oilskin's own program upgradeability** (§12 (2)).
+10. **Solana-specific chain risk:** priority-fee spikes during a crash delay the keeper; RPC provider dependence.
+
+## 10 · Audit
+
+A Solana program is audited by different firms than Solidity: **OtterSec, Neodyme, Zellic, Sec3** (and Certora
+for formal specs) are the names the founder should request quotes from. Scope of the audit: PDA seed collisions
+and bump handling; `invoke_signed` seed exposure; every Kamino CPI's account list (a wrong `lendingMarketAuthority`
+or vault is a fund-loss bug); HF math against Kamino's `Fraction`; grant budget parsing and period roll; the
+outcome check in `keeper_protect`; the swap floor; the exit hatches; the upgrade authority. Out of scope: Kamino,
+Scope, the bridge — third-party code we call, not audit (as `AUDIT-SCOPE.md` says of Aave and the engine).
+
+## 11 · Test plan (localnet; there is no devnet ZCASH market)
+
+`solana/scripts/localnet.sh` starts `solana-test-validator` with the mainnet programs cloned as upgradeable
+programs (klend, Scope, Farms) and the accounts cloned (the market, both reserves, their four vaults, the two
+cToken mints and vaults, Scope `OraclePrices` + `OracleMappings` + configuration, the ZEC and USDC mints), all
+from `SOLANA_TOKENS` / `KAMINO_ZCASH_MARKET` in shared. Two fixtures make it usable:
+
+- **Scope prices go stale in 180 s.** `scripts/patch-scope-fixture.mjs` dumps `OraclePrices`, rewrites the
+  `unix_timestamp` of entries 430, 429, 13 and 456 to the far future and the `last_updated_slot` to 0, and
+  loads it with `--account` at genesis, so Kamino's `now − ts > max_age` staleness check reads fresh
+  (`saturating_sub`); **whether klend also rejects a future timestamp is the first thing the harness verifies**.
+  The same script can set a chosen ZEC price to simulate a drawdown per test.
+- **ZEC cannot be minted locally** (the authority is the bridge's PDA): the fixture rewrites the mint's
+  authority to a test keypair's public key generated by the harness at run time (never committed).
+
+Scenarios, mirroring `contracts/test`: init → deposit → borrow at 40 % (HF 1.625) → refuse a borrow at 45 % →
+price fixture −8 % → `keeper_protect(warn)` refused (warn is notify-only, no budget) → −17 % → `repay` lifts to
+1.40 → −27 % → `derisk` → revoke → keeper refused by name → owner `close_position` → `transfer_out`. Property
+tests (Rust, `proptest`): the keeper never exceeds the grant under random sequences; the owner can always exit;
+HF after any owner instruction ≥ floor or debt is dust. CU is metered per instruction and recorded in
+`TESTING.md`; if `keeper_protect` with a sale exceeds the limit, §12 (1)'s two-instruction variant is taken.
+
+## 12 · Decisions for the founder (nothing below is built until decided)
+
+1. **May the keeper sell collateral to repay?** Base never withdraws collateral in a keeper plan because USDC
+   comes from closing LP. On Solana a hold position has no USDC source but (a) idle USDC the user left in the
+   account and (b) a sale of ZEC. Options: *sale off* (the ladder repays only from idle USDC; a user who
+   withdrew the USDC is protected only by warnings — the copy must say so); *sale on, bounded* (per-period ZEC
+   cap, Scope-priced floor, ≤ 5 % slippage, only at repay/derisk/emergency). Recommendation: **sale on, bounded,
+   off by default in Simple mode with a one-sentence opt-in**, because the product is named for the ladder
+   acting. Sub-decision if on: in-instruction Jupiter CPI (one tx, CU risk) vs a two-instruction session.
+2. **Program upgrade authority.** Solana programs are upgradeable unless the authority is set to none. Options:
+   burn after audit (a bug is then permanent, fixed by a new program and migration); or a Squads multisig with
+   a published delay and a watcher (the registry-owner shape of `RISKS.md` §16). Copy cannot say "no operator
+   powers" under either until the delay is real and announced.
+3. **Exit hatch shape.** `close_position` + `transfer_out` always work and need no Oilskin off-chain
+   component. Should `release_obligation` (hand the Kamino obligation to the wallet) also exist? It is the
+   stronger guarantee but depends on klend's ownership-transfer instructions accepting a PDA initiator (not
+   verified).
+4. **Pool-size threshold.** "Refuse a borrow priced above Base's live Aave USDC rate" (today +$84 K), or a fixed
+   published APR, or a utilisation ceiling (e.g. never above the 90 % kink → +$278 K)? And a concentration cap.
+5. **Fees.** There is no LP yield on Solana, hence no performance fee. Nothing in v1, or a small fixed fee on
+   `borrow`? Nothing is the honest default until the value is proven.
+6. **Keeper key and RPC.** A paid RPC (Helius / Triton / QuickNode) is needed for `getProgramAccounts` and
+   priority-fee estimation; the keeper key's custody follows the Base rule (never in a Claude session, never in
+   `.env` read by tooling).
+7. **Audit firm and budget** (§10), and whether the Solana audit is sequenced after the Base audit or in parallel
+   (the direction memo's cost statement stands).
+
+## 13 · Not in this design
+
+The LP leg on Solana (Orca / Meteora / Raydium — not modelled, not gated); moving USDC between chains (CCTP —
+a different product); the "lite" notify-only variant (rejected); Kamino Multiply (Kamino's own loop product —
+Oilskin's difference is the ladder, not the primitive); elevation groups (none active on this market);
+Kamino obligation orders (disabled on this market).

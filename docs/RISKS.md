@@ -1,6 +1,6 @@
 # Risks — what can go wrong, what mitigates it, what does not
 
-Written for the Base-first v1 tree of 2026-09-06, after the wave-1 audit
+Written for the Base module v1 tree of 2026-09-06, after the wave-1 audit
 (`AUDIT-2026-09-06.md`) and the fix round it produced. Every mitigation names
 the code that enforces it; a mitigation without a code path is marked **plan**.
 "Mitigated" never means "eliminated". The same list, in shorter words, is shown
@@ -1057,6 +1057,57 @@ in-process readings, so a restart blinds a pool until it re-corroborates.
 
 ---
 
+## 22 · Solana module: bridged ZEC on Kamino (design stage, 2026-09-12)
+
+Nothing of this module is built; the risks are recorded now because the design
+(`SOLANA-ARCHITECTURE.md`) and the copy it specifies depend on them. Every
+number is from `VERIFIED-SOLANA-FACTS.md` (read live 2026-09-12).
+
+**Risk — the bridge is in the trust path.** Solana ZEC is minted only by the
+bridge token program `dahPEoZG…CPxe` through its PDA (program-derived address)
+`FvULaw…NYds` (proven: seeds `["authority"]`); that program is upgradeable by
+`5kx8Aa…Web6`, itself a PDA whose controller was not identified. Behind it sit
+NEAR's OmniBridge custody of the locked ZEC and Wormhole messaging. The token has
+no freeze authority, but its supply is as sound as the bridge program's
+governance. Kamino's own wording — "On Solana, ZEC is a bridged representation
+available through NEAR Intents. Holding or transferring it on Solana does not
+provide Zcash's shielded transaction privacy." — is the floor for Oilskin's copy.
+
+**Risk — the venue's owner is a real owner.** The ZCASH market's
+`lendingMarketOwner` `A11Ezn…zMeR` can change LTV (40 %), liquidation
+threshold (65 %), caps (13,000 ZEC / $2 M), the rate curve and the oracle
+configuration at any time; no timelock is visible on chain. Kamino Lend, Scope
+and Farms are all upgradeable. Kamino's obligation orders (its own stop-loss)
+are disabled on this market, so the only automated protection is Oilskin's
+keeper.
+
+**Risk — a small, lopsided pool.** $358 K USDC borrowable; +$84 K of new
+borrowing prices the pool above Base's Aave USDC rate (4.547 %), +$358 K empties
+it; one obligation holds 58.8 % of all debt. A user could *be* the market.
+**Mitigates (design):** the pool-size gate (`SOLANA-ARCHITECTURE.md` §7) refuses
+an amount the pool cannot fund below the threshold and states the concentration.
+
+**Risk — liquidation depth and terms.** $4.5 M of ZEC liquidity across 30 pools;
+a 400 ZEC sale moved price 0.56 % at read; Kamino's bonus is 2–7 % with a 50 %
+protocol cut, close factor 20 %, at most $500 K per liquidation.
+
+**Risk — the oracle.** Scope entry 430 = the more recent of Pyth Lazer and
+Chainlink, refused above 15 % divergence or two hours of age; the reserve refuses
+a price older than 180 s or outside $400–$2,000. A halted price halts the
+reserve — and the keeper (fail-closed, as on Base).
+
+**Risk — USDC can be frozen** by Circle (`7dGbd2…Crar`), including the account's
+own USDC token account; a frozen account cannot repay from idle USDC.
+
+**Risk — Oilskin's own program is upgradeable** until the founder decides its
+authority policy (`SOLANA-ARCHITECTURE.md` §12 (2)). Copy may not claim "no
+operator powers" before that.
+
+**Does not (yet).** No code enforces any of this; the module has no instruction
+handlers. The keeper-sells-collateral question (§12 (1) there) is undecided —
+if the answer is no, a user who withdrew the borrowed USDC is protected by
+warnings only, and the copy must say so.
+
 ## Trust assumptions, in one list
 
 1. The user's wallet key. It owns the account; a lost or stolen key is a lost
@@ -1080,3 +1131,8 @@ in-process readings, so a restart blinds a pool until it re-corroborates.
    remain **not** in it: the Morpho market ids, the CoW vault relayer, the
    engine's live end-of-list revert shape, and any cbZEC B20 policy state
    (`AUDIT-SCOPE.md`).
+9. **For the Solana module, when it exists (§22):** the OmniBridge / Wormhole
+   bridge and the program that mints Solana ZEC; Kamino Lend, Scope and Farms
+   and their upgrade authorities; the ZCASH market's owner; Circle's freeze
+   authority over USDC; and the people who read `VERIFIED-SOLANA-FACTS.md`
+   from the chain on 2026-09-12.

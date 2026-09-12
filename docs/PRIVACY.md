@@ -1,6 +1,6 @@
 # Privacy — what is known about you, by whom
 
-Written for the Base-first v1 tree of 2026-09-05. Read the first sentence of
+Written for the Base module v1 tree of 2026-09-05. Read the first sentence of
 every section literally. Nothing about this product is private in the sense a
 Zcash user means; the pre-pivot design's bridge-based entry, and the claims
 it made, no longer exist (`BASE-PIVOT-2026-09.md` §2, "The privacy thesis
@@ -136,3 +136,15 @@ deposit addresses, address-reuse warnings and a "Privacy view", and made
 claims about the funding side that this product cannot make. None of that
 code exists. Those documents survive only as history (`FEEDBACK-ANSWERS.md`,
 `V1-SIMPLE.md`, `SECURITY-REVIEW-2026-08.md`, each with a header saying so).
+
+## 6 · Solana module (designed 2026-09-12, not built)
+
+A ZEC holder who uses the Solana module arrives through NEAR Intents /
+OmniBridge, whose deposit side is a transparent Zcash address
+(`research/INFRA-2026-09.md`): the bridge, and anyone watching it, sees the
+amount and the sending address. On Solana every balance, deposit, borrow and
+keeper action is public, tied to the wallet that owns the account PDA. The
+bridged token carries none of Zcash's shielded privacy — Kamino's own wording,
+quoted in `VERIFIED-SOLANA-FACTS.md`, is the floor for Oilskin's copy, and the
+banned-words test applies to the Solana surfaces exactly as to the Base ones.
+What Oilskin's software stores and logs (§3) does not change by chain.

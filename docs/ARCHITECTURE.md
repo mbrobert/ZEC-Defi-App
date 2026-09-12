@@ -1,4 +1,4 @@
-# Architecture — Base-first v1
+# Architecture — Base module v1 (the Solana module is designed in `SOLANA-ARCHITECTURE.md`)
 
 What is in the tree on 2026-09-06, after the wave-1 audit and fix round, and
 what enforces each claim. Anything labelled **plan** is not built. Addresses
@@ -657,6 +657,21 @@ losses and zero pass through untouched), `width.ts` (`RANGE_WIDTH_BOUNDS
 never-offered cbZEC/USDC pool), `keccak.ts`. The prototypes carry a byte-equal
 copy that `prototype/test/verify-toggle.mjs` deep-equals against the built
 package.
+
+## Solana module (design record, 2026-09-12 — nothing built)
+
+The Solana twin of the account + grant: an Anchor program whose **Account PDA**
+(program-derived address) owns a Kamino obligation on the ZCASH market; typed
+owner instructions (`deposit`, `borrow` with the entry floor, `repay`,
+`withdraw` with the exit floor, `close_position`, `transfer_out`, `grant` /
+`revoke` / `revoke_all`); one keeper instruction, `keeper_protect`, that the
+chain itself gates on the refreshed health factor being below the named rung
+and on the action lifting it to the rung's disarm level; ladder constants
+generated from `packages/shared` and pinned by a seam test; a pool-size gate in
+the yield service instead of the yield gate. The design, its departures from
+the Base module and their reasons, and the seven decisions the founder must make
+before a handler is written are in `SOLANA-ARCHITECTURE.md`; the chain-verified
+inputs are in `VERIFIED-SOLANA-FACTS.md`.
 
 ## What owns what — the trust model in one paragraph
 

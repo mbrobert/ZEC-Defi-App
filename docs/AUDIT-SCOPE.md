@@ -1,4 +1,4 @@
-# Audit scope — Base-first v1 (tree of 2026-09-06)
+# Audit scope — Base module v1 (tree of 2026-09-06)
 
 What an auditor is asked to read, what it must guarantee, and what we have
 not verified ourselves. Line counts are `wc -l` on this tree. The ABI seam
@@ -215,3 +215,12 @@ handed over with `Ownable2Step` (`acceptOwnership` is a separate transaction).
 The engine proxy `0x7D27CDfBFcC878F7E7349e216d44204BFd2AFd55` and its verified
 behaviours are from `AUDIT-FINDINGS-2026-09-03.md` Part 1 (head ≈ block
 50,821,540).
+
+## Not in this audit — the Solana module
+
+`solana/` (added 2026-09-12) is a design record and a scaffold with **no
+instruction handlers**; nothing in it executes on any chain. When it is built it
+gets its own audit by a Solana firm (`SOLANA-ARCHITECTURE.md` §10 names the
+candidates and the scope); it does not widen this one. The read-only facts
+readers and the ladder seam (`npm test -w @zyo/solana`) are tooling, not
+protocol code.
