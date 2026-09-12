@@ -143,6 +143,22 @@ while its NatSpec claims the balance delta; W3-LOW-7 the grant's spend carry-for
 **Not done.** No `acceptVenue`, `Deploy.s.sol` untouched, nothing broadcast; the fork tests were not
 re-run against Base in this session.
 
+## 2026-09-12 (night) — Solana slice S3: keeper_protect built and the ladder walked on localnet; release_obligation found impossible
+
+`keeper_protect` is the keeper's one instruction, and the chain now checks what Base decides off-chain: a live
+grant, a rung that is actually crossed and is the most severe the grant allows (warn is notify-only), budgets
+charged from the arguments before any CPI, and an outcome — HF at the rung's disarm level or a budget
+exhausted — without which the instruction fails. Because Kamino refuses to release collateral while LTV is
+above its cap, the sale path is "repay first, then release what the repayment earned": the keeper pays USDC
+into the Account in the same transaction, the program repays it, withdraws the ZEC that payment covers at the
+Scope price less the grant's allowance, and delegates exactly that to the keeper; the program never swaps.
+Localnet **21/21** (ladder 6: refusals by name at every step, the repay-only path at HF 1.30, the sale path at
+HF 1.17 with the keeper's pull bounded to the unit, budgets, revocation), host unit **7**.
+
+`release_obligation` (decision 3) cannot be built: klend's ownership transfer needs Kamino's global admin to
+approve it and refuses the initiate step under CPI or beside any other instruction, so a PDA-owned obligation
+is untransferable; the exit hatch is `close_position` + `transfer_out` (SOLANA-ARCHITECTURE §3, §12).
+
 ## 2026-09-12 (evening) — Solana slice S2: decisions taken, the owner path built and proven on localnet
 
 The founder decided `SOLANA-ARCHITECTURE.md` §12 (keeper may sell collateral to stop a liquidation; Squads

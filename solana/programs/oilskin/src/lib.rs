@@ -76,4 +76,10 @@ pub mod oilskin {
     pub fn revoke_all(ctx: Context<RevokeAllIx>) -> Result<()> {
         instructions::grant::revoke_all_handler(ctx)
     }
+
+    /// The keeper's one instruction: inside a live grant, at a crossed rung, repay from the Account's USDC and
+    /// release collateral to the keeper only against a Scope-priced payment already made.
+    pub fn keeper_protect(ctx: Context<KeeperProtect>, rung_id: u8, repay_usdc: u64, sell_zec: u64) -> Result<()> {
+        instructions::keeper_protect::handler(ctx, rung_id, repay_usdc, sell_zec)
+    }
 }

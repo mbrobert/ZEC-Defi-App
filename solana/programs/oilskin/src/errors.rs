@@ -30,6 +30,8 @@ pub enum OilskinError {
     GrantNotLive,
     #[msg("This rung is not allowed by the grant")]
     RungNotAllowed,
+    #[msg("The warn rung is notify-only: there is no on-chain action for it")]
+    RungIsNotifyOnly,
     #[msg("Unknown rung id")]
     UnknownRung,
     #[msg("The named rung is not crossed: the account is healthier than that")]

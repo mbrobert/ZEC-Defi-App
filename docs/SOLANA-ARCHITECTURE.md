@@ -7,10 +7,10 @@ module's design (`ARCHITECTURE.md`) is the reference for every choice below: whe
 it, the departure and its reason are stated.
 
 **Status (2026-09-12, evening).** The founder read this document, decided §12, installed the toolchain and
-started the localnet; the gate on handlers is lifted. **Built and proven on localnet (15/15):** every owner
-instruction in §3 (`init_account`, `deposit`, `borrow`, `repay`, `withdraw`, `transfer_out`, `close_position`,
-`grant`, `revoke`, `revoke_all`). **Not yet built:** `keeper_protect` and `release_obligation` (the next
-slice; the mock Scope now lets tests move the ZEC price to walk the ladder). Three facts the run established
+started the localnet; the gate on handlers is lifted. **Built and proven on localnet (21/21):** every owner
+instruction in §3 and `keeper_protect`, the ladder walked by the Scope mock (repay-only at HF 1.30, the
+sale path at HF 1.17). **Cannot be built:** `release_obligation` (§3, §12 (3)). **Not yet built:** the
+keeper process (`agent/` Solana path, §5), the pool-size gate (§7), the web flow (§8). Three facts the run established
 and the code now embodies: klend marks a reserve stale after every state change, so a post-action health view
 refreshes the reserves again before the obligation; klend **closes an obligation a full withdraw empties**
 (rent back to the Account PDA), so `deposit` re-creates it on the same PDA; and on this market Kamino's own
@@ -149,11 +149,24 @@ the program checks is the HF Kamino would liquidate against at that slot.
 | `grant` | `keeper, expiry_ts, period_secs, repay_usdc_per_period, sell_zec_per_period, max_sell_slippage_bps, allowed_rungs` | creates or overwrites the Grant; **a re-grant inside a live period carries spend forward** (Base's rule) | refuses `expiry ≤ now`, `period == 0`, an empty rung mask, a zero repay budget, slippage > 500 bps |
 | `revoke` | `keeper` | kills that Grant (`expiry = 0`); refuses a Grant that never existed, so a watcher can tell a kill switch from a no-op | — |
 | `revoke_all` | — | `account.grant_epoch += 1`: every Grant issued before is dead | — |
-| `release_obligation` (**decision**, §12 (3)) | — | CPI `initiateObligationOwnershipTransfer` to the wallet; the wallet then calls Kamino's `acceptObligationOwnership` itself | only when no live Grant exists; whether klend permits a PDA-initiated transfer is **not verified** |
+| ~~`release_obligation`~~ — **impossible on klend** (verified 2026-09-12) | — | klend's ownership transfer is initiate → **approve by Kamino's global admin** → accept, and its `ownership_transfer_execution_context_checks` refuse the instruction when invoked by CPI or when the transaction carries anything but compute-budget instructions. A PDA can only sign by CPI, so an Account-owned obligation can never be handed to a wallet. The exit hatch is `close_position` + `transfer_out`: no keeper, no grant, no Oilskin off-chain component, only the program being deployed | — |
 
-### Keeper — one instruction
+### Keeper — one instruction (built 2026-09-12)
 
-`keeper_protect { rung_id: u8, repay_usdc: u64, sell_zec: u64, min_usdc_out: u64 }`, signer = `grant.keeper`.
+`keeper_protect { rung_id: u8, repay_usdc: u64, sell_zec: u64 }`, signer = `grant.keeper`.
+
+**Why it repays first and never swaps.** Kamino refuses to release collateral while the obligation's LTV is
+above the reserve's cap (`WithdrawTooLarge`), which is exactly the state the ladder acts in — so "withdraw,
+sell, repay" cannot exist on this venue, and neither can an in-program swap of collateral. The order is
+**repay first, then release what the repayment earned**: the keeper puts `repay_usdc` into the Account's USDC
+token account in the same transaction (its own capital, or a klend flash loan it repays after selling), the
+program repays it to Kamino, withdraws `sell_zec` of collateral into the Account's ZEC token account, and
+approves the keeper as SPL delegate for exactly what arrived — provided `repay_usdc` covers that ZEC at the
+Scope price (entry 430) less the grant's slippage allowance. The keeper pulls the ZEC with a later
+instruction and sells it wherever it likes. Collateral leaves Kamino only into the Account's own token
+account, and leaves that account only under a delegation sized by a payment already received; the keeper's
+margin on a sale is bounded by the allowance the owner signed (≤ 5 %). With `sell_zec = 0` the same instruction
+is a plain repay from the Account's idle USDC.
 
 Checks, in order, each a named error:
 
@@ -164,24 +177,23 @@ Checks, in order, each a named error:
    `sell_zec > 0` refused when `sell_zec_per_period == 0`.
 4. Refresh: CPI `refreshReserve` ×2, `refreshObligation`; refuse if the obligation's `lastUpdate.stale` or the
    ZEC reserve's price status is not fully checked (`priceStatus` bits, `VERIFIED-SOLANA-FACTS.md`).
-5. **The rung is real:** HF (computed in §4) `< LADDER[rung_id].hf_bps`. A keeper cannot act on a healthy
-   account; it cannot name a milder rung than the one crossed to shrink its own obligations, either — the
-   program also requires that no *more severe* rung is crossed than the one named unless the named one is the
-   most severe the grant allows.
-6. Action: (a) repay `repay_usdc` from the Account USDC ATA (CPI); (b) if `sell_zec > 0`: withdraw `sell_zec`
-   (CPI) → swap to USDC → repay the proceeds. The swap is the one open design point (§12 (1)); the guard on it
-   is fixed either way: `usdc_received ≥ scope_price(430) × sell_zec × (1 − max_sell_slippage_bps)`, with the
-   Scope price read from the same `OraclePrices` account Kamino just refreshed against, and `min_usdc_out`
-   from the keeper may only *raise* that floor.
-7. **Outcome check:** HF after ≥ `LADDER[rung_id].disarm_hf_bps`, **or** the relevant budget is now exhausted,
-   **or** the debt is dust. Otherwise the instruction fails — an action that changed nothing cannot be recorded
-   as a success (Base's "a confirmed action that did not clear its rung re-arms it" becomes a chain-level
-   refusal).
-8. Event `KeeperProtected { account, keeper, rung, repaid, sold, hf_before, hf_after }`.
+5. **The rung is real:** HF (computed in §4) `< LADDER[rung_id].hf_bps`, and `rung_id` is the *most severe*
+   crossed rung the grant allows (`RungNotCrossed` if healthier than named, `RungUnderstated` if a more severe
+   allowed rung is crossed). `warn` is notify-only and refused (`RungIsNotifyOnly`). The ZEC reserve's price
+   status must carry all six of klend's checks (`PriceNotChecked`).
+6. Action: (a) repay `repay_usdc` from the Account USDC ATA (CPI), refresh; (b) if `sell_zec > 0`: withdraw
+   `sell_zec` (converted to cTokens at the reserve's exchange rate, rounded up, and re-measured as the token
+   account's delta), require `repay_usdc ≥ scope_price(430) × delta × (1 − max_sell_slippage_bps)`
+   (`SaleBelowFloor`), then SPL-approve the keeper as delegate for the delta.
+7. **Outcome check:** HF after ≥ `LADDER[rung_id].disarm_hf_bps`, **or** the repay budget is now exhausted,
+   **or** (on a sale) the sell budget is — otherwise `ProtectionIneffective`: an action that changed nothing
+   cannot be recorded as a success (Base's "a confirmed action that did not clear its rung re-arms it" becomes
+   a chain-level refusal).
+8. Event `KeeperProtected { account, keeper, rung, repaid_usdc, sold_zec, hf_before_bps, hf_after_bps }`.
 
 What the keeper can never do, by construction: move any token to any account but the Account's own ATAs and
-Kamino; change a Grant; withdraw collateral except into a sale whose proceeds repay in the same instruction;
-act above the rung; act after `revoke`/`revoke_all`/expiry.
+Kamino; change a Grant; take collateral except under a delegation the program sized against USDC it had
+already repaid at the Scope price; act above the rung; act after `revoke`/`revoke_all`/expiry.
 
 ## 4 · Health on chain
 
@@ -336,9 +348,9 @@ The founder answered all seven on 2026-09-12 after reading this document; the bu
 
 | # | Decision | What it changes below and in the code |
 |---|---|---|
-| 1 | **Yes — the keeper may sell collateral to repay when liquidation threatens**, to prevent liquidation of the whole position. | `keeper_protect` sells only at repay / de-risk / emergency, only up to what lifts HF to the rung's disarm level, under the grant's per-period ZEC cap and the Scope-priced slippage floor (§3 step 6). The Simple-mode grant enables it by default; the pre-sign copy says "may sell up to M ZEC per day to stop a liquidation". |
+| 1 | **Yes — the keeper may sell collateral to repay when liquidation threatens**, to prevent liquidation of the whole position. | Built as "repay first, then release what the repayment earned" (§3), because Kamino will not release collateral while LTV is above its cap. The keeper funds the repayment (its capital or a flash loan) and receives ZEC at the Scope price less the grant's allowance; per-period USDC and ZEC caps and the outcome check bound it. The Simple-mode grant enables it by default; the pre-sign copy says "may repay with its own USDC and take up to M ZEC per day at the oracle price, less at most s %, to stop a liquidation". |
 | 2 | **Squads multisig** holds the program's upgrade authority. | Deploy hands the authority to a Squads v4 multisig with a published delay and a watcher; until that handover the deployer key holds it and the copy says so (`RISKS.md` §22). |
-| 3 | **Yes** — `release_obligation` exists. | Owner instruction: CPI `initiateObligationOwnershipTransfer(new_owner = wallet)` when no live Grant exists; the wallet accepts with Kamino directly. Whether klend accepts a PDA initiator is verified on localnet before the handler is kept. |
+| 3 | **Yes** — `release_obligation` exists. | **Cannot be built (verified 2026-09-12):** klend's transfer needs Kamino's global admin to approve it and refuses the initiate step under CPI or with any companion instruction, so a PDA-owned obligation is untransferable. The exit hatch is `close_position` + `transfer_out`, which need nothing from Oilskin but the deployed program. The founder's intent — the user can always leave alone — is met by those two. |
 | 4 | **The depositor decides.** Oilskin shows what the borrow rate will be; it does not refuse on rate. | §7's gate refuses only what cannot be funded (`pool_depth_insufficient`, `deposit_cap_reached`, `venue_paused`, staleness); the projected borrow APR after the borrow and the market's concentration are **shown**, never a refusal. Founder's framing: once ZEC can be bridged to Solana and borrowed against there, this is the best Solana-native option. |
 | 5 | **No performance fees yet.** | No fee logic in the program or the flow. |
 | 6 | Free RPC while building. | Localnet needs none; the public `api.mainnet-beta.solana.com` serves the readers and the clone; a free keyed tier (Helius, QuickNode, Alchemy) goes into `.env` as `SOLANA_RPC_URL` when the keeper needs `getProgramAccounts` reliability. |

@@ -1125,9 +1125,13 @@ own USDC token account; a frozen account cannot repay from idle USDC.
 authority policy (`SOLANA-ARCHITECTURE.md` §12 (2)). Copy may not claim "no
 operator powers" before that.
 
-**Does not (yet).** The owner path is built and proven on localnet
-(2026-09-12, 15/15); `keeper_protect` and `release_obligation` are not, so no
-automated protection exists yet on Solana. Decided 2026-09-12: the keeper **may sell collateral** to stop a
+**Does not (yet).** The program is built and proven on localnet (2026-09-12,
+21/21: owner path and the keeper ladder), but no keeper process runs it yet —
+`agent/` has no Solana path — so no automated protection exists on Solana until
+that lands. The exit hatch is `close_position` + `transfer_out`; a
+wallet-signed hand-over of the Kamino obligation is impossible on klend (its
+transfer needs Kamino's admin and refuses CPI). The keeper's sale margin is
+bounded by the grant's allowance (≤ 5 %) and the pre-sign copy must state it. Decided 2026-09-12: the keeper **may sell collateral** to stop a
 liquidation, bounded per period and priced off Scope — so the pre-sign copy
 must say the keeper can sell ZEC, and how much; the program's upgrade authority
 goes to a Squads multisig at deploy, and until that handover a single deployer
