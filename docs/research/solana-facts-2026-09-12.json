@@ -1,0 +1,1042 @@
+{
+  "_about": "Raw decoded output behind docs/VERIFIED-SOLANA-FACTS.md. Produced by solana/scripts/read-facts.mjs (chain) and solana/scripts/read-authorities.mjs (programs, mint events) against https://api.mainnet-beta.solana.com, finalized commitment, 2026-09-12 00:36–00:57 UTC. Read-only; nothing signed.",
+  "chain": {
+    "read": {
+      "rpc": "https://api.mainnet-beta.solana.com",
+      "slot": 446298641,
+      "blockTime": 1789174639,
+      "iso": "2026-09-12T00:57:19.000Z"
+    },
+    "programs": {
+      "klend": {
+        "id": "KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD",
+        "executable": true,
+        "owner": "BPFLoaderUpgradeab1e11111111111111111111111"
+      },
+      "scope": {
+        "id": "HFn8GnPADiny6XqUoWE8uRPPxb29ikn4yTuPa9MF2fWJ",
+        "executable": true,
+        "owner": "BPFLoaderUpgradeab1e11111111111111111111111"
+      },
+      "farms": {
+        "id": "FarmsPZpWu9i7Kky8tPN37rs2TpmMrAZrC7S7vJa91Hr",
+        "executable": true,
+        "owner": "BPFLoaderUpgradeab1e11111111111111111111111"
+      },
+      "metaplexTokenMetadata": {
+        "id": "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s",
+        "executable": true,
+        "owner": "BPFLoaderUpgradeab1e11111111111111111111111"
+      }
+    },
+    "market": {
+      "address": "GBJ3bzUiMfwC9ugaF3MM68EXMDyTUb5UryRRAcVjEowd",
+      "name": "ZCASH Market",
+      "version": "1",
+      "lendingMarketOwner": "A11EznxnJM3JrjUvAq16wqoVyPRNz522mdQm6mSmzMeR",
+      "lendingMarketOwnerCached": "A11EznxnJM3JrjUvAq16wqoVyPRNz522mdQm6mSmzMeR",
+      "quoteCurrency": "",
+      "emergencyMode": 0,
+      "autodeleverageEnabled": 0,
+      "borrowDisabled": 0,
+      "referralFeeBps": 0,
+      "liquidationMaxDebtCloseFactorPct": 20,
+      "insolvencyRiskUnhealthyLtvPct": 95,
+      "minFullLiquidationValueThreshold": "2",
+      "maxLiquidatableDebtMarketValueAtOnce": "500000",
+      "globalAllowedBorrowValue": "45000000",
+      "priceRefreshTriggerToMaxAgePct": 0,
+      "minNetValueInObligationSf": "1152921504607",
+      "minValueSkipLiquidationLtvChecks": "0",
+      "minValueSkipLiquidationBfChecks": "0",
+      "individualAutodeleverageMarginCallPeriodSecs": "0",
+      "minInitialDepositAmount": "100000",
+      "obligationOrderExecutionEnabled": 0,
+      "obligationOrderCreationEnabled": 0,
+      "elevationGroupsActive": []
+    },
+    "reserveAddresses": [
+      "6e8XcrdencrXBjXtTqYkRS63nS36petvzkV3gBf2ezbH",
+      "EW9vT7g2VH2aTFfcbaXRUCbF7jEfaLwMiJpckwDZwUZd"
+    ],
+    "reserves": {
+      "ZEC": {
+        "address": "6e8XcrdencrXBjXtTqYkRS63nS36petvzkV3gBf2ezbH",
+        "lastUpdateSlot": "446297685",
+        "lastUpdateStale": 0,
+        "lastUpdatePriceStatus": 63,
+        "mint": "A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS",
+        "mintDecimals": 8,
+        "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+        "supplyVault": "7muPXroaziH8RTD62Ea4gQ3NuAPZswf8Gj7iuPZ6Ae6Y",
+        "feeVault": "3oxg1uptz3hSYvPiZEPW1UK2T2G5UUniyc2yjrszQC7R",
+        "collateralMint": "FQc32zaNbQnUZmQxd3Fqhg3enqfozyX6K74xcCCHw4NU",
+        "collateralSupplyVault": "8yr67socgzkzXYPMPC8KNCh8eLDPjGvqucLGXmCGdwq4",
+        "farmCollateral": "11111111111111111111111111111111",
+        "farmDebt": "11111111111111111111111111111111",
+        "status": 0,
+        "tokenName": "ZEC",
+        "loanToValuePct": 40,
+        "liquidationThresholdPct": 65,
+        "minLiquidationBonusBps": 200,
+        "maxLiquidationBonusBps": 700,
+        "badDebtLiquidationBonusBps": 10,
+        "borrowFactorPct": "150",
+        "protocolTakeRatePct": 0,
+        "protocolLiquidationFeePct": 50,
+        "protocolOrderExecutionFeePct": 0,
+        "hostFixedInterestRateBps": 0,
+        "fees": {
+          "originationFeeSf": "0",
+          "flashLoanFeeSf": "0",
+          "padding": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "depositLimit": "13000",
+        "borrowLimit": "0",
+        "borrowLimitOutsideElevationGroup": "0",
+        "utilizationLimitBlockBorrowingAbovePct": 0,
+        "depositWithdrawalCap": {
+          "configCapacity": "300000000000",
+          "currentTotal": "-10044541707",
+          "lastIntervalStartTimestamp": "1789159183",
+          "configIntervalLengthSeconds": "86400"
+        },
+        "debtWithdrawalCap": {
+          "configCapacity": "0",
+          "currentTotal": "0",
+          "lastIntervalStartTimestamp": "0",
+          "configIntervalLengthSeconds": "0"
+        },
+        "elevationGroups": [],
+        "disableUsageAsCollOutsideEmode": 0,
+        "blockCtokenUsage": 0,
+        "autodeleverageEnabled": 0,
+        "deleveragingMarginCallPeriodSecs": "0",
+        "deleveragingThresholdDecreaseBpsPerDay": "24",
+        "emergencyMode": 0,
+        "interestRateBasis": 0,
+        "proposerAuthorityLocked": 0,
+        "permissionedOps": "0",
+        "borrowRateCurve": [
+          {
+            "utilBps": 0,
+            "rateBps": 1000
+          },
+          {
+            "utilBps": 10000,
+            "rateBps": 1000
+          },
+          {
+            "utilBps": 10000,
+            "rateBps": 1000
+          },
+          {
+            "utilBps": 10000,
+            "rateBps": 1000
+          },
+          {
+            "utilBps": 10000,
+            "rateBps": 1000
+          },
+          {
+            "utilBps": 10000,
+            "rateBps": 1000
+          },
+          {
+            "utilBps": 10000,
+            "rateBps": 1000
+          },
+          {
+            "utilBps": 10000,
+            "rateBps": 1000
+          },
+          {
+            "utilBps": 10000,
+            "rateBps": 1000
+          },
+          {
+            "utilBps": 10000,
+            "rateBps": 1000
+          },
+          {
+            "utilBps": 10000,
+            "rateBps": 1000
+          }
+        ],
+        "oracle": {
+          "maxAgePriceSeconds": "180",
+          "maxAgeTwapSeconds": "240",
+          "maxTwapDivergenceBps": "1000",
+          "heuristic": {
+            "lower": "4000",
+            "upper": "20000",
+            "exp": "1"
+          },
+          "scope": {
+            "priceFeed": "3t4JZcueEzTbVP6kLxXrL3VpWx45jDer4eqysweBchNH",
+            "priceChain": [
+              430,
+              65535,
+              65535,
+              65535
+            ],
+            "twapChain": [
+              429,
+              65535,
+              65535,
+              65535
+            ]
+          },
+          "pyth": {
+            "price": "nu11111111111111111111111111111111111111111"
+          },
+          "switchboard": {
+            "priceAggregator": "nu11111111111111111111111111111111111111111",
+            "twapAggregator": "nu11111111111111111111111111111111111111111"
+          },
+          "blockPriceUsage": 0
+        },
+        "availableAmount": "1192.03654662",
+        "borrowedAmount": "0",
+        "totalSupply": "1192.03654662",
+        "utilizationPct": "0.0000",
+        "borrowRateNowPctFromCurve": "10.0000",
+        "marketPriceSf": "1159.57104325",
+        "marketPriceLastUpdatedTs": "1789174315",
+        "cumulativeBorrowRateBsf": {
+          "value": [
+            "1186265695988229628",
+            "0",
+            "0",
+            "0"
+          ],
+          "padding": [
+            "0",
+            "0"
+          ]
+        },
+        "depositLimitCrossedTimestamp": "0",
+        "borrowLimitCrossedTimestamp": "0",
+        "accumulatedProtocolFees": "0",
+        "collateralMintTotalSupply": "119203654662"
+      },
+      "USDC": {
+        "address": "EW9vT7g2VH2aTFfcbaXRUCbF7jEfaLwMiJpckwDZwUZd",
+        "lastUpdateSlot": "446296905",
+        "lastUpdateStale": 0,
+        "lastUpdatePriceStatus": 0,
+        "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "mintDecimals": 6,
+        "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+        "supplyVault": "C7ipQ9XPEncrVhCLXfHE4aCXPSk1HpPQUr127RwgVG9h",
+        "feeVault": "HwgFUiBaEHv2QnrpgVxPmWuUC5nqt7iGSna99ZQL8oTB",
+        "collateralMint": "HfwrP5s6bL8pGuqAQUGr6S79AEfyWm2F8W6WJkuXmT53",
+        "collateralSupplyVault": "GV12UJQSNK3cQPAGea9bHXcu7STuAadaCLeSwEKirWtQ",
+        "farmCollateral": "11111111111111111111111111111111",
+        "farmDebt": "11111111111111111111111111111111",
+        "status": 0,
+        "tokenName": "USDC",
+        "loanToValuePct": 0,
+        "liquidationThresholdPct": 0,
+        "minLiquidationBonusBps": 200,
+        "maxLiquidationBonusBps": 700,
+        "badDebtLiquidationBonusBps": 10,
+        "borrowFactorPct": "100",
+        "protocolTakeRatePct": 10,
+        "protocolLiquidationFeePct": 0,
+        "protocolOrderExecutionFeePct": 0,
+        "hostFixedInterestRateBps": 0,
+        "fees": {
+          "originationFeeSf": "0",
+          "flashLoanFeeSf": "0",
+          "padding": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "depositLimit": "2000000",
+        "borrowLimit": "2000000",
+        "borrowLimitOutsideElevationGroup": "18446744073709.551615",
+        "utilizationLimitBlockBorrowingAbovePct": 0,
+        "depositWithdrawalCap": {
+          "configCapacity": "1000000000000",
+          "currentTotal": "-86220040",
+          "lastIntervalStartTimestamp": "1789139924",
+          "configIntervalLengthSeconds": "86400"
+        },
+        "debtWithdrawalCap": {
+          "configCapacity": "1000000000000",
+          "currentTotal": "-15000000",
+          "lastIntervalStartTimestamp": "1789171393",
+          "configIntervalLengthSeconds": "86400"
+        },
+        "elevationGroups": [],
+        "disableUsageAsCollOutsideEmode": 0,
+        "blockCtokenUsage": 0,
+        "autodeleverageEnabled": 0,
+        "deleveragingMarginCallPeriodSecs": "0",
+        "deleveragingThresholdDecreaseBpsPerDay": "24",
+        "emergencyMode": 0,
+        "interestRateBasis": 1,
+        "proposerAuthorityLocked": 0,
+        "permissionedOps": "0",
+        "borrowRateCurve": [
+          {
+            "utilBps": 0,
+            "rateBps": 119
+          },
+          {
+            "utilBps": 5000,
+            "rateBps": 279
+          },
+          {
+            "utilBps": 9000,
+            "rateBps": 725
+          },
+          {
+            "utilBps": 9200,
+            "rateBps": 897
+          },
+          {
+            "utilBps": 10000,
+            "rateBps": 3860
+          },
+          {
+            "utilBps": 10000,
+            "rateBps": 3860
+          },
+          {
+            "utilBps": 10000,
+            "rateBps": 3860
+          },
+          {
+            "utilBps": 10000,
+            "rateBps": 3860
+          },
+          {
+            "utilBps": 10000,
+            "rateBps": 3860
+          },
+          {
+            "utilBps": 10000,
+            "rateBps": 3860
+          },
+          {
+            "utilBps": 10000,
+            "rateBps": 3860
+          }
+        ],
+        "oracle": {
+          "maxAgePriceSeconds": "180",
+          "maxAgeTwapSeconds": "240",
+          "maxTwapDivergenceBps": "300",
+          "heuristic": {
+            "lower": "98",
+            "upper": "102",
+            "exp": "2"
+          },
+          "scope": {
+            "priceFeed": "3t4JZcueEzTbVP6kLxXrL3VpWx45jDer4eqysweBchNH",
+            "priceChain": [
+              13,
+              65535,
+              65535,
+              65535
+            ],
+            "twapChain": [
+              456,
+              65535,
+              65535,
+              65535
+            ]
+          },
+          "pyth": {
+            "price": "nu11111111111111111111111111111111111111111"
+          },
+          "switchboard": {
+            "priceAggregator": "nu11111111111111111111111111111111111111111",
+            "twapAggregator": "nu11111111111111111111111111111111111111111"
+          },
+          "blockPriceUsage": 0
+        },
+        "availableAmount": "358198.992666",
+        "borrowedAmount": "442516.96703124810743",
+        "totalSupply": "800695.98628632928974",
+        "utilizationPct": "55.2665",
+        "borrowRateNowPctFromCurve": "3.3776",
+        "marketPriceSf": "0.99986367999999999946",
+        "marketPriceLastUpdatedTs": "1789171383",
+        "cumulativeBorrowRateBsf": {
+          "value": [
+            "1156993395983593540",
+            "0",
+            "0",
+            "0"
+          ],
+          "padding": [
+            "0",
+            "0"
+          ]
+        },
+        "depositLimitCrossedTimestamp": "0",
+        "borrowLimitCrossedTimestamp": "0",
+        "accumulatedProtocolFees": "19.973410918817685191",
+        "collateralMintTotalSupply": "800285603703"
+      }
+    },
+    "usdcProjection": {
+      "remainingBorrowableUsdc": "358198.99",
+      "boundBy": "available liquidity",
+      "rows": [
+        {
+          "addUsdc": 0,
+          "borrowedUsdc": "442517",
+          "utilPct": "55.27",
+          "borrowAprPct": "3.378"
+        },
+        {
+          "addUsdc": 50000,
+          "borrowedUsdc": "492517",
+          "utilPct": "61.51",
+          "borrowAprPct": "4.073"
+        },
+        {
+          "addUsdc": 100000,
+          "borrowedUsdc": "542517",
+          "utilPct": "67.76",
+          "borrowAprPct": "4.770"
+        },
+        {
+          "addUsdc": 150000,
+          "borrowedUsdc": "592517",
+          "utilPct": "74.00",
+          "borrowAprPct": "5.466"
+        },
+        {
+          "addUsdc": 200000,
+          "borrowedUsdc": "642517",
+          "utilPct": "80.24",
+          "borrowAprPct": "6.162"
+        },
+        {
+          "addUsdc": 250000,
+          "borrowedUsdc": "692517",
+          "utilPct": "86.49",
+          "borrowAprPct": "6.859"
+        },
+        {
+          "addUsdc": 300000,
+          "borrowedUsdc": "742517",
+          "utilPct": "92.73",
+          "borrowAprPct": "11.674"
+        },
+        {
+          "addUsdc": 350000,
+          "borrowedUsdc": "792517",
+          "utilPct": "98.98",
+          "borrowAprPct": "34.822"
+        }
+      ],
+      "baseAaveUsdcAprPct": 4.5469,
+      "newBorrowingThatCrossesBaseRateUsdc": 84000
+    },
+    "scope": {
+      "program": "HFn8GnPADiny6XqUoWE8uRPPxb29ikn4yTuPa9MF2fWJ",
+      "oraclePrices": "3t4JZcueEzTbVP6kLxXrL3VpWx45jDer4eqysweBchNH",
+      "oraclePricesOwner": "HFn8GnPADiny6XqUoWE8uRPPxb29ikn4yTuPa9MF2fWJ",
+      "oraclePricesLen": 28712,
+      "entries": 512,
+      "oracleMappings": "4zh6bmb77qX2CL7t5AJYCqa6YqFafbz3QJNeFvZjLowg",
+      "oracleMappingsOwner": "HFn8GnPADiny6XqUoWE8uRPPxb29ikn4yTuPa9MF2fWJ",
+      "oracleMappingsLen": 29704,
+      "readSlot": 446298653,
+      "oracleTypeTable": {
+        "0": "Pyth",
+        "1": "DeprecatedPlaceholder1",
+        "2": "SwitchboardV2",
+        "3": "DeprecatedPlaceholder2",
+        "4": "CToken",
+        "5": "SplStake",
+        "6": "KToken",
+        "7": "PythEMA",
+        "8": "MsolStake",
+        "9": "KTokenToTokenA",
+        "10": "KTokenToTokenB",
+        "11": "JupiterLpFetch",
+        "12": "ScopeTwap",
+        "13": "OrcaWhirlpoolAtoB",
+        "14": "OrcaWhirlpoolBtoA",
+        "15": "RaydiumAmmV3AtoB",
+        "16": "RaydiumAmmV3BtoA",
+        "17": "JupiterLpCompute",
+        "18": "MeteoraDlmmAtoB",
+        "19": "MeteoraDlmmBtoA",
+        "20": "JupiterLpScope",
+        "21": "PythPull",
+        "22": "PythPullEMA",
+        "23": "FixedPrice",
+        "24": "SwitchboardOnDemand",
+        "25": "JitoRestaking",
+        "26": "Chainlink",
+        "27": "DiscountToMaturity",
+        "28": "MostRecentOf",
+        "29": "PythLazer",
+        "30": "RedStone",
+        "31": "AdrenaLp",
+        "32": "Securitize",
+        "33": "CappedFloored",
+        "34": "ChainlinkRWA",
+        "35": "ChainlinkNAV",
+        "36": "FlashtradeLp",
+        "37": "ChainlinkX",
+        "38": "ChainlinkExchangeRate",
+        "39": "CappedMostRecentOf"
+      },
+      "zecPriceChain": [
+        430,
+        65535,
+        65535,
+        65535
+      ],
+      "zecTwapChain": [
+        429,
+        65535,
+        65535,
+        65535
+      ],
+      "zecEntries": [
+        {
+          "index": 430,
+          "priceType": "MostRecentOf",
+          "priceTypeCode": 28,
+          "priceInfoAccount": "HFn8GnPADiny6XqUoWE8uRPPxb29ikn4yTuPa9MF2fWJ",
+          "twapSource": null,
+          "twapEnabled": 0,
+          "refPrice": null,
+          "genericHex": "9701ac0100020002dc05201c0000000000000000",
+          "mostRecentOf": {
+            "sourceEntries": [
+              407,
+              428
+            ],
+            "maxDivergenceBps": 1500,
+            "sourcesMaxAgeS": 7200
+          },
+          "priceUsd": "1157.125",
+          "value": "115712500000",
+          "exp": 8,
+          "lastUpdatedSlot": "446298550",
+          "unixTimestamp": 1789174609,
+          "ageSecondsAtRead": 30,
+          "priceGenericHex": "80f811ad3e5b060000000000000000000000000000000000",
+          "sources": [
+            {
+              "index": 407,
+              "priceType": "PythLazer",
+              "priceTypeCode": 29,
+              "priceInfoAccount": "HFn8GnPADiny6XqUoWE8uRPPxb29ikn4yTuPa9MF2fWJ",
+              "twapSource": null,
+              "twapEnabled": 0,
+              "refPrice": null,
+              "genericHex": "4200083200000000000000003200000000000000",
+              "priceUsd": "1157.125",
+              "value": "115712500000",
+              "exp": 8,
+              "lastUpdatedSlot": "446298550",
+              "unixTimestamp": 1789174609,
+              "ageSecondsAtRead": 30,
+              "priceGenericHex": "80f811ad3e5b060000000000000000000000000000000000"
+            },
+            {
+              "index": 428,
+              "priceType": "Chainlink",
+              "priceTypeCode": 26,
+              "priceInfoAccount": "14CrXQzP5Ero3NvmW92uLSqgWDRqU2eEdKJTP8CMsuL",
+              "twapSource": null,
+              "twapEnabled": 1,
+              "refPrice": null,
+              "genericHex": "3200000000000000000000000000000000000000",
+              "priceUsd": "1157.71639542012185",
+              "value": "115771639542012185",
+              "exp": 14,
+              "lastUpdatedSlot": "446298625",
+              "unixTimestamp": 1789174633,
+              "ageSecondsAtRead": 6,
+              "priceGenericHex": "69a3a46a0000000000000000000000000000000000000000"
+            }
+          ]
+        }
+      ],
+      "zecTwapEntries": [
+        {
+          "index": 429,
+          "priceType": "ScopeTwap",
+          "priceTypeCode": 12,
+          "priceInfoAccount": "HFn8GnPADiny6XqUoWE8uRPPxb29ikn4yTuPa9MF2fWJ",
+          "twapSource": 428,
+          "twapEnabled": 0,
+          "refPrice": null,
+          "genericHex": "0000000000000000000000000000000000000000",
+          "priceUsd": "1160.5471239760946",
+          "value": "116054712397609460",
+          "exp": 14,
+          "lastUpdatedSlot": "446298625",
+          "unixTimestamp": 1789174633,
+          "ageSecondsAtRead": 6,
+          "priceGenericHex": "000000000000000000000000000000000000000000000000",
+          "twapOver": {
+            "index": 428,
+            "priceType": "Chainlink",
+            "priceTypeCode": 26,
+            "priceInfoAccount": "14CrXQzP5Ero3NvmW92uLSqgWDRqU2eEdKJTP8CMsuL",
+            "twapSource": null,
+            "twapEnabled": 1,
+            "refPrice": null,
+            "genericHex": "3200000000000000000000000000000000000000",
+            "priceUsd": "1157.71639542012185",
+            "value": "115771639542012185",
+            "exp": 14,
+            "lastUpdatedSlot": "446298625",
+            "unixTimestamp": 1789174633,
+            "ageSecondsAtRead": 6,
+            "priceGenericHex": "69a3a46a0000000000000000000000000000000000000000"
+          }
+        }
+      ],
+      "usdcEntries": [
+        {
+          "index": 13,
+          "priceType": "CappedFloored",
+          "priceTypeCode": 33,
+          "priceInfoAccount": "HFn8GnPADiny6XqUoWE8uRPPxb29ikn4yTuPa9MF2fWJ",
+          "twapSource": null,
+          "twapEnabled": 0,
+          "refPrice": null,
+          "genericHex": "0900010c0001bd00000000000000000000000000",
+          "priceUsd": "0.99988834",
+          "value": "99988834",
+          "exp": 8,
+          "lastUpdatedSlot": "446298550",
+          "unixTimestamp": 1789174609,
+          "ageSecondsAtRead": 30,
+          "priceGenericHex": "000000000000000000000000000000000000000000000000"
+        }
+      ],
+      "usdcTwapEntries": [
+        {
+          "index": 456,
+          "priceType": "type#48 (not in scope-sdk 10.2.6 table)",
+          "priceTypeCode": 48,
+          "priceInfoAccount": "HFn8GnPADiny6XqUoWE8uRPPxb29ikn4yTuPa9MF2fWJ",
+          "twapSource": null,
+          "twapEnabled": 0,
+          "refPrice": null,
+          "genericHex": "0800000000000000000000000000000000000000",
+          "priceUsd": "0.99989476",
+          "value": "99989476",
+          "exp": 8,
+          "lastUpdatedSlot": "446298550",
+          "unixTimestamp": 1789174609,
+          "ageSecondsAtRead": 30,
+          "priceGenericHex": "000000000000000000000000000000000000000000000000"
+        }
+      ],
+      "chainlinkSourceAccount": {
+        "address": "14CrXQzP5Ero3NvmW92uLSqgWDRqU2eEdKJTP8CMsuL",
+        "owner": null,
+        "space": null
+      }
+    },
+    "zecMint": {
+      "mint": "A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS",
+      "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+      "decimals": 8,
+      "supply": "9593317644828",
+      "supplyUi": "95933.17644828",
+      "mintAuthority": "FvULawNPGBbuwYus74ECaQoV1oH9Tk6XPN7VPN51NYds",
+      "mintAuthorityOnCurve": false,
+      "mintAuthorityIsPda": true,
+      "mintAuthorityAccount": {
+        "owner": "11111111111111111111111111111111",
+        "lamports": 1650841,
+        "dataLen": 0,
+        "executable": false
+      },
+      "freezeAuthority": null,
+      "metadata": {
+        "pda": "5mRY96MiFac9DBToh16j5dgq6kiJCPqhPXPzpoNNtxmw",
+        "updateAuthority": "FvULawNPGBbuwYus74ECaQoV1oH9Tk6XPN7VPN51NYds",
+        "name": "Zcash",
+        "symbol": "ZEC",
+        "uri": "https://arweave.net/cEDMVkvUHsXSckakyWWCQlMnG-SlWlXyFEGnLqCamug",
+        "sellerFeeBps": 0,
+        "creators": [],
+        "primarySaleHappened": false,
+        "isMutable": true
+      }
+    },
+    "usdcMint": {
+      "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      "decimals": 6,
+      "supplyUi": "8095154548.939011",
+      "mintAuthority": "BJE5MMbqXjVwjAF7oxwPYXnTXDyspzZyt4vwenNw5ruG",
+      "freezeAuthority": "7dGbd2QZcCKcTndnHcTL8q7SMVXAkp688NTQYwrRCrar"
+    },
+    "obligations": {
+      "obligationSpanBytes": 3344,
+      "count": 45,
+      "countWithDebt": 36,
+      "totalZecDepositedAcrossObligations": "1192.03554662",
+      "totalUsdcDebtAcrossObligations": "442341.84",
+      "totalDepositedValueUsdAtLastRefresh": "1387944",
+      "top5ByUsdcDebt": [
+        {
+          "address": "74VYE88JRBuQ9PmbyqWLgZqeL6Qfqjww7drc7te6uPBY",
+          "usdcDebt": "259911.91",
+          "zecDeposited": "612.1530",
+          "sharePct": "58.8",
+          "lastUpdateSlot": "445404219"
+        },
+        {
+          "address": "CvFTEmUZcnzd9N3AyA26cWKEiFAhg3jQ8MUcyEtyCjXL",
+          "usdcDebt": "25000.00",
+          "zecDeposited": "96.8309",
+          "sharePct": "5.7",
+          "lastUpdateSlot": "446250270"
+        },
+        {
+          "address": "3iydmpymmo6zBTYWdT1r5vxrWcxjaRFRvexvRBCB3UiY",
+          "usdcDebt": "24503.23",
+          "zecDeposited": "90.0084",
+          "sharePct": "5.5",
+          "lastUpdateSlot": "445578356"
+        },
+        {
+          "address": "3woGRW1vwzcnoEpqrTEBnvxktEA4zCyLEoNTTrfu26YT",
+          "usdcDebt": "20000.00",
+          "zecDeposited": "54.5318",
+          "sharePct": "4.5",
+          "lastUpdateSlot": "446166828"
+        },
+        {
+          "address": "Fcj5GEiBtSmZZz8rsVaRqLb6qNc13ma7e3ALCQg5mZjc",
+          "usdcDebt": "17250.69",
+          "zecDeposited": "35.9694",
+          "sharePct": "3.9",
+          "lastUpdateSlot": "446176815"
+        }
+      ],
+      "top1DebtSharePct": "58.8",
+      "top5DebtSharePct": "78.4",
+      "top10DebtSharePct": "88.8"
+    }
+  },
+  "programsAndMintEvents": {
+    "mintEvents": [
+      {
+        "signature": "2gLjXq4d1zEhcpitij1f3Tg3DeuJZWUYAxVvG75y8wpFByzfxugT3rTuCd9GD75eRxm3Dmeyx9oWPhBsT46Awbng",
+        "slot": 446297498,
+        "blockTime": 1789174278,
+        "iso": "2026-09-12T00:51:18.000Z",
+        "topLevelPrograms": [
+          "dahPEoZGXfyV58JqqH85okdHmpN8U2q8owgPUXSCPxe"
+        ],
+        "topLevelInvokes": [
+          "Program dahPEoZGXfyV58JqqH85okdHmpN8U2q8owgPUXSCPxe"
+        ],
+        "events": []
+      },
+      {
+        "signature": "5kSaBRCXSGcMzkW9yPQDAaASV4hfX4mhuHnrDv5q2qnAo7LGdmKq5i1NCBvRVQ9BLdoKfKpGk6sP91Bv6fqNvyt8",
+        "slot": 446297470,
+        "blockTime": 1789174269,
+        "iso": "2026-09-12T00:51:09.000Z",
+        "topLevelPrograms": [
+          "dahPEoZGXfyV58JqqH85okdHmpN8U2q8owgPUXSCPxe"
+        ],
+        "topLevelInvokes": [
+          "Program dahPEoZGXfyV58JqqH85okdHmpN8U2q8owgPUXSCPxe"
+        ],
+        "events": []
+      },
+      {
+        "signature": "3F6zDUc9qg4SaJRY2AwiBppXNTW2jt6H51n1QZR3vZnLKLreijoLX6XB6BDwZvDj99tBS3g7vVXNwRG8DyMPiVSj",
+        "slot": 446297467,
+        "blockTime": 1789174268,
+        "iso": "2026-09-12T00:51:08.000Z",
+        "topLevelPrograms": [
+          "dahPEoZGXfyV58JqqH85okdHmpN8U2q8owgPUXSCPxe"
+        ],
+        "topLevelInvokes": [
+          "Program dahPEoZGXfyV58JqqH85okdHmpN8U2q8owgPUXSCPxe"
+        ],
+        "events": []
+      },
+      {
+        "signature": "32LUBFhfuxgpNZJBTJhXKRXKzw6jbtFSKQSZ1ThueSRyvBURCWLcD2vJ5597zx5iLz6XHbrrGkVCGQLo9W7y9zdQ",
+        "slot": 446297457,
+        "blockTime": 1789174265,
+        "iso": "2026-09-12T00:51:05.000Z",
+        "topLevelPrograms": [
+          "dahPEoZGXfyV58JqqH85okdHmpN8U2q8owgPUXSCPxe"
+        ],
+        "topLevelInvokes": [
+          "Program dahPEoZGXfyV58JqqH85okdHmpN8U2q8owgPUXSCPxe"
+        ],
+        "events": [
+          {
+            "type": "mintTo",
+            "amountBase": "98807555",
+            "authority": "FvULawNPGBbuwYus74ECaQoV1oH9Tk6XPN7VPN51NYds",
+            "outerProgram": "dahPEoZGXfyV58JqqH85okdHmpN8U2q8owgPUXSCPxe",
+            "where": "inner-of-top#0"
+          }
+        ]
+      },
+      {
+        "signature": "5JSdVnV3CMD2riFzN3JUtLErtVhtoPg9hEfhhgh29obipdBBRi1AqsKJc6X1xE4xEvejgayXNe7V3R4HfPmrp1xr",
+        "slot": 446297456,
+        "blockTime": 1789174264,
+        "iso": "2026-09-12T00:51:04.000Z",
+        "topLevelPrograms": [
+          "11111111111111111111111111111111",
+          "dahPEoZGXfyV58JqqH85okdHmpN8U2q8owgPUXSCPxe"
+        ],
+        "topLevelInvokes": [
+          "Program 11111111111111111111111111111111",
+          "Program dahPEoZGXfyV58JqqH85okdHmpN8U2q8owgPUXSCPxe"
+        ],
+        "events": []
+      },
+      {
+        "signature": "C1ur7a5ooXBtdGdUCdw2vhqgTaXJyKcXCauXfcnkbkvAhogTptFhKbYj4Hfrh2Nv8rjYnaEPfRiiQX7tq7aDSiH",
+        "slot": 446297449,
+        "blockTime": 1789174261,
+        "iso": "2026-09-12T00:51:01.000Z",
+        "topLevelPrograms": [
+          "dahPEoZGXfyV58JqqH85okdHmpN8U2q8owgPUXSCPxe"
+        ],
+        "topLevelInvokes": [
+          "Program dahPEoZGXfyV58JqqH85okdHmpN8U2q8owgPUXSCPxe"
+        ],
+        "events": []
+      },
+      {
+        "signature": "5z43ukopZSTSVXbktvicLyes9pW7e2T7iVCnhaY4FCDjDJfX3qdVTWDBgFcagvNA3VKAf3mAikT9w1gRN7cHRyt2",
+        "slot": 446297449,
+        "blockTime": 1789174261,
+        "iso": "2026-09-12T00:51:01.000Z",
+        "topLevelPrograms": [
+          "dahPEoZGXfyV58JqqH85okdHmpN8U2q8owgPUXSCPxe"
+        ],
+        "topLevelInvokes": [
+          "Program dahPEoZGXfyV58JqqH85okdHmpN8U2q8owgPUXSCPxe"
+        ],
+        "events": []
+      },
+      {
+        "signature": "tedzusgD5kuzMgoDDy3BHCL1U8QzTREoYwkEjDu1jzmxGkDdL1HF3uvjPVHXc5Da42Gg2qxhDfcRq9tMt5GuW8F",
+        "slot": 446297449,
+        "blockTime": 1789174261,
+        "iso": "2026-09-12T00:51:01.000Z",
+        "topLevelPrograms": [
+          "dahPEoZGXfyV58JqqH85okdHmpN8U2q8owgPUXSCPxe"
+        ],
+        "topLevelInvokes": [
+          "Program dahPEoZGXfyV58JqqH85okdHmpN8U2q8owgPUXSCPxe"
+        ],
+        "events": []
+      }
+    ],
+    "programs": {
+      "klend": {
+        "id": "KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD",
+        "executable": true,
+        "owner": "BPFLoaderUpgradeab1e11111111111111111111111",
+        "programData": "9uSbGW1y9H5Av6H5TKxQ1wnFApSq2t3oEpfF2YfjDQGA",
+        "lastDeploySlot": 440486775,
+        "upgradeAuthority": "GzFgdRJXmawPhGeBsyRCDLx4jAKPsvbUqoqitzppkzkW",
+        "upgradeAuthorityOwner": "11111111111111111111111111111111",
+        "upgradeAuthorityOnCurve": false,
+        "upgradeAuthorityKind": "owned by 11111111111111111111111111111111"
+      },
+      "scope": {
+        "id": "HFn8GnPADiny6XqUoWE8uRPPxb29ikn4yTuPa9MF2fWJ",
+        "executable": true,
+        "owner": "BPFLoaderUpgradeab1e11111111111111111111111",
+        "programData": "DuKtB88SQGJbow5jxmUSwgJWmC7zma8mX3Nodz1Gsjs2",
+        "lastDeploySlot": 443102298,
+        "upgradeAuthority": "4R33WT7isNgzALNyvpZKiZQARtZNAXarWB3prUbPkXX7",
+        "upgradeAuthorityOwner": "11111111111111111111111111111111",
+        "upgradeAuthorityOnCurve": false,
+        "upgradeAuthorityKind": "owned by 11111111111111111111111111111111"
+      },
+      "farms": {
+        "id": "FarmsPZpWu9i7Kky8tPN37rs2TpmMrAZrC7S7vJa91Hr",
+        "executable": true,
+        "owner": "BPFLoaderUpgradeab1e11111111111111111111111",
+        "programData": "5Fz4tY19ihWJAW1j9RNoEQJKSdn5mQHjcVrcZ5BRK5E9",
+        "lastDeploySlot": 444035168,
+        "upgradeAuthority": "CivjSDKgTpmkRNL4zYcmv9D9QqPJg6yTxBVxMGcXvMuY",
+        "upgradeAuthorityOwner": "11111111111111111111111111111111",
+        "upgradeAuthorityOnCurve": false,
+        "upgradeAuthorityKind": "owned by 11111111111111111111111111111111"
+      },
+      "wormholeCore": {
+        "id": "worm2ZoG2kUd4vFXhvjh93UUH596ayRfgQ2MgjNMTth",
+        "executable": true,
+        "owner": "BPFLoaderUpgradeab1e11111111111111111111111",
+        "programData": "DUw5YjHpxeTVP5UZu39eoScMWDN5QnNnSrrBj68pFLHt",
+        "lastDeploySlot": 425583168,
+        "upgradeAuthority": "2rCAC1VKz5YP1jZTHcVfWDhHMs2iEruUaATdeZe5Fjk5",
+        "upgradeAuthorityOwner": null,
+        "upgradeAuthorityOnCurve": false,
+        "upgradeAuthorityKind": "owned by undefined"
+      },
+      "seen:dahPEoZGXfyV58JqqH85okdHmpN8U2q8owgPUXSCPxe": {
+        "id": "dahPEoZGXfyV58JqqH85okdHmpN8U2q8owgPUXSCPxe",
+        "executable": true,
+        "owner": "BPFLoaderUpgradeab1e11111111111111111111111",
+        "programData": "46ne7xLaLgUwqBTGyezWcgyrvzpXfTPZZkkKR56d5Rhe",
+        "lastDeploySlot": 428811242,
+        "upgradeAuthority": "5kx8AapW8tPkiFbuHiuEBcmN3ddwpBWZfCrZgxXgWeb6",
+        "upgradeAuthorityOwner": "11111111111111111111111111111111",
+        "upgradeAuthorityOnCurve": false,
+        "upgradeAuthorityKind": "owned by 11111111111111111111111111111111"
+      }
+    }
+  },
+  "secondarySources": {
+    "aaveV3BaseUsdc": {
+      "readAtUtc": "2026-09-12T00:41:59Z",
+      "block": 51192187,
+      "poolDataProvider": "0x0F43731EB8d45A581f4a36DD74F5f358bc90C73A",
+      "usdc": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "getReserveDataWords": {
+        "totalAToken": "183117044225154",
+        "liquidityRateRay": "35629678505300771597251837",
+        "variableBorrowRateRay": "45468686444999772919825038",
+        "lastUpdateTimestamp": 1789173721
+      },
+      "variableBorrowAprPct": 4.5469,
+      "supplyAprPct": 3.563
+    },
+    "kaminoApiReserveMetrics": {
+      "readAtUtc": "2026-09-12T00:38Z",
+      "url": "https://api.kamino.finance/kamino-market/GBJ3bzUiMfwC9ugaF3MM68EXMDyTUb5UryRRAcVjEowd/reserves/metrics",
+      "ZEC": {
+        "maxLtv": "0.4",
+        "totalSupply": "1192.03654662",
+        "totalBorrow": "0",
+        "totalSupplyUsd": "1383372.49",
+        "borrowApy": "0.17084850923220785",
+        "supplyApy": "0"
+      },
+      "USDC": {
+        "totalSupply": "800693.99981910160072",
+        "totalBorrow": "442516.3851109951196",
+        "borrowApy": "0.03434903239177256",
+        "supplyApy": "0.016940205381936968"
+      }
+    },
+    "jupiterQuotes": {
+      "readAtUtc": "2026-09-12T00:39Z",
+      "url": "https://lite-api.jup.ag/swap/v1/quote",
+      "inputMint": "A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS",
+      "outputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      "slippageBps": 50,
+      "rows": [
+        {
+          "inZec": 10,
+          "outUsdc": "11612.142909",
+          "priceImpactPct": "0.0002834264594496"
+        },
+        {
+          "inZec": 100,
+          "outUsdc": "115982.985890",
+          "priceImpactPct": "0.0013017103246220"
+        },
+        {
+          "inZec": 400,
+          "outUsdc": "461944.856138",
+          "priceImpactPct": "0.0055553235228217"
+        },
+        {
+          "inZec": 1000,
+          "outUsdc": "1139049.314623",
+          "priceImpactPct": "0.0193023004423422"
+        }
+      ]
+    },
+    "dexscreener": {
+      "readAtUtc": "2026-09-12T00:40:29Z",
+      "url": "https://api.dexscreener.com/latest/dex/tokens/A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS",
+      "solanaPairs": 30,
+      "totalLiquidityUsd": 4476697,
+      "top": [
+        {
+          "dex": "orca",
+          "pair": "ZEC/USDC",
+          "liquidityUsd": 2155451,
+          "volume24hUsd": 13754283,
+          "address": "GTHKH8s82ZR8GTSFZ1dUu6wfdxhy59wpMShxzG5zjiPm"
+        },
+        {
+          "dex": "meteora",
+          "pair": "ZEC/SOL",
+          "liquidityUsd": 1037358,
+          "volume24hUsd": 4412886,
+          "address": "8eybKAvjKJryVweQLg8SRgwUfdP7wHYJ5yyqgfE82DQA"
+        },
+        {
+          "dex": "orca",
+          "pair": "ZEC/SOL",
+          "liquidityUsd": 357799,
+          "volume24hUsd": 2267733,
+          "address": "2TAgfogn8JRwwTnsGKUa6WUT5Xdv1iMEzfEDMor68X9C"
+        },
+        {
+          "dex": "meteora",
+          "pair": "ZEC/USDC",
+          "liquidityUsd": 356390,
+          "volume24hUsd": 1290315,
+          "address": "9ToMYnmEeYKc1AWYAFo8yjPKM1bt3vPhgw1U6qh9RxBd"
+        }
+      ]
+    },
+    "kaminoAppWording": {
+      "readAtUtc": "2026-09-12T00:57Z",
+      "where": "kamino.com → Borrow → ZCASH Market → \"What is Zcash?\" tooltip",
+      "curator": "Allez Labs",
+      "marketSize": "$2.18M",
+      "borrowApy": "3.43%",
+      "tag": "New",
+      "learnMore": "https://z.cash/learn/what-is-zcash/",
+      "text": "ZEC is the native currency of Zcash, a payments blockchain supporting transparent and shielded transactions. Shielded transactions use zero-knowledge proofs to protect financial information. On Solana, ZEC is a bridged representation available through NEAR Intents. Holding or transferring it on Solana does not provide Zcash’s shielded transaction privacy."
+    },
+    "mintAuthorityPda": {
+      "address": "FvULawNPGBbuwYus74ECaQoV1oH9Tk6XPN7VPN51NYds",
+      "program": "dahPEoZGXfyV58JqqH85okdHmpN8U2q8owgPUXSCPxe",
+      "seeds": [
+        "authority"
+      ],
+      "bump": 255,
+      "provenBy": "PublicKey.findProgramAddressSync, local computation"
+    }
+  }
+}

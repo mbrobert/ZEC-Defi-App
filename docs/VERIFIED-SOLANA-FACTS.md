@@ -1,0 +1,260 @@
+# Verified Solana mainnet facts for the Solana module (read live 2026-09-12 00:36–00:57 UTC, slots 446,294,693 → 446,298,641)
+
+Method: JSON-RPC `getAccountInfo` / `getProgramAccounts` / `getSignaturesForAddress` / `getTransaction`
+against the public endpoint `https://api.mainnet-beta.solana.com` at `finalized` commitment, decoded with
+`@kamino-finance/klend-sdk` 12.0.0 (Kamino's own account layouts) and, for the Scope oracle, a byte-level decode
+checked against the account sizes the Scope SDK publishes. **Every address below has been confirmed to exist on
+chain and to answer the reads stated.** Nothing here was signed or sent. The reader is committed as
+`solana/scripts/read-facts.mjs` (+ `read-authorities.mjs`) and its raw output as
+`docs/research/solana-facts-2026-09-12.json`, so every number can be traced to the bytes it came from.
+
+A note on provenance. The handoff and `DIRECTION-2026-09-11.md` cite a research file
+`docs/research/SOLANA-ZEC-KAMINO-2026-09.md`. **That file does not exist in the repository or anywhere on the
+founder's Mac** (searched 2026-09-12). The direction memo carries its headline numbers, and this file re-reads each
+of them from the chain; the "Drift" section at the end says where the memo's numbers have moved. This file, not
+the missing research file, is what code pins to.
+
+Abbreviations: LTV = loan-to-value; LT = liquidation threshold; HF = health factor; APR = annual percentage rate;
+APY = annual percentage yield (compounded); PDA = program-derived address (an account a program, not a key,
+controls); RPC = remote procedure call; TWAP = time-weighted average price; SPL = Solana Program Library (the
+token standard); ATA = associated token account; CPI = cross-program invocation; MPC = multi-party computation;
+DEX = decentralised exchange.
+
+## Programs (all `executable`, all owned by the BPF upgradeable loader — every one has a live upgrade authority)
+
+| Program | Id | Last deploy slot | Upgrade authority | Authority kind |
+|---|---|---|---|---|
+| Kamino Lend (klend) | `KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD` | 440,486,775 | `GzFgdRJXmawPhGeBsyRCDLx4jAKPsvbUqoqitzppkzkW` | off-curve, system-owned, no data — a PDA (consistent with a multisig vault; the controlling program was not identified) |
+| Scope (Kamino's oracle aggregator) | `HFn8GnPADiny6XqUoWE8uRPPxb29ikn4yTuPa9MF2fWJ` | 443,102,298 | `4R33WT7isNgzALNyvpZKiZQARtZNAXarWB3prUbPkXX7` | same shape |
+| Kamino Farms | `FarmsPZpWu9i7Kky8tPN37rs2TpmMrAZrC7S7vJa91Hr` | 444,035,168 | `CivjSDKgTpmkRNL4zYcmv9D9QqPJg6yTxBVxMGcXvMuY` | same shape |
+| **Bridge token program (mints ZEC)** | `dahPEoZGXfyV58JqqH85okdHmpN8U2q8owgPUXSCPxe` | 428,811,242 | `5kx8AapW8tPkiFbuHiuEBcmN3ddwpBWZfCrZgxXgWeb6` | same shape |
+| Wormhole core bridge | `worm2ZoG2kUd4vFXhvjh93UUH596ayRfgQ2MgjNMTth` | 425,583,168 | `2rCAC1VKz5YP1jZTHcVfWDhHMs2iEruUaATdeZe5Fjk5` | off-curve, account absent (Wormhole's own governance PDA) |
+| Metaplex token metadata | `metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s` | — | — | read only for the ZEC name/symbol |
+
+Also seen in the bridge's transactions, role not identified: `EtZMZM22ViKMo4r5y4Anovs3wKQ2owUmDpjygnMMcdEX`.
+
+**Product implication.** Every program in the trust path can be upgraded by an authority that is not a burned key.
+That is the Solana norm and the copy must say so, the same way `RISKS.md` §16 says a timelocked registry owner is
+still an owner. Whether any of the four PDAs is a multisig, and with what threshold and delay, is **not verified**.
+
+## The ZCASH market (`LendingMarket` `GBJ3bzUiMfwC9ugaF3MM68EXMDyTUb5UryRRAcVjEowd`, 4,664 bytes, owner = klend)
+
+Decoded with `LendingMarket.decode` (klend-sdk 12.0.0):
+
+| Field | Value | Meaning |
+|---|---|---|
+| `name` | `ZCASH Market` | as shown on kamino.com; the Borrow page labels its curator **Allez Labs** and tags it **New** |
+| `lendingMarketOwner` (= `…OwnerCached`) | `A11EznxnJM3JrjUvAq16wqoVyPRNz522mdQm6mSmzMeR` | the key or PDA that can change every reserve parameter below; not probed further |
+| `version` | 1 | |
+| `emergencyMode` / `borrowDisabled` / `autodeleverageEnabled` | 0 / 0 / 0 | market open; no protocol-driven deleveraging |
+| `liquidationMaxDebtCloseFactorPct` | 20 | a liquidation may repay at most 20 % of an obligation's debt at once … |
+| `maxLiquidatableDebtMarketValueAtOnce` | 500,000 | … and at most $500,000 of it |
+| `insolvencyRiskUnhealthyLtvPct` | 95 | above 95 % LTV the close factor no longer applies (full liquidation allowed) |
+| `minFullLiquidationValueThreshold` | 2 | debt below $2 is closed in full |
+| `minInitialDepositAmount` | 100,000 base units | 0.001 ZEC / 0.10 USDC — first deposit floor |
+| `minNetValueInObligationSf` | 1,152,921,504,607 (= 1e-6 in 2^60 scaled-fraction) | dust floor on an obligation's net value |
+| `globalAllowedBorrowValue` | 45,000,000 | market-wide borrow ceiling in USD |
+| `referralFeeBps` | 0 | |
+| `priceRefreshTriggerToMaxAgePct` | 0 | |
+| elevation groups | none active | no e-mode on this market |
+| `obligationOrderCreationEnabled` / `…ExecutionEnabled` | 0 / 0 | **Kamino's own stop-loss / take-profit orders are not available on this market** — a keeper of our own is the only automated protection a position can have here |
+
+## Reserves — exactly two (chain enumeration: `getProgramAccounts` on klend, `dataSize` 8,624, `lendingMarket` at offset 32)
+
+| | ZEC reserve | USDC reserve |
+|---|---|---|
+| Address | `6e8XcrdencrXBjXtTqYkRS63nS36petvzkV3gBf2ezbH` | `EW9vT7g2VH2aTFfcbaXRUCbF7jEfaLwMiJpckwDZwUZd` |
+| Liquidity mint | `A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS` (8 dp) | `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v` (6 dp) |
+| Token program | SPL Token (`Tokenkeg…`) | SPL Token |
+| Supply vault / fee vault | `7muPXroaziH8RTD62Ea4gQ3NuAPZswf8Gj7iuPZ6Ae6Y` / `3oxg1uptz3hSYvPiZEPW1UK2T2G5UUniyc2yjrszQC7R` | `C7ipQ9XPEncrVhCLXfHE4aCXPSk1HpPQUr127RwgVG9h` / `HwgFUiBaEHv2QnrpgVxPmWuUC5nqt7iGSna99ZQL8oTB` |
+| Collateral (cToken) mint / vault | `FQc32zaNbQnUZmQxd3Fqhg3enqfozyX6K74xcCCHw4NU` / `8yr67socgzkzXYPMPC8KNCh8eLDPjGvqucLGXmCGdwq4` | `HfwrP5s6bL8pGuqAQUGr6S79AEfyWm2F8W6WJkuXmT53` / `GV12UJQSNK3cQPAGea9bHXcu7STuAadaCLeSwEKirWtQ` |
+| Farms (collateral / debt) | none / none | none / none |
+| `status` | 0 (active) | 0 (active) |
+| **`loanToValuePct`** | **40** | 0 (not collateral) |
+| **`liquidationThresholdPct`** | **65** | 0 |
+| Liquidation bonus (`min` / `max` / bad-debt) bps | 200 / 700 / 10 | 200 / 700 / 10 |
+| `protocolLiquidationFeePct` | 50 (of the bonus) | 0 |
+| `borrowFactorPct` | 150 | 100 |
+| `protocolTakeRatePct` | 0 | **10** (of interest) |
+| Origination / flash-loan fee | 0 / 0 | 0 / 0 |
+| **`depositLimit`** | **13,000 ZEC** (9.2 % used) | 2,000,000 USDC |
+| **`borrowLimit`** | **0 — ZEC cannot be borrowed** | 2,000,000 USDC |
+| Deposit-withdrawal cap | 3,000 ZEC per 86,400 s | 1,000,000 USDC per 86,400 s |
+| Debt-withdrawal cap | — | 1,000,000 USDC per 86,400 s |
+| `utilizationLimitBlockBorrowingAbovePct` | 0 (off) | 0 (off) |
+| `autodeleverageEnabled` / `deleveragingThresholdDecreaseBpsPerDay` | 0 / 24 | 0 / 24 |
+| `interestRateBasis` | 0 | 1 (meaning not verified — see below) |
+| Borrow curve (utilisation → APR) | flat 10 % (moot: not borrowable) | (0 %, 1.19 %) · (50 %, 2.79 %) · (90 %, 7.25 %) · (92 %, 8.97 %) · (100 %, 38.60 %), linear between points |
+| Oracle max age price / TWAP | **180 s / 240 s** | 180 s / 240 s |
+| Max TWAP divergence | 1,000 bps | 300 bps |
+| Price heuristic (sanity band) | **$400 – $2,000** (`lower` 4000, `upper` 20000, `exp` 1) | $0.98 – $1.02 |
+| Scope price chain / TWAP chain | **[430]** / [429] | [13] / [456] |
+| Pyth / Switchboard configuration | none (`nu11…`) | none |
+| `lastUpdate` slot / `stale` / `priceStatus` | 446,297,685 / 0 / 63 | 446,296,905 / 0 / 0 |
+| Cached `marketPriceSf` (ts) | $1,159.571 (1789174315) | $0.99986 (1789171383) |
+| **Total supply** | **1,192.03654662 ZEC ≈ $1.38 M** | **800,695.99 USDC** |
+| Borrowed | 0 | **442,516.97 USDC** |
+| Available | 1,192.04 ZEC | **358,198.99 USDC** |
+| Utilisation | 0 % | **55.27 %** |
+| Borrow APR from the curve at that utilisation | — | **3.378 %** (Kamino's API shows it compounded: 3.43 % APY borrow, 1.69 % APY supply) |
+| Accumulated protocol fees | 0 | 19.97 USDC |
+| cToken total supply | 119,203,654,662 (= liquidity supply, 1:1) | 800,285,603,703 |
+
+`priceStatus` 63 on the ZEC reserve reads as all six status bits set in klend's `PriceStatusFlags` (loaded,
+age-checked, TWAP-checked, TWAP-age-checked, heuristic-checked, usage-allowed); the bit meanings were not
+re-derived from the klend source in this read and must be before code depends on them.
+
+## What a new Oilskin borrow does to the USDC pool (the pool-size gate's inputs, computed from the curve above)
+
+Base's Aave v3 USDC variable borrow rate, read at the same time for the comparison the direction memo makes
+(`PoolDataProvider.getReserveData(USDC)`, block 51,192,187, 2026-09-12 00:41:59 UTC): **4.5469 % APR**
+(supply 3.5630 %; $183,117,044 supplied).
+
+| New borrowing on Kamino | Borrowed | Utilisation | Borrow APR |
+|---|---|---|---|
+| +$0 | $442,517 | 55.27 % | 3.378 % |
+| +$50,000 | $492,517 | 61.51 % | 4.073 % |
+| **+$84,000** | $526,517 | 65.76 % | **4.547 % — crosses Base's rate** |
+| +$100,000 | $542,517 | 67.76 % | 4.770 % |
+| +$150,000 | $592,517 | 74.00 % | 5.466 % |
+| +$200,000 | $642,517 | 80.24 % | 6.162 % |
+| +$250,000 | $692,517 | 86.49 % | 6.859 % |
+| +$300,000 | $742,517 | 92.73 % | 11.674 % |
+| +$350,000 | $792,517 | 98.98 % | 34.822 % |
+| **+$358,199** | $800,696 | 100 % | **pool empty** (bound by available liquidity, not by the $2 M borrow limit) |
+
+## Scope oracle — how ZEC is priced (`OraclePrices` `3t4JZcueEzTbVP6kLxXrL3VpWx45jDer4eqysweBchNH`, 28,712 bytes = 8 + 32 + 512 × 56; `OracleMappings` `4zh6bmb77qX2CL7t5AJYCqa6YqFafbz3QJNeFvZjLowg`, 29,704 bytes = 8 + 512 × 58; both owned by Scope)
+
+The klend SDK ships this feed as `SCOPE_MAINNET_KLEND_FEED`; the Hubble feed
+(`3NJYftD5sjVfxSnUdZ1wVML8f3aC6mp1CXCL6L7TnU8C`) is a different account and is **not** the one this market uses.
+
+| Index | Type (Scope `OracleType`) | Source / parameters | Price at read | Age |
+|---|---|---|---|---|
+| **430** (ZEC price) | **`MostRecentOf` (28)** | sources **[407, 428]**, `maxDivergenceBps` **1,500**, `sourcesMaxAgeS` **7,200** | $1,157.125 | 30 s |
+| 407 | `PythLazer` (29) | generic `4200083200…` (first u16 = 66; the Lazer feed-id mapping is not verified) | $1,157.125 | 30 s |
+| 428 | `Chainlink` (26) | price-info slot `14CrXQzP5Ero3NvmW92uLSqgWDRqU2eEdKJTP8CMsuL` — **no account existed at that address at read**; TWAP enabled | $1,157.716 | 6 s |
+| 429 (ZEC TWAP) | `ScopeTwap` (12) | over source 428 | $1,160.547 | 48 s |
+| 13 (USDC price) | `CappedFloored` (33) | generic `0900010c0001bd00…` (source 9; cap/floor bytes not decoded) | $0.99988834 | 49 s |
+| 456 (USDC TWAP) | type 48 — **not in scope-sdk 10.2.6's table** | | $0.99989476 | 49 s |
+
+So the ZEC price Kamino liquidates against is the more recent of a Pyth Lazer and a Chainlink reading, refused if
+they diverge by more than 15 % or if the fresher one is older than two hours, and the reserve additionally refuses a
+price older than 180 s, a TWAP older than 240 s, a TWAP more than 10 % away, or a price outside $400–$2,000. Which
+source wins when both are fresh, and what Scope does when only one passes, is **not verified** here.
+
+## Bridged ZEC — the mint, its authority, and who mints
+
+| Fact | Value |
+|---|---|
+| Mint | `A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS`, SPL Token, 8 decimals, initialised |
+| Supply | 95,932.18 ZEC at 00:47 UTC → 95,933.18 at 00:57 UTC (minting is live) |
+| **Mint authority** | `FvULawNPGBbuwYus74ECaQoV1oH9Tk6XPN7VPN51NYds` — **off-curve: a PDA, not a key.** Proven: `findProgramAddress(["authority"], dahPEoZG…CPxe)` = this address, bump 255 |
+| Freeze authority | **none** |
+| Who mints | the bridge token program `dahPEoZGXfyV58JqqH85okdHmpN8U2q8owgPUXSCPxe` — observed `mintTo` 0.98807555 ZEC with that PDA as authority, tx `32LUBFhfuxgpNZJBTJhXKRXKzw6jbtFSKQSZ1ThueSRyvBURCWLcD2vJ5597zx5iLz6XHbrrGkVCGQLo9W7y9zdQ`, slot 446,297,457, 2026-09-12 00:51:05 UTC. Earlier transactions on the same PDA invoked the Wormhole core bridge alongside it |
+| Metaplex metadata (PDA `5mRY96MiFac9DBToh16j5dgq6kiJCPqhPXPzpoNNtxmw`) | name **Zcash**, symbol **ZEC**, update authority = the same mint-authority PDA, **mutable**, uri `https://arweave.net/cEDMVkvUHsXSckakyWWCQlMnG-SlWlXyFEGnLqCamug` → `{"name":"Zcash","symbol":"ZEC","description":"","image":…}` |
+
+**What this settles.** The direction memo's "mint authority is a key" is not what the chain says: the authority is a
+PDA of an upgradeable program whose upgrade authority is itself a PDA. The token has no freeze authority (nobody
+can freeze a holder's ZEC on Solana), but the program that mints it can be upgraded, so the supply is as sound as
+that program's governance. This is the bridge operator in the trust path that `DIRECTION-2026-09-11.md` §4.1 says
+the deposit flow must state.
+
+USDC on Solana, for contrast: `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`, 6 dp, supply 8,095,154,548.94,
+mint authority `BJE5MMbqXjVwjAF7oxwPYXnTXDyspzZyt4vwenNw5ruG`, **freeze authority
+`7dGbd2QZcCKcTndnHcTL8q7SMVXAkp688NTQYwrRCrar`** — the issuer can freeze a USDC token account, including one an
+Oilskin account PDA owns.
+
+## Who is in the market (all 45 obligations under the ZCASH market, `dataSize` 3,344, decoded)
+
+| Fact | Value |
+|---|---|
+| Obligations | 45; 36 carry USDC debt |
+| ZEC deposited across them | 1,192.0355 (matches the reserve) |
+| USDC debt across them (principal at each obligation's last refresh) | $442,341.84 (reserve: $442,516.97; the gap is interest accrued since) |
+| **Largest borrower** `74VYE88JRBuQ9PmbyqWLgZqeL6Qfqjww7drc7te6uPBY` | **$259,911.91 = 58.8 % of all debt**, 612.15 ZEC deposited (≈ 36.7 % LTV at $1,157), last refreshed slot 445,404,219 |
+| Top 5 / top 10 share of debt | 78.4 % / 88.8 % |
+
+One obligation is most of this market. A liquidation of it alone would be a $260 K sale into the depth below.
+
+## Liquidation depth — where a forced ZEC sale would land (read 2026-09-12 00:39–00:40 UTC)
+
+Jupiter aggregator quotes, ZEC → USDC, exact-in, 50 bps slippage setting (`lite-api.jup.ag/swap/v1/quote`,
+route context slot 446,295,162–170):
+
+| Sell | Receive | Effective price | Price impact |
+|---|---|---|---|
+| 10 ZEC | 11,612.14 USDC | $1,161.21 | 0.028 % |
+| 100 ZEC | 115,982.99 USDC | $1,159.83 | 0.130 % |
+| **400 ZEC (≈ $462 K)** | 461,944.86 USDC | $1,154.86 | **0.556 %** |
+| 1,000 ZEC (≈ $1.14 M) | 1,139,049.31 USDC | $1,139.05 | 1.930 % |
+
+DexScreener (secondary source, same minute): **30 Solana pairs, $4,476,697 total liquidity**; the four that matter
+are Orca ZEC/USDC `GTHKH8s82ZR8GTSFZ1dUu6wfdxhy59wpMShxzG5zjiPm` ($2.16 M, $13.75 M 24 h volume), Meteora ZEC/SOL
+`8eybKAvjKJryVweQLg8SRgwUfdP7wHYJ5yyqgfE82DQA` ($1.04 M), Orca ZEC/SOL ($358 K) and Meteora ZEC/USDC ($356 K). The
+memo's "~$4 M of ZEC liquidity across Solana DEXs; a $400 K liquidation is ~10 % of it" holds as a share; the
+measured impact of that sale today is half a percent, well inside Kamino's 2–7 % liquidation bonus.
+
+## Kamino's own disclosure wording (the floor for Oilskin's copy)
+
+Read from kamino.com → Borrow → ZCASH Market → "What is Zcash?" tooltip, 2026-09-12 00:57 UTC, verbatim:
+
+> ZEC is the native currency of Zcash, a payments blockchain supporting transparent and shielded transactions.
+> Shielded transactions use zero-knowledge proofs to protect financial information. On Solana, ZEC is a bridged
+> representation available through NEAR Intents. Holding or transferring it on Solana does not provide Zcash's
+> shielded transaction privacy.
+
+Its "Learn More" links to `https://z.cash/learn/what-is-zcash/`. The same page shows the market as **New**,
+curated by **Allez Labs**, market size **$2.18 M**, borrow APY **3.43 %**. Kamino's documentation
+(`kamino.com/docs`, the risk framework and the oracle pages) carries **no ZEC-specific wording**; its generic
+framework sentence for a token like this is "elevated risk in one or more dimensions — perhaps limited oracle
+coverage, a newer smart contract without extensive battle-testing, or thin market liquidity." Press coverage
+(Crypto Briefing, 2026-09-07 launch) paraphrases Kamino and quotes nothing directly.
+
+Oilskin's copy must say at least what the tooltip says, and additionally: that the mint is controlled by an
+upgradeable bridge program; that Circle can freeze USDC; and that Kamino's market owner can change every parameter
+above. None of the words in `web/lib/copy.ts` `BANNED_WORDS` may be used to describe any of it.
+
+## What this settles for the build
+
+- **Entry rule on Solana.** `maxOfferedLtvBps(6500)` from `packages/shared` = min(5000, floor(6500 / 1.55)) =
+  4193 → the 41 % stop; **Kamino's own LTV cap is 40 %**, so the offer is min(shared rule, venue LTV) = **40 %**,
+  entry HF = 65 / 40 = **1.625** (above the 1.55 floor). Rungs at 40 % LTV against LT 65 %: warn fires after a
+  **7.7 %** ZEC drop, repay **16.9 %**, de-risk **26.2 %**, emergency **35.4 %**, liquidation **38.5 %**
+  (`rungDropPct` / `liquidationDropPct`, shared).
+- **The pool is small and lopsided.** $358 K borrowable; +$84 K of new borrowing prices Kamino above Base's Aave;
+  one borrower is 59 % of the debt. The yield service's pool-size gate (`SOLANA-ARCHITECTURE.md` §7) reads
+  these three numbers live and refuses to offer what the pool cannot fund below the threshold.
+- **Protection must be ours.** Kamino's obligation orders are disabled on this market; a keeper with a
+  scoped, revocable delegation is the only automated ladder a position can have.
+- **Oracle facts to pin.** Scope index 430 = MostRecentOf(407 Pyth Lazer, 428 Chainlink), 15 % divergence,
+  7,200 s source age, 180 s reserve age, $400–$2,000 band; TWAP 429 over Chainlink; USDC 13 / 456.
+
+## Drift against `DIRECTION-2026-09-11.md` (read 2026-09-11) — one day later
+
+| Memo | This read | Direction |
+|---|---|---|
+| 1,022 ZEC deposited | 1,192.04 ZEC | +17 % |
+| USDC pool $802 K | $800,696 supplied | flat |
+| $413 K left to borrow | $358,199 | −13 % (borrowed rose from ≈ $389 K to $442.5 K) |
+| borrow 2.78 % APY | 3.378 % APR (3.43 % APY) | up |
+| "+$200 K crosses Base's rate" | **+$84 K** (Base at 4.547 %) | earlier than the memo said |
+| "+$413 K empties the pool" | +$358 K | earlier |
+| "mint authority is a key" | **a PDA of the bridge program** | corrected |
+| Base Aave USDC 4.51 % | 4.547 % | flat |
+| "~$4 M DEX liquidity" | $4.48 M (DexScreener); 400 ZEC sells at 0.56 % impact (Jupiter) | confirmed, with a measurement |
+
+## Not verified by this read (probe before use)
+
+1. What controls the four upgrade-authority PDAs (Kamino lend, Scope, Farms, the bridge program): which multisig
+   program, which signers, what threshold, any timelock.
+2. The market owner `A11Ezn…zMeR`: key or PDA, and whether Allez Labs holds it.
+3. Scope's `MostRecentOf` selection rule and single-source fallback; the Pyth Lazer feed-id → ZEC/USD mapping;
+   how the `Chainlink` type obtains its report when its price-info slot names an account that does not exist.
+4. klend `interestRateBasis` = 1 on the USDC reserve, and the exact `PriceStatusFlags` bit meanings.
+5. The NEAR side of the bridge (OmniBridge signer set, MPC/TSS custody of the locked ZEC, withdrawal delay) and
+   the role of `EtZMZM22…cdEX`.
+6. Kamino's compute budget and account list for the CPI path an Oilskin PDA would take (`initObligation` with a
+   PDA owner, `refreshReserve` → `refreshObligation` → `repayObligationLiquidityV2` in one transaction) — to be
+   measured on the local validator, `SOLANA-ARCHITECTURE.md` §11.
+7. Anything about Solana devnet: the ZCASH market exists on mainnet only; localnet with cloned accounts is the
+   test surface.
