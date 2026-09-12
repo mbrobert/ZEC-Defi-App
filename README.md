@@ -121,7 +121,7 @@ drawdown to liquidation for that position. The forecast is computed, never curat
 | `services/yield/` | Live Aave rates, Aerodrome gauge emissions, the two-model yield gate, the LP model, empirical bands — HTTP API + backfill CLI | 131 tests |
 | `web/` | Next.js 14 — wallet connect, cbZEC onboarding, wizard, venue-aware chain-read dashboard with a keeper panel and a pending-venue banner, CoW spot; demo mode without a wallet | 152 unit tests (150 passed, 2 skipped); Playwright 12/12 |
 | `packages/shared/` | The one source for addresses, fees, the health-factor ladder (`ladderFor(entryHf)` — a position's rungs derive from the entry HF it opened at), the slider's bounds, widths, pools | 85 tests |
-| `prototype/` | `simple.html` and `index.html` — dependency-free walkthroughs pinned to the same facts and model numbers | 289 checks (118 + 109 + 56) + 6 fuzz |
+| `prototype/` | `simple.html` and `index.html` — dependency-free walkthroughs pinned to the same facts and model numbers, the risk slider and the derived ladder included | 308 checks (130 + 116 + 62) + 6 fuzz |
 | `scripts/verify-abi.mjs` | Generates / diffs `contracts/abi/oilskin-abi.json` from `contracts/out` | 327/327 |
 | `docs/` | `ARCHITECTURE` · `FLOWS` · `DEPOSIT-FLOW` · `RISKS` · `AUDIT` · `AUDIT-SCOPE` · `AUDIT-2026-09-06` · `TESTING` · `PRIVACY` · `CONTRACT-ABI` · `VERIFIED-BASE-FACTS` · `BASE-PIVOT-2026-09` · `BUILD-SPEC-2026-09` · `YIELD-SERVICE` · `MODEL-NUMBERS-2026-09-05` · `CHANGELOG` | this build |
 
@@ -148,7 +148,7 @@ npm test -w @zyo/web                         # 125 unit tests (ABI drift + both 
 cd web && PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npx playwright test   # 12 (6 scenarios × 2 viewports)
 
 # Prototypes (Playwright + Chromium)
-CHROMIUM_PATH=/opt/pw-browsers/chromium node prototype/test/run-all.mjs   # 118 + 109 + 56 + 6
+CHROMIUM_PATH="$(node -e "console.log(require('playwright').chromium.executablePath())")" node prototype/test/run-all.mjs   # 130 + 116 + 62 + 6
 ```
 
 `docs/TESTING.md` says what each suite proves and how the counts were obtained.

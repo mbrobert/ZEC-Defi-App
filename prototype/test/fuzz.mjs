@@ -35,17 +35,18 @@ const fuzzSimple = ([seed, N]) => {
   const fin = v => typeof v === "number" && Number.isFinite(v);
   const YR = 365 * 86400; let credits = {}; let n = 0, byType = {};
   const KNOWN_REASONS = Object.keys(o.GATE_WHY).concat(["ok"]);
-  const numsOk = s => { const p = s.pos; if (p) for (const k of ["coll", "debt", "lp", "lpBasis", "emis", "idle", "interest", "claimed", "ageS"]) if (!fin(p[k]) || p[k] < 0) return "pos." + k + "=" + p[k]; for (const k of ["cbBTC", "WETH", "cbZEC"]) if (!fin(s.price[k]) || s.price[k] <= 0) return "price." + k; if (!fin(s.borrowPct) || s.borrowPct < 0 || s.borrowPct > 100) return "borrowPct"; if (!fin(s.mult) || s.mult < 1) return "mult"; if (!fin(s.sel.amount) || s.sel.amount < 0) return "sel.amount"; if (![30, 40, 50].includes(s.sel.ltv)) return "sel.ltv"; return null; };
+  const numsOk = s => { const p = s.pos; if (p) for (const k of ["coll", "debt", "lp", "lpBasis", "emis", "idle", "interest", "claimed", "ageS"]) if (!fin(p[k]) || p[k] < 0) return "pos." + k + "=" + p[k]; for (const k of ["cbBTC", "WETH", "cbZEC"]) if (!fin(s.price[k]) || s.price[k] <= 0) return "price." + k; if (!fin(s.borrowPct) || s.borrowPct < 0 || s.borrowPct > 100) return "borrowPct"; if (!fin(s.mult) || s.mult < 1) return "mult"; if (!fin(s.sel.amount) || s.sel.amount < 0) return "sel.amount"; if (!fin(s.sel.hf, 1) || !fin(s.sel.ltv, 1, 100)) return "sel.hf/ltv=" + s.sel.hf + "/" + s.sel.ltv; if (Math.round(s.sel.ltv * 100) !== Math.floor(o.ltBpsOf(s.sel.asset) / s.sel.hf)) return "sel.ltv≠⌊LT÷HF⌋"; if (s.sel.hf < o.offeredBounds(s.sel.asset).minHf - 1e-9) return "sel.hf under the offered minimum"; return null; };
   for (let i = 0; i < N; i++) {
     const s = o.S; const before = s.pos ? JSON.parse(JSON.stringify(s.pos)) : null; const flowBefore = s.flow ? { ...s.flow } : null; const credBefore = s.credited.length;
-    const kind = pick(["connect", "connect", "disconnect", "selectAsset", "selectLtv", "selectPool", "setAmount", "setAmount", "ack", "ack", "beginDeposit", "beginDeposit", "flowAdvance", "flowAdvance", "flowAdvance", "flowComplete", "flowComplete", "flowDismiss", "tick", "tick", "tick", "setPrice", "setPrice", "setPrice", "withdraw", "claim", "setRange", "sim", "sim", "setBorrowRate", "setMult", "loadExample", "clearExample", "renewGrant", "revokeGrant", "swapReverted", "gateProbe", "storeRoundTrip"]);
+    const kind = pick(["connect", "connect", "disconnect", "selectAsset", "setHf", "setBorrow", "selectPool", "setAmount", "setAmount", "ack", "ack", "beginDeposit", "beginDeposit", "flowAdvance", "flowAdvance", "flowAdvance", "flowComplete", "flowComplete", "flowDismiss", "tick", "tick", "tick", "setPrice", "setPrice", "setPrice", "withdraw", "claim", "setRange", "sim", "sim", "setBorrowRate", "setMult", "loadExample", "clearExample", "renewGrant", "revokeGrant", "swapReverted", "gateProbe", "storeRoundTrip"]);
     byType[kind] = (byType[kind] || 0) + 1;
     let a;
     switch (kind) {
       case "connect": a = { type: "connect", provider: pick(["coinbase", "metamask", "walletconnect"]), addr: rnd() < 0.8 ? undefined : o.DEMO_WALLETS.other }; break;
       case "disconnect": a = { type: "disconnect" }; break;
       case "selectAsset": a = { type: "selectAsset", asset: pick(["cbBTC", "WETH", "cbZEC", "USDC", "nope"]) }; break;
-      case "selectLtv": a = { type: "selectLtv", ltv: pick([30, 40, 50, 60, 0, -10, NaN, 45]) }; break;
+      case "setHf": a = { type: "setHf", hf: pick([1.3, 1.56, 1.66, 1.95, 2.6, 10, 100, 0, -1, NaN, Infinity, 1.0]) }; break;
+      case "setBorrow": a = { type: "setBorrow", usdc: pick([0, 100, 1000, 3000, 1e6, 1e9, -5, NaN, Infinity]) }; break;
       case "selectPool": a = { type: "selectPool", pool: pick(o.MODEL.pools.map(p => p.id).concat(["bogus"])) }; break;
       case "setAmount": a = { type: "setAmount", amount: pick([0.001, 0.02, 0.05, 0.3, 1, 12, 0.6, 0, -1, NaN, Infinity, 1e308, 1e-9, rnd()]) }; break;
       case "ack": a = { type: "ack", on: rnd() < 0.75 }; break;
@@ -135,7 +136,8 @@ const fuzzSimple = ([seed, N]) => {
       if (kind === "renewGrant" && !t.pos.example && Math.abs(gr.remainingS - o.GRANT_EXPIRY_S) > 1e-9) fail("grant: renew did not restore the full term", gr.remainingS);
       if (kind === "revokeGrant" && !t.pos.example && gr.live) fail("grant: revoke left the permission live");
       const before2 = before && before.ladder; if (!gr.live && before2 && ["tick", "setPrice", "withdraw", "claim"].includes(kind)) { for (const r of o.RUNGS) if (before2[r] && !t.pos.ladder[r]) fail("grant: a rung fired without a live permission", { r, kind }); }
-      for (const r of o.RUNGS) { const armed = t.pos.ladder[r]; if (!armed && hf >= o.LADDER.disarm[r]) fail("ladder: fired rung while HF ≥ disarm", { r, hf }); if (gr.live && !t.sim.keeperOff && armed && hf < o.LADDER.rungs[r] && ["tick", "setPrice", "withdraw", "flowComplete", "sim"].includes(kind)) fail("ladder: armed rung below its line after evaluation", { r, hf, kind }); } }
+      const LADp = o.ladOf(t.pos.entryHf);   // the position's own ladder (A4): derived from the entry HF the open recorded
+      for (const r of o.RUNGS) { const armed = t.pos.ladder[r]; if (!armed && hf >= LADp.disarm[r]) fail("ladder: fired rung while HF ≥ disarm", { r, hf, entry: t.pos.entryHf }); if (gr.live && !t.sim.keeperOff && armed && hf < LADp.rungs[r] && ["tick", "setPrice", "withdraw", "flowComplete", "sim"].includes(kind)) fail("ladder: armed rung below its line after evaluation", { r, hf, kind }); } }
     // flow sanity
     if (t.flow && t.flow.status === "done" && !t.credited.includes(t.flow.id)) fail("done flow not credited");
     if (t.flow && t.flow.status === "signing" && t.pos && t.pos.example) fail("signing flow with an example position");
@@ -172,7 +174,7 @@ const fuzzAdvanced = ([seed, N]) => {
     switch (kind) {
       case "connect": a = { type: "connect", provider: pick(["coinbase", "metamask", "walletconnect"]), addr: rnd() < 0.8 ? undefined : o.DEMO_WALLETS.other }; break;
       case "disconnect": a = { type: "disconnect" }; break;
-      case "wiz": { const key = pick(["asset", "amount", "mode", "ltv", "pool", "preset", "rw", "rd", "rew", "econ", "step"]); const value = { asset: pick(["cbBTC", "WETH", "cbZEC", "USDC"]), amount: pick([0.001, 0.05, 0.2, 0.5, 1, 12, 40, 0, -1, NaN, Infinity, 1e308, rnd()]), mode: pick(o.MODES.concat(["bogus"])), ltv: pick([5, 30, 40, 50, 51, 80, 0, -3, NaN, 30.7]), pool: pick(o.MODEL.pools.map(p => p.id).concat(["bogus"])), preset: pick(["CONSERVATIVE", "MODERATE", "AGGRESSIVE", "CUSTOM", "x"]), rw: pick([150, 300, 784, 1500, 2356, 4500, 5000, 149, 5001, 8100, 10, 0, -1, NaN, Infinity, 999.6]), rd: pick([0, 2, 12, 48, 168, 169, -1, NaN]), rew: pick(["COMPOUND", "CLAIM_TO_WALLET", "SEND_HOME"]), econ: rnd() < 0.5, step: pick([1, 2, 3, 4, 5, 0, NaN]) }[key]; a = { type: "wiz", key, value }; break; }
+      case "wiz": { const key = pick(["asset", "amount", "mode", "hf", "borrow", "hfAck", "pool", "preset", "rw", "rd", "rew", "econ", "step"]); const value = { asset: pick(["cbBTC", "WETH", "cbZEC", "USDC"]), amount: pick([0.001, 0.05, 0.2, 0.5, 1, 12, 40, 0, -1, NaN, Infinity, 1e308, rnd()]), mode: pick(o.MODES.concat(["bogus"])), hf: pick([1.2, 1.56, 1.66, 1.95, 2.5, 10, 100, 0, -3, NaN, Infinity, 30.7]), borrow: pick([0, 100, 500, 5000, 5e6, 1e12, -1, NaN, Infinity]), hfAck: rnd() < 0.5, pool: pick(o.MODEL.pools.map(p => p.id).concat(["bogus"])), preset: pick(["CONSERVATIVE", "MODERATE", "AGGRESSIVE", "CUSTOM", "x"]), rw: pick([150, 300, 784, 1500, 2356, 4500, 5000, 149, 5001, 8100, 10, 0, -1, NaN, Infinity, 999.6]), rd: pick([0, 2, 12, 48, 168, 169, -1, NaN]), rew: pick(["COMPOUND", "CLAIM_TO_WALLET", "SEND_HOME"]), econ: rnd() < 0.5, step: pick([1, 2, 3, 4, 5, 0, NaN]) }[key]; a = { type: "wiz", key, value }; break; }
       case "beginFlow": a = { type: "beginFlow" }; break;
       case "flowAdvance": a = { type: "flowAdvance", id: s.flow && rnd() < 0.85 ? s.flow.id : Math.floor(rnd() * 1e9) }; break;
       case "flowComplete": a = { type: "flowComplete", id: s.flow && rnd() < 0.85 ? s.flow.id : (s.credited.length && rnd() < 0.5 ? pick(s.credited) : Math.floor(rnd() * 1e9)) }; break;
@@ -232,7 +234,8 @@ const fuzzAdvanced = ([seed, N]) => {
     for (const own of new Set(t.positions.map(p => p.owner.toLowerCase()))) { const L = t.ladders[own]; if (!L) continue; const hf = o.accountHf(t, own); const G = t.grants[own]; const live = !G || (G.remainingS > 0 && !G.revoked);
       const L0 = before2Ladders[own];
       if (!live && L0 && ["tick", "setPrice", "withdraw", "claim"].includes(kind)) { for (const r of o.RUNGS) if (L0[r] && !L[r]) fail("grant: a rung fired without a live permission", { r, kind, own }); }
-      for (const r of o.RUNGS) { if (!L[r] && hf >= o.LADDER.disarm[r]) fail("ladder: fired rung while HF ≥ disarm", { r, hf, own }); if (live && !t.sim.keeperOff && L[r] && hf < o.LADDER.rungs[r] && ["tick", "setPrice", "withdraw", "flowComplete", "sim", "claim"].includes(kind)) fail("ladder: armed rung below its line after evaluation", { r, hf, kind }); } }
+      const LADo = o.ladOf(o.entryOf(t, own));   // the account's own ladder (A4): derived from the entry HF the last open recorded
+      for (const r of o.RUNGS) { if (!L[r] && hf >= LADo.disarm[r]) fail("ladder: fired rung while HF ≥ disarm", { r, hf, own, entry: o.entryOf(t, own) }); if (live && !t.sim.keeperOff && L[r] && hf < LADo.rungs[r] && ["tick", "setPrice", "withdraw", "flowComplete", "sim", "claim"].includes(kind)) fail("ladder: armed rung below its line after evaluation", { r, hf, kind }); } }
     // HF invariant: HF = Σ coll·LT / debt, never NaN
     if (owner) { const hf = o.accountHf(t, owner); if (Number.isNaN(hf) || hf < 0) fail("HF NaN/negative"); }
     if (t.flow && t.flow.status === "done" && !t.credited.includes(t.flow.id)) fail("done flow not credited");

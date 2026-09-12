@@ -620,18 +620,23 @@ button:focus-visible,[tabindex]:focus-visible,a:focus-visible,input:focus-visibl
       <!-- Step 2 -->
       <div class="wstep" data-step="2">
         <div class="field" id="ltvBlock">
-          <label>Setting — borrow <span class="num" id="ltvLbl">30%</span> of collateral value <span class="tt" title="Presets 30% / 40% / top, where top = min(the product cap, ⌊liquidation threshold ÷ the entry floor⌋) per asset — derived from Aave's live threshold and the entry health-factor floor, never typed. The fine slider is bounded by the same top.">ⓘ</span></label>
-          <div class="seg" id="ltvSeg" role="radiogroup"></div>
+          <label>Setting — entry health factor <span class="num" id="hfLbl">—</span> · borrow <span class="num" id="ltvLbl">—</span> of collateral value <span class="tt" title="One number (BUILD-PLAN D7): the entry health factor, from the lowest offered on this asset — the smallest of the registry floor, Aave's own max LTV and Oilskin's borrow cap, whichever binds is named — up to borrowing almost nothing. debt = collateral × threshold ÷ HF; type a borrow and the HF follows. The Sheltered and Expert marks are marks, not modes; under the Sheltered mark you tick a sentence naming the fall that would liquidate you.">ⓘ</span></label>
+          <div class="seg" id="hfMarks" role="group" aria-label="Quick marks"></div>
           <div class="slider-row" style="margin-top:10px">
-            <span class="tiny faint">5%</span>
-            <input type="range" id="ltv" min="5" max="50" value="30" step="1" aria-label="Loan-to-value fine control">
-            <span class="tiny faint" id="ltvMax">50% top</span>
+            <span class="tiny faint">borrow little</span>
+            <input type="range" id="hf" min="100" max="5000" value="5000" step="1" aria-label="Entry health factor">
+            <span class="tiny faint num" id="hfMin">lowest offered —</span>
+          </div>
+          <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;align-items:flex-end">
+            <label class="tiny faint">Health factor <input class="in num" id="hfIn" type="number" step="0.01" inputmode="decimal" style="width:100px;display:block"></label>
+            <label class="tiny faint">Borrow (USDC) <input class="in num" id="borrowIn" type="text" inputmode="decimal" style="width:150px;display:block"></label>
           </div>
           <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
             <span class="chip chip-good" id="ltvHf"><span class="dot"></span>HF —</span>
             <span class="chip chip-mute num" id="ltvLiq">—</span>
             <span class="chip chip-mute num" id="ltvBorrow">—</span>
           </div>
+          <label class="tiny" id="hfAckRow" style="display:none;margin-top:8px;gap:6px;align-items:flex-start"><input type="checkbox" id="hfAck"> <span id="hfAckText"></span></label>
         </div>
         <div class="field" id="poolBlock">
           <label>Pool — <span id="poolCount" class="faint"></span> <span class="tt" title="Every curated Aerodrome pool the engine supports. Each pool shows whether emissions × (1 − fees) − IL drag at the chosen width beats the live Aave USDC borrow rate on both models; every pool can be picked, and a pool is greyed out only when it cannot be opened at all. The registry id is the exact bytes32 key the deposit passes on-chain.">ⓘ</span></label>
@@ -1122,6 +1127,15 @@ const OIL_SHARED = Object.freeze({
     { id: "derisk",    hf: 1.2,  disarmHf: 1.25, severity: 3, action: "derisk",           label: "De-risk" },
     { id: "emergency", hf: 1.05, disarmHf: 1.1,  severity: 4, action: "emergency-unwind", label: "Emergency" },
   ],
+  LADDER_RUNG_FACTORS: { warn: 0.91, repay: 0.64, derisk: 0.36, emergency: 0.09 },
+  EMERGENCY_HF_MIN: 1.05,
+  HF_HYSTERESIS_MIN: 0.02,
+  HF_HYSTERESIS_SPAN: 0.55,
+  MIN_LADDER_ENTRY_HF: 1.1,
+  HF_MARKS: [
+    { id: "sheltered", hf: 1.55, label: "Sheltered" },
+    { id: "expert", hf: 1.3, label: "Expert" },
+  ],
   COLLATERAL_SYMBOLS: ["cbBTC", "WETH", "cbZEC"],
   COLLATERAL_ASSETS: {
     cbBTC: { symbol: "cbBTC", enabled: true,  riskNotes: ["Custodial wrapper issued by Coinbase; issuer policy applies to the underlying BTC."] },
@@ -1343,6 +1357,25 @@ const OIL_MODEL = Object.freeze({
 const SH = OIL_SHARED, CR = OIL_CHAIN_READ, FEES = SH.FEES;
 const LAD = Object.freeze({ entryHfFloor: SH.ENTRY_HF_FLOOR, hysteresis: SH.HF_HYSTERESIS, rungs: Object.fromEntries(SH.HF_LADDER.map(r=>[r.id, r.hf])), disarm: Object.fromEntries(SH.HF_LADDER.map(r=>[r.id, r.disarmHf])) });
 const RUNGS = SH.HF_LADDER.map(r=>r.id);                    // mildest → most severe
+/* The ladder for a chosen entry HF e (BUILD-PLAN-2026-09-12 §2b), mirroring shared/health.ts ladderFor:
+   rung = 1 + (e − 1) × k, emergency never under EMERGENCY_HF_MIN, rungs kept strictly decreasing,
+   disarm = rung + hysteresis(e) with hysteresis = max(0.02, 0.05 × (e − 1) ÷ 0.55). ladderFor(1.55) is HF_LADDER. */
+const round2 = x => Math.round(x*100)/100;
+const hysteresisFor = e => round2(Math.max(SH.HF_HYSTERESIS_MIN, SH.HF_HYSTERESIS*(e-1)/SH.HF_HYSTERESIS_SPAN));
+const ladderFor = e => { const h = hysteresisFor(e); const raw = SH.HF_LADDER.map(r=>round2(1+(e-1)*SH.LADDER_RUNG_FACTORS[r.id])); const hf = new Array(raw.length); hf[raw.length-1] = Math.max(raw[raw.length-1], SH.EMERGENCY_HF_MIN); for(let i=raw.length-2;i>=0;i--) hf[i] = round2(Math.max(raw[i], hf[i+1]+0.01)); return SH.HF_LADDER.map((r,i)=>({ id:r.id, hf:hf[i], disarmHf: round2(hf[i]+h), severity:r.severity, action:r.action, label:r.label })); };
+/* A position's ladder in the LAD shape: derived from its recorded entry HF; the floor's (HF_LADDER) when there is none — the keeper's own fallback rule (HealthMonitor.resolveLadder). */
+const ladOf = e => { const own = Number.isFinite(e) && e >= SH.MIN_LADDER_ENTRY_HF; const l = own ? ladderFor(e) : SH.HF_LADDER; return { entryHf: own ? e : null, derived: own, hysteresis: round2(l[0].disarmHf - l[0].hf), rungs: Object.fromEntries(l.map(r=>[r.id, r.hf])), disarm: Object.fromEntries(l.map(r=>[r.id, r.disarmHf])) }; };
+const entryHfAtLtv = (asset, ltvPct) => { const hf = entryHf(asset, ltvPct); return Number.isFinite(hf) ? Math.floor(hf*1e4)/1e4 : hf; };   // what the router records: LT ÷ LTV to four decimals (shared entryHfAtLtvBps)
+/* Where the slider stops on an asset (shared offeredLtvBounds): the smallest of the registry floor, Aave's max LTV and the product cap, named; ties name the floor, then the venue. */
+const offeredBounds = asset => { const b = ltBpsOf(asset); if(b==null) return null; const r = CR.aaveReserves[asset]; const cands = [["entry_hf_floor", Math.floor((b*100)/ENTRY_HF_FLOOR_HUNDREDTHS)], ["venue_max_ltv", r.ltvBps], ["product_ltv_cap", SH.MAX_OFFERED_LTV_CAP_BPS]]; let best = cands[0]; for(const c of cands) if(c[1] < best[1]) best = c; return { maxLtvBps: best[1], minHf: entryHfAtLtv(asset, best[1]/100), binding: best[0] }; };
+const bindingPlain = b => b==="entry_hf_floor" ? `the registry's entry floor of ${LAD.entryHfFloor.toFixed(2)}` : b==="venue_max_ltv" ? "Aave's own maximum LTV for this asset" : `Oilskin's ${SH.MAX_OFFERED_LTV_CAP_BPS/100}% cap on any borrow`;
+const ltvForHf = (asset, hf) => Number.isFinite(hf) ? Math.floor(ltBpsOf(asset)/hf)/100 : 0;                 // LTV at entry = LT ÷ HF, whole bps, as a percent
+const hfForBorrow = (asset, coll, px, usdc) => usdc>0 && coll*px>0 ? coll*px*ltOf(asset)/usdc : Infinity;    // the identity the other way: HF = collateral × LT ÷ debt
+const SLIDER_MIN_LTV_BPS = 100;                                                                                // the prototypes stop at 1 % LTV so a saved state stays a JSON number; the site's slider reaches "borrow nothing"
+const clampHf = (asset, hf) => { const b = offeredBounds(asset); if(!b || !Number.isFinite(hf)) return hf; return Math.min(Math.max(hf, b.minHf), entryHfAtLtv(asset, SLIDER_MIN_LTV_BPS/100)); };
+const SHELTERED = SH.HF_MARKS.find(m=>m.id==="sheltered");
+const needsHfAck = hf => Number.isFinite(hf) && hf < SHELTERED.hf - 1e-9;
+const hfAckText = (asset, hf) => { const L = ladOf(hf); return `I chose an entry health factor of ${hf.toFixed(2)}, under the Sheltered mark of ${SHELTERED.hf.toFixed(2)}. A ${(100*(1-1/hf)).toFixed(1)}% fall in ${asset} from today's price liquidates this position. The keeper's first step, a message, comes at HF ${L.rungs.warn.toFixed(2)} and its last, closing the position, at ${L.rungs.emergency.toFixed(2)} — and only while the permission I grant it is live. Nothing here is advice or a promise.`; };
 const ltBpsOf = asset => { const r = CR.aaveReserves[asset]; return r ? r.liquidationThresholdBps : null; };
 const ltOf = asset => { const b = ltBpsOf(asset); return b==null ? null : b/10000; };
 const supplyAprOf = asset => { const r = CR.aaveReserves[asset]; return r ? r.supplyAprPct : 0; };
@@ -1582,7 +1615,7 @@ const MODES = ["LP","HOLD","SUPPLY","SPOT"];
 
 /* ── Store: versioned, validated on load, two-tab safe ── */
 const STORE_KEY = "oilskin.adv.v2";
-function freshWiz(){ const asset="cbBTC"; return { asset, amount: 0.1, mode:"LP", ltv: SH.LTV_PRESET_FIXED_BPS.p30/100, pool: null, preset:"CONSERVATIVE", rw: presetWidthBps("CONSERVATIVE","UNCORRELATED"), rd: SH.RANGE_PRESETS[0].defaultRebalanceDelayHours, rew:"COMPOUND", econ:true, step:1, ack:false }; }
+function freshWiz(){ const asset="cbBTC"; const hf = clampHf(asset, SHELTERED.hf); return { asset, amount: 0.1, mode:"LP", hf, ltv: ltvForHf(asset, hf), hfAck:false, pool: null, preset:"CONSERVATIVE", rw: presetWidthBps("CONSERVATIVE","UNCORRELATED"), rd: SH.RANGE_PRESETS[0].defaultRebalanceDelayHours, rew:"COMPOUND", econ:true, step:1, ack:false }; }
 const GRANT_EXPIRY_S = OIL_CONTRACTS.grant.expiryDays*86400;
 /* Session-only simulation levers: `paused` mirrors Aave's guardian pause per
    reserve, `corroborated` the gauge sampler's anchor state, `revote` a lapsed
@@ -1593,7 +1626,8 @@ function freshSim(){ return { keeperOff:false, failNext:null, refundNext:false, 
    explicitly so the model block stays pure and the fuzz harness can drive it. */
 const gopts = (s, extra) => Object.assign({ paused: s.sim.paused, corroborated: s.sim.corroborated, revote: s.sim.revote }, extra||{});
 const gopt = extra => gopts(S, extra);
-function freshState(){ return { v:2, seq:0, wallet:null, price:{...PRICE_READ}, borrowPct: CR.aaveReserves.USDC.borrowAprPct, mult:1, positions:[], activity:[], credited:[], flow:null, ladders:{}, grants:{}, sim:freshSim(), wiz: freshWiz(), nextId: 1, lastTick: 0 }; }
+function freshState(){ return { v:2, seq:0, wallet:null, price:{...PRICE_READ}, borrowPct: CR.aaveReserves.USDC.borrowAprPct, mult:1, positions:[], activity:[], credited:[], flow:null, ladders:{}, entryHfs:{}, grants:{}, sim:freshSim(), wiz: freshWiz(), nextId: 1, lastTick: 0 }; }
+const entryOf = (s, owner) => { const v = (s.entryHfs||{})[String(owner||"").toLowerCase()]; return fin(v,1) ? v : null; };   // StrategyRouter.entryHfWad for the account: the HF the venue measured at its last open, four decimals; null = no record
 function validPosition(p){
   if(!p||typeof p!=="object") return false;
   if(!fin(p.id,1)||!["LP","HOLD","SUPPLY","SPOT"].includes(p.kind)) return false;
@@ -1624,9 +1658,9 @@ function validateStore(raw){
   if(!o.sim||typeof o.sim.keeperOff!=="boolean") return {ok:false, why:"sim"};
   if(!o.grants||typeof o.grants!=="object") return {ok:false, why:"grants"};
   for(const [k,g] of Object.entries(o.grants)){ if(!/^0x[0-9a-fA-F]{40}$/.test(k)||!g||typeof g!=="object"||!fin(g.remainingS,0,GRANT_EXPIRY_S)||typeof g.revoked!=="boolean"||typeof g.notified!=="boolean") return {ok:false, why:"grant"}; }
-  if(!o.wiz||!(o.wiz.asset in MIN_AMOUNT)||!MODES.includes(o.wiz.mode)||!fin(o.wiz.amount)||!fin(o.wiz.ltv,0,100)||!fin(o.wiz.rw,SH.RANGE_WIDTH_BOUNDS.min,SH.RANGE_WIDTH_BOUNDS.max)||!fin(o.wiz.rd,SH.REBALANCE_DELAY_BOUNDS.minHours,SH.REBALANCE_DELAY_BOUNDS.maxHours)||!fin(o.wiz.step,1,4)) return {ok:false, why:"wiz"};
+  if(!o.wiz||!(o.wiz.asset in MIN_AMOUNT)||!MODES.includes(o.wiz.mode)||!fin(o.wiz.amount)||!fin(o.wiz.ltv,0,100)||!fin(o.wiz.hf,1)||!fin(o.wiz.rw,SH.RANGE_WIDTH_BOUNDS.min,SH.RANGE_WIDTH_BOUNDS.max)||!fin(o.wiz.rd,SH.REBALANCE_DELAY_BOUNDS.minHours,SH.REBALANCE_DELAY_BOUNDS.maxHours)||!fin(o.wiz.step,1,4)) return {ok:false, why:"wiz"};
   const s = freshState();
-  Object.assign(s, { seq:o.seq, wallet:o.wallet, price:{...s.price,...o.price}, borrowPct:o.borrowPct, mult:o.mult, positions:o.positions.map(p=>({...p, cooldown:0})), activity:o.activity.slice(0,500), credited:o.credited.slice(), flow:o.flow, ladders:JSON.parse(JSON.stringify(o.ladders)), grants:JSON.parse(JSON.stringify(o.grants)), sim:{...freshSim(), keeperOff:o.sim.keeperOff===true}, wiz:{...freshWiz(), ...o.wiz, step:1}, nextId:o.nextId, lastTick:o.lastTick });
+  Object.assign(s, { seq:o.seq, wallet:o.wallet, price:{...s.price,...o.price}, borrowPct:o.borrowPct, mult:o.mult, positions:o.positions.map(p=>({...p, cooldown:0})), activity:o.activity.slice(0,500), credited:o.credited.slice(), flow:o.flow, ladders:JSON.parse(JSON.stringify(o.ladders)), entryHfs:{...(o.entryHfs||{})}, grants:JSON.parse(JSON.stringify(o.grants)), sim:{...freshSim(), keeperOff:o.sim.keeperOff===true}, wiz:{...freshWiz(), ...o.wiz, step:1}, nextId:o.nextId, lastTick:o.lastTick });
   return {ok:true, state:s};
 }
 let storage = { get:()=>{ try{return localStorage.getItem(STORE_KEY);}catch(e){return null;} }, set:v=>{ try{localStorage.setItem(STORE_KEY,v);}catch(e){} }, del:()=>{ try{localStorage.removeItem(STORE_KEY);}catch(e){} } };
@@ -1688,7 +1722,8 @@ function accruePosition(s, p, dtRaw){
 /* Ladder per account, hysteresis per rung (shared semantics: fire when HF < rung.hf; re-arm when HF ≥ disarmHf). */
 function runLadder(s, owner){
   if(!owner) return; const L=ladderOf(s, owner); let hf=accountHf(s, owner);
-  for(const r of RUNGS){ if(!L[r] && hf >= LAD.disarm[r]) L[r]=true; }
+  const LADo = ladOf(entryOf(s, owner));                     // the ladder derived from the entry HF the last open recorded; the floor's when none
+  for(const r of RUNGS){ if(!L[r] && hf >= LADo.disarm[r]) L[r]=true; }
   if(s.sim.keeperOff) return;
   /* A permission that has expired or been revoked is not a permission. The
      keeper stops; the collateral and the loan are untouched, and the owner can
@@ -1705,14 +1740,14 @@ function runLadder(s, owner){
   const lps = () => ownedBy(s, owner).filter(p=>p.kind==="LP");
   for(const r of RUNGS){
     hf=accountHf(s, owner);                                 // re-read after any rung acted
-    if(!L[r] || !(hf < LAD.rungs[r])) continue;
+    if(!L[r] || !(hf < LADo.rungs[r])) continue;
     L[r]=false;
-    if(r==="warn"){ log(s,"Heads-up",`Account HF ${hf.toFixed(2)} < ${LAD.rungs.warn.toFixed(2)} — new borrows blocked; earnings repay next`,"⚠","chip-warn",false); }
+    if(r==="warn"){ log(s,"Heads-up",`Account HF ${hf.toFixed(2)} < ${LADo.rungs.warn.toFixed(2)} — new borrows blocked; earnings repay next`,"⚠","chip-warn",false); }
     else if(r==="repay"){ let paid=0; for(const p of lps()){ const pay=Math.min(p.emis+p.idle, p.debt); if(pay>0){ const e=Math.min(p.emis,pay); p.emis-=e; p.idle-=Math.min(p.idle,pay-e); p.debt-=pay; paid+=pay; } } for(const p of ownedBy(s,owner).filter(x=>x.kind==="HOLD"&&x.usdc>0)){ const pay=Math.min(p.usdc,p.debt); p.usdc-=pay; p.debt-=pay; paid+=pay; } log(s,"Earnings repaid debt",paid>0?`$${paid.toFixed(2)} of claimable → debt · HF ${accountHf(s,owner).toFixed(2)}`:`No claimable earnings at HF ${hf.toFixed(2)} — next rung is a partial unwind`,"♥","chip-good",paid>0); }
-    else if(r==="derisk"){ const target = weightedCollOf(s,owner)/LAD.entryHfFloor; let need=Math.max(0, debtOf(s,owner)-target); let paid=0; for(const p of ownedBy(s,owner).filter(x=>x.kind==="HOLD"&&x.usdc>0)){ if(need<=0) break; const pay=Math.min(need,p.usdc,p.debt); p.usdc-=pay; p.debt-=pay; need-=pay; paid+=pay; } for(const p of lps().sort((a,b)=>(a.inRange?1:0)-(b.inRange?1:0) || b.lp-a.lp)){ if(need<=0) break; const pay=Math.min(need, p.lp+p.emis+p.idle, p.debt); unwindPos(p, pay); need-=pay; paid+=pay; } log(s,"Protection ladder",`Partial unwind — $${paid.toFixed(2)} repaid to restore HF ${LAD.entryHfFloor.toFixed(2)} · HF ${fmtHf(accountHf(s,owner))}`,"🪜","chip-warn"); }
+    else if(r==="derisk"){ const target = weightedCollOf(s,owner)/LADo.disarm.derisk; let need=Math.max(0, debtOf(s,owner)-target); let paid=0; for(const p of ownedBy(s,owner).filter(x=>x.kind==="HOLD"&&x.usdc>0)){ if(need<=0) break; const pay=Math.min(need,p.usdc,p.debt); p.usdc-=pay; p.debt-=pay; need-=pay; paid+=pay; } for(const p of lps().sort((a,b)=>(a.inRange?1:0)-(b.inRange?1:0) || b.lp-a.lp)){ if(need<=0) break; const pay=Math.min(need, p.lp+p.emis+p.idle, p.debt); unwindPos(p, pay); need-=pay; paid+=pay; } log(s,"Protection ladder",`Partial unwind — $${paid.toFixed(2)} repaid to lift HF back to ${LADo.disarm.derisk.toFixed(2)}, the de-risk rung's re-arm level · HF ${fmtHf(accountHf(s,owner))}`,"🪜","chip-warn"); }
     else if(r==="emergency"){ let paid=0; for(const p of ownedBy(s,owner).filter(x=>x.kind==="HOLD"&&x.usdc>0)){ const pay=Math.min(p.usdc,p.debt); p.usdc-=pay; p.debt-=pay; paid+=pay; } for(const p of lps()){ const pay=Math.min(p.debt, p.lp+p.emis+p.idle); unwindPos(p, pay); paid+=pay; p.unwound=true; } log(s,"Protection ladder",`Emergency unwind — every pool position closed, $${paid.toFixed(2)} repaid · HF ${fmtHf(accountHf(s,owner))}`,"🪜","chip-crit"); }
   }
-  hf=accountHf(s, owner); for(const r of RUNGS){ if(!L[r] && hf >= LAD.disarm[r]) L[r]=true; }   // restored above disarm ⇒ armed again
+  hf=accountHf(s, owner); for(const r of RUNGS){ if(!L[r] && hf >= LADo.disarm[r]) L[r]=true; }   // restored above disarm ⇒ armed again
 }
 function unwindPos(p, pay){ let left=pay; const e=Math.min(p.emis,left); p.emis-=e; left-=e; const i=Math.min(p.idle,left); p.idle-=i; left-=i; const l=Math.min(p.lp,left); p.lp-=l; p.lpBasis=Math.max(0,p.lpBasis-l); left-=l; p.debt=Math.max(0,p.debt-(pay-left)); }
 const fmtHf = h => h===Infinity ? "∞" : h.toFixed(2);
@@ -1726,10 +1761,11 @@ function wizDecision(s){
   if(!fin(w.amount, MIN_AMOUNT[w.asset])) return {ok:false, why:`Enter at least ${MIN_AMOUNT[w.asset]} ${w.asset}`};
   if(w.amount > DEMO_BAL[w.asset]) return {ok:false, why:`Exceeds your wallet balance (${DEMO_BAL[w.asset]} ${w.asset})`};
   if(w.mode==="LP"||w.mode==="HOLD"){
-    const top=topLtvPct(w.asset); if(!fin(w.ltv,1,top)) return {ok:false, why:`Setting must be between 1% and the ${top}% top for ${w.asset}`};
+    { const b=offeredBounds(w.asset); if(!b || !fin(w.hf, b.minHf-1e-9)) return {ok:false, why:`Health factor must be at least the ${b?b.minHf.toFixed(2):"—"} offered for ${w.asset} (${b?bindingPlain(b.binding):"nothing offered"})`};
+      if(needsHfAck(w.hf) && !w.hfAck) return {ok:false, why:`Tick the acknowledgment under the slider: ${w.hf.toFixed(2)} is under the Sheltered mark ${SHELTERED.hf.toFixed(2)}`}; }
     const hf = accountHf(s, s.wallet.addr, w.amount*s.price[w.asset]*ltOf(w.asset), w.amount*s.price[w.asset]*(w.ltv/100));
     if(hf < LAD.entryHfFloor) return {ok:false, why:`Account HF would be ${hf.toFixed(2)} — below the ${LAD.entryHfFloor.toFixed(2)} entry floor (existing debt counts)`};
-    const L=ladderOf(s, s.wallet.addr); if(!L.warn && accountHf(s, s.wallet.addr) < LAD.disarm.warn) return {ok:false, why:"New borrows are blocked while the heads-up rung is fired"};
+    const L=ladderOf(s, s.wallet.addr); if(!L.warn && accountHf(s, s.wallet.addr) < ladOf(entryOf(s, s.wallet.addr)).disarm.warn) return {ok:false, why:"New borrows are blocked while the heads-up rung is fired"};
   }
   if(w.mode==="LP"){
     const pool=poolById(w.pool); if(!pool) return {ok:false, why:"Pick a pool"};
@@ -1748,11 +1784,13 @@ function reduce(s, a){
     case "connect": { const addr=a.addr||DEMO_WALLETS[a.provider]||DEMO_WALLETS.coinbase; s.wallet={addr, provider:a.provider||"coinbase"}; ladderOf(s, addr); return s; }
     case "disconnect": s.wallet=null; return s;
     case "wiz": { const w=s.wiz; const k=a.key, v=a.value;
-      if(k!=="step" && k!=="ack" && k!=="econ") w.ack=false;
-      if(k==="asset"){ if(!(v in MIN_AMOUNT)) return s; w.asset=v; if(ltOf(v)==null && w.mode!=="SPOT") w.mode="SPOT"; const top=topLtvPct(v); if(w.ltv>top) w.ltv=top||w.ltv; w.pool=null; }
+      if(k!=="step" && k!=="ack" && k!=="econ" && k!=="hfAck") w.ack=false;
+      if(k==="asset"){ if(!(v in MIN_AMOUNT)) return s; const prevB=offeredBounds(w.asset); const atDefault=!!prevB && Math.abs(w.hf-prevB.minHf)<1e-9; w.asset=v; if(ltOf(v)==null && w.mode!=="SPOT") w.mode="SPOT"; const hf0=atDefault?clampHf(v, SHELTERED.hf):clampHf(v, w.hf); if(hf0!==w.hf){ w.hf=hf0; w.hfAck=false; } if(ltOf(v)!=null) w.ltv=ltvForHf(v, w.hf); w.pool=null; }
       else if(k==="amount"){ w.amount = fin(v) ? v : 0; }   // a bad amount becomes 0 (blocked by the gate) — never NaN, so the saved state stays loadable
       else if(k==="mode"){ if(!MODES.includes(v)) return s; if(ltOf(w.asset)==null && v!=="SPOT") return s; w.mode=v; }
-      else if(k==="ltv"){ const top=topLtvPct(w.asset); if(fin(v,1,top)) w.ltv=Math.round(v); }
+      else if(k==="hf"){ if(!fin(v,1) || ltOf(w.asset)==null) return s; const hf=clampHf(w.asset, v); if(hf!==w.hf) w.hfAck=false; w.hf=hf; w.ltv=ltvForHf(w.asset, hf); }          // the slider, a typed HF or a mark: pulled into the offered range
+      else if(k==="borrow"){ if(!fin(v,0) || ltOf(w.asset)==null) return s; const hf=clampHf(w.asset, hfForBorrow(w.asset, w.amount, s.price[w.asset], v)); if(!fin(hf,1)) return s; if(hf!==w.hf) w.hfAck=false; w.hf=hf; w.ltv=ltvForHf(w.asset, hf); }
+      else if(k==="hfAck"){ w.hfAck=!!v; }
       else if(k==="pool"){ const p=poolById(v); if(p){ const pc=p.pairClass; w.pool=v; w.rw=presetWidthBps(w.preset==="CUSTOM"?"CONSERVATIVE":w.preset, pc); } }
       else if(k==="preset"){ const d=SH.RANGE_PRESETS.find(x=>x.preset===v); if(!d) return s; const p=poolById(w.pool); w.preset=v; w.rw=d.rangeWidthBps[p?p.pairClass:"UNCORRELATED"]; w.rd=d.defaultRebalanceDelayHours; }
       else if(k==="rw"){ if(fin(v)){ w.rw=Math.max(SH.RANGE_WIDTH_BOUNDS.min, Math.min(SH.RANGE_WIDTH_BOUNDS.max, Math.round(v))); const p=poolById(w.pool); const hit=SH.RANGE_PRESETS.find(x=>x.rangeWidthBps[p?p.pairClass:"UNCORRELATED"]===w.rw); w.preset=hit?hit.preset:"CUSTOM"; } }
@@ -1818,7 +1856,8 @@ function openFromFlow(s, f){
   else if(w.mode==="HOLD"){ const b=usdIn*(w.ltv/100); s.positions.unshift({ id:s.nextId++, kind:"HOLD", owner:o, asset:w.asset, coll:w.amount, ltv:w.ltv, debt:b, usdc:b, interest:0, openedAt:Date.now(), ageS:0 }); log(s,"Borrowed & holding",`${w.amount} ${w.asset} → Aave v3 · $${b.toFixed(2)} USDC borrowed, held in your account`,"＋","chip-gold"); }
   else if(w.mode==="SUPPLY"){ s.positions.unshift({ id:s.nextId++, kind:"SUPPLY", owner:o, asset:w.asset, coll:w.amount, debt:0, interest:0, openedAt:Date.now(), ageS:0 }); log(s,"Supplied",`${w.amount} ${w.asset} → Aave v3 · no borrow`,"＋","chip-gold"); }
   else if(w.mode==="SPOT"){ const out=usdIn*(1-0.0002); s.positions.unshift({ id:s.nextId++, kind:"SPOT", owner:o, asset:w.asset, coll:0, debt:0, interest:0, amountIn:w.amount, amountOut:out, openedAt:Date.now(), ageS:0 }); log(s,"Swapped via CoW",`${w.amount} ${w.asset} → $${out.toFixed(2)} USDC · batch auction settled`,"⇄","chip-info"); }
-  if(w.mode==="LP"||w.mode==="HOLD"){ const g=grantFor(s,o,true); g.remainingS=GRANT_EXPIRY_S; g.revoked=false; g.notified=false; }
+  if(w.mode==="LP"||w.mode==="HOLD"){ const g=grantFor(s,o,true); g.remainingS=GRANT_EXPIRY_S; g.revoked=false; g.notified=false;
+    const hf=accountHf(s,o); s.entryHfs[o.toLowerCase()] = Number.isFinite(hf) ? Math.floor(hf*1e4)/1e4 : null; }   // StrategyRouter.entryHfWad: the account's HF after this open, four decimals — every open moves it
   s.wiz={...freshWiz(), asset:w.asset};
   runLadder(s,o);
 }
@@ -1919,17 +1958,18 @@ function renderHealth(){
   if(D<=0){ track.innerHTML=`<div class="band-seg" style="flex:1;background:var(--good)"></div>`; zl(1,"no debt — nothing can be liquidated"); chip.className="chip chip-good"; chip.innerHTML=`<span class="dot"></span>No debt · HF <span class="num">∞</span>`; $("#hfBorrowLine").innerHTML=`No borrow against <b class="num">${usd(C)}</b> of collateral`; $("#hfLiqLine").innerHTML=`Liquidation — none possible`; }
   else {
     // scale = collateral value multiplier at which HF hits each level (all collateral moving together)
-    const m=lvl=>lvl/hf; const lo=Math.min(m(1)*0.72, 0.5), hi=Math.max(1.18, m(LAD.rungs.warn)*1.4); const X=v=>Math.max(0,Math.min(100,((v-lo)/(hi-lo))*100));
-    track.innerHTML=[`<div class="band-seg" style="width:${X(m(LAD.rungs.derisk))}%;background:var(--crit)"></div>`,`<div class="band-seg" style="width:${X(m(LAD.rungs.warn))-X(m(LAD.rungs.derisk))}%;background:var(--warn)"></div>`,`<div class="band-seg" style="flex:1;background:var(--good)"></div>`].join("");
+    const LADo=ladOf(entryOf(S, owner)); const m=lvl=>lvl/hf; const lo=Math.min(m(1)*0.72, 0.5), hi=Math.max(1.18, m(LADo.rungs.warn)*1.4); const X=v=>Math.max(0,Math.min(100,((v-lo)/(hi-lo))*100));
+    track.innerHTML=[`<div class="band-seg" style="width:${X(m(LADo.rungs.derisk))}%;background:var(--crit)"></div>`,`<div class="band-seg" style="width:${X(m(LADo.rungs.warn))-X(m(LADo.rungs.derisk))}%;background:var(--warn)"></div>`,`<div class="band-seg" style="flex:1;background:var(--good)"></div>`].join("");
     mk(X(m(1)),"Liquidation",`−${((1-m(1))*100).toFixed(0)}%`,"var(--crit)"); mk(X(1),"Now","HF "+hf.toFixed(2),"var(--ink)");
-    const xd=X(m(LAD.rungs.derisk)), xw=X(m(LAD.rungs.warn)); if(xd>14) zl(1,"at risk"); if(xw-xd>16) zl(xd+1,"ladder acting"); zl(xw+1,"healthy");
-    const cls = hf>=LAD.rungs.warn?"chip-good":hf>=LAD.rungs.derisk?"chip-warn":"chip-crit"; chip.className="chip "+cls; chip.innerHTML=`<span class="dot"></span>${hf>=LAD.rungs.warn?"Healthy":hf>=LAD.rungs.derisk?"Ladder acting":"At risk"} · HF <span class="num">${hf.toFixed(2)}</span>`;
+    const xd=X(m(LADo.rungs.derisk)), xw=X(m(LADo.rungs.warn)); if(xd>14) zl(1,"at risk"); if(xw-xd>16) zl(xd+1,"ladder acting"); zl(xw+1,"healthy");
+    const cls = hf>=LADo.rungs.warn?"chip-good":hf>=LADo.rungs.derisk?"chip-warn":"chip-crit"; chip.className="chip "+cls; chip.innerHTML=`<span class="dot"></span>${hf>=LADo.rungs.warn?"Healthy":hf>=LADo.rungs.derisk?"Ladder acting":"At risk"} · HF <span class="num">${hf.toFixed(2)}</span>`;
     $("#hfBorrowLine").innerHTML=`Borrowed <b class="num">${usd(D)} USDC</b> against <b class="num">${usd(C)}</b> of collateral · ${(D/C*100).toFixed(1)}% LTV`;
     $("#hfLiqLine").innerHTML=`Liquidation if collateral falls <b class="num" style="color:var(--crit)">${((1-m(1))*100).toFixed(1)}%</b> together`;
   }
   const L=ladderOf(S,owner);
-  $("#ladder").innerHTML=RUNGS.map(r=>`<div class="rung ${L[r]?"armed":"fired"}" data-rung="${r}"><b>${SH.HF_LADDER.find(x=>x.id===r).label}</b>HF &lt; ${LAD.rungs[r].toFixed(2)} · ${L[r]?"armed":"fired — re-arms ≥ "+LAD.disarm[r].toFixed(2)}</div>`).join("");
-  $("#ladderLine").innerHTML=`Keeper ladder: ${RUNGS.map(r=>`${SH.HF_LADDER.find(x=>x.id===r).label.toLowerCase()} &lt; ${LAD.rungs[r].toFixed(2)}`).join(" · ")} — hysteresis ${LAD.hysteresis.toFixed(2)} · entry floor ${LAD.entryHfFloor.toFixed(2)} · <button class="btn-quiet tiny" data-doc="health" style="color:var(--gold);padding:0">how it works →</button>`;
+  { const LADl=ladOf(entryOf(S, owner));
+  $("#ladder").innerHTML=RUNGS.map(r=>`<div class="rung ${L[r]?"armed":"fired"}" data-rung="${r}"><b>${SH.HF_LADDER.find(x=>x.id===r).label}</b>HF &lt; ${LADl.rungs[r].toFixed(2)} · ${L[r]?"armed":"fired — re-arms ≥ "+LADl.disarm[r].toFixed(2)}</div>`).join("");
+  $("#ladderLine").innerHTML=`Keeper ladder: ${RUNGS.map(r=>`${SH.HF_LADDER.find(x=>x.id===r).label.toLowerCase()} &lt; ${LADl.rungs[r].toFixed(2)}`).join(" · ")} — hysteresis ${LADl.hysteresis.toFixed(2)} · entry floor ${LAD.entryHfFloor.toFixed(2)} · ${LADl.derived ? `derived from this account's recorded entry HF ${LADl.entryHf.toFixed(2)} (the keeper reads the same number from the router)` : "no entry HF recorded — the floor's ladder"} · <button class="btn-quiet tiny" data-doc="health" style="color:var(--gold);padding:0">how it works →</button>`; }
   $("#keeperBanner").style.display=S.sim.keeperOff?"flex":"none";
 }
 const openCards=new Set();
@@ -2041,7 +2081,7 @@ function wdUpd(){ const p=wd.p; if(!p) return; const v=+$("#wdSlider").value, k=
   if(p.kind==="LP"){ const proceeds=(p.lp+p.idle+p.emis)*k; est=`≈ ${usd(proceeds)} from the pool`; if(wd.dest==="REPAY"&&D>0){ const r=Math.min(proceeds,D); hf1=accountHf(S,p.owner,0,-r); note=`repaying ${usd(r)}`; } else note="debt unchanged"; }
   else { const outW=p.coll*k*S.price[p.asset]*ltOf(p.asset); est=`≈ ${fmtAsset(p.coll*k,p.asset)} ${p.asset} (${usd(p.coll*k*S.price[p.asset])})${p.kind==="HOLD"?` + ${usd(p.usdc*k)} USDC`:""}`; const r = p.kind==="HOLD"&&wd.dest==="REPAY" ? Math.min(p.usdc*k,p.debt) : 0; hf1=accountHf(S,p.owner,-outW,-r); note=r>0?`repaying ${usd(r)} and withdrawing collateral`:"withdrawing collateral"; }
   $("#wdEst").textContent=est+" · price band set automatically";
-  $("#wdHf").innerHTML=D>0?`Health factor: <b>${fmtHf(hf0)}</b> → <b style="color:${hf1>=hf0?"var(--good)":hf1>=LAD.rungs.warn?"var(--ink)":hf1>=LAD.rungs.derisk?"var(--warn)":"var(--crit)"}">${fmtHf(hf1)}</b> (${note})`:"";
+  const LADw=ladOf(entryOf(S,p.owner)); $("#wdHf").innerHTML=D>0?`Health factor: <b>${fmtHf(hf0)}</b> → <b style="color:${hf1>=hf0?"var(--good)":hf1>=LADw.rungs.warn?"var(--ink)":hf1>=LADw.rungs.derisk?"var(--warn)":"var(--crit)"}">${fmtHf(hf1)}</b> (${note})`:"";
   const leg = wdLeg(k);
   $("#wdSwap").style.display = leg && leg.legUsd>0 ? "block" : "none";
   if(leg && leg.legUsd>0) $("#wdSwap").innerHTML = `<b>Selling the pool's ${leg.tokenIn} half for USDC.</b> Quote ${usd(leg.quotedIn)} of ${leg.tokenIn} → ${usd(leg.quotedOut)} USDC (the pool's own ${leg.feeBps} bps fee is in it), slippage cap <b>${(leg.maxSlippageBps/100).toFixed(2)}%</b> of the quote — the contract refuses anything above ${(leg.cap/100).toFixed(2)}%. The swap <b>reverts below ${usd(leg.minOut)}</b>: that floor is what <span class="mono">${OIL_CONTRACTS.swap.view}</span> returns and what <span class="mono">Swapped</span> logs. A leg that settles larger or smaller scales the floor with it; an adverse price does not move the floor, so the swap reverts rather than settle for dust.`;
@@ -2069,7 +2109,10 @@ $$("#modeCards [data-mode]").forEach(o=>o.addEventListener("click",()=>{ if(o.ge
 $$("#rewCards [data-rew]").forEach(o=>o.addEventListener("click",()=>dispatch({type:"wiz",key:"rew",value:o.dataset.rew})));
 $("#econToggle").addEventListener("click",e=>{ dispatch({type:"wiz",key:"econ",value:!S.wiz.econ}); });
 $("#wizAck").addEventListener("change",e=>dispatch({type:"wiz",key:"ack",value:e.target.checked}));
-$("#ltv").addEventListener("input",e=>dispatch({type:"wiz",key:"ltv",value:+e.target.value}));
+$("#hf").addEventListener("input",e=>dispatch({type:"wiz",key:"hf",value:entryHfAtLtv(S.wiz.asset, (+e.target.value)/100)}));
+{ const hfIn=$("#hfIn"), bIn=$("#borrowIn"); const commitHf=()=>{ const v=Number(hfIn.value); if(fin(v,1)) dispatch({type:"wiz",key:"hf",value:v}); else renderAll(); }; const commitB=()=>{ const v=Number(String(bIn.value).replace(/,/g,"")); if(fin(v,0)) dispatch({type:"wiz",key:"borrow",value:v}); else renderAll(); };
+  hfIn.addEventListener("change",commitHf); hfIn.addEventListener("keydown",e=>{ if(e.key==="Enter") commitHf(); }); bIn.addEventListener("change",commitB); bIn.addEventListener("keydown",e=>{ if(e.key==="Enter") commitB(); });
+  $("#hfAck").addEventListener("change",e=>dispatch({type:"wiz",key:"hfAck",value:e.target.checked})); }
 $("#rw").addEventListener("input",e=>dispatch({type:"wiz",key:"rw",value:+e.target.value}));
 $("#rd").addEventListener("input",e=>dispatch({type:"wiz",key:"rd",value:+e.target.value}));
 function renderWizard(){
@@ -2089,20 +2132,23 @@ function renderWizard(){
   $("#assetSeg").innerHTML=SH.COLLATERAL_SYMBOLS.map(a=>{ const c=SH.COLLATERAL_ASSETS[a]; const on=w.asset===a; return `<button type="button" role="radio" aria-checked="${on}" class="${on?"sel":""}" data-asset="${a}" tabindex="${on?0:-1}" title="${c.enabled?`Aave LT ${(ltBpsOf(a)/100).toFixed(0)}% · top setting ${topLtvPct(a)}%`:c.disabledReason}">${a}${c.enabled?"":" · spot only"}</button>`; }).join("");
   $$("#assetSeg [data-asset]").forEach(b=>b.addEventListener("click",()=>dispatch({type:"wiz",key:"asset",value:b.dataset.asset})));
   const c=SH.COLLATERAL_ASSETS[w.asset];
-  $("#assetHint").textContent = c.enabled ? `${w.asset}: Aave v3 liquidation threshold ${(ltBpsOf(w.asset)/100).toFixed(0)}% (read ${CR.readAt.slice(0,10)}), supply ${supplyAprOf(w.asset).toFixed(3)}% APR, Chainlink feed. Top setting = min(${SH.MAX_OFFERED_LTV_CAP_BPS/100}%, ⌊${(ltBpsOf(w.asset)/100).toFixed(0)}% ÷ ${LAD.entryHfFloor}⌋) = ${topLtvPct(w.asset)}%.` : `${w.asset} as collateral is disabled: ${c.disabledReason} Risks: ${c.riskNotes.join(" ")}`;
+  $("#assetHint").textContent = c.enabled ? `${w.asset}: Aave v3 liquidation threshold ${(ltBpsOf(w.asset)/100).toFixed(0)}% (read ${CR.readAt.slice(0,10)}), supply ${supplyAprOf(w.asset).toFixed(3)}% APR, Chainlink feed. Lowest health factor offered ${offeredBounds(w.asset).minHf.toFixed(2)} — ${bindingPlain(offeredBounds(w.asset).binding)} (registry floor ${LAD.entryHfFloor.toFixed(2)}; Aave's max LTV ${(CR.aaveReserves[w.asset].ltvBps/100).toFixed(0)}%; Oilskin's cap ${SH.MAX_OFFERED_LTV_CAP_BPS/100}%); most you can borrow ${(offeredBounds(w.asset).maxLtvBps/100).toFixed(2)}% LTV.` : `${w.asset} as collateral is disabled: ${c.disabledReason} Risks: ${c.riskNotes.join(" ")}`;
   $("#amtSuffix").textContent=w.asset; $("#amtUsd").textContent=fin(w.amount)?usd(w.amount*S.price[w.asset]):"—"; $("#amtHint").textContent=`min ${MIN_AMOUNT[w.asset]} · demo balance ${DEMO_BAL[w.asset]} ${w.asset} · no Oilskin cap`;
   if(document.activeElement!==$("#amt")) $("#amt").value=fin(w.amount)?w.amount:"";
   $$("#modeCards [data-mode]").forEach(o=>{ const dis = !c.enabled && o.dataset.mode!=="SPOT"; o.setAttribute("aria-disabled",dis); const on=w.mode===o.dataset.mode; o.classList.toggle("sel",on); o.setAttribute("aria-checked",on); o.tabIndex=on?0:-1; });
   // step 2
   const borrowMode = w.mode==="LP"||w.mode==="HOLD"; $("#ltvBlock").style.display=borrowMode?"":"none"; $("#poolBlock").style.display=w.mode==="LP"?"":"none"; $("#spotBlock").style.display=w.mode==="SPOT"?"":"none";
-  if(borrowMode){ const stops=ltvPresetsFor(w.asset), top=topLtvPct(w.asset); const px=S.price[w.asset], usdIn=fin(w.amount)?w.amount*px:0;
-    $("#ltvSeg").innerHTML=stops.map(p=>{ const l=p.ltvBps/100; const on=w.ltv===l; const name=p.id==="p30"?"Sheltered":p.id==="p40"?"Steady":"Working hard"; return `<button type="button" role="radio" aria-checked="${on}" class="${on?"sel":""}" data-ltv="${l}" tabindex="${on?0:-1}" ${p.offerable?"":"disabled"} title="${name}: HF ${entryHf(w.asset,l).toFixed(2)} at entry · liquidation if ${w.asset} falls ${dropPct(w.asset,l).toFixed(0)}%">${name} · ${l}%</button>`; }).join("");
-    $$("#ltvSeg [data-ltv]").forEach(b=>b.addEventListener("click",()=>{ if(b.disabled) return; dispatch({type:"wiz",key:"ltv",value:+b.dataset.ltv}); }));
-    const sl=$("#ltv"); sl.max=top; sl.value=w.ltv; $("#ltvMax").textContent=`${top}% top`; $("#ltvLbl").textContent=w.ltv+"%";
+  if(borrowMode){ const b=offeredBounds(w.asset); const px=S.price[w.asset], usdIn=fin(w.amount)?w.amount*px:0; const hfc=w.hf;
+    $("#hfMarks").innerHTML=SH.HF_MARKS.map(m=>{ const offered=!!b && m.hf>=b.minHf-1e-9; const on=Math.abs(hfc-m.hf)<5e-3; const why=offered?`${m.label}: entry HF ${m.hf.toFixed(2)} · borrow ${ltvForHf(w.asset,m.hf).toFixed(2)}% · liquidation if ${w.asset} falls ${(100*(1-1/m.hf)).toFixed(0)}%`:`${m.label} (${m.hf.toFixed(2)}) is under the lowest health factor offered for ${w.asset} today, ${b?b.minHf.toFixed(2):"—"} — ${b?bindingPlain(b.binding):""}.`; return `<button type="button" class="${on?"sel":""}" data-mark="${m.id}" data-hf="${m.hf}" ${offered?"":"disabled"} title="${why}">${m.label} · HF ${m.hf.toFixed(2)}${offered?"":" (not offered today)"}</button>`; }).join("");
+    $$("#hfMarks [data-mark]").forEach(bt=>bt.addEventListener("click",()=>{ if(bt.disabled) return; dispatch({type:"wiz",key:"hf",value:+bt.dataset.hf}); }));
+    const sl=$("#hf"); sl.min=SLIDER_MIN_LTV_BPS; sl.max=b?b.maxLtvBps:SLIDER_MIN_LTV_BPS; if(document.activeElement!==sl) sl.value=Math.round(w.ltv*100); sl.setAttribute("aria-valuetext",`health factor ${hfc.toFixed(2)}`);
+    $("#hfMin").textContent=b?`lowest offered ${b.minHf.toFixed(2)} · ${bindingPlain(b.binding)}`:"not offered"; $("#hfLbl").textContent=hfc.toFixed(2); $("#ltvLbl").textContent=w.ltv.toFixed(2)+"%";
+    const hfIn=$("#hfIn"), bIn=$("#borrowIn"); if(document.activeElement!==hfIn) hfIn.value=Number.isInteger(Math.round(hfc*1e6)/1e4)?hfc.toFixed(2):hfc.toFixed(4).replace(/0+$/,"").replace(/\.$/,""); if(document.activeElement!==bIn) bIn.value=(usdIn*(w.ltv/100)).toFixed(2);
     const hf=accountHf(S,owner||"0x0000000000000000000000000000000000000000",usdIn*ltOf(w.asset),usdIn*(w.ltv/100)); const D=(owner?debtOf(S,owner):0)+usdIn*(w.ltv/100), W=(owner?weightedCollOf(S,owner):0)+usdIn*ltOf(w.asset);
-    const dropAll = D>0 ? Math.max(0,(1-D/W)*100) : 100;
-    const hc=$("#ltvHf"); hc.className="chip "+(hf>=LAD.rungs.warn?"chip-good":hf>=LAD.rungs.derisk?"chip-warn":"chip-crit"); hc.innerHTML=`<span class="dot"></span>HF ${fmtHf(hf)} after · floor ${LAD.entryHfFloor.toFixed(2)}`;
-    $("#ltvLiq").textContent=`Liquidation if collateral falls ${dropAll.toFixed(1)}% (${usd(px*(1-dropAll/100))} ${w.asset})`; $("#ltvBorrow").textContent=`Borrows ${usd(usdIn*(w.ltv/100))} USDC at ${S.borrowPct.toFixed(3)}% against ${usd(usdIn)}`;
+    const dropAll = D>0 ? Math.max(0,(1-D/W)*100) : 100; const Lw=ladOf(hfc);
+    const hc=$("#ltvHf"); hc.className="chip "+(hf>=Lw.rungs.warn?"chip-good":hf>=Lw.rungs.derisk?"chip-warn":"chip-crit"); hc.innerHTML=`<span class="dot"></span>HF ${fmtHf(hf)} after · floor ${LAD.entryHfFloor.toFixed(2)} · ladder ${RUNGS.map(r=>Lw.rungs[r].toFixed(2)).join(" / ")}`;
+    $("#ltvLiq").textContent=`Liquidation if collateral falls ${dropAll.toFixed(1)}% (${usd(px*(1-dropAll/100))} ${w.asset})`; $("#ltvBorrow").textContent=`Borrows ${usd(usdIn*(w.ltv/100))} USDC at ${S.borrowPct.toFixed(3)}% against ${usd(usdIn)} (${w.ltv.toFixed(2)}% LTV)`;
+    const ack=needsHfAck(hfc); $("#hfAckRow").style.display=ack?"flex":"none"; if(ack){ $("#hfAckText").textContent=hfAckText(w.asset,hfc); $("#hfAck").checked=!!w.hfAck; }
   }
   if(w.mode==="LP") renderPoolList();
   if(w.mode==="SPOT"){ const usdIn=fin(w.amount)?w.amount*S.price[w.asset]:0; $("#spotQuote").innerHTML=`<b>${fin(w.amount)?w.amount:"—"} ${w.asset} → ≈ ${usd(usdIn*(1-0.0002))} USDC</b> · CoW batch auction, 2 bps solver fee, free expiry, MEV-protected. Settlement ${short(SH.COW_PROTOCOL.settlement)}; the vault relayer is read from <span class="mono">settlement.vaultRelayer()</span> before any approval. Demo quote.`; }
@@ -2157,7 +2203,7 @@ function proj(){
 function renderReview(){
   const w=S.wiz, owner=S.wallet.addr, px=S.price[w.asset], amt=w.amount, usdIn=amt*px, pool=poolById(w.pool);
   let rows=`<div class="rev-sec">Deposit</div><span class="k">Wallet</span><span class="v mono">${short(owner)} · ${S.wallet.provider}</span><span class="k">Oilskin account</span><span class="v mono">${short(accountOf(owner))}${ownedBy(S,owner).length?"":" (created in tx 1)"}</span><span class="k">Amount</span><span class="v num">${amt} ${w.asset} (${usd(usdIn)})</span><span class="k">Strategy</span><span class="v">${{LP:"Leveraged LP",HOLD:"Borrow & hold USDC",SUPPLY:"Supply only",SPOT:"Spot swap via CoW"}[w.mode]}</span>`;
-  if(w.mode==="LP"||w.mode==="HOLD"){ const b=usdIn*(w.ltv/100), hf=accountHf(S,owner,usdIn*ltOf(w.asset),b); rows+=`<div class="rev-sec">Borrow</div><span class="k">Setting</span><span class="v num">${w.ltv}% · ${usd(b)} USDC at ${S.borrowPct.toFixed(3)}%</span><span class="k">Health factor after</span><span class="v num">${fmtHf(hf)} (floor ${LAD.entryHfFloor.toFixed(2)}${debtOf(S,owner)>0?" · includes existing debt":""})</span><span class="k">Entry floor, enforced where</span><span class="v">${OIL_CONTRACTS.entry.floorEnforcedAt} — below it the transaction reverts <span class="mono">${OIL_CONTRACTS.entry.floorError}</span>, on every path including a batch you write yourself</span><span class="k">Router entry point</span><span class="v mono">${(w.mode==="LP"?OIL_CONTRACTS.entry.leveragedLp:OIL_CONTRACTS.entry.borrowOnly).split("(")[0]}</span><span class="k">Liquidation threshold (${w.asset})</span><span class="v num">${(ltBpsOf(w.asset)/100).toFixed(0)}% — read from Aave</span>`; }
+  if(w.mode==="LP"||w.mode==="HOLD"){ const b=usdIn*(w.ltv/100), hf=accountHf(S,owner,usdIn*ltOf(w.asset),b); rows+=`<div class="rev-sec">Borrow</div><span class="k">Setting</span><span class="v num">entry HF ${w.hf.toFixed(2)} → ${w.ltv.toFixed(2)}% LTV · ${usd(b)} USDC at ${S.borrowPct.toFixed(3)}%</span><span class="k">Health factor after</span><span class="v num">${fmtHf(hf)} (floor ${LAD.entryHfFloor.toFixed(2)}; lowest offered ${offeredBounds(w.asset).minHf.toFixed(2)} — ${bindingPlain(offeredBounds(w.asset).binding)}${debtOf(S,owner)>0?" · includes existing debt":""})</span><span class="k">Ladder for this entry</span><span class="v num">${RUNGS.map(r=>`${SH.HF_LADDER.find(x=>x.id===r).label.toLowerCase()} < ${ladOf(w.hf).rungs[r].toFixed(2)}`).join(" · ")} (re-arm +${ladOf(w.hf).hysteresis.toFixed(2)})</span><span class="k">Entry floor, enforced where</span><span class="v">${OIL_CONTRACTS.entry.floorEnforcedAt} — below it the transaction reverts <span class="mono">${OIL_CONTRACTS.entry.floorError}</span>, on every path including a batch you write yourself</span><span class="k">Router entry point</span><span class="v mono">${(w.mode==="LP"?OIL_CONTRACTS.entry.leveragedLp:OIL_CONTRACTS.entry.borrowOnly).split("(")[0]}</span><span class="k">Liquidation threshold (${w.asset})</span><span class="v num">${(ltBpsOf(w.asset)/100).toFixed(0)}% — read from Aave</span>`; }
   if(w.mode==="LP"){ const g=gate(pool,S.borrowPct,w.rw,S.mult,gopt({collateral:w.asset})); rows+=`<div class="rev-sec">Pool</div><span class="k">Pool</span><span class="v">${pool.name} · Aerodrome via Snuggle</span><span class="k">Registry id</span><span class="v num">${pool.eid.slice(0,10)}…${pool.eid.slice(-6)} ✓</span><span class="k">Range</span><span class="v num">±${halfWidthPct(w.rw).toFixed(2)}% (${w.rw} bps) · rebalance ${w.rd}h</span><span class="k">Working slice</span><span class="v num ${signCls(g.net)}">${pct(g.net)} (emissions ${g.gross.toFixed(2)}% × keep ${(feeKeep(pool)*100).toFixed(1)}%, IL drag ${fmtDrag(ilDragPct(pool.sigma,w.rw))})${S.mult!==1?` · WHAT-IF ×${S.mult}`:""}</span><span class="k">Rewards</span><span class="v">${w.rew==="COMPOUND"?"Auto-compound":"Claim to wallet"} · ${w.econ?`≥${SH.REWARD_CLAIM_POLICY.minCostMultiple}× costs, $${SH.REWARD_CLAIM_POLICY.minAbsoluteUsd} min`:"manual"}</span><span class="k">Keeper permission</span><span class="v">repay / unwind only · revocable</span>`; }
   if(w.mode==="SPOT") rows+=`<div class="rev-sec">Swap</div><span class="k">Receive</span><span class="v num">≈ ${usd(usdIn*(1-0.0002))} USDC</span><span class="k">Venue</span><span class="v">CoW batch auction · MEV-protected</span>`;
   rows+=`<div class="rev-sec">Fees</div><span class="k">Oilskin</span><span class="v num">${FEES.performanceBps/100}% of realised yield only (cap ${FEES.maxPerformanceBps/100}%) · no orchestration fee</span>${w.mode==="LP"?`<span class="k">Engine</span><span class="v num">${CR.snuggleEngineFeeBps/100}% of realised yield only</span>`:""}`;
@@ -2222,8 +2268,12 @@ $$("[data-cf]").forEach(b=>b.addEventListener("click",()=>{ const v=b.dataset.cf
 function renderDocs(){
   const R=CR.aaveReserves;
   $("#docHealthP").innerHTML=`Your health factor is <b>account-level</b>: Σ(collateral × its liquidation threshold) ÷ total debt, read from Aave. Thresholds at the ${CR.readAt.slice(0,10)} read: ${["cbBTC","WETH"].map(a=>`${a} <b>${(R[a].liquidationThresholdBps/100).toFixed(0)}%</b>`).join(", ")} — read live in production. HF 1.0 is where Aave liquidators act (bonus ${(R.cbBTC.liquidationBonusBps/100).toFixed(1)}% / ${(R.WETH.liquidationBonusBps/100).toFixed(1)}%).`;
-  $("#docSettings").innerHTML=`<thead><tr><th>Setting</th><th>LTV</th><th>Entry HF cbBTC / WETH</th><th>cbBTC must fall</th><th>WETH must fall</th></tr></thead><tbody>`+ltvPresetsFor("cbBTC").map(p=>{ const l=p.ltvBps/100; return `<tr><td>${p.id==="p30"?"Sheltered":p.id==="p40"?"Steady":"Working hard (top)"}</td><td class="num">${l}%</td><td class="num">${entryHf("cbBTC",l).toFixed(2)} / ${entryHf("WETH",l).toFixed(2)}</td><td class="num">${dropPct("cbBTC",l).toFixed(1)}%</td><td class="num">${dropPct("WETH",l).toFixed(1)}%</td></tr>`; }).join("")+`</tbody>`;
-  $("#docLadder").innerHTML=SH.HF_LADDER.map(r=>`<li><b>${r.label}</b> — HF &lt; ${r.hf.toFixed(2)}: ${{notify:"notify; new borrows blocked.",repay:"claimable emissions repay the debt; principal untouched.",derisk:"just enough of the pool position unwinds to restore HF "+LAD.entryHfFloor.toFixed(2)+", most out-of-range slice first.","emergency-unwind":"everything unwinds, price band still on; collateral sits plain."}[r.action]} Re-arms at HF ≥ ${r.disarmHf.toFixed(2)}.</li>`).join("");
+  { const rows=[]; const short=b=>b==="entry_hf_floor"?"registry floor":b==="venue_max_ltv"?"Aave's max LTV":`Oilskin's ${SH.MAX_OFFERED_LTV_CAP_BPS/100}% cap`;
+    for(const a of ["cbBTC","WETH"]){ const b=offeredBounds(a); rows.push(`<tr><td><b>${a}</b> lowest</td><td class="num">${b.minHf.toFixed(2)}</td><td class="num">${(b.maxLtvBps/100).toFixed(2)}%</td><td class="num">${(100*(1-1/b.minHf)).toFixed(1)}%</td><td>${short(b.binding)}</td></tr>`); }
+    for(const m of SH.HF_MARKS){ const bb=offeredBounds("cbBTC"); const ok=m.hf>=bb.minHf-1e-9; rows.push(`<tr><td><b>${m.label}</b> mark</td><td class="num">${m.hf.toFixed(2)}</td><td class="num">${ok?ltvForHf("cbBTC",m.hf).toFixed(2)+"%":"—"}</td><td class="num">${(100*(1-1/m.hf)).toFixed(1)}%</td><td>${ok?"offered today":`under ${bb.minHf.toFixed(2)} today (${short(bb.binding)})`}</td></tr>`); }
+    $("#docSettings").style.tableLayout="fixed"; $("#docSettings").innerHTML=`<thead><tr><th>Row</th><th>Entry HF</th><th>Borrow</th><th>Must fall</th><th>Set by</th></tr></thead><tbody>${rows.join("")}</tbody>`; }
+  { const ex=ladderFor(1.3); $("#docLadder").innerHTML=SH.HF_LADDER.map((r,i)=>`<li><b>${r.label}</b> — HF &lt; ${r.hf.toFixed(2)} for a position opened at the ${LAD.entryHfFloor.toFixed(2)} floor (${ex[i].hf.toFixed(2)} for one opened at 1.30): ${{notify:"notify; new borrows blocked.",repay:"claimable emissions repay the debt; principal untouched.",derisk:"just enough of the pool position unwinds to lift HF back to the rung's re-arm level ("+r.disarmHf.toFixed(2)+" at the floor), most out-of-range slice first.","emergency-unwind":"everything unwinds, price band still on; collateral sits plain."}[r.action]} Re-arms at HF ≥ ${r.disarmHf.toFixed(2)}.</li>`).join("")
+    + `<li><b>Derived from the entry.</b> rung = 1 + (entry HF − 1) × ${RUNGS.map(r=>SH.LADDER_RUNG_FACTORS[r]).join(" / ")}; the full unwind never sits under ${SH.EMERGENCY_HF_MIN.toFixed(2)}; hysteresis = max(${SH.HF_HYSTERESIS_MIN.toFixed(2)}, ${SH.HF_HYSTERESIS.toFixed(2)} × (entry − 1) ÷ ${SH.HF_HYSTERESIS_SPAN}). The keeper derives the same ladder from the health factor the router records at the open (StrategyRouter.entryHfWad).</li>`; }
   $("#docHys").textContent=`Hysteresis ${LAD.hysteresis.toFixed(2)}: a fired rung cannot fire again until HF has climbed back above rung + ${LAD.hysteresis.toFixed(2)}. After a full unwind, the next deposit re-arms the ladder. The keeper acts only through the permission you granted; if it is offline nothing acts — a stated risk, not a hidden one.`;
   $("#docGateP").innerHTML=`A pool beats the borrow at a setting when <b>emissions × (1 − fees) − IL drag &gt; the live Aave USDC borrow rate</b> (${S.borrowPct.toFixed(3)}% at the read); since 2026-09-12 that is information on the card, not a gate — every pool can be opened after you acknowledge its forecast. Emissions-only: staked positions earn AERO in lieu of trading fees. IL drag = σ²/(4·f(w)) at the chosen width. Nothing is curated by hand.`;
   $("#docPools").innerHTML=`<thead><tr><th>Pool</th><th>σ</th><th>Conservative</th><th>Moderate</th><th>Aggressive</th></tr></thead><tbody>`+OIL_MODEL.pools.map(p=>`<tr><td>${p.name}</td><td class="num">${p.sigma==null?"—":p.sigma}</td>${["CONSERVATIVE","MODERATE","AGGRESSIVE"].map(pr=>{const g=gate(p,S.borrowPct,presetWidthBps(pr,p.pairClass),S.mult,gopt({collateral:S.wiz.asset}));return `<td class="num" style="color:${g.ok?"var(--good)":"var(--crit)"}">${Number.isFinite(g.net)?pct(g.net):"—"} ${g.ok?"✓":"✕ "+g.reason}</td>`;}).join("")}</tr>`).join("")+`</tbody>`;
@@ -2323,7 +2373,7 @@ function tk(k,v){ const a=S.wiz.asset;
 
 /* Demo-only test seam (stripped in production): the fuzz drives the real reducer. */
 window.__oil = { SHARED:OIL_SHARED, CHAIN_READ:OIL_CHAIN_READ, MODEL:OIL_MODEL, RISKS, LADDER:LAD, FEES, RUNGS, MAX_TICK_S, DEMO_SPEED, MIN_AMOUNT, DEMO_BAL, DEMO_WALLETS, PRICE_READ, MODES,
-  ltOf, ltBpsOf, topLtvPct, maxOfferedLtvBps, ltvPresetsFor, ltvStopsFor, entryHf, dropPct, liqPrice, halfWidthPct, feeKeep, ilDragPct, netSlicePct, gate, forecast, forecastWhy, FORECAST_SAFETY, positionAprPct, presetWidthBps, poolById, accountOf, classifyCbZecAddress, grossEmissionsPct, lpNetPct, accrualRates, xOf, fW, GATE_WHY, firstOfferedPoolId,
+  ltOf, ltBpsOf, topLtvPct, maxOfferedLtvBps, ltvPresetsFor, ltvStopsFor, entryHf, dropPct, liqPrice, halfWidthPct, ladderFor, ladOf, hysteresisFor, offeredBounds, bindingPlain, entryHfAtLtv, ltvForHf, hfForBorrow, clampHf, needsHfAck, hfAckText, SHELTERED, entryOf, feeKeep, ilDragPct, netSlicePct, gate, forecast, forecastWhy, FORECAST_SAFETY, positionAprPct, presetWidthBps, poolById, accountOf, classifyCbZecAddress, grossEmissionsPct, lpNetPct, accrualRates, xOf, fW, GATE_WHY, firstOfferedPoolId,
   accountHf, debtOf, weightedCollOf, collUsdOf, ownedBy, ladderOf, positionApr, posValue, withdrawCapPct, wizDecision, stepGate, reduce, validateStore, serialize, freshState, freshWiz, freshSim, runLadder, accruePosition,
   CONTRACTS: OIL_CONTRACTS, mcLpNetPct, mcApply, realizedEmissionsPct, grossIfRevotedPct, minOutFor, swapLegFor, gopts, gopt, grantOf, grantFor, GRANT_EXPIRY_S, fmtDur,
   get S(){return S}, set S(v){S=v}, dispatch, renderAll, save, load, get storage(){return storage}, set storage(v){storage=v}, get bootNote(){return bootNote}, showView, setStep, launch,

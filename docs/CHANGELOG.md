@@ -3,6 +3,27 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-12 (later) — A4.3: the risk slider in both prototypes (BUILD-PLAN D7 §2b)
+
+- Both builds' pinned block gains, byte-equal and diffed against the built package: the six new shared keys
+  (`LADDER_RUNG_FACTORS`, `EMERGENCY_HF_MIN`, `HF_HYSTERESIS_MIN`, `HF_HYSTERESIS_SPAN`, `MIN_LADDER_ENTRY_HF`,
+  `HF_MARKS`) and `ladderFor` / `hysteresisFor` / `ladOf` / `entryHfAtLtv` / `offeredBounds` / `bindingPlain` /
+  `ltvForHf` / `hfForBorrow` / `clampHf` / `needsHfAck` / `hfAckText` mirroring `packages/shared`. `LAD` stays the
+  floor's ladder; every position (simple) and account (advanced) carries the entry HF its open recorded — the HF after
+  the open, four decimals, as `StrategyRouter.entryHfWad` — and the keeper sim, the band, the ladder card and the
+  chips run `ladOf(entry)`. The de-risk rung now lifts HF to its own re-arm level, as the keeper sizes a repay, not
+  to the entry floor the prototypes used to claim.
+- The setting is the slider on both pages: linear in the borrow from 1 % LTV (the prototypes stop there so a saved
+  state stays a JSON number; the site reaches "borrow nothing") to the offered maximum, the stop named with its cap,
+  the two marks disabled with the reason when under it, a typed HF and a typed borrow driving each other, the
+  sub-mark acknowledgment holding the CTA. An untouched default re-derives on a collateral switch; a chosen HF is
+  kept and pulled into range. The docs pages describe the derivation and show the marks and each asset's stop.
+- Suites: simple 126 → **130**, advanced 114 → **116**, toggle 57 → **62**, fuzz 6 (its invariants now check the
+  derived ladder and the HF ↔ LTV identity). One thing the advanced suite surfaced: withdrawing collateral down to
+  the exit floor leaves the account under the warn rung of the ladder derived from its recorded entry (the record
+  moves only at an open), so the keeper would act and new borrows are blocked until HF recovers — flagged for the
+  founder with the floor decision.
+
 ## 2026-09-12 (later) — A4.4: the forecast judges the floor the chain enforces (BUILD-PLAN D7 §2b)
 
 - `services/yield/src/sources/registry.ts`: `RegistrySource.entryHfFloor()` reads `CollateralRegistry.entryHfFloorWad()`
