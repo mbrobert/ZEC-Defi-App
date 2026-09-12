@@ -19,12 +19,12 @@ import { BaseError, ContractFunctionRevertedError, type Address, type Hex } from
 import { COLLATERAL_SYMBOLS, describeLpEnumerationFault, isLoanDust, isZeroAddress, type CollateralSymbol } from "@zyo/shared";
 import { AAVE_V3, BASE_TOKENS, COLLATERAL_ASSETS } from "./chain";
 import { AAVE_ORACLE_ABI, ERC20_ABI, POOL_ABI, POOL_DATA_PROVIDER_ABI } from "./abi/aave";
-import { AAVE_VENUE_ABI, ACCOUNT_ABI, AERODROME_CLPOOL_ABI, COLLATERAL_REGISTRY_ABI, COLLATERAL_VENUE_ABI, FACTORY_ABI, LP_VENUE_ABI, ROUTER_ABI, SNUGGLE_VAULT_ABI } from "./abi/oilskin";
+import { AAVE_VENUE_ABI, ACCOUNT_ABI, AERODROME_CLPOOL_ABI, COLLATERAL_REGISTRY_ABI, COLLATERAL_VENUE_ABI, DIRECT_LP_VENUE_ABI, FACTORY_ABI, LP_VENUE_ABI, ROUTER_ABI, SNUGGLE_VAULT_ABI } from "./abi/oilskin";
 import { baseUnitsToUsd, fromAtomic, rayToAprPct, wadHealthFactor } from "./math";
 import type { KeeperGrantRead } from "./keeper";
 import { UNWIND_SELECTOR, type Deployment } from "./plan";
 import { isInRange } from "./tickmath";
-import { CURATED_POOLS, PERMIT2, type CuratedPool } from "@zyo/shared";
+import { CURATED_POOLS, PERMIT2, directPoolId, type CuratedPool } from "@zyo/shared";
 
 /**
  * The subset of a viem PublicClient the readers need. Structural, so wagmi's
@@ -165,8 +165,13 @@ export interface VenueHealth {
 /** One engine position as read from chain (ISnuggleVault.positions + the pool's slot0). */
 export interface LpPositionRead {
   positionId: bigint;
+  /** The LP pool id: the engine's bytes32, or the pool address left-padded on the direct venue. */
   enginePoolId: `0x${string}`;
   pool: CuratedPool | undefined;
+  /** Which venue holds it (2026-09-11): the engine, or Oilskin's direct Slipstream venue. */
+  venue: "engine" | "direct";
+  /** Direct venue only: whether the NFT is staked in the pool's gauge (earning AERO). */
+  staked?: boolean;
   rangeWidthBps: number;
   tickLower: number;
   tickUpper: number;
@@ -206,6 +211,8 @@ export interface AccountRead {
   debtUsdc: number;
   /** Snuggle position ids owned by the account (via the LP venue). Empty when `lpUnreadable` is set. */
   lpPositionIds: bigint[];
+  /** Ids on the direct Slipstream venue (empty without one); their detail rows are in `lpPositions` with `venue: "direct"`. */
+  lpPositionIdsDirect: bigint[];
   /** Per-position detail from the engine (empty when the engine address is unknown). */
   lpPositions: LpPositionRead[];
   /**
@@ -215,6 +222,8 @@ export interface AccountRead {
    * `lpPositionIds` and `lpPositions` are empty and mean nothing while it is set.
    */
   lpUnreadable: string | null;
+  /** The direct venue's `positionsOf` refused (`PositionsUnreadable`, or a read failure); mirrored into `lpUnreadable` when the engine read was fine. */
+  lpUnreadableDirect: string | null;
   /** USDC held in the account (hold strategy / un-swept proceeds), base units. */
   accountUsdc: bigint;
   /**
@@ -304,6 +313,8 @@ export function decodeReserve(symbol: CollateralSymbol | "USDC", cfg: unknown, d
 export interface AccountReadOptions {
   factory?: Address;
   lpVenue?: Address;
+  /** The direct Slipstream venue, when the deployment has one: its `positionsOf` is read too. */
+  lpVenueDirect?: Address;
   engine?: Address;
   /** CollateralRegistry — enables the venue-aware read. Without it only the Aave leg is read and `venues` is null. */
   registry?: Address;
@@ -317,12 +328,16 @@ export interface AccountReadOptions {
  * router's Permit2 must be the canonical one or we refuse to proceed.
  */
 export async function readDeployment(client: ReadClient, factory: Address, router: Address, keeper: Address | null): Promise<Deployment> {
-  const [registry, lpVenue, swapAdapter, permit2] = await safeMulticall(client, [
+  const [registry, lpVenue, swapAdapter, permit2, lpVenueDirectRaw] = await safeMulticall(client, [
     { address: router, abi: ROUTER_ABI, functionName: "REGISTRY" },
     { address: router, abi: ROUTER_ABI, functionName: "LP_VENUE" },
     { address: router, abi: ROUTER_ABI, functionName: "SWAP" },
     { address: router, abi: ROUTER_ABI, functionName: "PERMIT2" },
+    // Zero on a deployment without the direct venue; a router from before it has no such view and
+    // the row simply fails — both read as "engine venue only" (2026-09-11).
+    { address: router, abi: ROUTER_ABI, functionName: "LP_VENUE_DIRECT" },
   ]);
+  const lpVenueDirect = typeof lpVenueDirectRaw === "string" && !isZeroAddress(lpVenueDirectRaw) ? (lpVenueDirectRaw as Address) : null;
   if (typeof registry !== "string" || typeof lpVenue !== "string" || typeof permit2 !== "string") throw new Error("router views unreadable");
   if (permit2.toLowerCase() !== PERMIT2.toLowerCase()) throw new Error(`router Permit2 ${permit2} is not the canonical Permit2 — refusing`);
   // The swap adapter is what enforces the unwind's price floor; without it the
@@ -340,6 +355,7 @@ export async function readDeployment(client: ReadClient, factory: Address, route
     router,
     registry: registry as Address,
     lpVenue: lpVenue as Address,
+    lpVenueDirect,
     aaveVenue: aaveVenue as Address,
     swapAdapter: swapAdapter as Address,
     engine: engine as Address,
@@ -630,6 +646,7 @@ export async function readPositions(client: ReadClient, engine: Address, ids: bi
       positionId: ids[idx],
       enginePoolId,
       pool,
+      venue: "engine",
       rangeWidthBps: Number(r[3]),
       tickLower: Number(r[4]),
       tickUpper: Number(r[5]),
@@ -656,6 +673,53 @@ export async function readPositions(client: ReadClient, engine: Address, ids: bi
       p.inRange = isInRange(p.tick, p.tickLower, p.tickUpper);
     });
   }
+  return out;
+}
+
+/**
+ * Positions on the direct Slipstream venue (2026-09-11): the static range and liquidity from the
+ * venue's `positionRange(id, account)` (the NFT is the gauge's while staked, so the venue is asked
+ * about the ACCOUNT), the pool from the venue's `POOL()`, in-range from the pool's live tick. No
+ * rebalancer, no auto-compound, no engine counters: those fields read 0 / false / null.
+ */
+export async function readDirectPositions(client: ReadClient, venue: Address, account: Address, ids: bigint[]): Promise<LpPositionRead[]> {
+  if (ids.length === 0) return [];
+  const [poolAddr] = await safeMulticall(client, [{ address: venue, abi: DIRECT_LP_VENUE_ABI, functionName: "POOL" }]);
+  const poolAddress = typeof poolAddr === "string" && !isZeroAddress(poolAddr) ? (poolAddr as Address) : null;
+  const pool = poolAddress ? CURATED_POOLS.find((p) => p.poolAddress?.toLowerCase() === poolAddress.toLowerCase()) : undefined;
+  const poolId = poolAddress ? directPoolId(poolAddress) : (`0x${"0".repeat(64)}` as `0x${string}`);
+  const rows = await safeMulticall(
+    client,
+    ids.map((id) => ({ address: venue, abi: DIRECT_LP_VENUE_ABI, functionName: "positionRange", args: [id, account] })),
+  );
+  let tick: number | null = null;
+  if (poolAddress) {
+    const [s] = await safeMulticall(client, [{ address: poolAddress, abi: AERODROME_CLPOOL_ABI, functionName: "slot0" }]);
+    if (Array.isArray(s)) tick = Number(s[1]);
+  }
+  const out: LpPositionRead[] = [];
+  rows.forEach((r, idx) => {
+    if (!Array.isArray(r)) return;
+    const lower = Number(r[0]);
+    const upper = Number(r[1]);
+    out.push({
+      positionId: ids[idx],
+      enginePoolId: poolId,
+      pool,
+      venue: "direct",
+      staked: Boolean(r[3]),
+      rangeWidthBps: upper - lower,
+      tickLower: lower,
+      tickUpper: upper,
+      tick,
+      inRange: tick === null ? null : isInRange(tick, lower, upper),
+      rebalanceDelayHours: 0,
+      autoCompound: false,
+      openedAt: null,
+      cumulativeRewardsAtomic: 0n,
+      totalRebalances: 0,
+    });
+  });
   return out;
 }
 
@@ -690,8 +754,10 @@ export async function readAccount(
     collateral: [],
     debtUsdc: 0,
     lpPositionIds: [],
+    lpPositionIdsDirect: [],
     lpPositions: [],
     lpUnreadable: null,
+    lpUnreadableDirect: null,
     accountUsdc: 0n,
     debtIsDust: false,
     walletEth,
@@ -735,6 +801,26 @@ export async function readAccount(
     }
   }
 
+  // The direct Slipstream venue's own list (2026-09-11), read the same way: on its own, never as a
+  // multicall row, so a refusal keeps its name. It fails closed by name (`PositionsUnreadable`)
+  // when the gauge or the position manager did not answer.
+  let lpPositionIdsDirect: bigint[] = [];
+  let lpUnreadableDirect: string | null = null;
+  if (opts.lpVenueDirect) {
+    try {
+      const ids = await client.readContract({ address: opts.lpVenueDirect, abi: DIRECT_LP_VENUE_ABI, functionName: "positionsOf", args: [account] });
+      if (Array.isArray(ids)) lpPositionIdsDirect = ids as bigint[];
+      else lpUnreadableDirect = "LP positions on the direct venue unreadable: positionsOf did not return a list — this is not a statement that the account holds no positions there";
+    } catch (e) {
+      const rv = revertOf(e);
+      lpUnreadableDirect =
+        rv?.name === "PositionsUnreadable"
+          ? "LP positions on the direct venue unreadable: the gauge or the position manager did not answer (PositionsUnreadable) — this is not a statement that the account holds no positions there"
+          : `LP positions on the direct venue unreadable: positionsOf failed (${rv?.name ?? (e instanceof Error ? e.message.split("\n")[0] : String(e))}) — this is not a statement that the account holds no positions there`;
+    }
+  }
+  if (lpUnreadable === null && lpUnreadableDirect !== null) lpUnreadable = lpUnreadableDirect;
+
   const acct = out[0];
   const usdcRow = out[1 + COLLATERAL_SYMBOLS.length];
   const usdcDebtAtomic = Array.isArray(usdcRow) ? (usdcRow[2] as bigint) + (usdcRow[1] as bigint) : null;
@@ -765,7 +851,10 @@ export async function readAccount(
   const debtUsdc = usdcDebtAtomic !== null ? fromAtomic(usdcDebtAtomic, BASE_TOKENS.USDC.decimals) : 0;
   const usdcBal = out[calls.length - 1];
   const accountUsdc = typeof usdcBal === "bigint" ? usdcBal : 0n;
-  const lpPositions = opts.engine ? await readPositions(client, opts.engine, lpPositionIds) : [];
+  const lpPositions = [
+    ...(opts.engine ? await readPositions(client, opts.engine, lpPositionIds) : []),
+    ...(opts.lpVenueDirect ? await readDirectPositions(client, opts.lpVenueDirect, account, lpPositionIdsDirect) : []),
+  ];
 
   // ---- venue-aware health (audit wave 2, M-HIGH-2) ------------------------------------------
   let venues: VenueHealth | null = null;
@@ -806,7 +895,7 @@ export async function readAccount(
   }
 
   const debtIsDust = aaveDebtIsDust && (venues === null || venues.venues.every((v) => v.debtIsDust));
-  return { ...base, account, deployed, aave, venues, collateral, debtUsdc, lpPositionIds, lpPositions, lpUnreadable, accountUsdc, debtIsDust };
+  return { ...base, account, deployed, aave, venues, collateral, debtUsdc, lpPositionIds, lpPositionIdsDirect, lpPositions, lpUnreadable, lpUnreadableDirect, accountUsdc, debtIsDust };
 }
 
 /** The custom error a viem read rejected with, by name, or null when it was not a decoded revert. */

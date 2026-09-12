@@ -38,7 +38,13 @@ export type KeeperEventKind =
   | "store-failure"
   | "feed-policy"
   /** A venue's oracle and the keeper's feed disagree: acting on the pessimistic health, withdrawals refused (RISKS §8 residual (b)). */
-  | "oracle-disagreement";
+  | "oracle-disagreement"
+  /**
+   * A protective repay was CONFIRMED with a shortfall: the account's USDC ran out on the worse
+   * book and a book owed at dispatch was left for the retry (slice 5 `judgeUntouched`). Told to
+   * the owner ONCE per dispatch, at warn; the re-armed rung's retry is bookkeeping (RISKS §8).
+   */
+  | "shortfall";
 
 export type Severity = "info" | "warn" | "critical";
 

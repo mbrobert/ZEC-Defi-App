@@ -164,6 +164,7 @@ export default function DashboardPage() {
         deadline: deadlineFromNow(),
         bandToleranceBps: DEFAULT_BAND_TOLERANCE_BPS,
         poolLabel: label,
+        venue: p.venue,
       });
     }
     return buildUnwindPlan({
@@ -173,6 +174,10 @@ export default function DashboardPage() {
       deployment,
       deadline: deadlineFromNow(),
       bandToleranceBps: DEFAULT_BAND_TOLERANCE_BPS,
+      positionVenue: p.venue,
+      // How many lending venues hold the collateral right now: one Close returns it from all of
+      // them (RISKS §8 "two-book Close", 2026-09-11), and the plain sentence says so when > 1.
+      collateralPlaces: new Set((account?.collateral ?? []).map((c) => (c.venueKind === "other" ? (c.venue ?? "other") : "aave"))).size || 1,
       // The swap is quoted live at sign time — until then the plan says so and
       // is NOT signable. There is no fallback minimum.
       quote: lastQuote,
@@ -241,6 +246,7 @@ export default function DashboardPage() {
           deadline: deadlineFromNow(),
           bandToleranceBps: DEFAULT_BAND_TOLERANCE_BPS,
           poolLabel: p.pool ? `${p.pool.token0}/${p.pool.token1}` : undefined,
+          venue: p.venue,
         },
         p.enginePoolId ?? null,
         emit,
@@ -251,8 +257,8 @@ export default function DashboardPage() {
     if (!p.enginePoolId || !p.pool?.poolAddress) return null;
     const hash = await runUnwind(
       c,
-      { account: view.accountAddr, positionIds: ids, collateral: primary?.symbol ?? "cbBTC", deployment, deadline: deadlineFromNow(), bandToleranceBps: DEFAULT_BAND_TOLERANCE_BPS, poolLabel: p.pool ? `${p.pool.token0}/${p.pool.token1}` : undefined },
-      { enginePoolId: p.enginePoolId, poolAddress: p.pool.poolAddress as Address },
+      { account: view.accountAddr, positionIds: ids, collateral: primary?.symbol ?? "cbBTC", deployment, deadline: deadlineFromNow(), bandToleranceBps: DEFAULT_BAND_TOLERANCE_BPS, poolLabel: p.pool ? `${p.pool.token0}/${p.pool.token1}` : undefined, positionVenue: p.venue },
+      { enginePoolId: p.enginePoolId, poolAddress: p.pool.poolAddress as Address, venue: p.venue },
       emit,
       setLastQuote,
     );

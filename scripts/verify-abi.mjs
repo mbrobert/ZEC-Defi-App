@@ -35,6 +35,8 @@ const CONTRACTS = [
   "SnuggleLpVenue",
   "CollateralRegistry",
   "AerodromeSwapAdapter",
+  "SlipstreamLpVenue",
+  "SlipstreamPoolSwapAdapter",
   "StrategyRouter",
   "PythOracleAdapter",
   "IOilskinAccount",

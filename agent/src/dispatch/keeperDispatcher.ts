@@ -13,8 +13,10 @@ import {
 import {
   clPoolAbi,
   erc20BalanceAbi,
+  directLpVenueAbi,
   lpVenueAbi,
   oilskinAccountAbi,
+  poolSwapAdapterAbi,
   strategyRouterAbi,
   swapAdapterAbi,
   GRANT_SELECTORS,
@@ -71,6 +73,12 @@ export interface KeeperDispatcherDeps {
   keeper: Address;
   router: Address;
   lpVenue: Address;
+  /**
+   * The direct Slipstream venue (`router.LP_VENUE_DIRECT()`), or null on a deployment without one.
+   * Its ids are read alongside the engine venue's; the router resolves each unwind's ids to the
+   * venue that says the account owns them, so the plan needs no venue field (2026-09-11).
+   */
+  lpVenueDirect?: Address | null;
   usdc: Address;
   reader: AaveReader;
   /** Same venue-aware reader the monitor uses; the world check must see every venue the monitor saw. */
@@ -107,7 +115,7 @@ const CONFIG_ERRORS = new Set(["NotActivePeripheral", "CallbackNotPermitted", "U
  * every error the call tree can bubble (the account re-throws venue / router /
  * adapter revert data untouched), so a revert decodes to its real name.
  */
-export const keeperExecAbi = [...oilskinAccountAbi, ...lpVenueAbi, ...strategyRouterAbi, ...swapAdapterAbi] as const;
+export const keeperExecAbi = [...oilskinAccountAbi, ...lpVenueAbi, ...directLpVenueAbi, ...strategyRouterAbi, ...swapAdapterAbi, ...poolSwapAdapterAbi] as const;
 
 function revertName(e: unknown): { name: string; args: readonly unknown[] } | null {
   if (!(e instanceof BaseError)) return null;
@@ -130,6 +138,12 @@ export interface UnwindSummary {
   withdrawn: bigint;
   /** `VenueRepaid` per venue (lower-cased address → USDC repaid there), summed across the receipt. */
   byVenue: Map<string, bigint>;
+  /**
+   * `VenueWithdrawn` per venue (lower-cased address → collateral returned from there). A keeper
+   * unwind never withdraws, so this is empty on every receipt the keeper confirms; it is read so a
+   * receipt that DID withdraw is visible for what it is (RISKS §8 "two-book Close", 2026-09-11).
+   */
+  withdrawnByVenue: Map<string, bigint>;
 }
 
 /**
@@ -142,7 +156,7 @@ export function summarizeUnwinds(
   logs: readonly { address: `0x${string}`; data: `0x${string}`; topics: readonly `0x${string}`[] }[],
   account: Address
 ): UnwindSummary {
-  const out: UnwindSummary = { events: 0, closed: 0n, failed: 0n, usdcFromLp: 0n, repaid: 0n, withdrawn: 0n, byVenue: new Map() };
+  const out: UnwindSummary = { events: 0, closed: 0n, failed: 0n, usdcFromLp: 0n, repaid: 0n, withdrawn: 0n, byVenue: new Map(), withdrawnByVenue: new Map() };
   type Unwound = { account?: string; closedCount?: bigint; failedCount?: bigint; usdcFromLp?: bigint; repaid?: bigint; withdrawn?: bigint };
   let parsed: { args: Unwound }[];
   try {
@@ -172,6 +186,19 @@ export function summarizeUnwinds(
     if (!a.account || a.account.toLowerCase() !== account.toLowerCase() || !a.venue) continue;
     const k = a.venue.toLowerCase();
     out.byVenue.set(k, (out.byVenue.get(k) ?? 0n) + (a.repaid ?? 0n));
+  }
+  type Withdrawn = { account?: string; venue?: string; withdrawn?: bigint };
+  let perVenueWithdrawn: { args: Withdrawn }[] = [];
+  try {
+    perVenueWithdrawn = parseEventLogs({ abi: strategyRouterAbi, logs: logs as never, eventName: "VenueWithdrawn" }) as unknown as { args: Withdrawn }[];
+  } catch {
+    perVenueWithdrawn = [];
+  }
+  for (const log of perVenueWithdrawn) {
+    const a = log.args;
+    if (!a.account || a.account.toLowerCase() !== account.toLowerCase() || !a.venue) continue;
+    const k = a.venue.toLowerCase();
+    out.withdrawnByVenue.set(k, (out.withdrawnByVenue.get(k) ?? 0n) + (a.withdrawn ?? 0n));
   }
   return out;
 }
@@ -683,33 +710,62 @@ export class KeeperDispatcher implements Dispatcher {
     account: Address,
     signal?: AbortSignal
   ): Promise<{ positions: PlannedPosition[]; pools: Map<Hex, PoolInfo>; idleUsdc: bigint }> {
-    let ids: readonly bigint[];
-    try {
-      ids = await this.call("positionsOf", signal, () =>
-        this.d.client.readContract({ address: this.d.lpVenue, abi: lpVenueAbi, functionName: "positionsOf", args: [account] })
-      );
-    } catch (e) {
-      // Slice A (RISKS §12): the venue refuses to enumerate when gas, shape, consistency or
-      // ownership disagree, and says why. Carry the fault's name into the REFUSED reason; the
-      // dispatch never proceeds as if the account held no positions.
-      const rv = revertName(e);
-      const named = describeLpEnumerationFault(rv?.name, rv?.args);
-      throw named ? new Error(`positionsOf refused — ${named}`) : e;
-    }
+    // Both LP venues (2026-09-11): the engine venue and, when the router names one, the direct
+    // Slipstream venue. Each pool id belongs to exactly one venue; the price and token reads for a
+    // pool go to the venue that listed it, and the router resolves the unwind's ids the same way.
+    const venues: { venue: Address; direct: boolean }[] = [{ venue: this.d.lpVenue, direct: false }];
+    if (this.d.lpVenueDirect) venues.push({ venue: this.d.lpVenueDirect, direct: true });
     const positions: PlannedPosition[] = [];
-    for (const id of ids) {
-      const [poolId] = await this.call(`poolOf(${id})`, signal, () =>
-        this.d.client.readContract({ address: this.d.lpVenue, abi: lpVenueAbi, functionName: "poolOf", args: [id] })
-      );
-      positions.push({ id, poolId, valueUsdc: null });
+    const venueOfPool = new Map<Hex, Address>();
+    for (const { venue, direct } of venues) {
+      const label = direct ? "direct venue" : "engine venue";
+      let ids: readonly bigint[];
+      try {
+        ids = direct
+          ? await this.call(`positionsOf[${label}]`, signal, () =>
+              this.d.client.readContract({ address: venue, abi: directLpVenueAbi, functionName: "positionsOf", args: [account] })
+            )
+          : await this.call(`positionsOf[${label}]`, signal, () =>
+              this.d.client.readContract({ address: venue, abi: lpVenueAbi, functionName: "positionsOf", args: [account] })
+            );
+      } catch (e) {
+        // Slice A (RISKS §12): the engine venue refuses to enumerate when gas, shape, consistency
+        // or ownership disagree, and says why; the direct venue refuses with `PositionsUnreadable`
+        // when the gauge or the position manager did not answer. Carry the name into the REFUSED
+        // reason; the dispatch never proceeds as if the account held no positions there.
+        const rv = revertName(e);
+        const named =
+          describeLpEnumerationFault(rv?.name, rv?.args) ??
+          (rv?.name === "PositionsUnreadable" ? `${label}: the gauge or the position manager did not answer (PositionsUnreadable)` : null);
+        throw named ? new Error(`positionsOf refused — ${named}`) : e;
+      }
+      for (const id of ids) {
+        let poolId: Hex;
+        if (direct) {
+          // A staked id is the gauge's on the NFT's books and the account's on the gauge's: ask
+          // the venue whether the ACCOUNT owns it, never the NFT owner.
+          const [pid, owned] = await this.call(`ownedPool(${id})`, signal, () =>
+            this.d.client.readContract({ address: venue, abi: directLpVenueAbi, functionName: "ownedPool", args: [id, account] })
+          );
+          if (!owned) continue;
+          poolId = pid;
+        } else {
+          [poolId] = await this.call(`poolOf(${id})`, signal, () =>
+            this.d.client.readContract({ address: venue, abi: lpVenueAbi, functionName: "poolOf", args: [id] })
+          );
+        }
+        positions.push({ id, poolId, valueUsdc: null });
+        venueOfPool.set(poolId, venue);
+      }
     }
     const pools = new Map<Hex, PoolInfo>();
     for (const poolId of new Set(positions.map((p) => p.poolId))) {
+      const venue = venueOfPool.get(poolId) ?? this.d.lpVenue;
       const sqrtPriceX96 = await this.call(`poolSqrtPriceX96(${poolId})`, signal, () =>
-        this.d.client.readContract({ address: this.d.lpVenue, abi: lpVenueAbi, functionName: "poolSqrtPriceX96", args: [poolId] })
+        this.d.client.readContract({ address: venue, abi: lpVenueAbi, functionName: "poolSqrtPriceX96", args: [poolId] })
       );
       const [token0, token1, pool] = await this.call(`poolTokens(${poolId})`, signal, () =>
-        this.d.client.readContract({ address: this.d.lpVenue, abi: lpVenueAbi, functionName: "poolTokens", args: [poolId] })
+        this.d.client.readContract({ address: venue, abi: lpVenueAbi, functionName: "poolTokens", args: [poolId] })
       );
       const usdc = this.d.usdc.toLowerCase();
       const needsSwap = token0.toLowerCase() !== usdc || token1.toLowerCase() !== usdc;

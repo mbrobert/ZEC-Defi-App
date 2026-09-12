@@ -186,6 +186,9 @@ contract DeploySepolia is Deploy {
         // The Pyth price id is chain-agnostic; the Sepolia proxy answers it (VERIFIED-BASE-FACTS, Sepolia).
         c.pythZecUsd = vm.envOr("PYTH_ZEC_USD", BaseAddresses.PYTH_ZEC_USD);
         c.cbzecUsdcPool = address(s.cbzecUsdcPool);
+        // No second Slipstream deployment on Base Sepolia: the direct venue is not deployed and the
+        // router serves the engine venue only.
+        c.deployDirectLpVenue = false;
         c.morpho = BaseSepoliaAddresses.MORPHO_BLUE;
         // The Morpho API does not index Base Sepolia and no cbBTC/WETH–USDC market is known there:
         // the venue deploys with no markets and reports enabled() == false.

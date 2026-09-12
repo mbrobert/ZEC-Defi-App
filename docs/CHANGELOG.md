@@ -3,6 +3,50 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-11 — Slice F: the two decisions implemented — one Close clears every book; cbZEC/USDC held directly on Slipstream
+
+**Two-book Close (RISKS §8, option 1).** `StrategyRouter.unwind`'s withdraw leg now visits every
+venue the registry names for the asset that holds the account's collateral, current pointer first,
+each gated on its own global health factor, one `VenueWithdrawn(account, venue, withdrawn)` per venue;
+`max` = everything everywhere, a fixed amount is a total taken in venue order and refused by name
+(`CollateralShort`) when the venues cannot meet it. Selector, `UnwindParams` and the keeper grant
+unchanged; the keeper still sets `withdrawAmount = 0`. `invariant_KNOWN_singleCloseStrandsCollateral`
+flipped to `invariant_singleCloseClearsEveryBook` (stranded == 0, never a revert on a funded two-book
+account); `VenueSwitch.t.sol` M1f rewritten and M1m–M1q added. The keeper's `summarizeUnwinds` reads
+the new event (`withdrawnByVenue`); a CONFIRMED-with-shortfall repay now tells the owner ONCE through
+a dedicated `shortfall` event, the rung is re-armed by the existing bounded rule, and the re-armed
+retry's SUPERSEDED is bookkeeping (`healthMonitor.test.ts`, end to end). The web's Close says the
+collateral sits in N places and comes back from all of them in the one transaction.
+
+**cbZEC/USDC held directly (CBZEC-PATH memo, option 1).** `SlipstreamLpVenue` over the second
+Slipstream deployment's position manager `0xe1f8…8b53` and the pool's gauge `0x8779…81FB`, and
+`SlipstreamPoolSwapAdapter` over the pool's own `swap` with the callback (the verified SwapRouter
+cannot reach this pool). Two-sided range centred on the price (a single-sided deposit is swapped to
+ratio through the pool under a floor from the caller's band, capped at 5 %), staked in the gauge when
+the Voter says it is alive, fee once per distinct token on what `claim` / `close` collect, principal
+untaxed, no rebalancer. Every signature from the verified sources (VERIFIED-BASE-FACTS Addendum 9).
+The router takes a second venue and adapter (`LP_VENUE_DIRECT`, `SWAP_DIRECT`; zero on Sepolia):
+a pool id is resolved on the engine venue first, then the direct one; an unwind's ids by
+`ILpVenue.ownedPool(id, account)` — new on both venues, because a staked NFT is the gauge's on the
+NFT's books. `Deploy.s.sol` wires both (`DEPLOY_DIRECT_LP_VENUE`, default true; the guard checks the
+pool names the recorded manager, gauge and factory). Keeper: both venues' `positionsOf`, the direct
+venue's `PositionsUnreadable` named, the callback's cbZEC payment charged to the grant's budget
+(`test_keeperUnwindOnTheDirectPoolIsBudgeted`). Web: `lpPoolId` (the padded pool address), claims
+target the venue that holds the id, positions carry `venue` and `staked`, a `direct-venue`
+disclosure. Shared: `lpMenu()` = engine menu + direct pools; `offerablePools()` unchanged (the
+prototypes' eight). Fork: open → close on the deployment's WETH/USDC ts-10 pool with the live NPM and
+gauge, and the cbZEC pool's live pointers; the cbZEC pool's own mint cannot run in a fork EVM.
+
+**Counts.** Contracts 329 → **360 passed, 0 failed, 12 skipped** (25 suites; +24 `SlipstreamLpVenue.t.sol`,
++5 `VenueSwitch.t.sol`, +2 `DeployTest`, +2 fork; the invariant group still one test, 10 invariants,
+10,240 calls, 0 reverts); root ABI 330 → **419** entries across 19 contracts; keeper seam 76 → **108**,
+tests 237 → **242** (47 suites); shared **69**; web 156 → **161** (159 passed, 2 skipped); yield **131**.
+Prototypes not run on this Mac (no Playwright Chromium at `/opt/pw-browsers`); `offerablePools()` and
+every constant they deep-equal are unchanged.
+
+**Not done.** No `acceptVenue` anywhere; `Deploy.s.sol` keeps cbBTC and WETH on `AaveV3Venue`;
+nothing broadcast; the gauge factory's early-withdraw penalty for this pool was not read.
+
 ## 2026-09-10 — Slice E: the cbZEC path with numbers (memo), and the B20 claim made true
 
 **Probes (read-only, blocks 51,146,494–51,146,674; Addendum 8).** The verified Slipstream SwapRouter

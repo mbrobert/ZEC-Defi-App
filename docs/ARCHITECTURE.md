@@ -48,7 +48,9 @@ flowchart LR
         REG[CollateralRegistry<br/>Ownable2Step · venue timelock<br/>maxOfferedLtvBps derived]
         AV[AaveV3Venue<br/>entry floor · registry gate]
         LV[SnuggleLpVenue<br/>fee chokepoint · width bounds · price band]
+        DV[SlipstreamLpVenue<br/>cbZEC/USDC direct · centred range · gauge-staked]
         SW[AerodromeSwapAdapter<br/>quote + capped tolerance]
+        PS[SlipstreamPoolSwapAdapter<br/>pool.swap + callback · balance-delta floor]
         MV[MorphoBlueVenue<br/>entry floor · registry gate<br/>2 Base markets · not the registry's venue yet]
         PY[PythOracleAdapter<br/>v1.1 · unused]
     end
@@ -305,7 +307,10 @@ note "no collateral market on Base yet", which the UI shows verbatim.
 
 ## Router (`contracts/src/router/StrategyRouter.sol`, 443 lines)
 
-Stateless: immutable `REGISTRY`, `LP_VENUE`, `SWAP`, `PERMIT2`, `USDC`; no
+Stateless: immutable `REGISTRY`, `LP_VENUE`, `SWAP`, `PERMIT2`, `USDC`, and
+since 2026-09-11 `LP_VENUE_DIRECT` / `SWAP_DIRECT` (the direct Slipstream venue
+and its pool-direct adapter, both zero on a deployment without them; a pool id
+is looked up on the engine venue first, an unwind's ids by `ownedPool`); no
 owner; no fee. Called only *by* an account (`msg.sender` is the account; an
 EOA calling it reverts because the account callbacks fail).
 
@@ -347,6 +352,16 @@ actually sticks to the router still reverts.
   reserve used to let a withdrawal with non-USDC debt sail past at HF 1.35.
 - `sweep(tokens)`: whole balances of the account go to `account.owner()` and
   nowhere else — earnings to the wallet.
+
+**SlipstreamLpVenue** (833 lines, 2026-09-11): `ILpVenue` directly over the
+cbZEC/USDC pool's second-deployment position manager and gauge — the engine
+does not list the pool and the verified SwapRouter cannot reach it. A
+single-sided deposit is swapped to the centred range's ratio through the pool
+itself (`SlipstreamPoolSwapAdapter`, 190 lines: `pool.swap` with the callback
+paying the pool from the account, the floor on the account's balance delta,
+a partial fill refused), minted two-sided, staked in the gauge while the Voter
+says it is alive; no rebalancer; fee once per distinct token on what `claim` /
+`close` collect. `RISKS.md` §12 has the design and its residuals.
 
 **AerodromeSwapAdapter** (111 lines): one Slipstream `exactInputSingle` from
 the account to the account over SwapRouter

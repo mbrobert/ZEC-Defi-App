@@ -459,6 +459,18 @@ contract SnuggleLpVenue is ILpVenue, Peripheral {
         (, poolId, owner,,,,,,,,,,,,,,) = ENGINE.positions(positionId);
     }
 
+    /// @inheritdoc ILpVenue
+    function ownedPool(uint256 positionId, address account)
+        external
+        view
+        override
+        returns (bytes32 poolId, bool owned)
+    {
+        (, bytes32 pid, address owner,,,,,,,,,,,,,,) = ENGINE.positions(positionId);
+        owned = owner == account && pid != bytes32(0);
+        poolId = owned ? pid : bytes32(0);
+    }
+
     /// @notice Current pool sqrtPriceX96 for `poolId`, read exactly as the band check reads it.
     function poolSqrtPriceX96(bytes32 poolId) external view returns (uint256) {
         (,, address pool,) = _poolOf(poolId);

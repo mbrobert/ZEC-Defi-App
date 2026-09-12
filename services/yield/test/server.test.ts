@@ -140,7 +140,9 @@ test("/v1/pools: live samples, emissions, gate verdicts per setting × collatera
 
     const zec = payload.pools.find((p) => p.id === "aero-cbzec-usdc")!;
     assert.equal(zec.protocol, "DIRECT");
-    assert.ok(zec.note && zec.note.includes("No emissions"));
+    // Since 2026-09-11 the pool is offerable through the direct venue; the note says the vote is
+    // per epoch, and the gauge stub (rewardRate 0 here) still refuses it as no_emissions.
+    assert.ok(zec.note && /re-voted every Thursday/.test(zec.note), zec.note);
     assert.equal(zec.emissions!.epochActive, false);
     assert.ok(zec.gate.every((g: GateVerdict) => !g.qualifies));
     assert.ok(zec.gate.filter((g: GateVerdict) => g.collateral !== "cbZEC").every((g: GateVerdict) => g.reason === "no_emissions"));

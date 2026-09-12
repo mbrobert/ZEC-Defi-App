@@ -9,6 +9,10 @@ import {
   enginePools,
   directPools,
   offerablePools,
+  lpMenu,
+  lpPoolId,
+  directPoolId,
+  poolByLpPoolId,
   AERODROME,
   REWARD_CLAIM_POLICY,
   shouldClaim,
@@ -32,7 +36,7 @@ test("curated pools keep their verified ids/addresses and gain a pairClass", () 
   assert.equal(ENGINE_REGISTRY_SNAPSHOT.vaultProxy, "0x7d27cdfbfcc878f7e7349e216d44204bfd2afd55");
 });
 
-test("cbZEC/USDC is TRACKED as a DIRECT pool with its gauge, and is never offerable", () => {
+test("cbZEC/USDC is a DIRECT pool with its gauge: in the LP menu through the direct venue, outside the engine menu", () => {
   const p = poolById("aero-cbzec-usdc");
   assert.ok(p);
   assert.equal(p.protocol, "DIRECT");
@@ -42,9 +46,18 @@ test("cbZEC/USDC is TRACKED as a DIRECT pool with its gauge, and is never offera
   assert.equal(p.tickSpacing, 200);
   assert.equal(p.feeTierBps, 20);
   assert.equal(p.enginePoolId, undefined);
-  assert.match(p.note ?? "", /rewardRate is 0|no emissions/i);
-  assert.equal(offerablePools().some((x) => x.id === "aero-cbzec-usdc"), false);
+  assert.match(p.note ?? "", /re-voted every Thursday/i, "the vote is per epoch, never baked in");
+  assert.match(p.note ?? "", /static/i, "no rebalancer on the direct venue");
+  assert.equal(offerablePools().some((x) => x.id === "aero-cbzec-usdc"), false, "not an engine pool");
   assert.deepEqual(directPools().map((x) => x.id), ["aero-cbzec-usdc"]);
+  assert.equal(lpMenu().some((x) => x.id === "aero-cbzec-usdc"), true, "openable through the direct venue");
+  assert.equal(lpMenu().length, 9);
+  assert.equal(lpPoolId(p), directPoolId(AERODROME.pools.cbZEC_USDC.address));
+  assert.equal(lpPoolId(p), "0x0000000000000000000000000fc47c17af86078d809358db1b4db2debc988566");
+  assert.equal(lpPoolId(poolById("aero-usdc-weth-5")!), poolById("aero-usdc-weth-5")!.enginePoolId);
+  assert.equal(poolByLpPoolId("0x0000000000000000000000000FC47C17AF86078D809358DB1B4DB2DEBC988566")?.id, "aero-cbzec-usdc");
+  assert.equal(poolByLpPoolId(poolById("aero-usdc-weth-5")!.enginePoolId!)?.id, "aero-usdc-weth-5");
+  assert.throws(() => directPoolId("0x1234"));
   assert.equal(enginePools().length, 12);
   assert.equal(enginePools().every((x) => !!x.enginePoolId), true);
 });

@@ -35,8 +35,18 @@ import {CollateralRegistry} from "../registry/CollateralRegistry.sol";
 ///      donation is inert; a token that actually stuck to the router still reverts.
 contract StrategyRouter is Peripheral {
     CollateralRegistry public immutable REGISTRY;
+    /// @notice The engine venue (`SnuggleLpVenue`) and the swap adapter its pools' non-USDC legs go
+    ///         through (`AerodromeSwapAdapter`, the verified SwapRouter).
     ILpVenue public immutable LP_VENUE;
     ISwapAdapter public immutable SWAP;
+    /// @notice The direct Slipstream venue (`SlipstreamLpVenue`, the cbZEC/USDC pool on the second
+    ///         deployment — `CBZEC-PATH-2026-09.md` option 1, decided 2026-09-10) and the pool-direct
+    ///         adapter its leg swaps through, because the SwapRouter cannot reach that pool.
+    ///         `address(0)` on a deployment without them (Base Sepolia). A pool id is looked up on the
+    ///         engine venue first, then here; an unwind's ids are resolved the same way, by which
+    ///         venue says the calling account owns the first of them.
+    ILpVenue public immutable LP_VENUE_DIRECT;
+    ISwapAdapter public immutable SWAP_DIRECT;
     IPermit2 public immutable PERMIT2;
     /// @notice The debt asset (USDC on Base).
     address public immutable USDC;
@@ -134,6 +144,12 @@ contract StrategyRouter is Peripheral {
     ///         account still owes untouched — `LeveragedLpUnwound.repaid` is a total and cannot say
     ///         WHICH book was paid (`RISKS.md` §8, 2026-09-09).
     event VenueRepaid(address indexed account, address indexed venue, uint256 repaid);
+    /// @notice The withdraw leg of `unwind` reached `venue`: `withdrawn` of the collateral asset
+    ///         returned to the calling account from there. One per venue holding the account's
+    ///         collateral, current pointer first — a two-book account is cleared in ONE Close
+    ///         (`RISKS.md` §8 "two-book Close", option (1), decided 2026-09-10). `LeveragedLpUnwound
+    ///         .withdrawn` is the sum.
+    event VenueWithdrawn(address indexed account, address indexed venue, uint256 withdrawn);
     event Swept(address indexed account, address indexed token, address indexed to, uint256 amount);
 
     error ZeroAddress();
@@ -143,6 +159,11 @@ contract StrategyRouter is Peripheral {
     error VenueDisabled(address venue);
     error ZeroBorrow();
     error PoolWithoutUsdc(bytes32 poolId);
+    /// @notice Neither LP venue serves `poolId`.
+    error UnknownPool(bytes32 poolId);
+    /// @notice A fixed `withdrawAmount` could not be met from the venues holding the account's
+    ///         collateral: `withdrawn` of `asked` came back. `max` never raises this.
+    error CollateralShort(uint256 asked, uint256 withdrawn);
     error EntryHfTooLow(uint256 healthFactor, uint256 floor);
     error ExitHfTooLow(uint256 healthFactor, uint256 floor);
     /// @notice The router's own balance of `token` moved across the call: `before` → `current`.
@@ -158,18 +179,24 @@ contract StrategyRouter is Peripheral {
         ILpVenue lpVenue,
         ISwapAdapter swapAdapter,
         IPermit2 permit2,
-        address usdc
+        address usdc,
+        ILpVenue lpVenueDirect,
+        ISwapAdapter swapAdapterDirect
     ) {
         if (
             address(registry) == address(0) || address(lpVenue) == address(0)
                 || address(swapAdapter) == address(0) || address(permit2) == address(0)
                 || usdc == address(0)
         ) revert ZeroAddress();
+        // Both or neither: a direct venue whose leg has no adapter could open and never close.
+        if ((address(lpVenueDirect) == address(0)) != (address(swapAdapterDirect) == address(0))) revert ZeroAddress();
         REGISTRY = registry;
         LP_VENUE = lpVenue;
         SWAP = swapAdapter;
         PERMIT2 = permit2;
         USDC = usdc;
+        LP_VENUE_DIRECT = lpVenueDirect;
+        SWAP_DIRECT = swapAdapterDirect;
     }
 
     // ------------------------------------------------------------------ open
@@ -186,7 +213,7 @@ contract StrategyRouter is Peripheral {
         if (p.deadline < block.timestamp) revert Expired(p.deadline);
         if (p.borrowAmount == 0) revert ZeroBorrow();
         ICollateralVenue venue = _entryVenueFor(p.collateralAsset);
-        (address t0, address t1,) = LP_VENUE.poolTokens(p.poolId);
+        (ILpVenue lp, address t0, address t1) = _lpVenueForPool(p.poolId);
         if (t0 != USDC && t1 != USDC) revert PoolWithoutUsdc(p.poolId);
 
         address account = msg.sender;
@@ -197,7 +224,7 @@ contract StrategyRouter is Peripheral {
 
         healthFactor = _supplyAndBorrow(venue, account, p.collateralAsset, p.collateralAmount, p.permit, p.borrowAmount);
 
-        LpOpenParams memory lp = LpOpenParams({
+        LpOpenParams memory lpParams = LpOpenParams({
             poolId: p.poolId,
             amount0: t0 == USDC ? p.borrowAmount : 0,
             amount1: t1 == USDC ? p.borrowAmount : 0,
@@ -207,7 +234,7 @@ contract StrategyRouter is Peripheral {
             band: p.band,
             deadline: p.deadline
         });
-        positionId = abi.decode(_nested(address(LP_VENUE), abi.encodeCall(ILpVenue.open, (lp))), (uint256));
+        positionId = abi.decode(_nested(address(lp), abi.encodeCall(ILpVenue.open, (lpParams))), (uint256));
 
         _assertUnchanged(p.collateralAsset, beforeCollateral);
         _assertUnchanged(USDC, beforeUsdc);
@@ -244,7 +271,8 @@ contract StrategyRouter is Peripheral {
 
     /// @notice The mirror: lpVenue.closeMany → swap non-USDC proceeds to USDC → venue.repay on
     ///         EVERY venue the account still owes, worst health factor first → venue.withdraw from
-    ///         the venue holding the position, all as the account. Works for DISABLED assets (exits
+    ///         EVERY venue holding the account's collateral, current pointer first, each gated by
+    ///         its own exit floor (one `VenueWithdrawn` each), all as the account. Works for DISABLED assets (exits
     ///         are never gated on the asset flag) but not through a DISABLED venue, which is a
     ///         different thing: a venue that reports itself off is code we will not delegate to,
     ///         and the owner's raw `exec` to the protocol still works when it happens.
@@ -252,9 +280,12 @@ contract StrategyRouter is Peripheral {
     ///      a swap of a non-USDC leg is bounded by the caller's quote and the adapter's cap; the
     ///      repay reaches every venue named for the asset that the account owes USDC on, the book
     ///      with the lowest health factor first, and a fixed repay against zero debt is a no-op,
-    ///      not a revert; after a collateral withdraw with ANY debt outstanding the withdrawn-from
-    ///      venue's global health factor is ≥ the entry floor; the router's balance of every token
-    ///      it touched is unchanged.
+    ///      not a revert; after a collateral withdraw with ANY debt outstanding EACH withdrawn-from
+    ///      venue's global health factor is ≥ the entry floor; `withdrawAmount = max` returns
+    ///      everything from every venue, a fixed amount is a TOTAL taken in venue order and reverts
+    ///      `CollateralShort` if the venues cannot meet it; the ids may be the engine venue's or the
+    ///      direct venue's, never both in one call; the router's balance of every token it touched
+    ///      is unchanged.
     function unwind(UnwindParams calldata p)
         external
         returns (uint256 usdcFromLp, uint256 repaid, uint256 withdrawn, uint256 healthFactor)
@@ -262,8 +293,9 @@ contract StrategyRouter is Peripheral {
         if (p.deadline < block.timestamp) revert Expired(p.deadline);
         address account = msg.sender;
         // Every venue the registry has ever named for this asset, current pointer first. The REPAY
-        // leg visits all of them (`_repayAcross`); the WITHDRAW leg, and the refusal through a
-        // venue that is off, go to the first one holding the account's position — as before.
+        // leg visits all of them the account owes (`_repayAcross`); the WITHDRAW leg visits all of
+        // them holding the account's collateral (`_withdrawAcross`); the refusal through a venue
+        // that is off is decided on the first one holding the account's position — as before.
         address[] memory venues = _exitVenues(p.collateralAsset);
         ICollateralVenue venue = _exitVenueFor(venues, p.collateralAsset, account);
 
@@ -279,22 +311,7 @@ contract StrategyRouter is Peripheral {
         if (p.repayAmount != 0) repaid = _repayAcross(venues, account, p.repayAmount);
 
         if (p.withdrawAmount != 0) {
-            withdrawn = abi.decode(
-                _nested(
-                    address(venue),
-                    abi.encodeCall(ICollateralVenue.withdraw, (p.collateralAsset, p.withdrawAmount))
-                ),
-                (uint256)
-            );
-            // The venue's health factor is GLOBAL across every reserve it holds; gate on that, not
-            // on the USDC debt alone, or a withdrawal with non-USDC debt outstanding sails past the
-            // floor. Only the venue withdrawn from moved, so only its factor is gated: a debt under
-            // the floor on ANOTHER venue must not trap collateral that was never behind it.
-            uint256 hfAfter = venue.healthFactor(account);
-            if (hfAfter != type(uint256).max) {
-                uint256 floor = REGISTRY.entryHfFloorWad();
-                if (hfAfter < floor) revert ExitHfTooLow(hfAfter, floor);
-            }
+            withdrawn = _withdrawAcross(venues, venue, p.collateralAsset, account, p.withdrawAmount);
         }
 
         // Reported: the account's WORST health factor across every venue named for the asset — the
@@ -359,27 +376,22 @@ contract StrategyRouter is Peripheral {
         // A stale id at index 0 no longer decides the batch's pool: the venue reports it in `failed`
         // like any other. Use the first id this account actually owns — the same rule the venue
         // uses, so the tokens the router swaps are always the tokens the venue paid out.
-        bytes32 poolId;
-        for (uint256 i = 0; i < p.positionIds.length; i++) {
-            (bytes32 pid, address owner) = LP_VENUE.poolOf(p.positionIds[i]);
-            if (owner == msg.sender && pid != bytes32(0)) {
-                poolId = pid;
-                break;
-            }
-        }
+        // The venue is the one that says the account owns that id (`ownedPool`): a position staked
+        // in a Slipstream gauge is the gauge's on the NFT's books and the account's on the gauge's.
+        (ILpVenue lp, ISwapAdapter adapter, bytes32 poolId) = _lpVenueForIds(p.positionIds, msg.sender);
         if (poolId == bytes32(0)) return (0, 0, p.positionIds.length);
 
-        (address t0, address t1,) = LP_VENUE.poolTokens(poolId);
+        (address t0, address t1,) = lp.poolTokens(poolId);
         uint256 beforeT0 = _balance(t0);
         uint256 beforeT1 = _balance(t1);
 
         (uint256 out0, uint256 out1,, uint256[] memory failed) = abi.decode(
-            _nested(address(LP_VENUE), abi.encodeCall(ILpVenue.closeMany, (p.positionIds, p.band))),
+            _nested(address(lp), abi.encodeCall(ILpVenue.closeMany, (p.positionIds, p.band))),
             (uint256, uint256, uint256, uint256[])
         );
         failedCount = failed.length;
         closed = p.positionIds.length - failedCount;
-        usdcFromLp = _toUsdc(t0, out0, p, true) + _toUsdc(t1, out1, p, false);
+        usdcFromLp = _toUsdc(adapter, t0, out0, p, true) + _toUsdc(adapter, t1, out1, p, false);
 
         _assertUnchanged(t0, beforeT0);
         _assertUnchanged(t1, beforeT1);
@@ -405,7 +417,7 @@ contract StrategyRouter is Peripheral {
         );
     }
 
-    function _toUsdc(address token, uint256 amount, UnwindParams calldata p, bool tokenIsToken0)
+    function _toUsdc(ISwapAdapter adapter, address token, uint256 amount, UnwindParams calldata p, bool tokenIsToken0)
         internal
         returns (uint256)
     {
@@ -414,7 +426,7 @@ contract StrategyRouter is Peripheral {
         _requireQuoteInBand(tokenIsToken0, p.swap, p.band);
         return abi.decode(
             _nested(
-                address(SWAP),
+                address(adapter),
                 abi.encodeCall(
                     ISwapAdapter.swap,
                     (
@@ -458,6 +470,104 @@ contract StrategyRouter is Peripheral {
         }
     }
 
+    /// @dev The LP venue serving `poolId` and the pool's tokens: the engine venue first, then the
+    ///      direct venue. A pool neither serves is refused by name.
+    function _lpVenueForPool(bytes32 poolId) internal view returns (ILpVenue lp, address t0, address t1) {
+        address pool;
+        (t0, t1, pool) = LP_VENUE.poolTokens(poolId);
+        if (pool != address(0)) return (LP_VENUE, t0, t1);
+        if (address(LP_VENUE_DIRECT) != address(0)) {
+            (t0, t1, pool) = LP_VENUE_DIRECT.poolTokens(poolId);
+            if (pool != address(0)) return (LP_VENUE_DIRECT, t0, t1);
+        }
+        revert UnknownPool(poolId);
+    }
+
+    /// @dev The LP venue, its swap adapter and the pool of the first id in `ids` that `account`
+    ///      owns — the engine venue asked first, then the direct venue. A stale id at index 0 no
+    ///      longer decides the batch's pool: the venue reports it in `failed` like any other, and
+    ///      the tokens the router swaps are always the tokens the venue paid out. Residual, stated
+    ///      (`RISKS.md` §12): the two id spaces are independent counters, so an account owning the
+    ///      SAME number on both venues has the engine's closed through `unwind` and the direct one
+    ///      through the direct venue's own `close`.
+    function _lpVenueForIds(uint256[] calldata ids, address account)
+        internal
+        view
+        returns (ILpVenue lp, ISwapAdapter adapter, bytes32 poolId)
+    {
+        bool direct = address(LP_VENUE_DIRECT) != address(0);
+        for (uint256 i = 0; i < ids.length; i++) {
+            (bytes32 pid, bool owned) = LP_VENUE.ownedPool(ids[i], account);
+            if (owned && pid != bytes32(0)) return (LP_VENUE, SWAP, pid);
+            if (direct) {
+                (pid, owned) = LP_VENUE_DIRECT.ownedPool(ids[i], account);
+                if (owned && pid != bytes32(0)) return (LP_VENUE_DIRECT, SWAP_DIRECT, pid);
+            }
+        }
+        return (LP_VENUE, SWAP, bytes32(0));
+    }
+
+    /// @dev The withdraw leg visits EVERY venue in `venues` holding the account's collateral, current
+    ///      pointer first — one `VenueWithdrawn` per venue reached, each gated by that venue's own
+    ///      GLOBAL health factor (it covers every reserve the venue holds; a debt under the floor on
+    ///      ANOTHER venue must not trap collateral that was never behind it). Until 2026-09-11 the
+    ///      leg stopped at the first venue holding anything, so an account with books on both
+    ///      venues after a registry switch got one venue's collateral back per Close and the other
+    ///      stayed, debt-free, where it was (`RISKS.md` §8 "two-book Close", option (1)).
+    ///      `max` = everything on every venue. A fixed amount is a TOTAL: taken in venue order, at
+    ///      most what each venue holds, and `CollateralShort` if the venues cannot meet it — never
+    ///      silently less than asked. With nothing held anywhere the current pointer (`fallback`, the
+    ///      venue `_exitVenueFor` resolved) is asked as before, so its own named refusal is what the
+    ///      caller sees.
+    function _withdrawAcross(
+        address[] memory venues,
+        ICollateralVenue fallback_,
+        address asset,
+        address account,
+        uint256 amount
+    ) internal returns (uint256 withdrawn) {
+        bool all = amount == type(uint256).max;
+        uint256 remaining = amount;
+        uint256 visited;
+        for (uint256 i = 0; i < venues.length && remaining != 0; i++) {
+            uint256 held = _collateralOf(venues[i], asset, account);
+            if (held == 0) continue;
+            ICollateralVenue v = _requireVenueEnabled(venues[i]);
+            uint256 ask = all ? type(uint256).max : (remaining < held ? remaining : held);
+            uint256 got = _withdrawGated(v, asset, account, ask);
+            withdrawn += got;
+            if (!all) remaining = got >= remaining ? 0 : remaining - got;
+            visited++;
+            emit VenueWithdrawn(account, address(v), got);
+        }
+        if (visited == 0) {
+            withdrawn = _withdrawGated(fallback_, asset, account, amount);
+            emit VenueWithdrawn(account, address(fallback_), withdrawn);
+        } else if (!all && remaining != 0) {
+            revert CollateralShort(amount, withdrawn);
+        }
+    }
+
+    function _withdrawGated(ICollateralVenue v, address asset, address account, uint256 amount)
+        internal
+        returns (uint256 got)
+    {
+        got = abi.decode(_nested(address(v), abi.encodeCall(ICollateralVenue.withdraw, (asset, amount))), (uint256));
+        uint256 hfAfter = v.healthFactor(account);
+        if (hfAfter != type(uint256).max) {
+            uint256 floor = REGISTRY.entryHfFloorWad();
+            if (hfAfter < floor) revert ExitHfTooLow(hfAfter, floor);
+        }
+    }
+
+    function _collateralOf(address venue, address asset, address account) internal view returns (uint256) {
+        try ICollateralVenue(venue).collateral(account, asset) returns (uint256 held) {
+            return held;
+        } catch {
+            return 0;
+        }
+    }
+
     /// @dev Opens resolve the registry's CURRENT venue and require both the venue's and the asset's
     ///      flag. Exits follow the POSITION (audit wave 2, M-HIGH-1), see `_exitVenues`.
     function _entryVenueFor(address asset) internal view returns (ICollateralVenue) {
@@ -496,11 +606,12 @@ contract StrategyRouter is Peripheral {
         }
     }
 
-    /// @dev The venue a WITHDRAWAL goes to, and the venue an exit is refused through when it is off:
-    ///      the first of `venues` holding anything of the account's (debt or collateral), else the
-    ///      current pointer. The VENUE's own switch is honoured on every path, entry and exit: a
-    ///      venue that says it is off is not code the account should be handed to. Only the ASSET
-    ///      flag is bypassed on exit. The REPAY leg does not stop at this venue — `_repayAcross`.
+    /// @dev The venue an exit is refused through when it is off, and the one a withdrawal falls back
+    ///      to when no venue holds the account's collateral: the first of `venues` holding anything
+    ///      of the account's (debt or collateral), else the current pointer. The VENUE's own switch
+    ///      is honoured on every path, entry and exit: a venue that says it is off is not code the
+    ///      account should be handed to. Only the ASSET flag is bypassed on exit. Neither the REPAY
+    ///      leg nor the WITHDRAW leg stops at this venue — `_repayAcross`, `_withdrawAcross`.
     function _exitVenueFor(address[] memory venues, address asset, address account)
         internal
         view

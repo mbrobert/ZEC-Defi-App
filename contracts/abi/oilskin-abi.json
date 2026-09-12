@@ -2844,6 +2844,11 @@
           "stateMutability": "nonpayable",
           "outputs": "uint256"
         },
+        "ownedPool(uint256,address)": {
+          "selector": "0xf19009ee",
+          "stateMutability": "view",
+          "outputs": "bytes32,bool"
+        },
         "performanceBps()": {
           "selector": "0x0b57b453",
           "stateMutability": "view",
@@ -3475,6 +3480,35 @@
             }
           ],
           "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "ownedPool",
+          "inputs": [
+            {
+              "name": "positionId",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "account",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "poolId",
+              "type": "bytes32",
+              "internalType": "bytes32"
+            },
+            {
+              "name": "owned",
+              "type": "bool",
+              "internalType": "bool"
+            }
+          ],
+          "stateMutability": "view"
         },
         {
           "type": "function",
@@ -5426,11 +5460,2115 @@
         }
       ]
     },
+    "SlipstreamLpVenue": {
+      "name": "SlipstreamLpVenue",
+      "functions": {
+        "BPS()": {
+          "selector": "0x249d39e9",
+          "stateMutability": "view",
+          "outputs": "uint256"
+        },
+        "GAUGE()": {
+          "selector": "0x7651b1e6",
+          "stateMutability": "view",
+          "outputs": "address"
+        },
+        "MAX_BAND_BPS()": {
+          "selector": "0x58e9ea7c",
+          "stateMutability": "view",
+          "outputs": "uint256"
+        },
+        "MAX_ENUMERATION()": {
+          "selector": "0x165693f5",
+          "stateMutability": "view",
+          "outputs": "uint256"
+        },
+        "MAX_PERFORMANCE_BPS()": {
+          "selector": "0x317fc02a",
+          "stateMutability": "view",
+          "outputs": "uint256"
+        },
+        "MAX_REBALANCE_DELAY()": {
+          "selector": "0xc0f59c94",
+          "stateMutability": "view",
+          "outputs": "uint64"
+        },
+        "MAX_WIDTH_BPS()": {
+          "selector": "0xa555c806",
+          "stateMutability": "view",
+          "outputs": "uint24"
+        },
+        "MIN_WIDTH_BPS()": {
+          "selector": "0x34d4052a",
+          "stateMutability": "view",
+          "outputs": "uint24"
+        },
+        "NPM()": {
+          "selector": "0x82ff8414",
+          "stateMutability": "view",
+          "outputs": "address"
+        },
+        "POOL()": {
+          "selector": "0x7535d246",
+          "stateMutability": "view",
+          "outputs": "address"
+        },
+        "POOL_ID()": {
+          "selector": "0xe0d7d0e9",
+          "stateMutability": "view",
+          "outputs": "bytes32"
+        },
+        "REWARD_TOKEN()": {
+          "selector": "0x99248ea7",
+          "stateMutability": "view",
+          "outputs": "address"
+        },
+        "SWAP()": {
+          "selector": "0x04d84108",
+          "stateMutability": "view",
+          "outputs": "address"
+        },
+        "TICK_SPACING()": {
+          "selector": "0x46ca626b",
+          "stateMutability": "view",
+          "outputs": "int24"
+        },
+        "TOKEN0()": {
+          "selector": "0x443ec74d",
+          "stateMutability": "view",
+          "outputs": "address"
+        },
+        "TOKEN1()": {
+          "selector": "0x5ee04d78",
+          "stateMutability": "view",
+          "outputs": "address"
+        },
+        "VOTER()": {
+          "selector": "0x8ebf2fd6",
+          "stateMutability": "view",
+          "outputs": "address"
+        },
+        "claim(uint256[],(uint160,uint160),uint256)": {
+          "selector": "0x388a2c47",
+          "stateMutability": "nonpayable",
+          "outputs": "uint256,uint256,uint256,uint256[]"
+        },
+        "close(uint256,(uint160,uint160))": {
+          "selector": "0x2623a0a9",
+          "stateMutability": "nonpayable",
+          "outputs": "uint256,uint256,uint256"
+        },
+        "closeMany(uint256[],(uint160,uint160))": {
+          "selector": "0x812b00f2",
+          "stateMutability": "nonpayable",
+          "outputs": "uint256,uint256,uint256,uint256[]"
+        },
+        "increase(uint256,uint256,uint256,(uint160,uint160),uint256)": {
+          "selector": "0x02efe039",
+          "stateMutability": "nonpayable",
+          "outputs": "uint256"
+        },
+        "open((bytes32,uint256,uint256,uint24,uint64,bool,(uint160,uint160),uint256))": {
+          "selector": "0x641b9c30",
+          "stateMutability": "nonpayable",
+          "outputs": "uint256"
+        },
+        "ownedPool(uint256,address)": {
+          "selector": "0xf19009ee",
+          "stateMutability": "view",
+          "outputs": "bytes32,bool"
+        },
+        "performanceBps()": {
+          "selector": "0x0b57b453",
+          "stateMutability": "view",
+          "outputs": "uint256"
+        },
+        "poolOf(uint256)": {
+          "selector": "0x83966021",
+          "stateMutability": "view",
+          "outputs": "bytes32,address"
+        },
+        "poolSqrtPriceX96(bytes32)": {
+          "selector": "0xd6473b12",
+          "stateMutability": "view",
+          "outputs": "uint256"
+        },
+        "poolTokens(bytes32)": {
+          "selector": "0xfbadbc39",
+          "stateMutability": "view",
+          "outputs": "address,address,address"
+        },
+        "positionRange(uint256,address)": {
+          "selector": "0x599b84b1",
+          "stateMutability": "view",
+          "outputs": "int24,int24,uint128,bool"
+        },
+        "positionsOf(address)": {
+          "selector": "0xf867d46b",
+          "stateMutability": "view",
+          "outputs": "uint256[]"
+        },
+        "treasury()": {
+          "selector": "0x61d027b3",
+          "stateMutability": "view",
+          "outputs": "address"
+        }
+      },
+      "events": {
+        "ClaimSkipped(address,uint256)": {
+          "topic0": "0x599569fdf6fbb754934e33ac5e59aa36948fe1a015bec21a0d389b0c5c83bb49",
+          "indexed": [
+            true,
+            true
+          ]
+        },
+        "FeeSkipped(address,address,uint256)": {
+          "topic0": "0xd4cf738c611c41ae5fa989535aec1d4adb5edc585e7e4390099b75ec4e39c22d",
+          "indexed": [
+            true,
+            true,
+            false
+          ]
+        },
+        "LpCloseFailed(address,uint256,bytes)": {
+          "topic0": "0x33dcf0cf6670f04a74a7c531c5945368e44cc1325e911cd8bc9f82b48ea7e015",
+          "indexed": [
+            true,
+            true,
+            false
+          ]
+        },
+        "LpClosed(address,uint256,uint256,uint256,uint256)": {
+          "topic0": "0xfff8dcff26b8e9a491f160dc111c77e5eb7493bff2baf048871adf7bac445be3",
+          "indexed": [
+            true,
+            true,
+            false,
+            false,
+            false
+          ]
+        },
+        "LpIncreased(address,uint256,uint256,uint256,uint256)": {
+          "topic0": "0xca27f7088949d58613e11535a7a1ddd75b7428d6192909ffac861ed371f8c786",
+          "indexed": [
+            true,
+            true,
+            true,
+            false,
+            false
+          ]
+        },
+        "LpMinted(address,uint256,int24,int24,uint128,uint256,uint256,bool)": {
+          "topic0": "0xd429198c1f21b6380218fbb7f0ed00550c27886edb39640ed7cb648f51fa6d95",
+          "indexed": [
+            true,
+            true,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false
+          ]
+        },
+        "LpOpened(address,bytes32,uint256,uint256,uint256,uint24)": {
+          "topic0": "0x45df14e66bef766b7f94ee79edb2c3017cd7d179ff024f0b0a9a10ebd79e3b4e",
+          "indexed": [
+            true,
+            true,
+            true,
+            false,
+            false,
+            false
+          ]
+        },
+        "PerformanceFee(address,address,uint256,uint256)": {
+          "topic0": "0xb7483bb3d2ece1aa3542f34c98cfadab44a8e7ad0ae8f1dc95341d74b88153cd",
+          "indexed": [
+            true,
+            true,
+            false,
+            false
+          ]
+        },
+        "RefundLeft(address,address,uint256)": {
+          "topic0": "0x433e95ffb97ee4c25567971764c3a6e52b90ff3d351e0ac6cd882428495d7d96",
+          "indexed": [
+            true,
+            true,
+            false
+          ]
+        },
+        "StakeSkipped(address,uint256,bytes)": {
+          "topic0": "0x5211a03420379a808b3df6fbe13c4978f251d11824af2a3b15574f9163a56571",
+          "indexed": [
+            true,
+            true,
+            false
+          ]
+        },
+        "SwappedToRatio(address,address,uint256,uint256)": {
+          "topic0": "0xc273386bfa8c1adbeace12702226e181bddda52445985600831ebafa2f844c1b",
+          "indexed": [
+            true,
+            true,
+            false,
+            false
+          ]
+        }
+      },
+      "errors": {
+        "BandRequired()": {
+          "selector": "0x86e45e3c"
+        },
+        "BandTooWide(uint160,uint160,uint256)": {
+          "selector": "0x6dc2c272"
+        },
+        "DegeneratePool(bytes32,address)": {
+          "selector": "0x46b3c09f"
+        },
+        "Expired(uint256)": {
+          "selector": "0xf80dbaea"
+        },
+        "FeeAboveCap(uint256,uint256)": {
+          "selector": "0x7159abd8"
+        },
+        "InvalidDelay(uint64)": {
+          "selector": "0x2161f0ea"
+        },
+        "InvalidWidth(uint24)": {
+          "selector": "0xb2c36d99"
+        },
+        "NotPositionOwner(uint256,address)": {
+          "selector": "0x606840e0"
+        },
+        "PoolInactive(bytes32)": {
+          "selector": "0x3ec8a600"
+        },
+        "PoolMismatch(string)": {
+          "selector": "0x260b52df"
+        },
+        "PositionsUnreadable(bytes)": {
+          "selector": "0x66c1607b"
+        },
+        "PriceOutOfBand(uint256,uint160,uint160)": {
+          "selector": "0xd92331cf"
+        },
+        "PriceUnreadable(address)": {
+          "selector": "0x7fdeb21f"
+        },
+        "RangeExcludesPrice(int24,int24,int24)": {
+          "selector": "0x3168591b"
+        },
+        "TickOutOfRange(int24)": {
+          "selector": "0xdd455374"
+        },
+        "TooManyPositions(uint256)": {
+          "selector": "0x3ff29beb"
+        },
+        "ZeroAddress()": {
+          "selector": "0xd92e233d"
+        },
+        "ZeroAmounts()": {
+          "selector": "0x213c7cc5"
+        }
+      },
+      "abi": [
+        {
+          "type": "constructor",
+          "inputs": [
+            {
+              "name": "pool",
+              "type": "address",
+              "internalType": "contract ISlipstreamPool"
+            },
+            {
+              "name": "npm",
+              "type": "address",
+              "internalType": "contract ISlipstreamNpm"
+            },
+            {
+              "name": "gauge",
+              "type": "address",
+              "internalType": "contract ISlipstreamGauge"
+            },
+            {
+              "name": "swapAdapter",
+              "type": "address",
+              "internalType": "contract ISwapAdapter"
+            },
+            {
+              "name": "rewardToken",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "treasury_",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "performanceBps_",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "BPS",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "GAUGE",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "address",
+              "internalType": "contract ISlipstreamGauge"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "MAX_BAND_BPS",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "MAX_ENUMERATION",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "MAX_PERFORMANCE_BPS",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "MAX_REBALANCE_DELAY",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint64",
+              "internalType": "uint64"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "MAX_WIDTH_BPS",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint24",
+              "internalType": "uint24"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "MIN_WIDTH_BPS",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint24",
+              "internalType": "uint24"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "NPM",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "address",
+              "internalType": "contract ISlipstreamNpm"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "POOL",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "address",
+              "internalType": "contract ISlipstreamPool"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "POOL_ID",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "bytes32",
+              "internalType": "bytes32"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "REWARD_TOKEN",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "SWAP",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "address",
+              "internalType": "contract ISwapAdapter"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "TICK_SPACING",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "int24",
+              "internalType": "int24"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "TOKEN0",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "TOKEN1",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "VOTER",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "address",
+              "internalType": "contract ISlipstreamVoter"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "claim",
+          "inputs": [
+            {
+              "name": "positionIds",
+              "type": "uint256[]",
+              "internalType": "uint256[]"
+            },
+            {
+              "name": "band",
+              "type": "tuple",
+              "internalType": "struct PriceBand",
+              "components": [
+                {
+                  "name": "minSqrtPriceX96",
+                  "type": "uint160",
+                  "internalType": "uint160"
+                },
+                {
+                  "name": "maxSqrtPriceX96",
+                  "type": "uint160",
+                  "internalType": "uint160"
+                }
+              ]
+            },
+            {
+              "name": "deadline",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "fees0",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "fees1",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "rewards",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "failed",
+              "type": "uint256[]",
+              "internalType": "uint256[]"
+            }
+          ],
+          "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "close",
+          "inputs": [
+            {
+              "name": "positionId",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "band",
+              "type": "tuple",
+              "internalType": "struct PriceBand",
+              "components": [
+                {
+                  "name": "minSqrtPriceX96",
+                  "type": "uint160",
+                  "internalType": "uint160"
+                },
+                {
+                  "name": "maxSqrtPriceX96",
+                  "type": "uint160",
+                  "internalType": "uint160"
+                }
+              ]
+            }
+          ],
+          "outputs": [
+            {
+              "name": "out0",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "out1",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "rewards",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "closeMany",
+          "inputs": [
+            {
+              "name": "positionIds",
+              "type": "uint256[]",
+              "internalType": "uint256[]"
+            },
+            {
+              "name": "band",
+              "type": "tuple",
+              "internalType": "struct PriceBand",
+              "components": [
+                {
+                  "name": "minSqrtPriceX96",
+                  "type": "uint160",
+                  "internalType": "uint160"
+                },
+                {
+                  "name": "maxSqrtPriceX96",
+                  "type": "uint160",
+                  "internalType": "uint160"
+                }
+              ]
+            }
+          ],
+          "outputs": [
+            {
+              "name": "out0",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "out1",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "rewards",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "failed",
+              "type": "uint256[]",
+              "internalType": "uint256[]"
+            }
+          ],
+          "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "increase",
+          "inputs": [
+            {
+              "name": "positionId",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "amount0",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "amount1",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "band",
+              "type": "tuple",
+              "internalType": "struct PriceBand",
+              "components": [
+                {
+                  "name": "minSqrtPriceX96",
+                  "type": "uint160",
+                  "internalType": "uint160"
+                },
+                {
+                  "name": "maxSqrtPriceX96",
+                  "type": "uint160",
+                  "internalType": "uint160"
+                }
+              ]
+            },
+            {
+              "name": "deadline",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "newPositionId",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "open",
+          "inputs": [
+            {
+              "name": "p",
+              "type": "tuple",
+              "internalType": "struct LpOpenParams",
+              "components": [
+                {
+                  "name": "poolId",
+                  "type": "bytes32",
+                  "internalType": "bytes32"
+                },
+                {
+                  "name": "amount0",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                },
+                {
+                  "name": "amount1",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                },
+                {
+                  "name": "rangeWidthBps",
+                  "type": "uint24",
+                  "internalType": "uint24"
+                },
+                {
+                  "name": "rebalanceDelay",
+                  "type": "uint64",
+                  "internalType": "uint64"
+                },
+                {
+                  "name": "autoCompound",
+                  "type": "bool",
+                  "internalType": "bool"
+                },
+                {
+                  "name": "band",
+                  "type": "tuple",
+                  "internalType": "struct PriceBand",
+                  "components": [
+                    {
+                      "name": "minSqrtPriceX96",
+                      "type": "uint160",
+                      "internalType": "uint160"
+                    },
+                    {
+                      "name": "maxSqrtPriceX96",
+                      "type": "uint160",
+                      "internalType": "uint160"
+                    }
+                  ]
+                },
+                {
+                  "name": "deadline",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                }
+              ]
+            }
+          ],
+          "outputs": [
+            {
+              "name": "positionId",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "ownedPool",
+          "inputs": [
+            {
+              "name": "positionId",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "account",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "poolId",
+              "type": "bytes32",
+              "internalType": "bytes32"
+            },
+            {
+              "name": "owned",
+              "type": "bool",
+              "internalType": "bool"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "performanceBps",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "poolOf",
+          "inputs": [
+            {
+              "name": "positionId",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "poolId",
+              "type": "bytes32",
+              "internalType": "bytes32"
+            },
+            {
+              "name": "owner",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "poolSqrtPriceX96",
+          "inputs": [
+            {
+              "name": "poolId",
+              "type": "bytes32",
+              "internalType": "bytes32"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "poolTokens",
+          "inputs": [
+            {
+              "name": "poolId",
+              "type": "bytes32",
+              "internalType": "bytes32"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "token0",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "token1",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "pool",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "positionRange",
+          "inputs": [
+            {
+              "name": "positionId",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "account",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "tickLower",
+              "type": "int24",
+              "internalType": "int24"
+            },
+            {
+              "name": "tickUpper",
+              "type": "int24",
+              "internalType": "int24"
+            },
+            {
+              "name": "liquidity",
+              "type": "uint128",
+              "internalType": "uint128"
+            },
+            {
+              "name": "staked",
+              "type": "bool",
+              "internalType": "bool"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "positionsOf",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "ids",
+              "type": "uint256[]",
+              "internalType": "uint256[]"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "treasury",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "event",
+          "name": "ClaimSkipped",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "positionId",
+              "type": "uint256",
+              "indexed": true,
+              "internalType": "uint256"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "event",
+          "name": "FeeSkipped",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "token",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "fee",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "event",
+          "name": "LpCloseFailed",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "positionId",
+              "type": "uint256",
+              "indexed": true,
+              "internalType": "uint256"
+            },
+            {
+              "name": "reason",
+              "type": "bytes",
+              "indexed": false,
+              "internalType": "bytes"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "event",
+          "name": "LpClosed",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "positionId",
+              "type": "uint256",
+              "indexed": true,
+              "internalType": "uint256"
+            },
+            {
+              "name": "out0",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            },
+            {
+              "name": "out1",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            },
+            {
+              "name": "rewards",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "event",
+          "name": "LpIncreased",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "positionId",
+              "type": "uint256",
+              "indexed": true,
+              "internalType": "uint256"
+            },
+            {
+              "name": "newPositionId",
+              "type": "uint256",
+              "indexed": true,
+              "internalType": "uint256"
+            },
+            {
+              "name": "amount0",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            },
+            {
+              "name": "amount1",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "event",
+          "name": "LpMinted",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "positionId",
+              "type": "uint256",
+              "indexed": true,
+              "internalType": "uint256"
+            },
+            {
+              "name": "tickLower",
+              "type": "int24",
+              "indexed": false,
+              "internalType": "int24"
+            },
+            {
+              "name": "tickUpper",
+              "type": "int24",
+              "indexed": false,
+              "internalType": "int24"
+            },
+            {
+              "name": "liquidity",
+              "type": "uint128",
+              "indexed": false,
+              "internalType": "uint128"
+            },
+            {
+              "name": "used0",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            },
+            {
+              "name": "used1",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            },
+            {
+              "name": "staked",
+              "type": "bool",
+              "indexed": false,
+              "internalType": "bool"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "event",
+          "name": "LpOpened",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "poolId",
+              "type": "bytes32",
+              "indexed": true,
+              "internalType": "bytes32"
+            },
+            {
+              "name": "positionId",
+              "type": "uint256",
+              "indexed": true,
+              "internalType": "uint256"
+            },
+            {
+              "name": "amount0",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            },
+            {
+              "name": "amount1",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            },
+            {
+              "name": "rangeWidthBps",
+              "type": "uint24",
+              "indexed": false,
+              "internalType": "uint24"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "event",
+          "name": "PerformanceFee",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "token",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "gross",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            },
+            {
+              "name": "fee",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "event",
+          "name": "RefundLeft",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "token",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "event",
+          "name": "StakeSkipped",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "positionId",
+              "type": "uint256",
+              "indexed": true,
+              "internalType": "uint256"
+            },
+            {
+              "name": "reason",
+              "type": "bytes",
+              "indexed": false,
+              "internalType": "bytes"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "event",
+          "name": "SwappedToRatio",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "tokenIn",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "amountIn",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            },
+            {
+              "name": "amountOut",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "error",
+          "name": "BandRequired",
+          "inputs": []
+        },
+        {
+          "type": "error",
+          "name": "BandTooWide",
+          "inputs": [
+            {
+              "name": "min",
+              "type": "uint160",
+              "internalType": "uint160"
+            },
+            {
+              "name": "max",
+              "type": "uint160",
+              "internalType": "uint160"
+            },
+            {
+              "name": "maxBps",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "DegeneratePool",
+          "inputs": [
+            {
+              "name": "poolId",
+              "type": "bytes32",
+              "internalType": "bytes32"
+            },
+            {
+              "name": "token",
+              "type": "address",
+              "internalType": "address"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "Expired",
+          "inputs": [
+            {
+              "name": "deadline",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "FeeAboveCap",
+          "inputs": [
+            {
+              "name": "bps",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "cap",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "InvalidDelay",
+          "inputs": [
+            {
+              "name": "rebalanceDelay",
+              "type": "uint64",
+              "internalType": "uint64"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "InvalidWidth",
+          "inputs": [
+            {
+              "name": "rangeWidthBps",
+              "type": "uint24",
+              "internalType": "uint24"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "NotPositionOwner",
+          "inputs": [
+            {
+              "name": "positionId",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "owner",
+              "type": "address",
+              "internalType": "address"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "PoolInactive",
+          "inputs": [
+            {
+              "name": "poolId",
+              "type": "bytes32",
+              "internalType": "bytes32"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "PoolMismatch",
+          "inputs": [
+            {
+              "name": "what",
+              "type": "string",
+              "internalType": "string"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "PositionsUnreadable",
+          "inputs": [
+            {
+              "name": "reason",
+              "type": "bytes",
+              "internalType": "bytes"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "PriceOutOfBand",
+          "inputs": [
+            {
+              "name": "sqrtPriceX96",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "min",
+              "type": "uint160",
+              "internalType": "uint160"
+            },
+            {
+              "name": "max",
+              "type": "uint160",
+              "internalType": "uint160"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "PriceUnreadable",
+          "inputs": [
+            {
+              "name": "pool",
+              "type": "address",
+              "internalType": "address"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "RangeExcludesPrice",
+          "inputs": [
+            {
+              "name": "tick",
+              "type": "int24",
+              "internalType": "int24"
+            },
+            {
+              "name": "tickLower",
+              "type": "int24",
+              "internalType": "int24"
+            },
+            {
+              "name": "tickUpper",
+              "type": "int24",
+              "internalType": "int24"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "TickOutOfRange",
+          "inputs": [
+            {
+              "name": "tick",
+              "type": "int24",
+              "internalType": "int24"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "TooManyPositions",
+          "inputs": [
+            {
+              "name": "cap",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "ZeroAddress",
+          "inputs": []
+        },
+        {
+          "type": "error",
+          "name": "ZeroAmounts",
+          "inputs": []
+        }
+      ]
+    },
+    "SlipstreamPoolSwapAdapter": {
+      "name": "SlipstreamPoolSwapAdapter",
+      "functions": {
+        "BPS()": {
+          "selector": "0x249d39e9",
+          "stateMutability": "view",
+          "outputs": "uint256"
+        },
+        "MAX_SLIPPAGE_BPS()": {
+          "selector": "0xe229cd76",
+          "stateMutability": "view",
+          "outputs": "uint16"
+        },
+        "POOL()": {
+          "selector": "0x7535d246",
+          "stateMutability": "view",
+          "outputs": "address"
+        },
+        "TICK_SPACING()": {
+          "selector": "0x46ca626b",
+          "stateMutability": "view",
+          "outputs": "int24"
+        },
+        "TOKEN0()": {
+          "selector": "0x443ec74d",
+          "stateMutability": "view",
+          "outputs": "address"
+        },
+        "TOKEN1()": {
+          "selector": "0x5ee04d78",
+          "stateMutability": "view",
+          "outputs": "address"
+        },
+        "minOutFor(uint256,uint256,uint256,uint16)": {
+          "selector": "0xea6f620b",
+          "stateMutability": "pure",
+          "outputs": "uint256"
+        },
+        "swap(address,address,uint256,uint256,uint256,uint16,uint256,bytes)": {
+          "selector": "0xaa212198",
+          "stateMutability": "nonpayable",
+          "outputs": "uint256"
+        },
+        "uniswapV3SwapCallback(int256,int256,bytes)": {
+          "selector": "0xfa461e33",
+          "stateMutability": "nonpayable",
+          "outputs": ""
+        }
+      },
+      "events": {
+        "Swapped(address,address,address,uint256,uint256,uint256)": {
+          "topic0": "0xc9163c3bdf7263acf1bb3d24072cc7da025f7181c31e2edc7e1673edf5e0ca32",
+          "indexed": [
+            true,
+            true,
+            true,
+            false,
+            false,
+            false
+          ]
+        }
+      },
+      "errors": {
+        "Expired(uint256)": {
+          "selector": "0xf80dbaea"
+        },
+        "InsufficientOutput(uint256,uint256)": {
+          "selector": "0x2c19b8b8"
+        },
+        "NoSwapInFlight()": {
+          "selector": "0x9af5fad2"
+        },
+        "NotPool(address)": {
+          "selector": "0x4a1576a2"
+        },
+        "NotPoolPair(address,address)": {
+          "selector": "0x0014ed04"
+        },
+        "PartialFill(uint256,uint256)": {
+          "selector": "0x20aae256"
+        },
+        "Reentrancy()": {
+          "selector": "0xab143c06"
+        },
+        "SameToken()": {
+          "selector": "0x201b580a"
+        },
+        "SlippageTooHigh(uint16,uint16)": {
+          "selector": "0xe4617933"
+        },
+        "WrongRoute(int24,int24)": {
+          "selector": "0xf7364524"
+        },
+        "ZeroAddress()": {
+          "selector": "0xd92e233d"
+        },
+        "ZeroAmount()": {
+          "selector": "0x1f2a2005"
+        },
+        "ZeroQuote()": {
+          "selector": "0x69f8a2c0"
+        }
+      },
+      "abi": [
+        {
+          "type": "constructor",
+          "inputs": [
+            {
+              "name": "pool",
+              "type": "address",
+              "internalType": "contract ISlipstreamPool"
+            }
+          ],
+          "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "BPS",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "MAX_SLIPPAGE_BPS",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint16",
+              "internalType": "uint16"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "POOL",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "address",
+              "internalType": "contract ISlipstreamPool"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "TICK_SPACING",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "int24",
+              "internalType": "int24"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "TOKEN0",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "TOKEN1",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "minOutFor",
+          "inputs": [
+            {
+              "name": "amountIn",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "quotedIn",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "quotedOut",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "maxSlippageBps",
+              "type": "uint16",
+              "internalType": "uint16"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "pure"
+        },
+        {
+          "type": "function",
+          "name": "swap",
+          "inputs": [
+            {
+              "name": "tokenIn",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "tokenOut",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "amountIn",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "quotedIn",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "quotedOut",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "maxSlippageBps",
+              "type": "uint16",
+              "internalType": "uint16"
+            },
+            {
+              "name": "deadline",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "routeData",
+              "type": "bytes",
+              "internalType": "bytes"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "amountOut",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "uniswapV3SwapCallback",
+          "inputs": [
+            {
+              "name": "amount0Delta",
+              "type": "int256",
+              "internalType": "int256"
+            },
+            {
+              "name": "amount1Delta",
+              "type": "int256",
+              "internalType": "int256"
+            },
+            {
+              "name": "",
+              "type": "bytes",
+              "internalType": "bytes"
+            }
+          ],
+          "outputs": [],
+          "stateMutability": "nonpayable"
+        },
+        {
+          "type": "event",
+          "name": "Swapped",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "tokenIn",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "tokenOut",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "amountIn",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            },
+            {
+              "name": "amountOut",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            },
+            {
+              "name": "minOut",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "error",
+          "name": "Expired",
+          "inputs": [
+            {
+              "name": "deadline",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "InsufficientOutput",
+          "inputs": [
+            {
+              "name": "amountOut",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "minOut",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "NoSwapInFlight",
+          "inputs": []
+        },
+        {
+          "type": "error",
+          "name": "NotPool",
+          "inputs": [
+            {
+              "name": "caller",
+              "type": "address",
+              "internalType": "address"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "NotPoolPair",
+          "inputs": [
+            {
+              "name": "tokenIn",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "tokenOut",
+              "type": "address",
+              "internalType": "address"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "PartialFill",
+          "inputs": [
+            {
+              "name": "amountIn",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "consumed",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "Reentrancy",
+          "inputs": []
+        },
+        {
+          "type": "error",
+          "name": "SameToken",
+          "inputs": []
+        },
+        {
+          "type": "error",
+          "name": "SlippageTooHigh",
+          "inputs": [
+            {
+              "name": "bps",
+              "type": "uint16",
+              "internalType": "uint16"
+            },
+            {
+              "name": "cap",
+              "type": "uint16",
+              "internalType": "uint16"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "WrongRoute",
+          "inputs": [
+            {
+              "name": "given",
+              "type": "int24",
+              "internalType": "int24"
+            },
+            {
+              "name": "expected",
+              "type": "int24",
+              "internalType": "int24"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "ZeroAddress",
+          "inputs": []
+        },
+        {
+          "type": "error",
+          "name": "ZeroAmount",
+          "inputs": []
+        },
+        {
+          "type": "error",
+          "name": "ZeroQuote",
+          "inputs": []
+        }
+      ]
+    },
     "StrategyRouter": {
       "name": "StrategyRouter",
       "functions": {
         "LP_VENUE()": {
           "selector": "0xbe14899f",
+          "stateMutability": "view",
+          "outputs": "address"
+        },
+        "LP_VENUE_DIRECT()": {
+          "selector": "0x37829814",
           "stateMutability": "view",
           "outputs": "address"
         },
@@ -5446,6 +7584,11 @@
         },
         "SWAP()": {
           "selector": "0x04d84108",
+          "stateMutability": "view",
+          "outputs": "address"
+        },
+        "SWAP_DIRECT()": {
+          "selector": "0x44757dfe",
           "stateMutability": "view",
           "outputs": "address"
         },
@@ -5527,6 +7670,14 @@
             true,
             false
           ]
+        },
+        "VenueWithdrawn(address,address,uint256)": {
+          "topic0": "0x117e568a9249ddc4625b3c536c9f0ba540c836382fec816c48e703afea6ec4fd",
+          "indexed": [
+            true,
+            true,
+            false
+          ]
         }
       },
       "errors": {
@@ -5535,6 +7686,9 @@
         },
         "AssetNotRegistered(address)": {
           "selector": "0x1a2a9e87"
+        },
+        "CollateralShort(uint256,uint256)": {
+          "selector": "0xb73f0d17"
         },
         "EntryHfTooLow(uint256,uint256)": {
           "selector": "0xd40fd174"
@@ -5553,6 +7707,9 @@
         },
         "RouterBalanceChanged(address,uint256,uint256)": {
           "selector": "0xc690fd22"
+        },
+        "UnknownPool(bytes32)": {
+          "selector": "0x180b8555"
         },
         "VenueDisabled(address)": {
           "selector": "0x251897fd"
@@ -5592,6 +7749,16 @@
               "name": "usdc",
               "type": "address",
               "internalType": "address"
+            },
+            {
+              "name": "lpVenueDirect",
+              "type": "address",
+              "internalType": "contract ILpVenue"
+            },
+            {
+              "name": "swapAdapterDirect",
+              "type": "address",
+              "internalType": "contract ISwapAdapter"
             }
           ],
           "stateMutability": "nonpayable"
@@ -5599,6 +7766,19 @@
         {
           "type": "function",
           "name": "LP_VENUE",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "address",
+              "internalType": "contract ILpVenue"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "LP_VENUE_DIRECT",
           "inputs": [],
           "outputs": [
             {
@@ -5638,6 +7818,19 @@
         {
           "type": "function",
           "name": "SWAP",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "address",
+              "internalType": "contract ISwapAdapter"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "SWAP_DIRECT",
           "inputs": [],
           "outputs": [
             {
@@ -6145,6 +8338,31 @@
           "anonymous": false
         },
         {
+          "type": "event",
+          "name": "VenueWithdrawn",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "venue",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "withdrawn",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            }
+          ],
+          "anonymous": false
+        },
+        {
           "type": "error",
           "name": "AssetDisabled",
           "inputs": [
@@ -6168,6 +8386,22 @@
               "name": "asset",
               "type": "address",
               "internalType": "address"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "CollateralShort",
+          "inputs": [
+            {
+              "name": "asked",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "withdrawn",
+              "type": "uint256",
+              "internalType": "uint256"
             }
           ]
         },
@@ -6264,6 +8498,17 @@
               "name": "balanceAfter",
               "type": "uint256",
               "internalType": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "UnknownPool",
+          "inputs": [
+            {
+              "name": "poolId",
+              "type": "bytes32",
+              "internalType": "bytes32"
             }
           ]
         },
@@ -7659,6 +9904,11 @@
           "stateMutability": "nonpayable",
           "outputs": "uint256"
         },
+        "ownedPool(uint256,address)": {
+          "selector": "0xf19009ee",
+          "stateMutability": "view",
+          "outputs": "bytes32,bool"
+        },
         "performanceBps()": {
           "selector": "0x0b57b453",
           "stateMutability": "view",
@@ -7964,6 +10214,35 @@
             }
           ],
           "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "ownedPool",
+          "inputs": [
+            {
+              "name": "positionId",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "account",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "poolId",
+              "type": "bytes32",
+              "internalType": "bytes32"
+            },
+            {
+              "name": "owned",
+              "type": "bool",
+              "internalType": "bool"
+            }
+          ],
+          "stateMutability": "view"
         },
         {
           "type": "function",

@@ -4,7 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import type { Address } from "viem";
 import { usePublicClient, useSignTypedData, useWriteContract } from "wagmi";
-import { isCollateralSymbol, type CollateralSymbol } from "@zyo/shared";
+import { isCollateralSymbol, lpPoolId, type CollateralSymbol } from "@zyo/shared";
 import { BASE_TOKENS, CHAIN_ID, COLLATERAL_ASSETS } from "@/lib/chain";
 import { useAccountRead, useDeployment, useGate, useMarket, useSession } from "@/lib/hooks";
 import { useMode } from "@/lib/mode";
@@ -83,7 +83,9 @@ function Wizard() {
       collateral: state.collateral,
       collateralAmount: state.amount || "0",
       borrowUsdc: review.loan.borrowUsdc,
-      enginePoolId: lp ? (lp.pool.enginePoolId as `0x${string}` | undefined) : undefined,
+      // The engine's bytes32, or the pool address padded for a pool held on the direct venue.
+      enginePoolId: lp ? lpPoolId(lp.pool) : undefined,
+      poolVenue: lp ? (lp.pool.protocol === "DIRECT" ? "direct" : "engine") : undefined,
       poolLabel: lp ? `${lp.pool.token0}/${lp.pool.token1}` : undefined,
       lpParams: review.lpParams ?? { rangeWidthBps: 1500, rebalanceDelayHours: 12, autoCompoundEnabled: true },
       deployment,

@@ -20,6 +20,10 @@ import {IPoolAddressesProvider} from "../../src/interfaces/IAaveV3.sol";
 import {CollateralRegistry} from "../../src/registry/CollateralRegistry.sol";
 import {ICollateralRegistry} from "../../src/interfaces/ICollateralRegistry.sol";
 import {LoanDust} from "../../src/libraries/LoanDust.sol";
+import {ISwapAdapter} from "../../src/interfaces/ISwapAdapter.sol";
+import {ISlipstreamGauge, ISlipstreamNpm, ISlipstreamPool, ISlipstreamVoter} from "../../src/interfaces/ISlipstream.sol";
+import {SlipstreamLpVenue} from "../../src/venues/SlipstreamLpVenue.sol";
+import {SlipstreamPoolSwapAdapter} from "../../src/swap/SlipstreamPoolSwapAdapter.sol";
 
 /// @title BaseFork — the tests that can only be true against the chain (Part 6 lesson 2: "verify
 ///        the external contract against the chain, not against your own mock").
@@ -587,5 +591,141 @@ contract BaseForkTest is Test {
         assertGt(BaseAddresses.PERMIT2.code.length, 0);
         assertGt(BaseAddresses.MORPHO_BLUE.code.length, 0);
         assertGt(BaseAddresses.PYTH.code.length, 0);
+    }
+
+    // ------------------------------------------- the direct Slipstream venue (slice F, 2026-09-11)
+
+    /// The second deployment's WETH/USDC pool — `CLFactory(0xf8f2…61Ef).allPools(0)`, read 2026-09-10
+    /// at block 51,149,744 (VERIFIED-BASE-FACTS Addendum 9): ordinary ERC-20s on both sides, so the
+    /// fork EVM can run the venue end to end on the LIVE position manager and gauge of the very
+    /// deployment the cbZEC/USDC pool lives on. The cbZEC pool itself cannot be exercised in a fork
+    /// EVM (the B20 precompile, Addendum 3); `test_fork_directVenueBindsToTheCbzecPool` proves the
+    /// wiring against its live pointers instead.
+    address constant SECOND_FACTORY_WETH_USDC_POOL = 0x493E74Eda2720e127BAcCC1A19B2D567Bc14aB43;
+
+    function _directVenueOver(address pool) internal returns (SlipstreamLpVenue venue, SlipstreamPoolSwapAdapter adapter) {
+        ISlipstreamPool p = ISlipstreamPool(pool);
+        adapter = new SlipstreamPoolSwapAdapter(p);
+        venue = new SlipstreamLpVenue(
+            p,
+            ISlipstreamNpm(p.nft()),
+            ISlipstreamGauge(p.gauge()),
+            ISwapAdapter(address(adapter)),
+            BaseAddresses.AERO,
+            treasury,
+            1000
+        );
+    }
+
+    function _forkBand(address pool, uint256 pctBps) internal view returns (PriceBand memory) {
+        (uint160 sp,,,,,) = IAerodromeCLPool(pool).slot0();
+        return PriceBand({
+            minSqrtPriceX96: uint160((uint256(sp) * (10_000 - pctBps)) / 10_000),
+            maxSqrtPriceX96: uint160((uint256(sp) * (10_000 + pctBps)) / 10_000)
+        });
+    }
+
+    /// open (to-ratio swap through the pool's own `swap` + callback, mint on the live NPM, stake in
+    /// the live gauge) → positionsOf → close (unstake, decrease, collect, burn) on the second
+    /// deployment, under the account, with everything metered.
+    function test_fork_directVenueOpenCloseOnTheSecondDeployment() public onlyForked {
+        address pool = SECOND_FACTORY_WETH_USDC_POOL;
+        assertEq(ISlipstreamPool(pool).factory(), BaseAddresses.AERODROME_CL_FACTORY_2, "the pool is the second factory's");
+        assertEq(ISlipstreamPool(pool).token0(), BaseAddresses.WETH);
+        assertEq(ISlipstreamPool(pool).token1(), BaseAddresses.USDC);
+        assertEq(ISlipstreamPool(pool).tickSpacing(), 10);
+        assertEq(ISlipstreamPool(pool).nft(), BaseAddresses.AERODROME_NPM_2, "one NPM for the whole deployment");
+        (SlipstreamLpVenue venue, SlipstreamPoolSwapAdapter adapter) = _directVenueOver(pool);
+        ISlipstreamGauge gauge = venue.GAUGE();
+        bool alive = ISlipstreamVoter(gauge.voter()).isAlive(address(gauge));
+        console2.log("second-deployment WETH/USDC gauge", address(gauge));
+        console2.log("gauge alive / rewardRate / fee pips", alive, gauge.rewardRate(), ISlipstreamPool(pool).fee());
+
+        uint256 amount = 400e6;
+        deal(BaseAddresses.USDC, address(acct), amount);
+        LpOpenParams memory p = LpOpenParams({
+            poolId: venue.POOL_ID(),
+            amount0: 0,
+            amount1: amount,
+            rangeWidthBps: 1500,
+            rebalanceDelay: 12 hours,
+            autoCompound: true,
+            band: _forkBand(pool, 1000),
+            deadline: block.timestamp + 10 minutes
+        });
+        vm.prank(alice);
+        uint256 g0 = gasleft();
+        bytes memory ret = acct.execWithCallback(address(venue), 0, abi.encodeCall(ILpVenue.open, (p)));
+        console2.log("direct open gas (whole tx, through the account)", g0 - gasleft());
+        uint256 id = abi.decode(ret, (uint256));
+        assertGt(id, 0);
+
+        uint256[] memory ids = venue.positionsOf(address(acct));
+        assertEq(ids.length, 1, "enumerated from the gauge or the NPM");
+        assertEq(ids[0], id);
+        (bytes32 pid, bool owned) = venue.ownedPool(id, address(acct));
+        assertTrue(owned);
+        assertEq(pid, venue.POOL_ID());
+        (int24 lower, int24 upper, uint128 liquidity, bool staked) = venue.positionRange(id, address(acct));
+        (, int24 tick,,,,) = IAerodromeCLPool(pool).slot0();
+        assertLt(lower, tick);
+        assertGt(upper, tick);
+        assertGt(liquidity, 0);
+        assertEq(staked, alive, "staked exactly when the Voter says the gauge is alive");
+        assertEq(ISlipstreamNpm(BaseAddresses.AERODROME_NPM_2).ownerOf(id), staked ? address(gauge) : address(acct));
+        uint256 idleUsdc = IERC20(BaseAddresses.USDC).balanceOf(address(acct));
+        uint256 idleWeth = IERC20(BaseAddresses.WETH).balanceOf(address(acct));
+        console2.log("left idle after open: USDC / WETH", idleUsdc, idleWeth);
+        assertLt(idleUsdc, amount / 20, "less than 5 % of the deposit left idle (real impact + tick rounding)");
+        assertEq(IERC20(BaseAddresses.USDC).balanceOf(address(venue)), 0, "the venue holds nothing");
+        assertEq(IERC20(BaseAddresses.WETH).balanceOf(address(adapter)), 0, "the adapter holds nothing");
+        assertEq(IERC20(BaseAddresses.USDC).allowance(address(acct), BaseAddresses.AERODROME_NPM_2), 0, "no allowance survives");
+
+        vm.warp(block.timestamp + 1 hours);
+        vm.prank(alice);
+        g0 = gasleft();
+        ret = acct.execWithCallback(address(venue), 0, abi.encodeCall(ILpVenue.close, (id, _forkBand(pool, 1000))));
+        console2.log("direct close gas (whole tx, through the account)", g0 - gasleft());
+        (uint256 out0, uint256 out1, uint256 rewards) = abi.decode(ret, (uint256, uint256, uint256));
+        console2.log("close paid WETH / USDC / AERO(net)", out0, out1, rewards);
+        assertGt(out0 + out1, 0);
+        assertEq(venue.positionsOf(address(acct)).length, 0);
+        vm.expectRevert();
+        ISlipstreamNpm(BaseAddresses.AERODROME_NPM_2).ownerOf(id); // burnt
+        // Value came back: the USDC now held plus the WETH at the pool's price, within the two
+        // pool fees and the impact of a 400 USDC round trip.
+        (uint160 sp,,,,,) = IAerodromeCLPool(pool).slot0();
+        uint256 wethNow = IERC20(BaseAddresses.WETH).balanceOf(address(acct));
+        uint256 wethInUsdc = Math.mulDiv(Math.mulDiv(wethNow, sp, 2 ** 96), sp, 2 ** 96);
+        uint256 total = IERC20(BaseAddresses.USDC).balanceOf(address(acct)) + wethInUsdc;
+        console2.log("round trip: USDC-equivalent back of 400e6", total);
+        assertGt(total, amount * 97 / 100, "no more than 3 % lost to fees and impact");
+        assertLe(total, amount * 101 / 100);
+    }
+
+    /// The deploy script's wiring, proved on the live cbZEC/USDC pointers without touching the B20
+    /// precompile: the pool names the recorded NPM and gauge, the gauge names the pool and pays
+    /// AERO, the adapter binds to the pool, and the venue's constructor cross-checks all pass.
+    function test_fork_directVenueBindsToTheCbzecPool() public onlyForked {
+        ISlipstreamPool pool = ISlipstreamPool(BaseAddresses.AERODROME_CBZEC_USDC_POOL);
+        assertEq(pool.factory(), BaseAddresses.AERODROME_CL_FACTORY_2);
+        assertEq(pool.nft(), BaseAddresses.AERODROME_NPM_2, "the NPM recorded in Addendum 8");
+        assertEq(pool.gauge(), BaseAddresses.AERODROME_CBZEC_USDC_GAUGE, "the gauge recorded in Addendum 8");
+        ISlipstreamGauge gauge = ISlipstreamGauge(BaseAddresses.AERODROME_CBZEC_USDC_GAUGE);
+        assertEq(gauge.nft(), BaseAddresses.AERODROME_NPM_2);
+        assertEq(gauge.pool(), address(pool));
+        assertEq(gauge.rewardToken(), BaseAddresses.AERO);
+        SlipstreamPoolSwapAdapter adapter = new SlipstreamPoolSwapAdapter(pool);
+        assertEq(adapter.TOKEN0(), BaseAddresses.USDC);
+        assertEq(adapter.TOKEN1(), BaseAddresses.CBZEC);
+        assertEq(adapter.TICK_SPACING(), 200);
+        SlipstreamLpVenue venue = new SlipstreamLpVenue(
+            pool, ISlipstreamNpm(pool.nft()), gauge, ISwapAdapter(address(adapter)), BaseAddresses.AERO, treasury, 1000
+        );
+        assertEq(venue.POOL_ID(), bytes32(uint256(uint160(address(pool)))));
+        assertEq(address(venue.VOTER()), BaseAddresses.AERODROME_VOTER, "the gauge's voter is the Aerodrome Voter");
+        assertTrue(ISlipstreamVoter(BaseAddresses.AERODROME_VOTER).isAlive(address(gauge)), "alive at the read");
+        console2.log("cbZEC/USDC gauge rewardRate / periodFinish", gauge.rewardRate(), gauge.periodFinish());
+        assertEq(venue.positionsOf(address(acct)).length, 0, "a fresh account holds nothing there");
     }
 }

@@ -2,7 +2,7 @@
 
 **Source of truth is the compiled artifact, not this page.** `contracts/abi/oilskin-abi.json` is
 generated from `contracts/out` by `node scripts/verify-abi.mjs --write` and carries the full ABI plus
-every selector / topic / error for 17 contracts and interfaces — **327 entries** as of 2026-09-09 (204 functions, 31 events, 92 errors). 2026-09-09 added `StrategyRouter.VenueRepaid` (`RISKS.md` §8 residual (a): the repay reaches every venue the account owes and the receipt says which; 326 before it). The wave-2 fix round (`AUDIT-2026-09-07.md`) added `CollateralRegistry.previousVenues`, `ICollateralVenue.borrowAgainst` on both venues, `MorphoBlueVenue.NoMarketCanFill` and `StrategyRouter.QuoteOutsideBand`, and dropped `PythOracleAdapter.NoUpdateInTx` (321 before it; 303 before `MorphoBlueVenue` was built).
+every selector / topic / error for 19 contracts and interfaces — **419 entries** as of 2026-09-11 (248 functions, 44 events, 127 errors). 2026-09-11 (slice F) added `SlipstreamLpVenue` and `SlipstreamPoolSwapAdapter` (§4b, §6b), `StrategyRouter.LP_VENUE_DIRECT` / `SWAP_DIRECT` / `VenueWithdrawn` / `UnknownPool` / `CollateralShort`, `ILpVenue.ownedPool` on both venues, and two more router constructor arguments (330 across 17 on 2026-09-10 after slice C's `InsufficientLoanToken`; 327 before it). 2026-09-09 added `StrategyRouter.VenueRepaid` (`RISKS.md` §8 residual (a): the repay reaches every venue the account owes and the receipt says which; 326 before it). The wave-2 fix round (`AUDIT-2026-09-07.md`) added `CollateralRegistry.previousVenues`, `ICollateralVenue.borrowAgainst` on both venues, `MorphoBlueVenue.NoMarketCanFill` and `StrategyRouter.QuoteOutsideBand`, and dropped `PythOracleAdapter.NoUpdateInTx` (321 before it; 303 before `MorphoBlueVenue` was built).
 Import that JSON; run `node scripts/verify-abi.mjs` in your area's test script — it exits 1 on any
 drift. The previous project lost this seam twice by encoding from a written document
 (AUDIT-FINDINGS Part 4); this document is a *reading aid* and every selector below was read out of
@@ -304,6 +304,48 @@ Events: `LpOpened(address indexed account,bytes32 indexed poolId,uint256 indexed
 
 Errors: `FeeAboveCap(uint256,uint256)` `0x7159abd8` · `ZeroAddress()` `0xd92e233d` · `InvalidWidth(uint24)` `0xb2c36d99` · `InvalidDelay(uint64)` `0x2161f0ea` · `Expired(uint256)` `0xf80dbaea` · `ZeroAmounts()` `0x213c7cc5` · `PoolInactive(bytes32)` `0x3ec8a600` · `BandRequired()` `0x86e45e3c` · `PriceUnreadable(address)` `0x7fdeb21f` · `PriceOutOfBand(uint256,uint160,uint160)` `0xd92331cf` · `NotPositionOwner(uint256,address)` `0x606840e0` · `EngineUnreachable()` `0xd148f8ee` · **`EnumerationAmbiguous(uint8,uint256,bytes)` `0x52e93923`** (fault = `EnumerationFault` {InsufficientGas, ProbeOutOfGas, CanaryAnswered, TerminalShapeUnknown, InconsistentEnd, LivenessLost, PositionUnreadable, OwnerMismatch}, in that order) · `EnumerationFailed(bytes)` `0xb1440723` · `TooManyPositions(uint256)` `0x3ff29beb` · **new:** `BandTooWide(uint160,uint160,uint256)` `0x6dc2c272` · `DegeneratePool(bytes32,address)` `0x46b3c09f`. **`MixedPools()` is deleted.**
 
+## 4b. ILpVenue → SlipstreamLpVenue  (`src/venues/SlipstreamLpVenue.sol`, 2026-09-11)
+
+The direct venue over the cbZEC/USDC pool `0x0Fc4…8566` on the SECOND Slipstream deployment (NPM
+`0xe1f8…8b53`, gauge `0x8779…81FB`; `VERIFIED-BASE-FACTS.md` Addenda 8–9). The same `ILpVenue`
+selectors as §4 — `open` `0x641b9c30`, `increase` `0x02efe039`, `close` `0x2623a0a9`, `closeMany`
+`0x812b00f2`, `claim` `0x388a2c47`, `positionsOf` `0xf867d46b`, `poolTokens` `0xfbadbc39`, `poolOf`
+`0x83966021`, `performanceBps` `0x0b57b453`, `treasury` `0x61d027b3`, `poolSqrtPriceX96` `0xd6473b12`
+— plus **`ownedPool(uint256 positionId,address account) → (bytes32 poolId,bool owned)`** `0xf19009ee`
+(on BOTH venues and on `ILpVenue`: a staked NFT is the GAUGE's on the NFT's books and the account's
+on the gauge's, so `poolOf` alone cannot answer "does this account own it") and
+`positionRange(uint256 positionId,address account) → (int24 tickLower,int24 tickUpper,uint128
+liquidity,bool staked)` `0x599b84b1` (the static range the dashboard shows). Its ONE pool id is
+`POOL_ID()` `0xe0d7d0e9` = `bytes32(uint256(uint160(pool)))` (`@zyo/shared` `directPoolId`);
+`poolTokens` of any other id returns zeros. Views: `POOL()` `0x7535d246`, `NPM()` `0x82ff8414`,
+`GAUGE()` `0x7651b1e6`, `VOTER()` `0x8ebf2fd6`, `SWAP()` `0x04d84108`, `TOKEN0()` / `TOKEN1()` /
+`TICK_SPACING()`, `REWARD_TOKEN()`, the width / band / enumeration bounds as §4.
+
+Semantics that differ from §4: a single-sided `open` is swapped to the centred range's ratio through
+`SWAP` (the pool-direct adapter, §6b) under a floor derived from the caller's band and capped at the
+adapter's 5 %; the mint is two-sided, centred on the current tick, rounded outward to the tick
+spacing; the NFT is `approve`d to the gauge and `deposit`ed when `VOTER.isAlive(gauge)`, else held
+unstaked (`StakeSkipped`); `rebalanceDelay` / `autoCompound` are accepted and ignored (no
+rebalancer); `close` = gauge `withdraw` (pays the AERO) or NPM `collect` (fees while unstaked) — fee
+once per distinct token — then `decreaseLiquidity` / `collect` / `burn`, principal untaxed;
+`closeMany` reports an id the gauge or the NPM refused and leaves it where it is; `claim` = gauge
+`getReward` or NPM `collect`; `positionsOf` = gauge `stakedValues` + NPM `tokenOfOwnerByIndex`
+filtered by pool, failing closed with **`PositionsUnreadable(bytes reason)`** `0x66c1607b`.
+
+Events: `LpOpened` (as §4) · **`LpMinted(address indexed account,uint256 indexed positionId,int24
+tickLower,int24 tickUpper,uint128 liquidity,uint256 used0,uint256 used1,bool staked)`**
+(`0xd429198c…`) · `LpIncreased` · `LpClosed` · `LpCloseFailed` · `ClaimSkipped` · `PerformanceFee` ·
+`FeeSkipped` · `RefundLeft` · **`StakeSkipped(address indexed account,uint256 indexed
+positionId,bytes reason)`** (`0x5211a034…`) · **`SwappedToRatio(address indexed account,address
+indexed tokenIn,uint256 amountIn,uint256 amountOut)`** (`0xc273386b…`).
+
+Errors: the §4 set it shares (`FeeAboveCap`, `ZeroAddress`, `InvalidWidth`, `InvalidDelay`,
+`Expired`, `ZeroAmounts`, `PoolInactive`, `BandRequired`, `PriceUnreadable`, `PriceOutOfBand`,
+`BandTooWide`, `NotPositionOwner`, `DegeneratePool`, `TooManyPositions`) plus **`PoolMismatch(string
+what)`** `0x260b52df` (constructor cross-checks: `pool.nft`, `pool.gauge`, `gauge.nft`, `gauge.pool`,
+`gauge.rewardToken`, `swap.POOL`, `pool.tokens`), `PositionsUnreadable(bytes)` `0x66c1607b`,
+**`RangeExcludesPrice(int24 tick,int24 tickLower,int24 tickUpper)`** `0x3168591b`.
+
 ## 5. CollateralRegistry  (`src/registry/CollateralRegistry.sol`, Ownable2Step)
 
 Constructor: `(address initialOwner, uint256 entryHfFloorWad, uint256 timelockDelay)`.
@@ -357,6 +399,22 @@ Live SwapRouter, code-verified 2026-09-06: **`0xBE6D8f0d05cC4be24d5167a3eF062215
 `0x6Cb442acF35158D5eDa88fe602Ef9Cf89694fFEa` that circulates publicly has **no code on Base** — do
 not use it.
 
+## 6b. ISwapAdapter → SlipstreamPoolSwapAdapter  (`src/swap/SlipstreamPoolSwapAdapter.sol`, 2026-09-11)
+
+The pool-direct adapter for the ONE pool the verified SwapRouter cannot reach: the same `swap`
+`0xaa212198` / `minOutFor` `0xea6f620b` / `MAX_SLIPPAGE_BPS` `0xe229cd76` (= 500) as §6, plus
+**`uniswapV3SwapCallback(int256 amount0Delta,int256 amount1Delta,bytes data)`** `0xfa461e33` — the
+pool's callback, accepted only from `POOL()` `0x7535d246`, only while a swap is in flight, only once,
+paying the pool exactly the positive delta of the input token from the calling account
+(`execFromPeripheral` → charged to a keeper's budget like any transfer). `routeData` =
+`abi.encode(int24 tickSpacing)` as §6, and it must be the pool's (`WrongRoute(int24 given,int24
+expected)` `0xf7364524`). Differences from §6, stated: the output is MEASURED as the account's
+balance delta (never a return value); the input consumed must be exactly `amountIn`
+(**`PartialFill(uint256 amountIn,uint256 consumed)`** `0x20aae256`, never half-done); the pair must
+be the pool's (**`NotPoolPair(address,address)`** `0x0014ed04`); **`NotPool(address caller)`**
+`0x4a1576a2`, **`NoSwapInFlight()`** `0x9af5fad2`, `Reentrancy()` `0xab143c06`. Views: `TOKEN0()`,
+`TOKEN1()`, `TICK_SPACING()`, `BPS()`. Event `Swapped` as §6.
+
 ## 7. StrategyRouter  (`src/router/StrategyRouter.sol`) — stateless
 
 ```
@@ -375,13 +433,13 @@ UnwindParams     { address collateralAsset; uint256[] positionIds; PriceBand ban
 |---|---|---|
 | `0x3c2639d6` | `openLeveragedLp(OpenParams) → (uint256 positionId,uint256 healthFactor)` | Permit2 pull → supply → borrow USDC → LP open (USDC single-sided; pool must contain USDC) |
 | `0x16e05d79` | `openBorrowOnly(BorrowOnlyParams) → uint256 healthFactor` | **new** — the "hold" shape; same registry gate, deadline, floor and delta assertions; nothing deployed |
-| `0x08435e75` | `unwind(UnwindParams) → (uint256 usdcFromLp,uint256 repaid,uint256 withdrawn,uint256 healthFactor)` | closeMany (stale ids reported at any index) → swap the non-USDC leg under the quote → repay on EVERY venue the account owes, lowest HF first, one `VenueRepaid` each (a fixed repay against zero debt is a no-op) → withdraw from the venue holding the position (gated on THAT venue's GLOBAL HF). Works on a DISABLED ASSET; refuses through a DISABLED VENUE |
+| `0x08435e75` | `unwind(UnwindParams) → (uint256 usdcFromLp,uint256 repaid,uint256 withdrawn,uint256 healthFactor)` | closeMany on the venue that says the account owns the first id (`ownedPool`: the engine venue first, then the direct one; stale ids reported at any index) → swap the non-USDC leg under the quote through THAT venue's adapter → repay on EVERY venue the account owes, lowest HF first, one `VenueRepaid` each (a fixed repay against zero debt is a no-op) → **since 2026-09-11** withdraw from EVERY venue holding the account's collateral, current pointer first, each gated on its own GLOBAL HF, one `VenueWithdrawn` each (`max` = all everywhere; a fixed amount is a total in venue order, `CollateralShort` if unmet). Works on a DISABLED ASSET; refuses through a DISABLED VENUE. Selector unchanged |
 | `0x780469bb` | `sweep(address[] tokens)` | whole balances to `account.owner()` — earnings to the wallet |
-| views | `0x06433b1b` `REGISTRY()` · `0xbe14899f` `LP_VENUE()` · `0x04d84108` `SWAP()` · `0x6afdd850` `PERMIT2()` · `0x89a30271` `USDC()` | |
+| views | `0x06433b1b` `REGISTRY()` · `0xbe14899f` `LP_VENUE()` · `0x04d84108` `SWAP()` · `0x6afdd850` `PERMIT2()` · `0x89a30271` `USDC()` · **new (2026-09-11)** `0x37829814` `LP_VENUE_DIRECT()` · `0x44757dfe` `SWAP_DIRECT()` (both zero on a deployment without the direct venue) | |
 
-Events `LeveragedLpOpened(address indexed account,address indexed collateralAsset,uint256 collateralAmount,uint256 borrowed,bytes32 indexed poolId,uint256 positionId,uint256 healthFactor)` (`0x6c145e8b…`) · **new** `BorrowOnlyOpened(address indexed account,address indexed collateralAsset,uint256 collateralAmount,uint256 borrowed,uint256 healthFactor)` (`0xcc55d9e7…`) · `LeveragedLpUnwound(address indexed account,address indexed collateralAsset,uint256 closedCount,uint256 failedCount,uint256 usdcFromLp,uint256 repaid,uint256 withdrawn,uint256 healthFactor)` (`0x56a4f848…`; `healthFactor` is the worst across the venues named for the asset) · **new (2026-09-09)** `VenueRepaid(address indexed account,address indexed venue,uint256 repaid)` (`0x327daf51…`, one per venue the repay reached, worst first) · `Swept(address indexed account,address indexed token,address indexed to,uint256 amount)` (`0xddb9e887…`).
+Events `LeveragedLpOpened(address indexed account,address indexed collateralAsset,uint256 collateralAmount,uint256 borrowed,bytes32 indexed poolId,uint256 positionId,uint256 healthFactor)` (`0x6c145e8b…`) · **new** `BorrowOnlyOpened(address indexed account,address indexed collateralAsset,uint256 collateralAmount,uint256 borrowed,uint256 healthFactor)` (`0xcc55d9e7…`) · `LeveragedLpUnwound(address indexed account,address indexed collateralAsset,uint256 closedCount,uint256 failedCount,uint256 usdcFromLp,uint256 repaid,uint256 withdrawn,uint256 healthFactor)` (`0x56a4f848…`; `healthFactor` is the worst across the venues named for the asset) · **new (2026-09-09)** `VenueRepaid(address indexed account,address indexed venue,uint256 repaid)` (`0x327daf51…`, one per venue the repay reached, worst first) · **new (2026-09-11)** `VenueWithdrawn(address indexed account,address indexed venue,uint256 withdrawn)` (`0x117e568a…`, one per venue the withdraw leg reached, current pointer first) · `Swept(address indexed account,address indexed token,address indexed to,uint256 amount)` (`0xddb9e887…`).
 
-Errors `ZeroAddress()` `0xd92e233d` · `Expired(uint256)` `0xf80dbaea` · `AssetNotRegistered(address)` `0x1a2a9e87` · `AssetDisabled(address asset,string note)` `0x121ab360` · `VenueDisabled(address)` `0x251897fd` (**now reachable on `unwind`**) · `ZeroBorrow()` `0x774257f7` · `PoolWithoutUsdc(bytes32)` `0x3a20909e` · `EntryHfTooLow(uint256,uint256)` `0xd40fd174` · `ExitHfTooLow(uint256,uint256)` `0x73cd1b85` · **new:** `RouterBalanceChanged(address token,uint256 balanceBefore,uint256 balanceAfter)` `0xc690fd22`. **`RouterHoldsBalance` is deleted — remove every reference.**
+Errors `ZeroAddress()` `0xd92e233d` · `Expired(uint256)` `0xf80dbaea` · `AssetNotRegistered(address)` `0x1a2a9e87` · `AssetDisabled(address asset,string note)` `0x121ab360` · `VenueDisabled(address)` `0x251897fd` (**now reachable on `unwind`**) · `ZeroBorrow()` `0x774257f7` · `PoolWithoutUsdc(bytes32)` `0x3a20909e` · `EntryHfTooLow(uint256,uint256)` `0xd40fd174` · `ExitHfTooLow(uint256,uint256)` `0x73cd1b85` · **new:** `RouterBalanceChanged(address token,uint256 balanceBefore,uint256 balanceAfter)` `0xc690fd22` · **new (2026-09-11):** `UnknownPool(bytes32 poolId)` `0x180b8555` (neither LP venue serves it) · `CollateralShort(uint256 asked,uint256 withdrawn)` `0xb73f0d17` (a fixed withdraw the venues could not meet). **`RouterHoldsBalance` is deleted — remove every reference.** Constructor (2026-09-11): `(registry, lpVenue, swapAdapter, permit2, usdc, lpVenueDirect, swapAdapterDirect)` — the last two together or both zero.
 
 ## 8. PythOracleAdapter (v1.1, built, UNUSED)  (`src/oracle/PythOracleAdapter.sol`)
 
@@ -406,6 +464,12 @@ Errors `ZeroAddress()` `0xd92e233d` · `Expired(uint256)` `0xf80dbaea` · `Asset
   `ICollateralVenue` fragments the venue-aware reader encodes, pinned against the interface and `MorphoBlueVenue`).
 
 ## 10. Addresses (Base 8453) — from VERIFIED-BASE-FACTS only, mirrored in `script/Deploy.s.sol::BaseAddresses`
+
+*Added 2026-09-11 (Addenda 8–9):* the second Slipstream CLFactory `0xf8f2eB4940CFE7d13603DDDD87f123820Fc061Ef`
+(`AERODROME_CL_FACTORY_2`), its NonfungiblePositionManager `0xe1f8cd9AC4e4A65F54f38a5CdAfCA44f6dD68b53`
+(`AERODROME_NPM_2`) and the cbZEC/USDC gauge `0x8779E34E5d38358B0cB957c553B40cC1208C81FB`
+(`AERODROME_CBZEC_USDC_GAUGE`) — what `SlipstreamLpVenue` binds to; the deploy guard checks the pool
+names all three.
 
 USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` · WETH `0x4200000000000000000000000000000000000006` · cbBTC `0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf` · cbZEC `0xB2000000000000000000008501b13360000cb2EC` (B20) · AERO `0x940181a94A35A4569E4529A3CDfB74e38FD98631` · Aave provider `0xe20fCBdBfFC4Dd138cE8b2E6FBb6CB49777ad64D` / pool `0xA238Dd80C259a72e81d7e4664a9801593F98d1c5` / data provider `0x0F43731EB8d45A581f4a36DD74F5f358bc90C73A` / oracle `0x2Cc0Fc26eD4563A5ce5e8bdcfe1A2878676Ae156` · Chainlink cbBTC/USD `0x07DA0E54543a844a80ABE69c8A12F22B3aA59f9D`, ETH/USD `0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70` · Pyth `0x8250f4aF4B972684F7b336503E2D6dFeDeB1487a`, ZEC/USD id `0xbe9b59d1…bb24` · Aerodrome cbZEC/USDC pool `0x0Fc47C17AF86078d809358db1b4db2DeBC988566` · **Aerodrome Slipstream SwapRouter `0xBE6D8f0d05cC4be24d5167a3eF062215bE6D18a5`** and **Multicall3 `0xcA11bde05977b3631167028862bE2a173976CA11`** (both code-verified 2026-09-06) · Morpho `0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb` · Permit2 `0x000000000022D473030F116dDEE9F6B43aC78BA3` · Snuggle engine `0x7D27CDfBFcC878F7E7349e216d44204BFd2AFd55`.
 

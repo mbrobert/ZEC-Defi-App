@@ -328,3 +328,73 @@ test("revokeAll is a planned call with its own plain sentence and says what stop
 test("deadlineFromNow is DEADLINE_MINUTES ahead, in seconds", () => {
   assert.equal(deadlineFromNow(1_700_000_000_000), 1_700_000_000 + DEADLINE_MINUTES * 60);
 });
+
+// ---------------------------------------------------------------------------------------------
+// Slice F (2026-09-11): the two-book Close in one transaction, and the direct Slipstream venue.
+// ---------------------------------------------------------------------------------------------
+test("Close on an account whose collateral sits in two places says so, and says the one transaction returns it from both (RISKS §8 option 1)", () => {
+  const one = buildUnwindPlan({ account: ACCOUNT, positionIds: [42n], collateral: "cbBTC", deployment: LIVE, deadline: 1_800_000_000, bandToleranceBps: 100, quote: QUOTE, collateralPlaces: 1 });
+  assert.doesNotMatch(one[0].plain, /places/);
+  const two = buildUnwindPlan({ account: ACCOUNT, positionIds: [42n], collateral: "cbBTC", deployment: LIVE, deadline: 1_800_000_000, bandToleranceBps: 100, quote: QUOTE, collateralPlaces: 2 });
+  assert.match(two[0].plain, /sits in 2 places/);
+  assert.match(two[0].plain, /returns it from every one of them/);
+  assert.match(two[0].plain, /nothing is left behind for a second signature/);
+  const withdraw = two[0].args.find((a) => a.name === "withdrawAmount")!;
+  assert.match(withdraw.value, /every one of the 2 venues holding it/);
+  assert.match(two[0].note, /withdraw from EVERY venue holding your collateral/);
+  assert.match(two[0].note, /one VenueWithdrawn per venue/);
+  // The encoding is unchanged: one unwind(ids, repay max, withdraw max) — the router iterates.
+  const w = encodeUnwindWrite({ account: ACCOUNT, positionIds: [42n], collateral: "cbBTC", deployment: LIVE, deadline: 1_800_000_000, bandToleranceBps: 100, quote: QUOTE, collateralPlaces: 2 }, BAND);
+  const d = decodeFunctionData({ abi: ACCOUNT_ABI, data: w.data });
+  const u = decodeFunctionData({ abi: ROUTER_ABI, data: d.args[2] as Hex });
+  assert.equal(u.functionName, "unwind");
+  assert.equal((u.args[0] as Record<string, unknown>).withdrawAmount, 2n ** 256n - 1n);
+});
+
+test("a Close on a direct Slipstream position names the venue and the pool-direct swap; the router call is the same unwind", () => {
+  const plan = buildUnwindPlan({ account: ACCOUNT, positionIds: [7n], collateral: "cbBTC", deployment: LIVE, deadline: 1_800_000_000, bandToleranceBps: 100, quote: QUOTE, positionVenue: "direct", poolLabel: "USDC/cbZEC" });
+  assert.ok(plan[0].args.some((a) => a.name === "positions" && a.value === "Slipstream position #7"));
+  assert.ok(plan[0].args.some((a) => a.name === "swap route" && /pool's own swap/.test(a.value)));
+  assert.match(plan[0].note, /SlipstreamLpVenue/);
+  assert.match(plan[0].note, /SlipstreamPoolSwapAdapter/);
+  assert.equal(plan[0].functionName, "execWithCallback → StrategyRouter.unwind");
+});
+
+test("a claim on a direct position targets the direct venue, not the engine's; a deployment without one is not signable and encode throws by name", () => {
+  const DIRECT = "0x1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d" as const;
+  const live = { ...LIVE, lpVenueDirect: DIRECT };
+  const input = { account: ACCOUNT, positionIds: [7n], sweepTokens: [{ symbol: "AERO", address: BASE_TOKENS.AERO.address }], deployment: live, deadline: 1_800_000_000, bandToleranceBps: 100, venue: "direct" as const };
+  const plan = buildClaimPlan(input);
+  assert.equal(plan[0].encodable, true);
+  assert.equal(plan[0].functionName, "execBatch → SlipstreamLpVenue.claim, StrategyRouter.sweep");
+  assert.ok(plan[0].args.some((a) => a.name === "band" && /swaps nothing/.test(a.value)));
+  const w = encodeClaimWrite(input, BAND);
+  const d = decodeFunctionData({ abi: ACCOUNT_ABI, data: w.data });
+  const calls = d.args[0] as { target: string; callback: boolean }[];
+  assert.equal(calls[0].target.toLowerCase(), DIRECT);
+  assert.equal(calls[0].callback, true);
+  assert.equal(calls[1].target, live.router);
+  // The engine claim still targets the engine venue.
+  const engine = encodeClaimWrite({ ...input, venue: "engine" }, BAND);
+  const e = decodeFunctionData({ abi: ACCOUNT_ABI, data: engine.data });
+  assert.equal((e.args[0] as { target: string }[])[0].target, live.lpVenue);
+  // No direct venue on the deployment: not signable, and the encoder refuses by name.
+  const none = buildClaimPlan({ ...input, deployment: LIVE });
+  assert.equal(none[0].encodable, false);
+  assert.throws(() => encodeClaimWrite({ ...input, deployment: LIVE }, BAND), /no direct Slipstream venue/);
+});
+
+test("an open on a direct pool says the position is held directly, part-swapped through the pool, centred and staked — and encodes the padded pool address as the pool id", () => {
+  const poolId = "0x0000000000000000000000000fc47c17af86078d809358db1b4db2debc988566" as const;
+  const calls = buildOpenPlan({ ...base, strategy: "lp", enginePoolId: poolId, poolVenue: "direct", poolLabel: "USDC/cbZEC" });
+  const open = calls.find((c) => c.kind === "open")!;
+  assert.ok(open.args.some((a) => a.name === "poolId" && /held directly on Aerodrome Slipstream/.test(a.value) && /staked in the pool's gauge/.test(a.value)));
+  assert.match(open.note, /SlipstreamLpVenue\.open/);
+  // An existing account: execWithCallback(router, 0, openLeveragedLp(...)).
+  const w = encodeOpenWrite({ ...base, accountDeployed: true, keeperProtection: false, strategy: "lp", enginePoolId: poolId, poolVenue: "direct" }, { nonce: 1n, deadline: 1n, signature: SIG }, BAND);
+  const d = decodeFunctionData({ abi: ACCOUNT_ABI, data: w.data });
+  assert.equal(d.functionName, "execWithCallback");
+  const inner = decodeFunctionData({ abi: ROUTER_ABI, data: (d.args as unknown as [unknown, unknown, Hex])[2] });
+  assert.equal(inner.functionName, "openLeveragedLp");
+  assert.equal((inner.args[0] as Record<string, unknown>).poolId, poolId);
+});

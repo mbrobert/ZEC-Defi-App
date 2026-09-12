@@ -11,7 +11,7 @@ import {
   type Hex,
 } from "viem";
 import { AAVE_V3, COLLATERAL_ASSETS, COLLATERAL_SYMBOLS } from "@zyo/shared";
-import { aaveVenueAbi, clPoolAbi, collateralRegistryAbi, collateralVenueAbi, erc20BalanceAbi, lpVenueAbi, oilskinAccountAbi, strategyRouterAbi, swapAdapterAbi } from "../src/abi/oilskin.js";
+import { aaveVenueAbi, clPoolAbi, collateralRegistryAbi, collateralVenueAbi, directLpVenueAbi, erc20BalanceAbi, lpVenueAbi, oilskinAccountAbi, strategyRouterAbi, swapAdapterAbi } from "../src/abi/oilskin.js";
 import type { Address } from "../src/types/evm.js";
 import { MAX_UINT256 } from "../src/types/evm.js";
 import type { MockChain, MockLog } from "./mockChain.js";
@@ -39,6 +39,13 @@ import { USDC } from "./fixtures.js";
 export interface MockOilskinOptions {
   router: Address;
   lpVenue: Address;
+  /**
+   * The direct Slipstream venue (`router.LP_VENUE_DIRECT()`), 2026-09-11. Absent = the zero
+   * address, the shape of a deployment without one. Its ids live in the same `positions` map
+   * (the mock router closes any id) but are listed only by ITS `positionsOf`, and `ownedPool`
+   * answers for them the way the real venue does for a gauge-staked id.
+   */
+  lpVenueDirect?: Address;
   usdc?: Address;
   /** `router.REGISTRY()`. Defaults to REGISTRY_ADDR. */
   registry?: Address;
@@ -73,6 +80,9 @@ export const OTHER_VENUE_ADDR = getAddress("0x0000000000000000000000000000000000
 export const MORPHO_VENUE_ADDR = OTHER_VENUE_ADDR;
 /** An address with a contract that answers NOTHING the reader asks — a venue the keeper cannot talk to. */
 export const DEAD_VENUE_ADDR = getAddress("0x0000000000000000000000000000000000000e16") as Address;
+/** The direct Slipstream venue and the gauge that owns its staked NFTs (2026-09-11). */
+export const LP_VENUE_DIRECT_ADDR = getAddress("0x0000000000000000000000000000000000000e17") as Address;
+export const DIRECT_GAUGE_ADDR = getAddress("0x0000000000000000000000000000000000000e18") as Address;
 
 /** One isolated-market position on the Morpho-style mock venue. */
 export interface MockMorphoPosition {
@@ -172,8 +182,22 @@ export class MockOilskin {
     const g = this.grants.get(`${keeper}:${target}:${selector}`.toLowerCase());
     return g !== undefined && g.active;
   }
+  /** Ids on the direct venue, and a `PositionsUnreadable` fault per account for its `positionsOf`. */
+  directIds = new Set<bigint>();
+  directFault = new Map<string, Hex>();
+
+  /** Positions on the DIRECT venue: closable by the mock router like any other, listed only there. */
+  setDirectPositions(account: Address, list: { id: bigint; poolId: Hex }[]): void {
+    const key = account.toLowerCase();
+    const kept = (this.positions.get(key) ?? []).filter((p) => !this.directIds.has(p.id));
+    for (const p of list) this.directIds.add(p.id);
+    this.positions.set(key, [...kept, ...list]);
+  }
+
   setPositions(account: Address, list: { id: bigint; poolId: Hex }[]): void {
-    this.positions.set(account.toLowerCase(), [...list]);
+    const key = account.toLowerCase();
+    const direct = (this.positions.get(key) ?? []).filter((p) => this.directIds.has(p.id));
+    this.positions.set(key, [...list, ...direct]);
   }
   /** Make the venue REFUSE to enumerate this account: `positionsOf` reverts `EnumerationAmbiguous(code, index, 0x)` (slice A). */
   setPositionsFault(account: Address, fault: { code: number; index: bigint } | null): void {
@@ -305,9 +329,50 @@ export class MockOilskin {
       const { functionName } = decodeFunctionData({ abi: strategyRouterAbi, data });
       if (functionName === "USDC") return encodeFunctionResult({ abi: strategyRouterAbi, functionName, result: this.usdc });
       if (functionName === "LP_VENUE") return encodeFunctionResult({ abi: strategyRouterAbi, functionName, result: this.opts.lpVenue });
+      if (functionName === "LP_VENUE_DIRECT") {
+        return encodeFunctionResult({ abi: strategyRouterAbi, functionName, result: this.opts.lpVenueDirect ?? ("0x" + "00".repeat(20)) as Address });
+      }
       if (functionName === "REGISTRY") return encodeFunctionResult({ abi: strategyRouterAbi, functionName, result: this.registry });
       throw revert("mock router: not callable directly");
     });
+    if (this.opts.lpVenueDirect) {
+      c.set(this.opts.lpVenueDirect.toLowerCase(), (data) => {
+        const { functionName, args } = decodeFunctionData({ abi: lpVenueAbi, data });
+        if (functionName === "positionsOf") {
+          const [acct] = args as [Address];
+          const fault = this.directFault.get(acct.toLowerCase());
+          if (fault) throw revertWith(encodeErrorResult({ abi: directLpVenueAbi, errorName: "PositionsUnreadable", args: [fault] }));
+          const mine = (this.positions.get(acct.toLowerCase()) ?? []).filter((p) => this.directIds.has(p.id)).map((p) => p.id);
+          return encodeFunctionResult({ abi: lpVenueAbi, functionName, result: mine });
+        }
+        if (functionName === "ownedPool") {
+          const [id, acct] = args as [bigint, Address];
+          const p = (this.positions.get(acct.toLowerCase()) ?? []).find((x) => x.id === id && this.directIds.has(id));
+          return encodeFunctionResult({ abi: lpVenueAbi, functionName, result: p ? [p.poolId, true] : [("0x" + "00".repeat(32)) as Hex, false] });
+        }
+        if (functionName === "poolOf") {
+          // The NFT's owner: the GAUGE for a staked id — never the account. `ownedPool` is the question.
+          const [id] = args as [bigint];
+          for (const list of this.positions.values()) {
+            const p = list.find((x) => x.id === id && this.directIds.has(id));
+            if (p) return encodeFunctionResult({ abi: lpVenueAbi, functionName, result: [p.poolId, DIRECT_GAUGE_ADDR] });
+          }
+          return encodeFunctionResult({ abi: lpVenueAbi, functionName, result: [("0x" + "00".repeat(32)) as Hex, ("0x" + "00".repeat(20)) as Address] });
+        }
+        if (functionName === "poolSqrtPriceX96") {
+          const [poolId] = args as [Hex];
+          const price = this.poolPrices.get(poolId);
+          if (price === undefined) throw revert("mock direct venue: unknown pool");
+          return encodeFunctionResult({ abi: lpVenueAbi, functionName, result: price });
+        }
+        if (functionName === "poolTokens") {
+          const [poolId] = args as [Hex];
+          const t = this.tokensOf(poolId);
+          return encodeFunctionResult({ abi: lpVenueAbi, functionName, result: [t.token0, t.token1, t.pool] });
+        }
+        throw revert("mock direct venue: not callable directly");
+      });
+    }
     c.set(this.registry.toLowerCase(), (data) => {
       const { functionName, args } = decodeFunctionData({ abi: collateralRegistryAbi, data });
       const [asset] = args as [Address];
@@ -333,15 +398,20 @@ export class MockOilskin {
         const [acct] = args as [Address];
         const fault = this.positionsFault.get(acct.toLowerCase());
         if (fault) throw revertWith(encodeErrorResult({ abi: lpVenueAbi, errorName: "EnumerationAmbiguous", args: [fault.code, fault.index, "0x"] }));
-        return encodeFunctionResult({ abi: lpVenueAbi, functionName, result: (this.positions.get(acct.toLowerCase()) ?? []).map((p) => p.id) });
+        return encodeFunctionResult({ abi: lpVenueAbi, functionName, result: (this.positions.get(acct.toLowerCase()) ?? []).filter((p) => !this.directIds.has(p.id)).map((p) => p.id) });
       }
       if (functionName === "poolOf") {
         const [id] = args as [bigint];
         for (const [acct, list] of this.positions) {
-          const p = list.find((x) => x.id === id);
+          const p = list.find((x) => x.id === id && !this.directIds.has(id));
           if (p) return encodeFunctionResult({ abi: lpVenueAbi, functionName, result: [p.poolId, acct as Address] });
         }
         throw revert("mock venue: unknown id");
+      }
+      if (functionName === "ownedPool") {
+        const [id, acct] = args as [bigint, Address];
+        const p = (this.positions.get(acct.toLowerCase()) ?? []).find((x) => x.id === id && !this.directIds.has(id));
+        return encodeFunctionResult({ abi: lpVenueAbi, functionName, result: p ? [p.poolId, true] : [("0x" + "00".repeat(32)) as Hex, false] });
       }
       if (functionName === "poolSqrtPriceX96") {
         const [poolId] = args as [Hex];

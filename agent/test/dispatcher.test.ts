@@ -17,7 +17,9 @@ import type { DispatchRecord } from "../src/store/keeperStore.js";
 import type { VenueBook } from "../src/store/keeperStore.js";
 import type { Address } from "../src/types/evm.js";
 import { ACCOUNT_A, CBBTC, USDC, WETH as WETH_T, cbBtcPosition, debtForHf, newMockChain } from "./fixtures.js";
-import { AAVE_VENUE_ADDR, MORPHO_VENUE_ADDR, MockOilskin } from "./mockOilskin.js";
+import { AAVE_VENUE_ADDR, LP_VENUE_DIRECT_ADDR, MORPHO_VENUE_ADDR, MockOilskin } from "./mockOilskin.js";
+import { encodeAbiParameters as encParams, encodeEventTopics as encTopics } from "viem";
+import { strategyRouterAbi as routerAbiForLogs } from "../src/abi/oilskin.js";
 
 const ROUTER = getAddress("0x2000000000000000000000000000000000000001") as Address;
 const LP_VENUE = getAddress("0x2000000000000000000000000000000000000002") as Address;
@@ -50,10 +52,10 @@ function record(action: string, rung: string, hf: number, over: Partial<Dispatch
   return { key: `${ACCOUNT_A.toLowerCase()}:1:1:${action}`, account: ACCOUNT_A.toLowerCase() as Address, episode: 1, seq: 1, action, rung, hf, status: "PENDING", attempts: 0, createdAt: now, updatedAt: now, ...over };
 }
 
-async function rig(hf = 1.3, opts: { venues?: boolean } = {}) {
+async function rig(hf = 1.3, opts: { venues?: boolean; direct?: boolean } = {}) {
   const chain = newMockChain();
   cbBtcPosition(chain, ACCOUNT_A, debtForHf(hf));
-  const oil = new MockOilskin(chain, { router: ROUTER, lpVenue: LP_VENUE });
+  const oil = new MockOilskin(chain, { router: ROUTER, lpVenue: LP_VENUE, ...(opts.direct ? { lpVenueDirect: LP_VENUE_DIRECT_ADDR } : {}) });
   oil.install([ACCOUNT_A]);
   oil.poolPrices.set(POOL_A, SQRT_P);
   oil.poolPrices.set(POOL_B, SQRT_P * 2n);
@@ -80,6 +82,7 @@ async function rig(hf = 1.3, opts: { venues?: boolean } = {}) {
     keeper: KEEPER,
     router: ROUTER,
     lpVenue: LP_VENUE,
+    lpVenueDirect: opts.direct ? LP_VENUE_DIRECT_ADDR : null,
     usdc: USDC,
     reader,
     venues,
@@ -807,5 +810,79 @@ describe("KeeperDispatcher — world check before acting (resume safety)", () =>
     const all = r.sink.lines.join("\n");
     assert.ok(!all.includes(KEY.slice(2)), "private key in logs");
     assert.ok(all.includes('"txHash":"0x'), "tx hash is logged under its allow-listed field");
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Slice F (2026-09-11): the direct Slipstream venue next to the engine venue, and the router's
+// `VenueWithdrawn` in the receipt summary.
+// ---------------------------------------------------------------------------------------------
+describe("keeper dispatcher — two LP venues (the direct Slipstream venue), and VenueWithdrawn", () => {
+  const POOL_DIRECT = ("0x" + "0".repeat(24) + "d1".repeat(20)) as Hex;
+
+  it("summarizeUnwinds reads one VenueWithdrawn per venue into withdrawnByVenue (a keeper receipt carries none)", () => {
+    const account = ACCOUNT_A;
+    const mk = (venue: Address, amount: bigint) => ({
+      address: ROUTER,
+      topics: encTopics({ abi: routerAbiForLogs, eventName: "VenueWithdrawn", args: { account, venue } }) as Hex[],
+      data: encParams([{ type: "uint256" }], [amount]),
+    });
+    const unwound = {
+      address: ROUTER,
+      topics: encTopics({ abi: routerAbiForLogs, eventName: "LeveragedLpUnwound", args: { account, collateralAsset: CBBTC } }) as Hex[],
+      data: encParams(
+        [{ type: "uint256" }, { type: "uint256" }, { type: "uint256" }, { type: "uint256" }, { type: "uint256" }, { type: "uint256" }],
+        [0n, 0n, 0n, 1n, 3n, 2n ** 255n]
+      ),
+    };
+    const s = summarizeUnwinds([unwound, mk(MORPHO_VENUE_ADDR, 1n), mk(AAVE_VENUE_ADDR, 2n)], account);
+    assert.equal(s.withdrawn, 3n);
+    assert.deepEqual([...s.withdrawnByVenue.entries()], [[MORPHO_VENUE_ADDR.toLowerCase(), 1n], [AAVE_VENUE_ADDR.toLowerCase(), 2n]]);
+    assert.equal(s.byVenue.size, 0, "no VenueRepaid in this receipt");
+    const none = summarizeUnwinds([unwound], account);
+    assert.equal(none.withdrawnByVenue.size, 0);
+  });
+
+  it("reads BOTH venues' positionsOf, plans one unwind per pool, and the router closes the engine id and the direct id in one dispatch", async () => {
+    const r = await rig(1.0, { direct: true });
+    r.oil.setPositions(ACCOUNT_A, [{ id: 1n, poolId: POOL_A }]);
+    r.oil.setDirectPositions(ACCOUNT_A, [{ id: 7n, poolId: POOL_DIRECT }]);
+    r.oil.poolPrices.set(POOL_DIRECT, SQRT_P);
+    r.oil.defaultCloseYield = { usdc: 8_000_000_000n, other: 0n };
+    r.grantAll();
+    const res = await r.dispatcher.dispatch({ record: record("emergency-unwind", "emergency", 1.0), valuation: await r.valuation() });
+    assert.equal(res.status, "SENT", JSON.stringify(res));
+    const exec = r.oil.executed.filter((e) => e.mutate);
+    assert.equal(exec.length, 1);
+    assert.deepEqual(exec[0].calls.map((c) => c.selector), [GRANT_SELECTORS["StrategyRouter.unwind"], GRANT_SELECTORS["StrategyRouter.unwind"]], "one unwind per pool: the engine pool and the direct pool");
+    assert.equal(r.oil.positions.get(ACCOUNT_A.toLowerCase())!.length, 0, "both ids closed");
+    const c = await r.dispatcher.confirm(record("emergency-unwind", "emergency", 1.0, { status: "SENT", txHash: (res as { txHash: Hex }).txHash }));
+    assert.equal(c.status, "CONFIRMED", JSON.stringify(c));
+  });
+
+  it("without a direct venue on the router (null) the direct id is invisible and only the engine pool is planned — the pre-slice shape", async () => {
+    const r = await rig(1.0);
+    r.oil.setPositions(ACCOUNT_A, [{ id: 1n, poolId: POOL_A }]);
+    r.oil.setDirectPositions(ACCOUNT_A, [{ id: 7n, poolId: POOL_DIRECT }]);
+    r.oil.poolPrices.set(POOL_DIRECT, SQRT_P);
+    r.oil.defaultCloseYield = { usdc: 8_000_000_000n, other: 0n };
+    r.grantAll();
+    const res = await r.dispatcher.dispatch({ record: record("emergency-unwind", "emergency", 1.0), valuation: await r.valuation() });
+    assert.equal(res.status, "SENT", JSON.stringify(res));
+    const exec = r.oil.executed.filter((e) => e.mutate);
+    assert.equal(exec[0].calls.length, 1, "one pool: the engine's");
+    assert.deepEqual(r.oil.positions.get(ACCOUNT_A.toLowerCase())!.map((p) => p.id), [7n], "the direct id was never listed, so never closed");
+  });
+
+  it("the direct venue refusing to enumerate (PositionsUnreadable) is REFUSED with the venue named — never planned as 'no positions there'", async () => {
+    const r = await rig(1.0, { direct: true });
+    r.oil.setPositions(ACCOUNT_A, [{ id: 1n, poolId: POOL_A }]);
+    r.oil.directFault.set(ACCOUNT_A.toLowerCase(), "0xdead");
+    r.oil.defaultCloseYield = { usdc: 8_000_000_000n, other: 0n };
+    r.grantAll();
+    const res = await r.dispatcher.dispatch({ record: record("emergency-unwind", "emergency", 1.0), valuation: await r.valuation() });
+    assert.equal(res.status, "REFUSED", JSON.stringify(res));
+    assert.match((res as { reason: string }).reason, /direct venue.*PositionsUnreadable/);
+    assert.equal(r.oil.txFrom.length, 0, "nothing sent");
   });
 });

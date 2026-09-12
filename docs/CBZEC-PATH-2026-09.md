@@ -150,4 +150,16 @@ one epoch's vote.
 engine.** To be built in its own session against the second deployment's addresses recorded in
 Addendum 8 (factory `0xf8f2…61Ef`, NPM `0xe1f8…8b53`, gauge `0x8779…81FB`, gauge factory
 `0x3852…6AbB`), with the swap path settled first (a pool-direct adapter, or a router bound to that
-factory that must be found and probed, never guessed). Nothing of it exists in this tree yet.
+factory that must be found and probed, never guessed).
+
+**Built 2026-09-11 (slice F).** `contracts/src/venues/SlipstreamLpVenue.sol` (833 lines),
+`contracts/src/swap/SlipstreamPoolSwapAdapter.sol` (190 — the pool-direct path with the callback;
+no router bound to the second factory was found, and none was guessed), `interfaces/ISlipstream.sol`
+(166, every signature from the verified sources — `VERIFIED-BASE-FACTS.md` Addendum 9),
+`libraries/LiquidityAmounts.sol` (97, vendored), mocks (`MockSlipstream.sol`, `MockCLPool.sol`
+extended), `test/SlipstreamLpVenue.t.sol` (24 tests), two fork tests, `Deploy.s.sol` (+1 venue, +1
+adapter, +3 addresses, `DEPLOY_DIRECT_LP_VENUE`), the router (a second venue and adapter, resolved by
+pool id on open and by `ownedPool` on unwind), the keeper (both venues' `positionsOf`), the web (the
+pool id is the padded pool address, `lpPoolId`; claims target the direct venue; positions carry their
+venue) and the yield service unchanged (it already gated the pool live). The order of magnitude the
+memo estimated (≈ 2,300 lines) held. `RISKS.md` §12 carries the design and its residuals.

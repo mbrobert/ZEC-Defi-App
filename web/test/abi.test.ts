@@ -26,7 +26,9 @@ import {
   COLLATERAL_REGISTRY_ABI,
   COLLATERAL_VENUE_ABI,
   FACTORY_ABI,
+  DIRECT_LP_VENUE_ABI,
   LP_VENUE_ABI,
+  POOL_SWAP_ADAPTER_ABI,
   PERMIT2_ABI,
   ROUTER_ABI,
   SELECTORS,
@@ -63,6 +65,8 @@ const OURS: Record<string, readonly unknown[]> = {
   ICollateralVenue: COLLATERAL_VENUE_ABI,
   IPermit2: PERMIT2_ABI,
   AerodromeSwapAdapter: SWAP_ADAPTER_ABI,
+  SlipstreamLpVenue: DIRECT_LP_VENUE_ABI,
+  SlipstreamPoolSwapAdapter: POOL_SWAP_ADAPTER_ABI,
 };
 
 test("ABI_STATUS is verified and the generated file carries the bundle hash", () => {

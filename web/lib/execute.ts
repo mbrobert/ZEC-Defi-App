@@ -110,7 +110,20 @@ async function guardedWrite(ctx: RunContext, step: number, spec: WriteSpec, emit
   return hash;
 }
 
-/** Quote the deposit/close/claim band from the engine pool's live sqrtPrice. */
+/**
+ * The LP venue a pool's band is quoted from and a claim is sent to: the engine venue, or the
+ * direct Slipstream venue for a pool held there (2026-09-11). A deployment without a direct venue
+ * refuses by name rather than quoting the wrong contract.
+ */
+export function lpVenueFor(d: Deployment, venue: "engine" | "direct" | undefined): Address {
+  if (venue === "direct") {
+    if (!d.lpVenueDirect) throw new Error("this deployment has no direct Slipstream venue, so a position there cannot be quoted or acted on here");
+    return d.lpVenueDirect;
+  }
+  return d.lpVenue;
+}
+
+/** Quote the deposit/close/claim band from the pool's live sqrtPrice, read through its venue. */
 export async function quoteBand(read: ReadClient, lpVenue: Address, enginePoolId: `0x${string}`, toleranceBps: number): Promise<PriceBand> {
   const sqrtP = (await read.readContract({ address: lpVenue, abi: LP_VENUE_ABI, functionName: "poolSqrtPriceX96", args: [enginePoolId] })) as bigint;
   if (typeof sqrtP !== "bigint" || sqrtP <= 0n) throw new Error("pool price unreadable — refusing to quote a band");
@@ -166,7 +179,7 @@ export async function runOpen(
       let band: PriceBand = { minSqrtPriceX96: 1n, maxSqrtPriceX96: 1n };
       if (input.strategy === "lp") {
         try {
-          band = await quoteBand(ctx.read, d.lpVenue, input.enginePoolId as `0x${string}`, input.bandToleranceBps);
+          band = await quoteBand(ctx.read, lpVenueFor(d, input.poolVenue), input.enginePoolId as `0x${string}`, input.bandToleranceBps);
         } catch (e) {
           emit({ type: "blocked", step: c.step, reason: shortenRevert((e as Error).message) });
           return null;
@@ -203,7 +216,7 @@ export async function runOpen(
 export async function runUnwind(
   ctx: RunContext,
   input: Omit<UnwindPlanInput, "quote">,
-  position: { enginePoolId: `0x${string}`; poolAddress: Address },
+  position: { enginePoolId: `0x${string}`; poolAddress: Address; venue?: "engine" | "direct" },
   emit: Emit,
   onQuote?: (q: QuotedSwap) => void,
 ): Promise<Hex | null> {
@@ -229,7 +242,7 @@ export async function runUnwind(
 
   let band: PriceBand;
   try {
-    band = await quoteBand(ctx.read, d.lpVenue, position.enginePoolId, input.bandToleranceBps);
+    band = await quoteBand(ctx.read, lpVenueFor(d, position.venue), position.enginePoolId, input.bandToleranceBps);
   } catch (e) {
     emit({ type: "blocked", step: 1, reason: shortenRevert((e as Error).message) });
     return null;
@@ -251,7 +264,7 @@ export async function runClaim(ctx: RunContext, input: ClaimPlanInput, enginePoo
   }
   let band: PriceBand;
   try {
-    band = await quoteBand(ctx.read, d.lpVenue, enginePoolId, input.bandToleranceBps);
+    band = await quoteBand(ctx.read, lpVenueFor(d, input.venue), enginePoolId, input.bandToleranceBps);
   } catch (e) {
     emit({ type: "blocked", step: 1, reason: shortenRevert((e as Error).message) });
     return null;

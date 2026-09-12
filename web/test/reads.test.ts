@@ -272,6 +272,16 @@ test("readDeployment discovers the swap adapter, and refuses a router without on
   );
 });
 
+test("readDeployment: LP_VENUE_DIRECT is read (zero or an old router without the view → null; an address → the direct venue)", async () => {
+  const none = await readDeployment(chainClient(deploymentAnswer()), "0x3333333333333333333333333333333333333333", ROUTER, KEEPER);
+  assert.equal(none.lpVenueDirect, null, "a router without the view: the row fails, read as none");
+  const zero = await readDeployment(chainClient(deploymentAnswer({ LP_VENUE_DIRECT: ZERO })), "0x3333333333333333333333333333333333333333", ROUTER, KEEPER);
+  assert.equal(zero.lpVenueDirect, null);
+  const DIRECT = "0x1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d";
+  const some = await readDeployment(chainClient(deploymentAnswer({ LP_VENUE_DIRECT: DIRECT })), "0x3333333333333333333333333333333333333333", ROUTER, KEEPER);
+  assert.equal(some.lpVenueDirect, DIRECT);
+});
+
 test("readDeployment: every enabled asset on an AaveV3Venue over the shared provider → no unsupported venues", async () => {
   const d = await readDeployment(chainClient(deploymentAnswer()), "0x3333333333333333333333333333333333333333", ROUTER, KEEPER);
   assert.deepEqual(d.unsupportedVenues, []);

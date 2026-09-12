@@ -198,6 +198,11 @@ export const strategyRouterAbi = [
   { type: "function", name: "USDC", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
   { type: "function", name: "LP_VENUE", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
   { type: "function", name: "SWAP", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
+  // The direct Slipstream venue over the cbZEC/USDC pool and its pool-direct adapter (2026-09-11);
+  // zero on a deployment without them. The keeper reads BOTH venues' `positionsOf`; the router
+  // resolves an unwind's ids to the venue that says the account owns them (`ownedPool`).
+  { type: "function", name: "LP_VENUE_DIRECT", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
+  { type: "function", name: "SWAP_DIRECT", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
   { type: "function", name: "REGISTRY", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
   /**
    * What an unwind actually did. `confirm` reads it from the receipt: a repay
@@ -234,8 +239,25 @@ export const strategyRouterAbi = [
       { name: "repaid", type: "uint256", indexed: false },
     ],
   },
+  /**
+   * WHICH venue the withdraw leg reached: one per venue holding the account's collateral, current
+   * pointer first (RISKS §8 "two-book Close", option (1), 2026-09-11). The keeper never sets a
+   * withdraw, so its receipts carry none of these; `summarizeUnwinds` reads them for completeness
+   * and the dashboard's activity shows them.
+   */
+  {
+    type: "event",
+    name: "VenueWithdrawn",
+    inputs: [
+      { name: "account", type: "address", indexed: true },
+      { name: "venue", type: "address", indexed: true },
+      { name: "withdrawn", type: "uint256", indexed: false },
+    ],
+  },
   { type: "error", name: "Expired", inputs: [{ name: "deadline", type: "uint256" }] },
   { type: "error", name: "ExitHfTooLow", inputs: [{ name: "healthFactor", type: "uint256" }, { name: "floor", type: "uint256" }] },
+  { type: "error", name: "UnknownPool", inputs: [{ name: "poolId", type: "bytes32" }] },
+  { type: "error", name: "CollateralShort", inputs: [{ name: "asked", type: "uint256" }, { name: "withdrawn", type: "uint256" }] },
   { type: "error", name: "AssetNotRegistered", inputs: [{ name: "asset", type: "address" }] },
   { type: "error", name: "VenueDisabled", inputs: [{ name: "venue", type: "address" }] },
   // The DELTA form. `RouterHoldsBalance` (an absolute zero-balance assertion, and a
@@ -277,6 +299,19 @@ export const lpVenueAbi = [
     outputs: [
       { name: "poolId", type: "bytes32" },
       { name: "owner", type: "address" },
+    ],
+  },
+  {
+    type: "function",
+    name: "ownedPool",
+    stateMutability: "view",
+    inputs: [
+      { name: "positionId", type: "uint256" },
+      { name: "account", type: "address" },
+    ],
+    outputs: [
+      { name: "poolId", type: "bytes32" },
+      { name: "owned", type: "bool" },
     ],
   },
   {
@@ -413,6 +448,53 @@ export const swapAdapterAbi = [
   { type: "error", name: "ZeroQuote", inputs: [] },
   { type: "error", name: "SlippageTooHigh", inputs: [{ name: "bps", type: "uint16" }, { name: "cap", type: "uint16" }] },
   { type: "error", name: "InsufficientOutput", inputs: [{ name: "out", type: "uint256" }, { name: "minOut", type: "uint256" }] },
+] as const;
+
+/**
+ * SlipstreamLpVenue — the direct venue over the cbZEC/USDC pool (2026-09-11). The keeper reads the
+ * same ILpVenue views it reads on the engine venue, asks `ownedPool` because a staked id is the
+ * gauge's on the NFT's books, and decodes the venue's own refusals. `positionsOf` there fails
+ * closed with `PositionsUnreadable(bytes)` when the gauge or the position manager did not answer.
+ */
+export const directLpVenueAbi = [
+  ...lpVenueAbi.filter((x) => x.type === "function" && ["closeMany", "positionsOf", "poolOf", "ownedPool", "poolTokens", "poolSqrtPriceX96", "MAX_BAND_BPS"].includes(x.name)),
+  {
+    type: "function",
+    name: "positionRange",
+    stateMutability: "view",
+    inputs: [
+      { name: "positionId", type: "uint256" },
+      { name: "account", type: "address" },
+    ],
+    outputs: [
+      { name: "tickLower", type: "int24" },
+      { name: "tickUpper", type: "int24" },
+      { name: "liquidity", type: "uint128" },
+      { name: "staked", type: "bool" },
+    ],
+  },
+  { type: "error", name: "PositionsUnreadable", inputs: [{ name: "reason", type: "bytes" }] },
+  { type: "error", name: "PriceUnreadable", inputs: [{ name: "pool", type: "address" }] },
+  { type: "error", name: "PriceOutOfBand", inputs: [{ name: "sqrtPriceX96", type: "uint256" }, { name: "min", type: "uint160" }, { name: "max", type: "uint160" }] },
+  { type: "error", name: "BandRequired", inputs: [] },
+  { type: "error", name: "BandTooWide", inputs: [{ name: "min", type: "uint160" }, { name: "max", type: "uint160" }, { name: "maxBps", type: "uint256" }] },
+  { type: "error", name: "PoolInactive", inputs: [{ name: "poolId", type: "bytes32" }] },
+  { type: "error", name: "NotPositionOwner", inputs: [{ name: "positionId", type: "uint256" }, { name: "owner", type: "address" }] },
+  { type: "error", name: "RangeExcludesPrice", inputs: [{ name: "tick", type: "int24" }, { name: "tickLower", type: "int24" }, { name: "tickUpper", type: "int24" }] },
+] as const;
+
+/**
+ * SlipstreamPoolSwapAdapter — the pool-direct adapter the direct venue's leg swaps through; the
+ * keeper never calls it directly and decodes its reverts (a partial fill or a pool paying less
+ * than it says is refused by name, never half-done).
+ */
+export const poolSwapAdapterAbi = [
+  ...swapAdapterAbi,
+  { type: "error", name: "PartialFill", inputs: [{ name: "amountIn", type: "uint256" }, { name: "consumed", type: "uint256" }] },
+  { type: "error", name: "NotPoolPair", inputs: [{ name: "tokenIn", type: "address" }, { name: "tokenOut", type: "address" }] },
+  { type: "error", name: "WrongRoute", inputs: [{ name: "given", type: "int24" }, { name: "expected", type: "int24" }] },
+  { type: "error", name: "NotPool", inputs: [{ name: "caller", type: "address" }] },
+  { type: "error", name: "NoSwapInFlight", inputs: [] },
 ] as const;
 
 export const erc20BalanceAbi = [

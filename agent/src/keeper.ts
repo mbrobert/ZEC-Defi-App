@@ -18,6 +18,7 @@ import { AccountDiscovery } from "./services/discovery.js";
 import { UnsupportedVenueError, VenueReader } from "./services/venues.js";
 import { KeeperStore } from "./store/keeperStore.js";
 import { ProgressWatchdog, type TickHandle } from "./watchdog.js";
+import type { Address } from "./types/evm.js";
 
 /**
  * Wires the keeper and runs the loop. Structure, in order of what has bitten
@@ -244,12 +245,22 @@ export async function runKeeper(env: NodeJS.ProcessEnv, opts: RunOptions = {}): 
       client.readContract({ address: config.routerAddress, abi: strategyRouterAbi, functionName: "USDC" }),
       client.readContract({ address: config.routerAddress, abi: strategyRouterAbi, functionName: "LP_VENUE" }),
     ]);
+    // The direct Slipstream venue (2026-09-11): zero on a deployment without it, and a router from
+    // before it has no such view at all — both mean "engine venue only", never a fatal start.
+    let lpVenueDirect: Address | null = null;
+    try {
+      const v = await client.readContract({ address: config.routerAddress, abi: strategyRouterAbi, functionName: "LP_VENUE_DIRECT" });
+      if (!/^0x0{40}$/i.test(v)) lpVenueDirect = v;
+    } catch {
+      lpVenueDirect = null;
+    }
     dispatcher = new KeeperDispatcher({
       client,
       wallet,
       keeper: account.address,
       router: config.routerAddress,
       lpVenue,
+      lpVenueDirect,
       usdc,
       reader,
       venues,
@@ -270,7 +281,7 @@ export async function runKeeper(env: NodeJS.ProcessEnv, opts: RunOptions = {}): 
       },
       notifier,
     });
-    log.info("keeper mode", { keeper: account.address, router: config.routerAddress, lpVenue, usdc });
+    log.info("keeper mode", { keeper: account.address, router: config.routerAddress, lpVenue, lpVenueDirect, usdc });
   } else {
     dispatcher = new ObserveOnlyDispatcher(log, notifier);
     log.warn("observe-only: no KEEPER_PRIVATE_KEY — rungs are recorded and warnings delivered, on-chain actions refused");

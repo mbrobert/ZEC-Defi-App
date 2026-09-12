@@ -3,7 +3,7 @@
 What an auditor is asked to read, what it must guarantee, and what we have
 not verified ourselves. Line counts are `wc -l` on this tree. The ABI seam
 (selectors, errors, events) is `CONTRACT-ABI.md` and the generated
-`contracts/abi/oilskin-abi.json` (330 entries as of 2026-09-10); read the code, not the tables.
+`contracts/abi/oilskin-abi.json` (419 entries across 19 contracts as of 2026-09-11); read the code, not the tables.
 Wave 1 of the internal audit and the fix round it produced are in
 `AUDIT-2026-09-06.md`.
 
@@ -12,16 +12,19 @@ Machine; HF = health factor; LT = liquidation threshold; LTV = loan-to-value;
 LP = liquidity provision; TWAP = time-weighted average price; RPC = remote
 procedure call; EIP = Ethereum Improvement Proposal; MC = Monte Carlo.
 
-## In scope — on chain (`contracts/src`, 3,492 lines, solc 0.8.24, via-IR, EVM cancun)
+## In scope — on chain (`contracts/src`, 5,773 lines on 2026-09-11, solc 0.8.24, via-IR, EVM cancun)
 
 | Contract | Lines | Role | Owner / admin |
 |---|---|---|---|
 | `account/OilskinAccount.sol` | 642 | The user's account: `exec` (plain) / `execWithCallback` / `execBatch` (owner), `execAsKeeper` (grant-checked), `execFromPeripheral` / `execNestedPeripheral` (active peripheral only, depth ≤ 8), `execBatchFromFactory` (factory only), grants and budgets in transient-storage context | none; `owner` immutable after `initialize` |
 | `account/OilskinAccountFactory.sol` | 81 | CREATE2 clones, `accountOf`, `createAccount`, idempotent `createAccountAndExec` | none |
 | `account/Peripheral.sol` | 61 | Base for venues / router: `_exec`, `_execMany`, `_approveCallReset`; documents that a stateful peripheral must carry its own reentrancy guard | — |
-| `router/StrategyRouter.sol` | 443 | `openLeveragedLp`, `openBorrowOnly`, `unwind`, `sweep`; stateless; asserts its balance of every token it touches is **unchanged** (a delta, not a zero) | none |
+| `router/StrategyRouter.sol` | 755 | `openLeveragedLp`, `openBorrowOnly`, `unwind`, `sweep`; stateless; asserts its balance of every token it touches is **unchanged** (a delta, not a zero). Since 2026-09-11: two LP venues (engine first, then direct — by pool id on open, by `ownedPool` on unwind) and the withdraw leg visiting every venue holding the account's collateral, one `VenueWithdrawn` each | none |
+| `venues/SlipstreamLpVenue.sol` | 833 | `ILpVenue` directly over the cbZEC/USDC pool's second-deployment position manager and gauge (2026-09-11): to-ratio swap through the pool under a band-derived floor, centred two-sided mint, gauge stake when alive, fee once per distinct token on what `claim` / `close` collect, enumeration = gauge `stakedValues` + NPM enumerable filtered by pool, fails closed by name | none; `performanceBps`, `treasury` immutable; constructor cross-checks pool ↔ NPM ↔ gauge ↔ adapter |
+| `swap/SlipstreamPoolSwapAdapter.sol` | 190 | `ISwapAdapter` over one pool's own `swap` with `uniswapV3SwapCallback` paying the pool from the account (2026-09-11): floor on the account's balance delta, partial fill refused, callback only from the bound pool while a swap is in flight, once | none |
+| `interfaces/ISlipstream.sol` + `libraries/LiquidityAmounts.sol` | 166 + 97 | the second deployment's NPM / gauge / pool / Voter subsets, every signature from the verified sources (Addendum 9); vendored Uniswap-lineage liquidity math | — |
 | `venues/AaveV3Venue.sol` | 189 | `ICollateralVenue` over Aave v3; provider-resolved addresses; LT / LTV read at call time; **enforces the registry's offer on `supply` and the entry HF floor on `borrow`** | none |
-| `venues/SnuggleLpVenue.sol` | 651 | `ILpVenue` over the Snuggle engine; single fee chokepoint (once per distinct token); price band with a bounded width; width bounds; shape-exact enumeration; refund folding; stale ids reported at any index | none; `performanceBps`, `treasury` immutable |
+| `venues/SnuggleLpVenue.sol` | 757 | `ILpVenue` over the Snuggle engine; single fee chokepoint (once per distinct token); price band with a bounded width; width bounds; enumeration that accepts a terminal revert only when gas, shape, consistency and ownership agree; refund folding; stale ids reported at any index; `ownedPool` (2026-09-11) | none; `performanceBps`, `treasury` immutable |
 | `venues/MorphoBlueVenue.sol` | ~330 | `ICollateralVenue` over the two verified Base Morpho markets; entry floor + registry gate in the venue; per-market isolation (worst-market HF, headroom borrow, worst-first repay); `libraries/MorphoMath.sol` reproduces Morpho's share/interest arithmetic. Deployed but not the registry's venue until propose → timelock → accept | `CollateralVenues.t.sol` (MorphoBlueVenueTest), `audit-regressions/MorphoEntryFloor.t.sol` |
 | `registry/CollateralRegistry.sol` | 257 | Asset → venue / enabled / note; `maxOfferedLtvBps` derived from LT **and** LTV; `entryHfFloorWad` in (1, 10]; **venue replacement behind an immutable timelock** with propose / accept / cancel and a `pendingVenue` view | `Ownable2Step` — the only owned contract |
 | `swap/AerodromeSwapAdapter.sol` | 111 | One Slipstream `exactInputSingle`, recipient = account; floor derived from a caller quote with an on-chain 500 bps cap; `minOutFor` view | none |
@@ -97,8 +100,10 @@ bands (informational), `contracts/test/mocks` (test doubles).
 
 ## Invariants actually asserted
 
-From `contracts/test/invariant/Invariants.t.sol` — a Handler with **16
-actions** (`supplyAndBorrow`, `openLp`, `accrueYield`, `ownerClaim`,
+From `contracts/test/invariant/Invariants.t.sol` — a Handler with **21
+actions** (the 16 below plus `switchVenue`, `routerExitProbe`,
+`supplyAndBorrowOnCurrentVenue`, `repayAcrossProbe`, `singleCloseProbe`; the
+direct venue is NOT yet a Handler action — a slice-G item) (`supplyAndBorrow`, `openLp`, `accrueYield`, `ownerClaim`,
 `ownerCloseOne`, `keeperUnwind`, `keeperAttack`, `rekey`, `toggleAsset`,
 `revokeAll`, `regrant`, `warp`, `glitchEnumeration`, `rawExitProbe`,
 `ownerExit`, **`donate`**), at the default profile 256 runs × depth 40 per
@@ -127,13 +132,18 @@ invariant, and re-run in the fix round at 1,500 × 120 (180,000 calls each,
    `test_handlerPathsAreLive` driving a keeper unwind *after* a 1-wei donation
    so the property is not vacuous either.
 6. **No standing allowances** survive a call (`invariant_noStandingAllowances`).
+7. **The product's own exit reaches the position after a venue switch**
+   (`invariant_userCanAlwaysExitViaRouter`), **the repay reaches every book**
+   (`invariant_repayReachesEveryBook`), and since 2026-09-11 **one Close
+   clears every book** — a two-book account funded to cover every book strands
+   no collateral and the call never reverts (`invariant_singleCloseClearsEveryBook`).
 
 Plus `invariant_callSummary` (coverage reporting only) and
 `test_handlerPathsAreLive` (asserts every handler path is reachable, so none of
 the above is vacuous).
 
-Unit-level properties (244 tests, 11 fuzz tests at 512 runs by default, 5,000
-in the fix round): only the factory initialises an account, exactly once; only
+Unit-level properties (360 passed on 2026-09-11, 12 fuzz tests at 512 runs by
+default, 5,000 in the wave-1 fix round): only the factory initialises an account, exactly once; only
 the owner can `exec`; a plain call grants nothing and `execFromPeripheral`
 refuses a call that asks for rights; reentrancy through every door reverts;
 peripheral depth bounded; grants expire, revoke, epoch-bump, period-roll and
@@ -161,7 +171,8 @@ chain / missing env / no code / Aave provider drift.
 | Item | State | Where it bites |
 |---|---|---|
 | **Fork tests against Base** | `contracts/test/fork/BaseFork.t.sol`, 10 tests, `vm.skip` without `FORK_URL` — **run against Base mainnet on 2026-09-10 at block 51,127,409: 4 passed / 4 failed of 8 on the first run, 5 / 3 after slice A, 7 / 2 after slice B, 8 / 1 after slice C, 9 / 1 of 10 after slice D** — the one failure is the cbZEC B20 harness limit (`VERIFIED-BASE-FACTS.md` Addenda 3–6; `TESTING.md`). Reported as SKIPPED without `FORK_URL`, never as passed. | Aave provider resolution, live reserve params, cbZEC B20 shape, the engine's index-getter shape, supply → borrow → repay → withdraw under a real account, open → close on the live engine |
-| **The two-book Close** | **Known and parked (slice D, 2026-09-10)**: the web's single `unwind(withdraw max)` returns one venue's collateral and leaves the other's, debt-free; `invariant_KNOWN_singleCloseStrandsCollateral` asserts the strand every time so the fix has a test waiting; the two options are costed in `RISKS.md` §8 (fork gas at block 51,127,409). Not implemented: a product decision. | a user with books on two venues after a registry switch |
+| **The two-book Close** | **Resolved 2026-09-11 (slice F, `RISKS.md` §8 option 1)**: the withdraw leg visits every venue holding the account's collateral, one `VenueWithdrawn` each; `invariant_singleCloseClearsEveryBook` (stranded == 0) replaces the KNOWN-FAILURE invariant; M1m–M1q pin it. Not yet re-measured on the fork (the slice-D gas figures at block 51,127,409 are the estimate: ≈ 362k per extra Aave venue, ≈ 189k per extra Morpho venue). | — |
+| **The direct Slipstream venue on the cbZEC pool itself** | The venue is proved on the fork against the same deployment's WETH/USDC ts-10 pool (live NPM and gauge) and against the cbZEC pool's live pointers; the cbZEC pool's own mint, swap and close cannot run in a fork EVM (the B20 precompile, Addendum 3) and were NOT executed anywhere — the mocks carry the verified semantics (Addendum 9). Not read: the gauge factory's early-withdraw penalty for this pool. | the first real cbZEC/USDC open; a fast close's AERO |
 | **The engine's single-sided deposit** | **Measured 2026-09-10 (slice B)**: it is NOT swapped to ratio — the verified mint library builds a one-sided range on the deposited token's side of the price, so the product's borrowed-USDC open holds only USDC and earns nothing until the price enters the range (`RISKS.md` §12, `ISnuggleVault` FACT 4 corrected). What the yield model should assume for this shape is not verified and is a product decision (slice E memo). | every leveraged LP open; the yield verdict |
 | **The engine's live end-of-list revert shape** | **Recorded 2026-09-10: empty `0x`**, and `positionsOf` redesigned for it the same day (slice A): gas under a measured stipend, canary / end / k + 1 shape agreement, liveness before and after, `positions(id).owner` per id — `EnumerationAmbiguous(fault, …)` otherwise, named by the keeper and the web (`RISKS.md` §12, Addendum 4; fork test green at block 51,127,409). **Still not verifiable on chain:** a getter-less implementation upgrade reads as an empty list for every account; the EIP-1967 slot (`0x359f…2d28`) is the only off-chain guard and is NOT compared by any shipped code — a product decision left open. An isolated failure at the last index is a list one shorter. | `positionsOf`, the dashboard's position list, the keeper's id discovery |
 | **Morpho Blue market ids** (cbBTC/USDC, WETH/USDC) | Discovered and chain-verified 2026-09-07, re-read at block 51,003,524 (`VERIFIED-BASE-FACTS.md`, Morpho addendum: both 86 % LLTV, ids recomputed from `idToMarketParams`). **In code**: `Deploy.s.sol` `MORPHO_MARKET_*` constants, shared `MORPHO_BLUE.marketIds`, and `MorphoBlueVenue` re-derives each at construction | venue deployed; registry still on Aave |

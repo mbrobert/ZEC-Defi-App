@@ -16,6 +16,10 @@ export interface PositionView {
   pool: CuratedPool | undefined;
   poolId: string;
   enginePoolId?: `0x${string}`;
+  /** Which venue holds the position (2026-09-11); undefined for a cache-only row. */
+  venue?: "engine" | "direct";
+  /** Direct venue: staked in the pool's gauge (earning AERO) or held unstaked in the account. */
+  staked?: boolean;
   preset: RangePreset | "UNKNOWN";
   rangeWidthBps?: number;
   tickLower?: number;
@@ -91,6 +95,8 @@ export function mergePositions(chain: LpPositionRead[] | null, cache: IndexedAcc
         pool,
         poolId: pool?.id ?? k?.poolId ?? c.enginePoolId,
         enginePoolId: c.enginePoolId,
+        venue: c.venue,
+        staked: c.staked,
         preset: presetOf(c.rangeWidthBps, pool),
         rangeWidthBps: c.rangeWidthBps,
         tickLower: c.tickLower,

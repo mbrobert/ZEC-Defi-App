@@ -776,7 +776,26 @@ export class HealthMonitor {
       case "CONFIRMED":
         patch.status = "CONFIRMED";
         patch.txHash = result.txHash;
-        if (result.note) l.warn("dispatch confirmed with a shortfall — the retry's world check follows up", { key: record.key, note: result.note });
+        if (result.note) {
+          // The CONFIRMED-with-shortfall path, end to end (slice F, 2026-09-11): the owner is told
+          // ONCE here, at warn; the rung stays fired, `reArmIneffective` re-arms it on the next
+          // tick if the health factor is still under it (bounded by `maxRungRefires`), and that
+          // retry's world check SUPERSEDES the new record when the paid book has cleared the
+          // disarm — or acts again if it has not. Nothing about the note is repeated after this.
+          l.warn("dispatch confirmed with a shortfall — the re-armed rung's world check follows up", { key: record.key, note: result.note });
+          await this.emit({
+            kind: "shortfall",
+            severity: "warn",
+            account: record.account,
+            owner: this.d.store.getAccount(record.account)?.owner,
+            rung: record.rung,
+            action: record.action,
+            hf: record.hf,
+            key: record.key,
+            txHash: result.txHash,
+            reasons: [result.note],
+          });
+        }
         break;
       case "REFUSED":
         patch.status = "REFUSED";
@@ -805,7 +824,9 @@ export class HealthMonitor {
         key: record.key,
         status: result.status,
         txHash: "txHash" in result ? result.txHash : undefined,
-        reasons: "reason" in result ? [result.reason] : "error" in result ? [result.error] : "note" in result && result.note ? [result.note] : undefined,
+        // A shortfall note was delivered above as its own event; this record-level event carries
+        // only reasons and errors, so the owner hears about the shortfall exactly once.
+        reasons: "reason" in result ? [result.reason] : "error" in result ? [result.error] : undefined,
       });
     }
     if (result.status === "REFUSED" && result.permanent) {

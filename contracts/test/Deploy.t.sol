@@ -27,6 +27,9 @@ contract DeployTest is Fixture {
         c.pyth = makeAddrView("pyth");
         c.pythZecUsd = BaseAddresses.PYTH_ZEC_USD;
         c.cbzecUsdcPool = address(poolCbzecUsdc);
+        c.cbzecUsdcNpm = address(npmCbzec);
+        c.cbzecUsdcGauge = address(gaugeCbzec);
+        c.deployDirectLpVenue = true;
         c.morpho = address(morpho);
         c.morphoMarketIds = _morphoIds();
         c.permit2 = address(permit2);
@@ -180,6 +183,40 @@ contract DeployTest is Fixture {
         assertEq(address(d.router.SWAP()), address(d.swapAdapter));
         assertEq(d.router.USDC(), address(usdc));
         assertEq(address(d.pythAdapter), address(0), "v1.1 adapter not deployed by default");
+        // 2026-09-11: the direct Slipstream venue over the cbZEC/USDC pool, bound to the pool's own
+        // manager and gauge, its adapter bound to the same pool, both handed to the router.
+        assertEq(address(d.router.LP_VENUE_DIRECT()), address(d.directLpVenue));
+        assertEq(address(d.router.SWAP_DIRECT()), address(d.poolSwapAdapter));
+        assertEq(address(d.directLpVenue.POOL()), address(poolCbzecUsdc));
+        assertEq(address(d.directLpVenue.NPM()), address(npmCbzec));
+        assertEq(address(d.directLpVenue.GAUGE()), address(gaugeCbzec));
+        assertEq(address(d.directLpVenue.SWAP()), address(d.poolSwapAdapter));
+        assertEq(address(d.poolSwapAdapter.POOL()), address(poolCbzecUsdc));
+        assertEq(d.directLpVenue.REWARD_TOKEN(), address(aero));
+        assertEq(d.directLpVenue.treasury(), treasury);
+        assertEq(d.directLpVenue.performanceBps(), 1000);
+    }
+
+    function test_deployWithoutTheDirectVenueLeavesTheRouterOnTheEngineOnly() public {
+        Deploy.Config memory c = _config();
+        c.deployDirectLpVenue = false;
+        Deploy.Deployed memory d = script.deploy(c);
+        assertEq(address(d.directLpVenue), address(0));
+        assertEq(address(d.poolSwapAdapter), address(0));
+        assertEq(address(d.router.LP_VENUE_DIRECT()), address(0));
+        assertEq(address(d.router.SWAP_DIRECT()), address(0));
+    }
+
+    function test_guardNamesAPoolThatNoLongerNamesTheRecordedManagerOrGauge() public {
+        Deploy.Config memory c = _config();
+        c.cbzecUsdcGauge = makeAddrView("some-other-gauge");
+        vm.etch(c.cbzecUsdcGauge, hex"6001");
+        vm.expectRevert(abi.encodeWithSelector(Deploy.SlipstreamDrift.selector, "pool.gauge", c.cbzecUsdcGauge, address(gaugeCbzec)));
+        script.guard(c);
+        c = _config();
+        c.deployDirectLpVenue = false;
+        c.cbzecUsdcGauge = address(0);
+        script.guard(c); // not deployed → not checked
     }
 
     function test_deployOptionalPythAdapter() public {

@@ -85,7 +85,16 @@ interface ILpVenue {
         returns (address token0, address token1, address pool);
 
     /// @notice (poolId, owner) of an engine id; both zero once the id is closed or re-keyed.
+    /// @dev `owner` is the venue's notion of the holder: the engine's position owner, or the NPM's
+    ///      owner on the direct Slipstream venue — the GAUGE for a staked id. Ask `ownedPool` when
+    ///      the question is "does ACCOUNT own this id".
     function poolOf(uint256 positionId) external view returns (bytes32 poolId, address owner);
+
+    /// @notice Whether `account` owns `positionId` on this venue, and the pool it sits in (zero when
+    ///         not owned). The router resolves the batch's venue and pool with this, so a position
+    ///         staked in a gauge — owned by the gauge on the NFT's books, by the account on the
+    ///         gauge's — is still the account's (2026-09-11, `SlipstreamLpVenue`).
+    function ownedPool(uint256 positionId, address account) external view returns (bytes32 poolId, bool owned);
 
     function performanceBps() external view returns (uint256);
     function treasury() external view returns (address);

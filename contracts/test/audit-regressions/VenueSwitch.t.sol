@@ -208,8 +208,9 @@ contract VenueSwitchRegressionTest is Fixture {
     /// Two positions, one per venue (opened before and after the switch). The REPAY leg reaches
     /// both books in one call, worst health factor first (2026-09-09; until then the first exit
     /// repaid Morpho's 10k only and the Aave 30k waited for the second click). The WITHDRAW leg
-    /// resolves the venue holding the position: the current one first, and once it is empty the
-    /// previous venue is found — so two Closes still return both collaterals.
+    /// visits every venue holding the account's collateral, current pointer first (2026-09-11;
+    /// until then it stopped at the current venue and the Aave collateral waited for a second
+    /// Close — slice D's KNOWN FAILURE). One Close returns both collaterals.
     function test_FIX_M1f_positionsOnBothVenuesAreEachReachable() public {
         _openOnAaveAndGrant(); // Aave: 1 cbBTC, 30k debt, 30k idle USDC
         _switchToMorpho(address(cbbtc));
@@ -217,24 +218,23 @@ contract VenueSwitchRegressionTest is Fixture {
         assertEq(morphoVenue.debt(address(acct), address(usdc)), 10_000e6);
         assertLt(aaveVenue.healthFactor(address(acct)), morphoVenue.healthFactor(address(acct)), "Aave is the worse book");
 
-        // First exit: the repay clears Aave (worse) then Morpho; the withdraw resolves the CURRENT
-        // venue (Morpho) and clears it.
+        // The one exit: the repay clears Aave (worse) then Morpho; the withdraw visits Morpho (the
+        // current pointer) and then Aave, and both collaterals come back.
         StrategyRouter.UnwindParams memory u = _keeperUnwind(new uint256[](0));
         u.withdrawAmount = type(uint256).max;
         bytes memory ret = _ownerExec(address(router), abi.encodeCall(StrategyRouter.unwind, (u)));
         (, uint256 repaid, uint256 withdrawn,) = abi.decode(ret, (uint256, uint256, uint256, uint256));
         assertEq(repaid, BORROW + 10_000e6, "one unwind repaid both books");
-        assertEq(withdrawn, ONE_CBBTC);
+        assertEq(withdrawn, 2 * ONE_CBBTC, "one unwind returned both collaterals");
         assertEq(morphoVenue.collateral(address(acct), address(cbbtc)), 0);
+        assertEq(aaveVenue.collateral(address(acct), address(cbbtc)), 0, "the previous venue's collateral came back in the same call");
         assertEq(aaveVenue.debt(address(acct), address(usdc)), 0, "the previous venue's debt went in the same call");
         assertEq(morphoVenue.debt(address(acct), address(usdc)), 0);
-
-        // Second exit now finds the Aave collateral through the registry's memory; nothing is owed.
-        ret = _ownerExec(address(router), abi.encodeCall(StrategyRouter.unwind, (u)));
-        (, repaid, withdrawn,) = abi.decode(ret, (uint256, uint256, uint256, uint256));
-        assertEq(repaid, 0);
-        assertEq(withdrawn, ONE_CBBTC);
         assertEq(cbbtc.balanceOf(address(acct)), 2 * ONE_CBBTC);
+
+        // A second Close has nothing to do and says so through the current venue's own refusal.
+        vm.expectRevert(MorphoBlueVenue.NothingToWithdraw.selector);
+        _ownerExec(address(router), abi.encodeCall(StrategyRouter.unwind, (u)));
     }
 
     // =====================================================================
@@ -360,5 +360,122 @@ contract VenueSwitchRegressionTest is Fixture {
         assertLt(hf, morphoVenue.healthFactor(address(acct)));
         // 50,000 x 0.78 / 25,000 = 1.56: the number the keeper's ladder sees, not Morpho's ~68.
         assertApproxEqRel(hf, 1.56e18, 1e14);
+    }
+
+    // =====================================================================
+    // RISKS §8 "two-book Close", option (1), decided 2026-09-10, implemented 2026-09-11 (slice F):
+    // the WITHDRAW leg visits every venue holding the account's collateral, current pointer first,
+    // each gated by that venue's own exit floor, one `VenueWithdrawn` per venue reached. Slice D
+    // had proved the strand with `invariant_KNOWN_singleCloseStrandsCollateral`; that invariant is
+    // now `invariant_singleCloseClearsEveryBook`.
+    // =====================================================================
+
+    /// The web's exact Close on a two-book account, debt-free on both: one call, two
+    /// `VenueWithdrawn` events — the current pointer first — and the sum in `LeveragedLpUnwound`.
+    function test_FIX_M1m_oneCloseWithdrawsFromEveryVenueHoldingCollateral() public {
+        _openOnAaveAndGrant();
+        _switchToMorpho(address(cbbtc));
+        _ownerExec(address(router), abi.encodeCall(StrategyRouter.openBorrowOnly, (_borrowOnly(ONE_CBBTC, 10_000e6, 3))));
+        StrategyRouter.UnwindParams memory u = _keeperUnwind(new uint256[](0));
+        u.withdrawAmount = type(uint256).max;
+        vm.expectEmit(true, true, false, true);
+        emit StrategyRouter.VenueWithdrawn(address(acct), address(morphoVenue), ONE_CBBTC);
+        vm.expectEmit(true, true, false, true);
+        emit StrategyRouter.VenueWithdrawn(address(acct), address(aaveVenue), ONE_CBBTC);
+        vm.expectEmit(true, true, false, true);
+        emit StrategyRouter.LeveragedLpUnwound(
+            address(acct), address(cbbtc), 0, 0, 0, BORROW + 10_000e6, 2 * ONE_CBBTC, type(uint256).max
+        );
+        _ownerExec(address(router), abi.encodeCall(StrategyRouter.unwind, (u)));
+        assertEq(cbbtc.balanceOf(address(acct)), 2 * ONE_CBBTC);
+    }
+
+    /// The per-venue gate is the same rule applied to each venue withdrawn from: a Close that would
+    /// leave the Aave book below the floor reverts `ExitHfTooLow` even though the Morpho book
+    /// (visited first) was fine, and nothing moves — the transaction is atomic.
+    function test_FIX_M1n_eachVenueIsGatedByItsOwnExitFloor() public {
+        _openOnAaveAndGrant(); // 30k on Aave, HF ≈ 2.07 at the fixture price
+        _switchToMorpho(address(cbbtc));
+        _ownerExec(address(router), abi.encodeCall(StrategyRouter.openBorrowOnly, (_borrowOnly(ONE_CBBTC, 10_000e6, 3))));
+        // Repay nothing, withdraw half the collateral in total: Morpho gives its whole 1 cbBTC?
+        // No — a fixed amount is a TOTAL: 0.5 from Morpho (the current pointer), Morpho left with
+        // 0.5 against 10k (HF 34 at the fixture price) passes; nothing asked of Aave. Then ask for
+        // 1.6 in total: Morpho's whole 1 cbBTC (debt-free? no: 10k still owed → HF 0 → refused).
+        StrategyRouter.UnwindParams memory u = _keeperUnwind(new uint256[](0));
+        u.repayAmount = 0;
+        u.withdrawAmount = 1.6e8;
+        bytes memory data = abi.encodeCall(StrategyRouter.unwind, (u));
+        vm.prank(alice);
+        vm.expectRevert(); // ExitHfTooLow at the venue that would be left below the floor
+        acct.execWithCallback(address(router), 0, data);
+        assertEq(morphoVenue.collateral(address(acct), address(cbbtc)), ONE_CBBTC, "atomic: nothing moved");
+        assertEq(aaveVenue.collateral(address(acct), address(cbbtc)), ONE_CBBTC);
+    }
+
+    /// A fixed `withdrawAmount` is a TOTAL across the venues, taken in venue order (current pointer
+    /// first) and never more than a venue holds; the remainder spills to the next venue. `max`
+    /// means everything on every venue.
+    function test_FIX_M1o_aFixedWithdrawIsATotalTakenInVenueOrder() public {
+        _openOnAaveAndGrant();
+        _switchToMorpho(address(cbbtc));
+        _ownerExec(address(router), abi.encodeCall(StrategyRouter.openBorrowOnly, (_borrowOnly(ONE_CBBTC, 10_000e6, 3))));
+        // Clear both debts first so the floor does not interfere.
+        StrategyRouter.UnwindParams memory u = _keeperUnwind(new uint256[](0));
+        _ownerExec(address(router), abi.encodeCall(StrategyRouter.unwind, (u)));
+        assertEq(aaveVenue.debt(address(acct), address(usdc)) + morphoVenue.debt(address(acct), address(usdc)), 0);
+
+        u.withdrawAmount = 1.5e8; // more than Morpho holds: 1 from Morpho, 0.5 from Aave
+        vm.expectEmit(true, true, false, true);
+        emit StrategyRouter.VenueWithdrawn(address(acct), address(morphoVenue), ONE_CBBTC);
+        vm.expectEmit(true, true, false, true);
+        emit StrategyRouter.VenueWithdrawn(address(acct), address(aaveVenue), 0.5e8);
+        bytes memory ret = _ownerExec(address(router), abi.encodeCall(StrategyRouter.unwind, (u)));
+        (,, uint256 withdrawn,) = abi.decode(ret, (uint256, uint256, uint256, uint256));
+        assertEq(withdrawn, 1.5e8);
+        assertEq(morphoVenue.collateral(address(acct), address(cbbtc)), 0);
+        assertEq(aaveVenue.collateral(address(acct), address(cbbtc)), 0.5e8);
+
+        // Asking for more than every venue holds together is refused by name, never silently less.
+        u.withdrawAmount = 1e8;
+        bytes memory data = abi.encodeCall(StrategyRouter.unwind, (u));
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(StrategyRouter.CollateralShort.selector, 1e8, 0.5e8));
+        acct.execWithCallback(address(router), 0, data);
+        assertEq(aaveVenue.collateral(address(acct), address(cbbtc)), 0.5e8, "atomic");
+    }
+
+    /// Today's production shape — one asset, one venue, no switch ever — is exactly what it was,
+    /// plus one `VenueWithdrawn` naming the Aave venue.
+    function test_FIX_M1p_theAaveOnlyCloseIsUnchangedPlusOneEvent() public {
+        _openOnAaveAndGrant();
+        assertEq(registry.previousVenues(address(cbbtc)).length, 0, "no switch has happened");
+        StrategyRouter.UnwindParams memory u = _keeperUnwind(new uint256[](0));
+        u.withdrawAmount = type(uint256).max;
+        vm.expectEmit(true, true, false, true);
+        emit StrategyRouter.VenueRepaid(address(acct), address(aaveVenue), BORROW);
+        vm.expectEmit(true, true, false, true);
+        emit StrategyRouter.VenueWithdrawn(address(acct), address(aaveVenue), ONE_CBBTC);
+        vm.expectEmit(true, true, false, true);
+        emit StrategyRouter.LeveragedLpUnwound(address(acct), address(cbbtc), 0, 0, 0, BORROW, ONE_CBBTC, type(uint256).max);
+        bytes memory ret = _ownerExec(address(router), abi.encodeCall(StrategyRouter.unwind, (u)));
+        (, uint256 repaid, uint256 withdrawn,) = abi.decode(ret, (uint256, uint256, uint256, uint256));
+        assertEq(repaid, BORROW);
+        assertEq(withdrawn, ONE_CBBTC);
+        assertEq(cbbtc.balanceOf(address(acct)), ONE_CBBTC);
+    }
+
+    /// The keeper's grant is untouched by the change: its plan keeps `withdrawAmount = 0`, and a
+    /// keeper that set it would be stopped by the exit floor on the venue it drains, not by the
+    /// grant — exactly as before (the selector did not move, so the signed permission still fits).
+    function test_FIX_M1q_theKeeperGrantAndSelectorAreUnchanged() public {
+        _openOnAaveAndGrant();
+        _switchToMorpho(address(cbbtc));
+        _ownerExec(address(router), abi.encodeCall(StrategyRouter.openBorrowOnly, (_borrowOnly(ONE_CBBTC, 10_000e6, 3))));
+        aave.setReserve(address(cbbtc), CBBTC_LTV, CBBTC_LT, 750, true, true, 50_000e8, RATE_CBBTC_RAY);
+        uint256 repaid = _keeperRepay(type(uint256).max);
+        assertEq(repaid, BORROW + 10_000e6, "the keeper's repay-only call still reaches both books through the same selector");
+        assertEq(morphoVenue.collateral(address(acct), address(cbbtc)), ONE_CBBTC, "a keeper unwind withdraws nothing");
+        assertEq(aaveVenue.collateral(address(acct), address(cbbtc)), ONE_CBBTC);
+        assertEq(StrategyRouter.unwind.selector, bytes4(0x08435e75), "the selector the signed grant names");
     }
 }

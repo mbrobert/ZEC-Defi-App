@@ -24,7 +24,9 @@ const {
   oilskinAccountFactoryAbi,
   strategyRouterAbi,
   lpVenueAbi,
+  directLpVenueAbi,
   swapAdapterAbi,
+  poolSwapAdapterAbi,
   clPoolAbi,
   collateralRegistryAbi,
   aaveVenueAbi,
@@ -114,6 +116,11 @@ compare("OilskinAccountFactory", oilskinAccountFactoryAbi, loadArtifact("Oilskin
 compare("StrategyRouter", strategyRouterAbi, loadArtifact("StrategyRouter"));
 compare("SnuggleLpVenue", lpVenueAbi, loadArtifact("SnuggleLpVenue"));
 compare("AerodromeSwapAdapter", swapAdapterAbi, loadArtifact("AerodromeSwapAdapter"));
+// The direct Slipstream venue and its pool-direct adapter (2026-09-11): the keeper reads the
+// venue's views (the same ILpVenue surface plus `ownedPool` and `positionRange`) and decodes
+// both contracts' refusals by name.
+compare("SlipstreamLpVenue", directLpVenueAbi, loadArtifact("SlipstreamLpVenue"));
+compare("SlipstreamPoolSwapAdapter", poolSwapAdapterAbi, loadArtifact("SlipstreamPoolSwapAdapter"));
 compare("CollateralRegistry", collateralRegistryAbi, loadArtifact("CollateralRegistry"));
 compare("AaveV3Venue", aaveVenueAbi, loadArtifact("AaveV3Venue"));
 // The venue-aware reader (audit wave 2, M-HIGH-2) calls these on whatever venue the registry names.

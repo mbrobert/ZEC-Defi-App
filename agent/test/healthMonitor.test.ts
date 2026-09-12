@@ -534,3 +534,47 @@ describe("health monitor — isolation, concurrency, fail-closed, escalation", (
 
 // Keep the type import used (TickHandle appears in signatures above).
 export type _T = TickHandle;
+
+// ---------------------------------------------------------------------------------------------
+// Slice F (2026-09-11): the CONFIRMED-with-shortfall path carried end to end through the monitor.
+// ---------------------------------------------------------------------------------------------
+describe("health monitor — a CONFIRMED repay with a shortfall note", () => {
+  it("tells the owner ONCE (one `shortfall` event), re-arms the rung, and records the re-armed retry's SUPERSEDED as bookkeeping — no second notice, no third dispatch", async () => {
+    const r = await rig();
+    r.chain.emitAccountCreated(OWNER_A, ACCOUNT_A, 1n);
+    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.3)); // warn + repay crossed in one step → repay fires
+    const tx = ("0x" + "22".repeat(32)) as `0x${string}`;
+    const note = "USDC ran out on the worse book (0xaave 20000); 0xmorpho (1000 USDC still owed) was owed at dispatch and is left for the retry — an honest shortfall, not a wrong book";
+    r.dispatcher.script.push(async () => ({ status: "CONFIRMED", txHash: tx, note }));
+    await r.tick();
+    const k1 = keyOf(r, 0);
+    assert.equal(k1, `${ACCOUNT_A.toLowerCase()}:1:1:repay`);
+    assert.equal(r.store.getDispatch(k1)?.status, "CONFIRMED");
+    const shortfalls = r.events.filter((e) => e.kind === "shortfall");
+    assert.equal(shortfalls.length, 1, "the owner is told once");
+    assert.equal(shortfalls[0].account, ACCOUNT_A.toLowerCase());
+    assert.match(shortfalls[0].reasons?.[0] ?? "", /honest shortfall/);
+    for (const e of r.events.filter((e) => e.kind === "dispatch")) {
+      assert.ok(!(e.reasons ?? []).some((x) => /shortfall/i.test(x)), "the record-level dispatch event does not repeat the note");
+    }
+
+    // The mock chain did not move (HF still 1.3, under the repay rung): the rung whose action
+    // CONFIRMED without clearing it is re-armed once and fires again with a NEW key; the retry's
+    // world check (scripted here as the dispatcher would answer once the paid book cleared the
+    // disarm) SUPERSEDES it.
+    r.dispatcher.script.push(async () => ({ status: "SUPERSEDED", reason: "HF 1.6000 ≥ repay disarm 1.4" }));
+    await r.tick();
+    assert.equal(r.dispatcher.calls.length, 2);
+    const k2 = keyOf(r, 1);
+    assert.equal(k2, `${ACCOUNT_A.toLowerCase()}:1:2:repay`);
+    assert.equal(r.store.getDispatch(k2)?.status, "SUPERSEDED");
+    assert.equal(r.store.getAccount(ACCOUNT_A)?.rungRefires?.repay, 1);
+    assert.equal(r.events.filter((e) => e.kind === "shortfall").length, 1, "still told once");
+    assert.ok(r.events.some((e) => e.kind === "dispatch" && e.reasons?.some((x) => /≥ repay disarm/.test(x))), "the SUPERSEDED reason is recorded");
+
+    // A SUPERSEDED record is not re-armed again: the next tick sends nothing new.
+    await r.tick();
+    assert.equal(r.dispatcher.calls.length, 2);
+    await r.store.close();
+  });
+});

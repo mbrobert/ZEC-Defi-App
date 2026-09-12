@@ -18,6 +18,11 @@ import {IAerodromeSwapRouter} from "../src/interfaces/IAerodromeSwapRouter.sol";
 import {IAerodromeCLPool} from "../src/interfaces/IAerodromeCLPool.sol";
 import {IPermit2} from "../src/interfaces/IPermit2.sol";
 import {IPyth} from "../src/interfaces/IPyth.sol";
+import {ILpVenue} from "../src/interfaces/ILpVenue.sol";
+import {ISwapAdapter} from "../src/interfaces/ISwapAdapter.sol";
+import {ISlipstreamGauge, ISlipstreamNpm, ISlipstreamPool} from "../src/interfaces/ISlipstream.sol";
+import {SlipstreamLpVenue} from "../src/venues/SlipstreamLpVenue.sol";
+import {SlipstreamPoolSwapAdapter} from "../src/swap/SlipstreamPoolSwapAdapter.sol";
 
 /// @notice Base mainnet (chain id 8453) addresses — EVERY one from docs/VERIFIED-BASE-FACTS.md
 ///         (read live 2026-09-05) or AUDIT-FINDINGS Part 1 (engine, 2026-09-03). Nothing else may
@@ -52,6 +57,15 @@ library BaseAddresses {
     ///      `0xb2cc…DC59` 2026-09-10 at block 51,145,283 (VERIFIED-BASE-FACTS, the 2026-09-06 addendum and Addendum 5). The
     ///      cbZEC/USDC pool was created by a DIFFERENT factory (`0xf8f2…61Ef`, Addendum 3).
     address internal constant AERODROME_CL_FACTORY = 0x5e7BB104d84c7CB9B682AaC2F3d509f5F406809A;
+    /// @dev The SECOND Slipstream deployment — the one the cbZEC/USDC pool was created by and the
+    ///      direct venue binds to (VERIFIED-BASE-FACTS Addendum 8, read 2026-09-10 at blocks
+    ///      51,146,581–674, and Addendum 9, 2026-09-10 at block 51,149,6xx): CLFactory `0xf8f2…61Ef`
+    ///      (`isPool(cbZEC pool)` = true; approved by the FactoryRegistry), its NonfungiblePosition
+    ///      Manager (`pool.nft()`, ERC-721 Enumerable, "Slipstream Position NFT v1") and the pool's
+    ///      gauge (`pool.gauge()` = `voter.gauges(pool)`, `rewardToken()` = AERO, `nft()` = the NPM).
+    address internal constant AERODROME_CL_FACTORY_2 = 0xf8f2eB4940CFE7d13603DDDD87f123820Fc061Ef;
+    address internal constant AERODROME_NPM_2 = 0xe1f8cd9AC4e4A65F54f38a5CdAfCA44f6dD68b53;
+    address internal constant AERODROME_CBZEC_USDC_GAUGE = 0x8779E34E5d38358B0cB957c553B40cC1208C81FB;
 
     address internal constant MORPHO_BLUE = 0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb;
     /// @dev Morpho Blue markets, read from `idToMarketParams` 2026-09-07 at block 51,003,524
@@ -81,6 +95,13 @@ library BaseAddresses {
 ///                            two verified Base markets). Empty on a chain with no market → the
 ///                            venue deploys DISABLED. The registry keeps pointing at Aave either
 ///                            way; moving an asset to Morpho is proposeVenue → timelock → acceptVenue.
+///   DEPLOY_DIRECT_LP_VENUE   default true: deploy the direct Slipstream venue for the cbZEC/USDC
+///                            pool (`SlipstreamLpVenue` + `SlipstreamPoolSwapAdapter`) and hand
+///                            both to the router; "false" (Base Sepolia, no such pool) leaves the
+///                            router with the engine venue only
+///   AERODROME_CBZEC_USDC_NPM / AERODROME_CBZEC_USDC_GAUGE  the second deployment's position
+///                            manager and the pool's gauge (defaults: the verified addresses; the
+///                            guard checks the pool names both)
 ///   DEPLOY_PYTH_ADAPTER      "true" to also deploy the v1.1 PythOracleAdapter (unused in v1)
 ///   PYTH_MAX_AGE / PYTH_MAX_DEVIATION_BPS / PYTH_TWAP_WINDOW  adapter params (defaults 60 / 300 / 1800)
 ///   ALLOW_ANY_CHAIN          "true" to run on a non-Base chain with ALL addresses given by env
@@ -103,6 +124,10 @@ contract Deploy is Script {
         address pyth;
         bytes32 pythZecUsd;
         address cbzecUsdcPool;
+        /// @dev The second deployment's position manager and the pool's gauge (direct venue).
+        address cbzecUsdcNpm;
+        address cbzecUsdcGauge;
+        bool deployDirectLpVenue;
         address morpho;
         bytes32[] morphoMarketIds;
         address permit2;
@@ -132,6 +157,9 @@ contract Deploy is Script {
         SnuggleLpVenue lpVenue;
         CollateralRegistry registry;
         AerodromeSwapAdapter swapAdapter;
+        /// @dev The direct Slipstream venue and its pool-direct adapter; zero when not deployed.
+        SlipstreamPoolSwapAdapter poolSwapAdapter;
+        SlipstreamLpVenue directLpVenue;
         StrategyRouter router;
         PythOracleAdapter pythAdapter;
     }
@@ -141,6 +169,9 @@ contract Deploy is Script {
     error MissingEnv(string name);
     error NoCode(string name, address addr);
     error AaveProviderDrift(string what, address expected, address actual);
+    /// @notice The cbZEC/USDC pool no longer names the position manager, gauge or factory recorded
+    ///         in VERIFIED-BASE-FACTS: re-read before deploying the direct venue.
+    error SlipstreamDrift(string what, address expected, address actual);
     error UnexpectedToken(string what);
     /// @notice On mainnet the fee destination must not be the broadcasting key (audit wave 2, S-LOW-1).
     error TreasuryIsBroadcaster(address treasury);
@@ -178,6 +209,9 @@ contract Deploy is Script {
         c.pyth = vm.envOr("PYTH", BaseAddresses.PYTH);
         c.pythZecUsd = vm.envOr("PYTH_ZEC_USD", BaseAddresses.PYTH_ZEC_USD);
         c.cbzecUsdcPool = vm.envOr("AERODROME_CBZEC_USDC_POOL", BaseAddresses.AERODROME_CBZEC_USDC_POOL);
+        c.cbzecUsdcNpm = vm.envOr("AERODROME_CBZEC_USDC_NPM", BaseAddresses.AERODROME_NPM_2);
+        c.cbzecUsdcGauge = vm.envOr("AERODROME_CBZEC_USDC_GAUGE", BaseAddresses.AERODROME_CBZEC_USDC_GAUGE);
+        c.deployDirectLpVenue = vm.envOr("DEPLOY_DIRECT_LP_VENUE", true);
         c.morpho = vm.envOr("MORPHO_BLUE", BaseAddresses.MORPHO_BLUE);
         c.morphoMarketIds = vm.envOr("MORPHO_MARKET_IDS", ",", defaultMorphoMarketIds());
         c.permit2 = vm.envOr("PERMIT2", BaseAddresses.PERMIT2);
@@ -254,6 +288,23 @@ contract Deploy is Script {
             );
             if (ok) revert UnexpectedToken("engine userPositions(address,uint256) did not revert past end");
         }
+
+        // The direct venue's three contracts, after the Aave checks so an Aave drift is named first.
+        if (c.deployDirectLpVenue) {
+            _requireCode("cbZEC/USDC pool", c.cbzecUsdcPool);
+            _requireCode("Slipstream NPM (second deployment)", c.cbzecUsdcNpm);
+            _requireCode("cbZEC/USDC gauge", c.cbzecUsdcGauge);
+            // The pool must name the manager and the gauge the venue binds to, and the gauge must
+            // pay AERO — the venue's constructor re-checks, this names the drift first.
+            ISlipstreamPool pool = ISlipstreamPool(c.cbzecUsdcPool);
+            if (pool.nft() != c.cbzecUsdcNpm) revert SlipstreamDrift("pool.nft", c.cbzecUsdcNpm, pool.nft());
+            if (pool.gauge() != c.cbzecUsdcGauge) revert SlipstreamDrift("pool.gauge", c.cbzecUsdcGauge, pool.gauge());
+            address rt = ISlipstreamGauge(c.cbzecUsdcGauge).rewardToken();
+            if (rt != c.aero) revert SlipstreamDrift("gauge.rewardToken", c.aero, rt);
+            if (isBase && pool.factory() != BaseAddresses.AERODROME_CL_FACTORY_2) {
+                revert SlipstreamDrift("pool.factory", BaseAddresses.AERODROME_CL_FACTORY_2, pool.factory());
+            }
+        }
     }
 
     // ---------------------------------------------------------------- deploy
@@ -278,7 +329,26 @@ contract Deploy is Script {
         d.registry.register(c.cbzec, address(d.aaveVenue), c.pyth, false, CBZEC_NOTE);
         d.registry.transferOwnership(c.registryOwner);
         d.swapAdapter = new AerodromeSwapAdapter(IAerodromeSwapRouter(c.aerodromeSwapRouter));
-        d.router = new StrategyRouter(d.registry, d.lpVenue, d.swapAdapter, IPermit2(c.permit2), c.usdc);
+        // The direct Slipstream venue over the cbZEC/USDC pool, bypassing the engine
+        // (`CBZEC-PATH-2026-09.md` option 1, decided 2026-09-10): the pool-direct adapter first
+        // (the venue checks it is bound to the same pool), then the venue, then both to the router.
+        ILpVenue direct;
+        ISwapAdapter directSwap;
+        if (c.deployDirectLpVenue) {
+            d.poolSwapAdapter = new SlipstreamPoolSwapAdapter(ISlipstreamPool(c.cbzecUsdcPool));
+            d.directLpVenue = new SlipstreamLpVenue(
+                ISlipstreamPool(c.cbzecUsdcPool),
+                ISlipstreamNpm(c.cbzecUsdcNpm),
+                ISlipstreamGauge(c.cbzecUsdcGauge),
+                ISwapAdapter(address(d.poolSwapAdapter)),
+                c.aero,
+                c.treasury,
+                c.performanceBps
+            );
+            direct = ILpVenue(address(d.directLpVenue));
+            directSwap = ISwapAdapter(address(d.poolSwapAdapter));
+        }
+        d.router = new StrategyRouter(d.registry, d.lpVenue, d.swapAdapter, IPermit2(c.permit2), c.usdc, direct, directSwap);
         if (c.deployPythAdapter) {
             d.pythAdapter = new PythOracleAdapter(
                 IPyth(c.pyth),
@@ -309,6 +379,8 @@ contract Deploy is Script {
         console2.log("SnuggleLpVenue        ", address(d.lpVenue));
         console2.log("CollateralRegistry    ", address(d.registry));
         console2.log("AerodromeSwapAdapter  ", address(d.swapAdapter));
+        console2.log("SlipstreamPoolSwapAdapter", address(d.poolSwapAdapter));
+        console2.log("SlipstreamLpVenue     ", address(d.directLpVenue));
         console2.log("StrategyRouter        ", address(d.router));
         console2.log("PythOracleAdapter     ", address(d.pythAdapter));
         console2.log("NOTE: REGISTRY_OWNER must call registry.acceptOwnership()");

@@ -212,11 +212,14 @@ export const CURATED_POOLS: CuratedPool[] = [
   },
   {
     /**
-     * TRACKED, NOT OFFERED. Verified 2026-09-05 (docs/VERIFIED-BASE-FACTS.md):
-     * gauge exists but rewardRate() = 0 / periodFinish() = 0 — never voted.
-     * The yield gate must read the gauge live; with zero emissions this pool
-     * can never clear the borrow rate and must not appear as a yield option.
-     * Not in the Snuggle engine registry (no enginePoolId) → DIRECT only.
+     * DIRECT: held through Oilskin's own `SlipstreamLpVenue` on the pool's second-deployment
+     * position manager and gauge (docs/CBZEC-PATH-2026-09.md option 1, decided 2026-09-10, built
+     * 2026-09-11) — the engine does not list this pool and the verified SwapRouter cannot reach
+     * it. Its gauge received its first emissions vote in the epoch that began 2026-09-10
+     * (VERIFIED-BASE-FACTS Addendum 8); the vote is re-cast every epoch, so the yield gate reads
+     * `rewardRate()` / `periodFinish()` live and refuses the pool whenever the epoch has no vote.
+     * Not in the Snuggle engine registry (no enginePoolId): its LP pool id is the pool address,
+     * left-padded (`directPoolId`).
      */
     id: "aero-cbzec-usdc",
     protocol: "DIRECT",
@@ -228,13 +231,38 @@ export const CURATED_POOLS: CuratedPool[] = [
     riskTag: "VOLATILE",
     pairClass: "UNCORRELATED",
     description:
-      "cbZEC against USDC on Aerodrome Slipstream. Gauge created but unvoted — earns no AERO until an emissions vote lands.",
+      "cbZEC against USDC on Aerodrome Slipstream, held directly (no engine, no engine fee): a two-sided range centred on the price and staked in the pool's gauge for AERO. The gauge's emissions are voted epoch by epoch; the pool itself (~$0.9M on 2026-09-10) is the depth.",
     poolAddress: AERODROME.pools.cbZEC_USDC.address,
     gauge: AERODROME.pools.cbZEC_USDC.gauge,
     tickSpacing: AERODROME.pools.cbZEC_USDC.tickSpacing,
-    note: "No emissions today: gauge rewardRate is 0. Shown for spot/LP awareness only; never offered as yield until the gauge is voted.",
+    note:
+      "Emissions here exist only while the weekly Aerodrome vote sends them (first vote: the epoch of 2026-09-10; re-voted every Thursday) — the gate reads the gauge live and refuses this pool in any epoch without one. The range is static: if the price leaves it the position earns nothing until closed and re-opened. cbZEC is a Coinbase B20 token the issuer can pause or block.",
   },
 ];
+
+/**
+ * The LP pool id a router `openLeveragedLp` / venue `open` takes for a curated pool: the engine's
+ * bytes32 for an engine pool, the pool address left-padded to 32 bytes for a DIRECT pool
+ * (`SlipstreamLpVenue.POOL_ID`). Undefined for a pool the product cannot open on either venue.
+ */
+export function lpPoolId(pool: CuratedPool): `0x${string}` | undefined {
+  if (pool.enginePoolId) return pool.enginePoolId as `0x${string}`;
+  if (pool.protocol === "DIRECT" && pool.poolAddress) return directPoolId(pool.poolAddress);
+  return undefined;
+}
+
+/** `bytes32(uint256(uint160(pool)))` — how the direct venue names its one pool. */
+export function directPoolId(poolAddress: string): `0x${string}` {
+  const hex = poolAddress.toLowerCase().replace(/^0x/, "");
+  if (!/^[0-9a-f]{40}$/.test(hex)) throw new RangeError(`not an address: ${poolAddress}`);
+  return `0x${"0".repeat(24)}${hex}`;
+}
+
+/** The pool a direct pool id names, if it is a curated DIRECT pool. */
+export function poolByLpPoolId(id: string): CuratedPool | undefined {
+  const k = id.toLowerCase();
+  return CURATED_POOLS.find((p) => lpPoolId(p)?.toLowerCase() === k);
+}
 
 /** Pools the engine (Snuggle/MaxFi) can deposit into — every entry has an enginePoolId. */
 export function enginePools(): CuratedPool[] {
@@ -246,9 +274,18 @@ export function directPools(): CuratedPool[] {
   return CURATED_POOLS.filter((p) => p.protocol === "DIRECT");
 }
 
-/** The v1 product menu: Aerodrome pools reachable through the engine. */
+/** The engine menu: Aerodrome pools reachable through the Snuggle engine (the eight the prototypes model). */
 export function offerablePools(): CuratedPool[] {
   return CURATED_POOLS.filter((p) => p.dex === "AERODROME" && p.protocol !== "DIRECT" && !!p.enginePoolId);
+}
+
+/**
+ * Every pool the product can open an LP position in: the engine menu plus the DIRECT pools held
+ * through `SlipstreamLpVenue` (2026-09-11). Whether any of them is OFFERED on a given day is the
+ * yield gate's verdict, read live — this is the list the gate is asked about.
+ */
+export function lpMenu(): CuratedPool[] {
+  return [...offerablePools(), ...directPools().filter((p) => !!p.poolAddress)];
 }
 
 /**

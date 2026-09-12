@@ -676,3 +676,54 @@ own fee manager `0xE6A4…2075`; a direct integration would bind to THOSE, not t
 addresses. (3) The gauge has one epoch's vote worth ≈ $336/day of AERO at the read, paid to
 almost nobody (0.086 % of the liquidity is staked) — a number that is re-voted on 2026-09-17 and
 must never be baked in. (4) Nothing in the product can earn it today.
+
+## Addendum 9 — slice F, 2026-09-10/11: the second Slipstream deployment, read for the direct venue
+
+Purpose: the pointers and shapes `SlipstreamLpVenue` and `SlipstreamPoolSwapAdapter` bind to
+(`docs/CBZEC-PATH-2026-09.md` option 1, decided 2026-09-10). Method: `cast call` against
+`https://mainnet.base.org` between blocks **51,149,609 and 51,149,744** (2026-09-10, ≈ 19:0x UTC),
+and the verified sources from Sourcify (`/server/v2/contract/8453/<addr>?fields=all`). Nothing signed
+or broadcast. Abbreviations: NPM = NonfungiblePositionManager (the ERC-721 that mints Slipstream
+positions); CL = concentrated liquidity.
+
+### Pointers (all at blocks 51,149,609–625)
+
+| Read | Value |
+|---|---|
+| CLFactory `0xf8f2…61Ef` `isPool(0x0Fc4…8566)` | true |
+| Voter `0x1661…80A5` `gauges(0x0Fc4…8566)` | `0x8779E34E5d38358B0cB957c553B40cC1208C81FB` — the gauge Addendum 8 recorded |
+| pool `gauge()` / `nft()` / `factory()` | `0x8779…81FB` / `0xe1f8cd9AC4e4A65F54f38a5CdAfCA44f6dD68b53` / `0xf8f2…61Ef` — **this deployment's pools answer `gauge()`** (the 2026-09-06 pool `0xb2cc…DC59` reverts on it) |
+| gauge `nft()` / `rewardToken()` | `0xe1f8…8b53` / AERO `0x9401…8631` |
+| gauge `stakedValues(0x…01)` | `[]` (answers; an empty list for a fresh address) |
+| NPM `name()` / `supportsInterface(0x780e9d63)` / `totalSupply()` | "Slipstream Position NFT v1" / **true — ERC-721 Enumerable** / 1,557,619 |
+| CLFactory `getPool(WETH, USDC, 100)` / `(cbBTC, USDC, 100)` / `(WETH, USDC, 200)` | zero, zero, zero — the majors' pools are on the OLD factory; this one has no WETH/USDC at 100 or 200 |
+| gauge factory `0x3852…6AbB` `implementation()` / `nft()` | `0x434BCcaB043311a20b16021C137EA81702790f7B` / `0xe1f8…8b53` |
+
+### Verified sources (Sourcify, all `exact_match`, solc 0.7.6+commit.7338295f)
+
+| Contract | Source | What the venue relies on |
+|---|---|---|
+| NPM `0xe1f8…8b53` | `NonfungiblePositionManager.sol` (59 files) | `mint(MintParams)` pulls both tokens from `msg.sender` (`PeripheryPayments.pay` → `transferFrom`) and mints to `recipient` with a plain `_mint`; `MintParams` carries `tickSpacing` and a `sqrtPriceX96` that creates the pool when non-zero (Oilskin passes 0); `decreaseLiquidity`, `collect`, `burn` require `msg.sender` to own or be approved for the id; `burn` requires liquidity and both `tokensOwed` at zero ("NC"); `positions(id)` is the 12-field tuple |
+| CLFactory `0xf8f2…61Ef` | `CLFactory.sol` + `CLPool.sol` (37 files) | `swap(recipient, zeroForOne, amountSpecified, sqrtPriceLimitX96, data)`: exact input when positive; the limit must sit strictly between the price and the tick bound ("SPL"); the output is sent to `recipient` BEFORE `ICLSwapCallback(msg.sender).uniswapV3SwapCallback(amount0, amount1, data)`, after which the pool checks its own balance ("IIA") |
+| CLGauge implementation `0x434B…0f7B` (the pool's gauge is an EIP-1167 clone of it, per Blockscout) and gauge factory `0x3852…6AbB` | `CLGauge.sol`, `CLGaugeFactory.sol` (37 / 39 files) | `deposit(tokenId)`: `nft.ownerOf(tokenId) == msg.sender` ("NA"), `voter.isAlive(gauge)` ("GK"), the position's tokens and spacing must be the pool's ("PM"); it calls `nft.collect(→ msg.sender)` and `nft.safeTransferFrom(msg.sender, gauge, tokenId)` — so the depositor must `approve(gauge, tokenId)` first. `withdraw(tokenId)`: collects, pays the reward to `msg.sender` (`_getReward`, less `gaugeFactory.penaltyRate()` while `block.timestamp < depositTimestamp + minStakeTimes(pool)`), unstakes and `safeTransferFrom`s the NFT back (the receiver needs `onERC721Received` — the account has it). `getReward(tokenId)` pays without unstaking. `stakedValues(depositor)`, `stakedContains(depositor, tokenId)`, `stakedLength` are the only depositor views: there is **no id → depositor view**, which is why `ILpVenue.ownedPool(id, account)` exists |
+
+### A sibling pool for the fork test (block 51,149,744)
+
+`CLFactory.allPools(0)` = **`0x493E74Eda2720e127BAcCC1A19B2D567Bc14aB43`**: token0 WETH, token1
+USDC, tickSpacing **10**, gauge `0xBb43264000215f475EB6b456cF1Bbf0EF5a726FA` (via `voter.gauges`),
+`liquidity()` 1,008,288,662,761,661. Ordinary ERC-20s on both sides, so a fork EVM can run the
+venue end to end on this deployment's live NPM and gauge
+(`test_fork_directVenueOpenCloseOnTheSecondDeployment`); the cbZEC pool itself cannot be exercised
+in a fork EVM (Addendum 3) and is proved by its pointers only
+(`test_fork_directVenueBindsToTheCbzecPool`). The next entries: `allPools(1..4)` are WETH or USDC
+against `0x9d0E…d083`, `0x6985…71cd`, `0xacfE…21bf`, `0x9126…86Eb` (all gauged); `allPools(5..7)` have
+no gauge (zero) and two of them zero liquidity.
+
+**What this settles.** (1) The venue's four constructor cross-checks (`pool.nft`, `pool.gauge`,
+`gauge.nft`, `gauge.pool`, `gauge.rewardToken`, and the adapter's `POOL()`) hold on the live
+cbZEC/USDC pointers. (2) A staked position is the gauge's on the NFT's books and the account's on
+the gauge's; enumeration is `stakedValues` plus the NPM's `tokenOfOwnerByIndex` filtered by pool.
+(3) The pool-direct swap pays the pool inside the callback, from the account, exactly the positive
+delta the pool reports. (4) Not read: `gaugeFactory.penaltyRate()` and `minStakeTimes(pool)` for
+this pool — an early-withdraw penalty on AERO, if set, reduces the reward a fast close collects;
+the venue does not check it.

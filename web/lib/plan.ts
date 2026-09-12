@@ -56,6 +56,12 @@ export interface Deployment {
   router: Address;
   registry: Address;
   lpVenue: Address;
+  /**
+   * The direct Slipstream venue over the cbZEC/USDC pool (`router.LP_VENUE_DIRECT()`), or null on a
+   * deployment without one (2026-09-11). Its positions are NPM tokens staked in the pool's gauge,
+   * enumerated by `positionsOf` there; a claim on one of them targets this venue, not the engine's.
+   */
+  lpVenueDirect: Address | null;
   aaveVenue: Address;
   /** AerodromeSwapAdapter — the contract that enforces the swap floor (router.SWAP()). */
   swapAdapter: Address;
@@ -198,8 +204,14 @@ export interface OpenPlanInput {
   collateral: CollateralSymbol;
   collateralAmount: string;
   borrowUsdc: number;
-  /** Engine pool (bytes32) — required for "lp". */
+  /**
+   * The LP pool id the router takes — required for "lp": the engine's bytes32 for an engine pool,
+   * or the pool address left-padded for a pool held on the direct Slipstream venue
+   * (`@zyo/shared` `lpPoolId`). The router looks it up on the engine venue first, then the direct one.
+   */
   enginePoolId?: `0x${string}`;
+  /** Which venue serves the pool — decides the wording, never the encoding (the router resolves it). */
+  poolVenue?: "engine" | "direct";
   poolLabel?: string;
   lpParams: LpParams;
   /** Current allowance of the collateral token to Permit2, if known. */
@@ -284,7 +296,13 @@ export function buildOpenPlan(i: OpenPlanInput): PlannedCall[] {
       ]
     : [
         ...sharedArgs,
-        { name: "poolId", value: `${i.poolLabel ?? "pool"} — engine pool id ${short(i.enginePoolId ?? ZERO32)}` },
+        {
+          name: "poolId",
+          value:
+            i.poolVenue === "direct"
+              ? `${i.poolLabel ?? "pool"} — held directly on Aerodrome Slipstream through Oilskin's own venue (pool id = the pool address ${short(i.enginePoolId ?? ZERO32)}): the borrowed USDC is part-swapped through the pool itself, minted as a two-sided range centred on the price, and staked in the pool's gauge`
+              : `${i.poolLabel ?? "pool"} — engine pool id ${short(i.enginePoolId ?? ZERO32)}`,
+        },
         { name: "rangeWidthBps", value: `${chainLp.rangeWidthBps} (total tick span; on-chain bounds ${RANGE_WIDTH_BOUNDS.min}–${RANGE_WIDTH_BOUNDS.max})` },
         { name: "rebalanceDelay", value: `${chainLp.rebalanceDelay} seconds (${i.lpParams.rebalanceDelayHours} h)` },
         { name: "autoCompound", value: chainLp.autoCompound ? "on" : "off" },
@@ -318,7 +336,9 @@ export function buildOpenPlan(i: OpenPlanInput): PlannedCall[] {
     ],
     note: hold
       ? `${routerFn}: Permit2 pull → venue.supply (onBehalfOf = account) → venue.borrow(USDC), nothing deployed. The venue itself refuses a borrow under the registry's entry health-factor floor, so this cannot open under it. The router's balance of every token it touches is unchanged at exit and it asserts that.`
-      : `${routerFn}: Permit2 pull → venue.supply (onBehalfOf = account) → venue.borrow(USDC) → lpVenue.open (USDC single-sided, price band) → reverts EntryHfTooLow below the floor. The router's balance of every token it touches is unchanged at exit and it asserts that.`,
+      : i.poolVenue === "direct"
+        ? `${routerFn}: Permit2 pull → venue.supply (onBehalfOf = account) → venue.borrow(USDC) → SlipstreamLpVenue.open (the router resolves the pool id to the direct venue; the venue swaps part of the USDC to the pool's other token through the pool's own swap under a floor derived from your price band, mints a centred range on the position manager, stakes the NFT in the gauge when the Voter says it is alive, and leaves whatever the pool did not take idle in your account) → reverts EntryHfTooLow below the floor. The router's balance of every token it touches is unchanged at exit and it asserts that.`
+        : `${routerFn}: Permit2 pull → venue.supply (onBehalfOf = account) → venue.borrow(USDC) → lpVenue.open (USDC single-sided, price band) → reverts EntryHfTooLow below the floor. The router's balance of every token it touches is unchanged at exit and it asserts that.`,
     required: true,
     encodable: abiOk && !!account && (hold || !!i.enginePoolId),
   });
@@ -482,12 +502,27 @@ export interface UnwindPlanInput {
    * why. The owner's raw exec to the venue stays open, as it does for every other refusal.
    */
   withdrawRefusedReason?: string | null;
+  /**
+   * How many lending venues currently hold this account's collateral (the Aave venue, and after a
+   * registry switch possibly a previous one too). Since 2026-09-11 ONE Close returns it from every
+   * one of them (`RISKS.md` §8 "two-book Close", option (1)); when it is more than one the plain
+   * sentence says so, because the promise "one transaction returns your collateral" is then a
+   * claim about two places.
+   */
+  collateralPlaces?: number;
+  /** Which venue holds the position being closed — wording only; the router resolves the ids. */
+  positionVenue?: "engine" | "direct";
 }
 
 export function buildUnwindPlan(i: UnwindPlanInput): PlannedCall[] {
   const asset = COLLATERAL_ASSETS[i.collateral];
   const d = i.deployment;
   const refused = i.withdrawRefusedReason ?? null;
+  const places = i.collateralPlaces ?? 1;
+  const twoPlaces =
+    places > 1
+      ? ` Your ${asset.symbol} sits in ${places} places, because Oilskin changed the lending contract while your position was open; this same transaction returns it from every one of them — nothing is left behind for a second signature.`
+      : "";
   const abiOk = ABI_STATUS === "verified" && !!d && !d.demo && !refused;
   const q = i.quote;
   const quoteOk = !!q && validateSwapQuote(q).length === 0;
@@ -500,27 +535,32 @@ export function buildUnwindPlan(i: UnwindPlanInput): PlannedCall[] {
       kind: "unwind",
       wallet: "transaction",
       title: "Close the position, repay the loan, get your collateral back — one transaction",
-      plain: `One transaction that closes ${i.poolLabel ?? "the position"}, turns everything back into USDC at a price floor you can see below, repays your Aave loan in full and returns your ${asset.symbol} to your wallet; the performance fee is taken only on the rewards it collects.`,
+      plain: `One transaction that closes ${i.poolLabel ?? "the position"}, turns everything back into USDC at a price floor you can see below, repays your Aave loan in full and returns your ${asset.symbol} to your wallet; the performance fee is taken only on the rewards it collects.${twoPlaces}`,
       to: i.account,
       toLabel: `your Oilskin account (${i.account ? short(i.account) : "…"})`,
       functionName: "execWithCallback → StrategyRouter.unwind",
       args: [
-        { name: "positions", value: i.positionIds.map((p) => `engine position #${p}`).join(", ") || "none" },
+        { name: "positions", value: i.positionIds.map((p) => `${i.positionVenue === "direct" ? "Slipstream position" : "engine position"} #${p}`).join(", ") || "none" },
         { name: "collateralAsset", value: `${asset.symbol} (${short(asset.address)})` },
         { name: "band", value: `pool price ±${(i.bandToleranceBps / 100).toFixed(2)}% around the live price read before you sign` },
         { name: "swap quote", value: quoteText },
-        { name: "swap route", value: q ? `Aerodrome Slipstream, tick spacing ${q.tickSpacing}` : "pool tick spacing read at sign time" },
-        { name: "repayAmount", value: "max (all of your debt, or all the USDC that comes back if less)" },
+        {
+          name: "swap route",
+          value: q
+            ? `${i.positionVenue === "direct" ? "the pool's own swap (the verified SwapRouter cannot reach this pool)" : "Aerodrome Slipstream"}, tick spacing ${q.tickSpacing}`
+            : "pool tick spacing read at sign time",
+        },
+        { name: "repayAmount", value: "max (all of your debt, on every lending venue you still owe, the one in most trouble first)" },
         {
           name: "withdrawAmount",
           value: refused
             ? `refused — ${refused}`
-            : "max (all collateral; refused if debt would remain with the health factor below the floor)",
+            : `max (all collateral, from ${places > 1 ? `every one of the ${places} venues holding it` : "the venue holding it"}; refused if debt would remain with that venue's health factor below the floor)`,
         },
         { name: "deadline", value: utc(i.deadline) },
       ],
       note:
-        "closeMany (ids that refuse are reported in failedCount, at index 0 like anywhere else — never a revert) → swap the non-USDC leg through AerodromeSwapAdapter, which enforces amountIn × quotedOut / quotedIn × (10000 − maxSlippageBps) / 10000 on the amount actually swapped → repay on every lending venue you still owe, the one with the lowest health factor first (a fixed repay against zero debt is a no-op, not a revert) → withdraw from the venue holding the position, gated on that venue's GLOBAL health factor. " +
+        `closeMany on ${i.positionVenue === "direct" ? "SlipstreamLpVenue (unstake from the gauge, collect the AERO — fee on it — then decrease, collect and burn the NFT; a refused id is reported in failedCount and left where it is)" : "SnuggleLpVenue"} (ids that refuse are reported in failedCount, at index 0 like anywhere else — never a revert) → swap the non-USDC leg through ${i.positionVenue === "direct" ? "SlipstreamPoolSwapAdapter (the pool's own swap with the callback; a partial fill is refused by name)" : "AerodromeSwapAdapter"}, which enforces amountIn × quotedOut / quotedIn × (10000 − maxSlippageBps) / 10000 on the amount actually received → repay on every lending venue you still owe, the one with the lowest health factor first (a fixed repay against zero debt is a no-op, not a revert; one VenueRepaid per venue) → withdraw from EVERY venue holding your collateral, the registry's current venue first, each gated on that venue's GLOBAL health factor (one VenueWithdrawn per venue; since 2026-09-11 — before, only the first venue was visited). ` +
         "Works on a disabled ASSET; refuses through a disabled VENUE (VenueDisabled) — then the owner's raw exec to Aave is the escape. Fee only in SnuggleLpVenue.close, on rewards.",
       required: true,
       encodable: abiOk && !!i.account && i.positionIds.length > 0 && quoteOk,
@@ -572,11 +612,19 @@ export interface ClaimPlanInput {
   deadline: number;
   bandToleranceBps: number;
   poolLabel?: string;
+  /** Which venue holds the ids: the claim is encoded against THAT venue (the router is not involved). */
+  venue?: "engine" | "direct";
+}
+
+/** The venue a claim targets; null when the deployment has no such venue. */
+export function claimVenueAddress(d: Deployment, venue: ClaimPlanInput["venue"]): Address | null {
+  return venue === "direct" ? d.lpVenueDirect : d.lpVenue;
 }
 
 export function buildClaimPlan(i: ClaimPlanInput): PlannedCall[] {
   const d = i.deployment;
-  const abiOk = ABI_STATUS === "verified" && !!d && !d.demo;
+  const direct = i.venue === "direct";
+  const abiOk = ABI_STATUS === "verified" && !!d && !d.demo && (!direct || !!d.lpVenueDirect);
   return [
     {
       step: 1,
@@ -586,10 +634,15 @@ export function buildClaimPlan(i: ClaimPlanInput): PlannedCall[] {
       plain: `One transaction that collects the AERO rewards ${i.poolLabel ? `from ${i.poolLabel} ` : ""}into your Oilskin account (the performance fee comes off here) and then moves them to your wallet.`,
       to: i.account,
       toLabel: `your Oilskin account (${i.account ? short(i.account) : "…"})`,
-      functionName: "execBatch → SnuggleLpVenue.claim, StrategyRouter.sweep",
+      functionName: `execBatch → ${direct ? "SlipstreamLpVenue" : "SnuggleLpVenue"}.claim, StrategyRouter.sweep`,
       args: [
-        { name: "positions", value: i.positionIds.map((p) => `engine position #${p}`).join(", ") || "none" },
-        { name: "band", value: `pool price ±${(i.bandToleranceBps / 100).toFixed(2)}% — your positions auto-compound, so a harvest can swap inside the engine; this bounds the price it may do that at` },
+        { name: "positions", value: i.positionIds.map((p) => `${direct ? "Slipstream position" : "engine position"} #${p}`).join(", ") || "none" },
+        {
+          name: "band",
+          value: direct
+            ? `pool price ±${(i.bandToleranceBps / 100).toFixed(2)}% — a direct claim swaps nothing (the gauge pays the AERO, the position manager pays any trading fees); the venue still checks the price sits inside this window, as every venue call does`
+            : `pool price ±${(i.bandToleranceBps / 100).toFixed(2)}% — your positions auto-compound, so a harvest can swap inside the engine; this bounds the price it may do that at`,
+        },
         { name: "deadline", value: utc(i.deadline) },
         { name: "sweep to wallet", value: i.sweepTokens.map((t) => `${t.symbol} (${short(t.address)})`).join(", ") || "—" },
       ],
@@ -604,13 +657,16 @@ export function buildClaimPlan(i: ClaimPlanInput): PlannedCall[] {
 export function encodeClaimWrite(i: ClaimPlanInput, band: PriceBand): WriteSpec {
   const d = i.deployment;
   if (!d || d.demo || !i.account) throw new Error("no deployment / account");
+  const venueAddr = claimVenueAddress(d, i.venue);
+  if (!venueAddr) throw new Error("this deployment has no direct Slipstream venue — the claim cannot be encoded");
+  // The two venues share the ILpVenue `claim` signature; the target decides which one collects.
   const claim = encodeFunctionData({
     abi: LP_VENUE_ABI,
     functionName: "claim",
     args: [i.positionIds, { minSqrtPriceX96: band.minSqrtPriceX96, maxSqrtPriceX96: band.maxSqrtPriceX96 }, BigInt(i.deadline)],
   });
   const sweep = encodeFunctionData({ abi: ROUTER_ABI, functionName: "sweep", args: [i.sweepTokens.map((t) => t.address)] });
-  const inner: AccountCall[] = [peripheralCall(d.lpVenue, claim), peripheralCall(d.router, sweep)];
+  const inner: AccountCall[] = [peripheralCall(venueAddr, claim), peripheralCall(d.router, sweep)];
   const args = [inner] as const;
   return { address: i.account, abi: ACCOUNT_ABI, functionName: "execBatch", args, data: encodeFunctionData({ abi: ACCOUNT_ABI, functionName: "execBatch", args }) };
 }
@@ -710,6 +766,7 @@ export const DEMO_DEPLOYMENT: Deployment = {
   router: "0x4444444444444444444444444444444444444444",
   registry: "0x5555555555555555555555555555555555555555",
   lpVenue: "0x6666666666666666666666666666666666666666",
+  lpVenueDirect: null,
   aaveVenue: "0x7777777777777777777777777777777777777777",
   swapAdapter: "0x0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
   engine: "0x8888888888888888888888888888888888888888",

@@ -407,11 +407,30 @@ user who signs the first Close and walks away is left with a debt-free book
 on the second venue — visible on the dashboard, but a state the product has
 to explain.
 
-**Decided by the founder, 2026-09-10: option (1)** — the router's withdraw leg
-iterates every venue holding the account's collateral, one `VenueWithdrawn`
-event per venue, selector and grant unchanged. To be implemented in its own
-session; until then the KNOWN-FAILURE invariant stands and this section is
-the specification it is built to.
+**Decided by the founder, 2026-09-10: option (1); implemented 2026-09-11
+(slice F).** `StrategyRouter._withdrawAcross` visits every venue the registry
+names for the asset that holds the account's collateral, current pointer
+first, asks each for the amount, gates each on ITS OWN global health factor
+(`ExitHfTooLow`, the same rule applied per venue) and emits one
+`VenueWithdrawn(account, venue, withdrawn)` per venue reached;
+`LeveragedLpUnwound.withdrawn` is the sum. `withdrawAmount = max` returns
+everything from every venue; a fixed amount is a TOTAL taken in venue order,
+never more than a venue holds, and `CollateralShort(asked, withdrawn)` if the
+venues together cannot meet it — never silently less. With nothing held
+anywhere the current pointer is asked as before, so its own named refusal is
+what the caller sees. The `unwind` selector (`0x08435e75`), `UnwindParams`
+and the keeper's grant did not move; the keeper's plans keep `withdrawAmount
+= 0` and its receipts carry no `VenueWithdrawn`. The invariant flipped:
+`invariant_singleCloseClearsEveryBook` asserts a two-book account funded to
+cover every book strands nothing and never reverts (256 runs × depth 40,
+10,240 calls, 0 reverts); `VenueSwitch.t.sol` M1m–M1q pin one Close clearing
+both venues, the per-venue gate, the fixed-amount rule, the Aave-only shape
+plus its one event, and the unchanged selector; the web's Close says "your
+cbBTC sits in N places … this same transaction returns it from every one of
+them" when the account read counts more than one venue holding collateral.
+What it still does not cover: a venue whose exit floor refuses reverts the
+whole Close (option (1)'s stated cost) — the transaction is atomic, nothing
+moves, and the owner's raw exec to the other venue remains.
 
 **Does not.** The floor binds only sequences that go through the Oilskin venue.
 A user who hand-writes `account.exec(aavePool, borrow(...))` can still open at
@@ -499,8 +518,10 @@ random sequences.
 
 ## 11 · Smart-contract risk
 
-**Risk.** `OilskinAccount`, the factory, the router, the venues, the adapter
-and the registry are new code (3,492 lines, `AUDIT-SCOPE.md`). Aave v3,
+**Risk.** `OilskinAccount`, the factory, the router, the venues, the adapters
+and the registry are new code (5,773 lines on 2026-09-11, `AUDIT-SCOPE.md`,
+of which the direct Slipstream venue, its pool-direct swap adapter, their
+interfaces and the vendored liquidity math are 1,286 — slice F). Aave v3,
 Aerodrome, the Snuggle engine, Permit2 and CoW are third-party contracts with
 their own histories; the Snuggle engine discloses AI-only audits.
 
@@ -509,10 +530,10 @@ storage; the router's balance of every token it touches is unchanged across
 every call; no standing allowances (`_approveCallReset`;
 `invariant_noStandingAllowances`); reentrancy lock in transient storage;
 peripheral rights opt-in per call and bounded in depth; revert data bubbled
-untouched; **329 unit / fuzz / invariant tests green** (2026-09-10, slice D;
-plus 10 fork tests skipped without `FORK_URL`), with 10 invariants including the user-can-always-exit (raw and via the
-router), repay-reaches-every-book, fee-never-touches-principal and the two
-donation properties.
+untouched; **360 unit / fuzz / invariant tests green** (2026-09-11, slice F;
+plus 12 fork tests skipped without `FORK_URL`), with 10 invariants including the user-can-always-exit (raw and via the
+router), repay-reaches-every-book, one-Close-clears-every-book,
+fee-never-touches-principal and the two donation properties.
 The one owned contract is the registry, which cannot touch an account — but
 see §16 for what it *can* do.
 
@@ -685,6 +706,49 @@ and rebalances carry `whenNotPaused`. Tests: `SnuggleLpVenue.t.sol`
 (`test_positionsOfFailsClosedWhenEngineUnreachable`,
 `test_pausedEngineRefusesOpensButNotCloses`), the two fork tests.
 
+**The direct Slipstream venue (slice F, 2026-09-11; `CBZEC-PATH-2026-09.md`
+option 1, decided 2026-09-10).** cbZEC/USDC is not an engine pool and the
+verified SwapRouter cannot reach it (Addendum 8), so it is held through
+Oilskin's own `SlipstreamLpVenue` on the SECOND Slipstream deployment's
+position manager `0xe1f8…8b53` and the pool's gauge `0x8779…81FB`, and swapped
+through `SlipstreamPoolSwapAdapter` — the pool's own `swap` with the callback
+paying the pool from the account (Addendum 9). Behind the same `ILpVenue`:
+the router resolves a pool id to the engine venue first, then the direct one
+(`UnknownPool` otherwise), and an unwind's ids to the venue that says the
+account owns the first of them (`ILpVenue.ownedPool`, new — a staked NFT is
+the gauge's on the NFT's books and the account's on the gauge's, and the
+gauge has no id → depositor view). *What it does differently, on purpose:*
+the position is two-sided and centred — a single-sided deposit is first
+swapped to the range's ratio through the pool under a floor derived from the
+caller's own price band, capped at the adapter's 5 % — then minted and staked
+in the gauge when the Voter says it is alive (otherwise held unstaked and
+said so, `StakeSkipped`); there is no rebalancer, the range is static; the
+fee chokepoint is on what `claim` / `close` collect (AERO from the gauge, any
+trading fees accrued while unstaked), once per distinct token, principal
+untaxed. *Risk lines it adds, each stated in code or copy:* a killed or
+unvoted gauge pays nothing (the yield gate reads `rewardRate` live and the
+pool note says the vote is weekly); the range does not follow the price (the
+dashboard shows it; the disclosure says it earns nothing outside it); an
+early-withdraw penalty on the AERO if the gauge factory sets one (not read,
+not checked — Addendum 9); the pool IS the depth (≈ $0.9M on 2026-09-10); the
+second factory's fee manager `0xE6A4…2075` sets the pool's swap fee (§16); the
+callback is a new door — accepted only from the bound pool, only while a swap
+is in flight, only once, paying exactly the pool's positive delta and never
+the other token (`SlipstreamLpVenue.t.sol`, the adapter tests). *Residuals:*
+(a) the engine's and the NPM's id spaces are independent counters, so an
+account owning the SAME number on both venues has the engine's closed through
+`unwind` and the direct one through the direct venue's own `close`; (b) the
+pool-direct swap has no price limit beyond the tick bounds — the floor is the
+protection, and a partial fill (liquidity running out) is refused by name
+(`PartialFill`), never half-done; (c) mint and decrease minimums are zero
+because the whole call is one transaction whose price was checked against the
+band at the start and moved only by the venue's own bounded swap — a
+same-block move inside the band is the same residual as §13's. Proved on the
+fork on the deployment's WETH/USDC ts-10 pool (open → positionsOf → close on
+the live NPM and gauge, `test_fork_directVenueOpenCloseOnTheSecondDeployment`)
+and on the cbZEC pool's live pointers (`test_fork_directVenueBindsToTheCbzecPool`);
+the cbZEC pool's own mint cannot run in a fork EVM (Addendum 3).
+
 ## 13 · Price-band and swap floors (MEV)
 
 **Risk.** A deposit or close through the engine swaps internally; without a
@@ -702,7 +766,12 @@ and the UI show the number the chain enforces, and `Swapped` logs it. The web
 fetches a real quote from the pool's live price, cross-checks it against the
 Chainlink price Aave uses, and refuses a pool more than 3 % off the oracle
 (`web/lib/quote.ts`); the keeper builds its quote from the same live pool price
-(`agent/src/dispatch/quote.ts`).
+(`agent/src/dispatch/quote.ts`). The cbZEC/USDC leg (2026-09-11) goes through
+`SlipstreamPoolSwapAdapter`, the pool's own `swap`: the same quote-plus-capped-
+tolerance floor, but checked against the account's BALANCE DELTA rather than
+a return value, with a partial fill refused by name and the callback accepting
+only the bound pool while a swap is in flight; the venue's own to-ratio swap on
+open takes its tolerance from the caller's band, capped at the same 5 %.
 
 **Does not.** The quote is still caller-supplied: a dishonest quote still gives
 a bad floor. What changed is that the lie is an explicit number in calldata
@@ -756,6 +825,12 @@ false without a deployment; demo addresses are obviously synthetic
 ---
 
 ## 16 · Operator powers: a timelocked owner is still an owner
+
+*Added 2026-09-11 (slice F):* the cbZEC/USDC pool's second Slipstream factory
+`0xf8f2…61Ef` has its own owner and fee manager, `0xE6A4…2075`, which sets that
+pool's swap fee and unstaked fee (Addendum 8), and Aerodrome's Voter decides
+each week whether the gauge pays anything; neither is Oilskin, and neither is
+bounded by anything in this repo. They join the trust list below.
 
 **Risk.** `CollateralRegistry` is the one owned contract, and the venue it
 names for an asset receives every calling account's peripheral rights on every

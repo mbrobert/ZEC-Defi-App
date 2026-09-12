@@ -89,9 +89,15 @@ export const RISKS: readonly RiskItem[] = [
     scope: ["review", "dashboard"],
   },
   {
+    id: "direct-venue",
+    title: "cbZEC/USDC held directly on Aerodrome",
+    body: "The cbZEC/USDC position does not go through the engine: Oilskin's own venue mints a two-sided range centred on the price, stakes it in the pool's gauge and swaps through the pool itself, because the usual router cannot reach this pool. The range never moves on its own — if the price leaves it, the position earns nothing until you close and reopen. The AERO it earns is decided by Aerodrome's weekly vote (the first landed in the epoch of 2026-09-10) and can be zero in any week; the pool is small and is itself the exit liquidity; a fee manager Oilskin does not control sets its swap fee.",
+    scope: ["review", "dashboard"],
+  },
+  {
     id: "contracts",
     title: "Smart-contract risk",
-    body: "Your OilskinAccount, the router and the venue adapters are new code. Aave, Aerodrome, Snuggle, Permit2 and CoW are third-party contracts with their own risks. An external audit of the Oilskin contracts has not been completed.",
+    body: "Your OilskinAccount, the router, the venue adapters and the direct Slipstream venue with its pool-swap adapter are new code. Aave, Aerodrome, Snuggle, Permit2 and CoW are third-party contracts with their own risks. An external audit of the Oilskin contracts has not been completed.",
     scope: ["review", "dashboard", "spot", "footer"],
   },
   {

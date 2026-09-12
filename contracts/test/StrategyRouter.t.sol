@@ -527,7 +527,15 @@ contract StrategyRouterTest is Fixture {
 
     function test_routerConstructorRejectsZero() public {
         vm.expectRevert(StrategyRouter.ZeroAddress.selector);
-        new StrategyRouter(registry, lpVenue, swapAdapter, permit2, address(0));
+        new StrategyRouter(registry, lpVenue, swapAdapter, permit2, address(0), ILpVenue(address(0)), ISwapAdapter(address(0)));
+        // The direct venue and its adapter come together or not at all.
+        vm.expectRevert(StrategyRouter.ZeroAddress.selector);
+        new StrategyRouter(registry, lpVenue, swapAdapter, permit2, address(usdc), ILpVenue(address(directVenue)), ISwapAdapter(address(0)));
+        vm.expectRevert(StrategyRouter.ZeroAddress.selector);
+        new StrategyRouter(registry, lpVenue, swapAdapter, permit2, address(usdc), ILpVenue(address(0)), ISwapAdapter(address(poolSwapAdapter)));
+        // Without them the router serves the engine venue only.
+        StrategyRouter bare = new StrategyRouter(registry, lpVenue, swapAdapter, permit2, address(usdc), ILpVenue(address(0)), ISwapAdapter(address(0)));
+        assertEq(address(bare.LP_VENUE_DIRECT()), address(0));
     }
 
     // ------------------------------------------------------------------ fuzz

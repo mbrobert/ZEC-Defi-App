@@ -78,14 +78,12 @@ contract Handler is Test {
     bytes4 public g_lastRepayAcrossSelector;
     /// Opens that landed on Morpho: reachable only after `switchVenue(true)`.
     uint256 public g_morphoOpens;
-    /// Slice D (2026-09-10, `RISKS.md` §8 "two-book Close"). The web's Close is ONE
-    /// `unwind(ids, repay max, withdraw max)`. On an account with collateral on BOTH venues the
-    /// withdraw leg goes to the first venue holding anything of the account's and the other venue's
-    /// collateral is left behind. Recorded as a KNOWN FAILURE with a test waiting for the fix:
-    /// `singleCloseProbe` counts the two-book runs and the runs that stranded collateral;
-    /// `invariant_KNOWN_singleCloseStrandsCollateral` asserts the two counts are EQUAL today and
-    /// must be flipped to "stranded == 0" when the fix lands. `g_singleCloseUnexpected` is set when
-    /// a two-book close reverted or stranded nothing — either means the model in RISKS §8 is off.
+    /// Slice D (2026-09-10, `RISKS.md` §8 "two-book Close") recorded the strand; slice F
+    /// (2026-09-11) fixed it. The web's Close is ONE `unwind(ids, repay max, withdraw max)`. On an
+    /// account with collateral on BOTH venues the withdraw leg now visits every venue holding the
+    /// account's collateral: `singleCloseProbe` counts the two-book runs and the runs that STILL
+    /// stranded collateral, and `invariant_singleCloseClearsEveryBook` asserts the latter is zero.
+    /// `g_singleCloseUnexpected` is set when a two-book close, funded to cover every book, reverted.
     uint256 public g_singleCloseProbes;
     uint256 public g_singleCloseTwoBook;
     uint256 public g_singleCloseStranded;
@@ -396,7 +394,7 @@ contract Handler is Test {
         vm.revertToState(snap);
         if (!twoBook) return;
         g_singleCloseTwoBook++;
-        if (!ok || !stranded) g_singleCloseUnexpected = true;
+        if (!ok) g_singleCloseUnexpected = true;
         if (ok && stranded) g_singleCloseStranded++;
     }
 
@@ -514,8 +512,8 @@ contract Handler is Test {
         });
         (ok,) = _exec(address(router), abi.encodeCall(StrategyRouter.unwind, (u)));
         if (!ok) return (true, false, false);
-        // Debt cleared everywhere (the repay leg reaches every book) but collateral left on the
-        // venue the withdraw leg did not visit: that is the strand.
+        // Debt cleared everywhere (the repay leg reaches every book) but collateral left on a
+        // venue the withdraw leg did not visit: that would be the strand slice D recorded.
         stranded = _totalDebt() == 0 && _totalCollateral() != 0;
     }
 
@@ -546,12 +544,12 @@ contract Handler is Test {
         if (debtAfter != 0 && usdc.balanceOf(address(acct)) != 0) return false;
         if (debtBefore != 0 && heldBefore != 0 && debtAfter == debtBefore) return false;
         if (debtAfter == 0) {
-            // The withdraw leg goes to the first venue holding anything of the account's, so a
-            // two-book account takes one `unwind(withdraw max)` per venue — what a Close does.
+            // The withdraw leg visits every venue holding the account's collateral (2026-09-11), so
+            // ONE `unwind(withdraw max)` must return it all, however many books there were.
             u.positionIds = new uint256[](0);
             u.repayAmount = 0;
             u.withdrawAmount = type(uint256).max;
-            for (uint256 i = 0; i < 2 && _totalCollateral() != 0; i++) {
+            if (_totalCollateral() != 0) {
                 (ok,) = _exec(address(router), abi.encodeCall(StrategyRouter.unwind, (u)));
                 if (!ok) return false;
             }

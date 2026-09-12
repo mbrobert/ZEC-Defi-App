@@ -28,6 +28,11 @@ import {MockPermit2} from "./mocks/MockPermit2.sol";
 import {MockCLPool} from "./mocks/MockCLPool.sol";
 import {MockSnuggleVault} from "./mocks/MockSnuggleVault.sol";
 import {MockAerodromeSwapRouter} from "./mocks/MockAerodromeSwapRouter.sol";
+import {MockCLGauge, MockSlipstreamNpm, MockVoter} from "./mocks/MockSlipstream.sol";
+import {SlipstreamLpVenue} from "../src/venues/SlipstreamLpVenue.sol";
+import {SlipstreamPoolSwapAdapter} from "../src/swap/SlipstreamPoolSwapAdapter.sol";
+import {ISwapAdapter} from "../src/interfaces/ISwapAdapter.sol";
+import {ISlipstreamGauge, ISlipstreamNpm, ISlipstreamPool} from "../src/interfaces/ISlipstream.sol";
 
 /// @notice The whole v1 surface wired against mocks that mirror VERIFIED-BASE-FACTS:
 ///           reserves cbBTC LT 7800 / LTV 7300, WETH 8300 / 8000, USDC 7800 / 7500 borrowable,
@@ -55,6 +60,10 @@ abstract contract Fixture is Test {
     MockCLPool poolWethUsdc;
     MockCLPool poolCbzecUsdc;
     MockAerodromeSwapRouter aeroRouter;
+    // the second Slipstream deployment, around the cbZEC/USDC pool (2026-09-11, the direct venue)
+    MockVoter voter;
+    MockSlipstreamNpm npmCbzec;
+    MockCLGauge gaugeCbzec;
 
     // ours
     OilskinAccountFactory factory;
@@ -64,10 +73,14 @@ abstract contract Fixture is Test {
     SnuggleLpVenue lpVenue;
     CollateralRegistry registry;
     AerodromeSwapAdapter swapAdapter;
+    SlipstreamPoolSwapAdapter poolSwapAdapter;
+    SlipstreamLpVenue directVenue;
     StrategyRouter router;
 
     bytes32 constant POOL_WETH_USDC = keccak256("aero-cl100-WETH-USDC");
     bytes32 constant POOL_CBZEC_USDC = keccak256("aero-cl200-USDC-cbZEC");
+    /// @dev The direct venue's one pool id: the pool address, left-padded (set in setUp).
+    bytes32 POOL_ID_DIRECT;
 
     uint256 constant ENTRY_HF_FLOOR_WAD = 1.55e18; // packages/shared ENTRY_HF_FLOOR
     uint256 constant PERF_BPS = 1000; // packages/shared FEES.performanceBps
@@ -153,6 +166,18 @@ abstract contract Fixture is Test {
         engine.addPool(POOL_WETH_USDC, address(poolWethUsdc), address(weth), address(usdc), 871);
         engine.addPool(POOL_CBZEC_USDC, address(poolCbzecUsdc), address(usdc), address(cbzec), 2000);
 
+        // The second Slipstream deployment: the cbZEC/USDC pool's own position manager and gauge,
+        // the Voter that says the gauge is alive, and the pool funded to fill the to-ratio swaps.
+        voter = new MockVoter();
+        npmCbzec = new MockSlipstreamNpm(poolCbzecUsdc, makeAddr("clfactory-2"));
+        gaugeCbzec = new MockCLGauge(poolCbzecUsdc, npmCbzec, address(aero), voter);
+        voter.setGauge(address(poolCbzecUsdc), address(gaugeCbzec));
+        poolCbzecUsdc.setGaugeAndNft(address(gaugeCbzec), address(npmCbzec), makeAddr("clfactory-2"));
+        usdc.mint(address(poolCbzecUsdc), 5_000_000e6);
+        cbzec.mint(address(poolCbzecUsdc), 5_000e8);
+        aero.mint(address(gaugeCbzec), 100_000e18);
+        POOL_ID_DIRECT = bytes32(uint256(uint160(address(poolCbzecUsdc))));
+
         aeroRouter = new MockAerodromeSwapRouter();
         // 1 WETH → 2453.45 USDC; 1 cbZEC → 1020 USDC; and back.
         aeroRouter.setRate(address(weth), address(usdc), 2453_450000, 1e18);
@@ -182,7 +207,25 @@ abstract contract Fixture is Test {
         );
         vm.stopPrank();
         swapAdapter = new AerodromeSwapAdapter(IAerodromeSwapRouter(address(aeroRouter)));
-        router = new StrategyRouter(registry, lpVenue, swapAdapter, IPermit2(address(permit2)), address(usdc));
+        poolSwapAdapter = new SlipstreamPoolSwapAdapter(ISlipstreamPool(address(poolCbzecUsdc)));
+        directVenue = new SlipstreamLpVenue(
+            ISlipstreamPool(address(poolCbzecUsdc)),
+            ISlipstreamNpm(address(npmCbzec)),
+            ISlipstreamGauge(address(gaugeCbzec)),
+            ISwapAdapter(address(poolSwapAdapter)),
+            address(aero),
+            treasury,
+            PERF_BPS
+        );
+        router = new StrategyRouter(
+            registry,
+            lpVenue,
+            swapAdapter,
+            IPermit2(address(permit2)),
+            address(usdc),
+            ILpVenue(address(directVenue)),
+            ISwapAdapter(address(poolSwapAdapter))
+        );
     }
 
     // ------------------------------------------------------------ helpers
