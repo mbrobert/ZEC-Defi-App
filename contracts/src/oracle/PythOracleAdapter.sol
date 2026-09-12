@@ -99,6 +99,10 @@ contract PythOracleAdapter is IMorphoOracle {
     ///         a borrower's bundle, a liquidator's bundle, or anyone at all may post it.
     /// @dev Invariant: on return the on-chain price for `PRICE_ID` is no older than `maxAge` (the
     ///      read below reverts otherwise, so a refresh that leaves the feed stale fails).
+    ///      Aderyn `eth-send-unchecked-address` (it anchors on this function), triaged 2026-09-12
+    ///      (AUDIT-2026-09-12.md): the refund goes to whoever paid the fee (msg.sender), by design;
+    ///      there is no other recipient to check against.
+    // aderyn-ignore-next-line(eth-send-unchecked-address)
     function refresh(bytes[] calldata updateData) external payable {
         uint256 fee = PYTH.getUpdateFee(updateData);
         if (msg.value < fee) revert InsufficientFee(msg.value, fee);
@@ -106,9 +110,6 @@ contract PythOracleAdapter is IMorphoOracle {
         (uint256 p, uint256 t) = _pythE8();
         emit Refreshed(fee, p, t);
         if (msg.value > fee) {
-            // Aderyn `eth-send-unchecked-address`, triaged 2026-09-12: the refund goes to whoever paid the fee
-            // (msg.sender), by design; there is no other recipient to check against.
-            // aderyn-ignore-next-line(eth-send-unchecked-address)
             (bool ok,) = msg.sender.call{value: msg.value - fee}("");
             if (!ok) revert RefundFailed();
         }

@@ -79,7 +79,9 @@ liquidity provision; EIP = Ethereum Improvement Proposal.
   suppressed at its site with `// aderyn-ignore-next-line(<detector>)` and the reason
   (`AUDIT-2026-09-12.md`, "Aderyn"): the factory forwards `msg.value` in full, the Pyth refund goes to
   the fee's payer, the constructor reads cannot be re-entered, `uint16(tol)` is bounded by a `uint16`
-  cap. Aderyn could not be run on this Mac (crates.io has 0.1.9; v0.6.8 needs nightly Rust), so the
+  cap. (Second pass, same evening: the CI run of the first pass counted 4 → 1 — `eth-send-unchecked-address`
+  anchors on the `refresh` function line, not on the refund call, so its ignore moved above the function.)
+  Aderyn could not be run on this Mac (crates.io has 0.1.9; v0.6.8 needs nightly Rust), so the
   CI run of this commit is the check of these suppressions; halmos has still not run and is the next
   step in that job.
 - `ci.yml` / `nightly-invariants.yml`: the Foundry cache is **exact key or nothing**. Since `485b3ff`
