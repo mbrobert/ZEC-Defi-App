@@ -41,7 +41,7 @@ type Sym = keyof typeof CFG;
 const symOf = (addr: string): Sym => (Object.keys(BASE_TOKENS) as Sym[]).find((s) => BASE_TOKENS[s as keyof typeof BASE_TOKENS].address.toLowerCase() === addr.toLowerCase())!;
 
 /** A fake viem client that answers the same calls the real one would. */
-function fakeClient(opts: { multicallThrows?: boolean; deployed?: boolean; account?: string; positions?: bigint[]; positionsFault?: { code: number; index: bigint } | "plain"; log?: string[] } = {}): ReadClient {
+function fakeClient(opts: { multicallThrows?: boolean; deployed?: boolean; account?: string; positions?: bigint[]; positionsFault?: { code: number; index: bigint } | "plain"; log?: string[]; entryHfWad?: bigint | Error } = {}): ReadClient {
   const answer = (c: { address: string; functionName: string; args?: readonly unknown[] }): unknown => {
     opts.log?.push(c.functionName);
     const asset = symOf(String(c.args?.[0] ?? ""));
@@ -64,6 +64,9 @@ function fakeClient(opts: { multicallThrows?: boolean; deployed?: boolean; accou
         if (a === "USDC") return [0n, 0n, e6(AAVE_DEBT_USDC), 0n, 0n, 0n, 0n, 0n, false];
         return [0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, false];
       }
+      case "entryHfWad":
+        if (opts.entryHfWad instanceof Error) throw opts.entryHfWad;
+        return opts.entryHfWad ?? 0n;
       case "positionsOf":
         if (opts.positionsFault === "plain") throw new Error("rpc: connection reset");
         if (opts.positionsFault) {
@@ -175,6 +178,24 @@ test("readAccount: deployed account → Aave data, holdings, USDC debt, LP ids",
   assert.deepEqual(a.lpPositionIds, [7n, 9n]);
   assert.equal(a.lpUnreadable, null);
   assert.equal(a.walletBalances.cbBTC, 123_000_000n);
+  assert.equal(a.entryHf, null);
+  assert.equal(a.entryHfStatus, "no_router", "no router given: the record was not asked for");
+});
+
+test("readAccount: the router's entry-HF record (A4) — recorded, none (0), and unreadable are three different statements", async () => {
+  const market = await readMarket(fakeClient());
+  const owner = "0x1111111111111111111111111111111111111111" as const;
+  const opts = { factory: "0x3333333333333333333333333333333333333333" as const, router: "0x4444444444444444444444444444444444444444" as const };
+  const recorded = await readAccount(fakeClient({ entryHfWad: 1_950_000_000_000_000_000n }), owner, market, opts);
+  assert.equal(recorded.entryHf, 1.95);
+  assert.equal(recorded.entryHfStatus, "recorded");
+  const none = await readAccount(fakeClient({ entryHfWad: 0n }), owner, market, opts);
+  assert.equal(none.entryHf, null);
+  assert.equal(none.entryHfStatus, "none");
+  const bad = await readAccount(fakeClient({ entryHfWad: new Error("rpc: timeout") }), owner, market, opts);
+  assert.equal(bad.entryHf, null);
+  assert.equal(bad.entryHfStatus, "unreadable");
+  assert.ok(bad.aave, "the rest of the account still reads");
 });
 
 test("readAccount: a positionsOf the venue refuses is UNREADABLE with the fault named — never an empty list (slice A, RISKS §12)", async () => {
@@ -260,6 +281,8 @@ const deploymentAnswer =
       enabled: true,
       liquidationThresholdBps: 7800n,
       ENGINE,
+      // The registry's entry floor (A4): 1.55 at 18 decimals.
+      entryHfFloorWad: 1_550_000_000_000_000_000n,
       ...over,
     };
     if (!(c.functionName in table)) throw new Error(`unexpected ${c.functionName}`);
@@ -275,7 +298,10 @@ test("readDeployment discovers the swap adapter, and refuses a router without on
   assert.equal(d.lpVenue, LP_VENUE);
   assert.equal(d.aaveVenue, AAVE_VENUE);
   assert.equal(d.engine, ENGINE);
+  assert.equal(d.entryHfFloor, 1.55, "the registry's floor, read — the slider's minimum");
   assert.equal(d.demo, false);
+  // Without a readable floor the slider has no minimum: refused, not assumed.
+  await assert.rejects(() => readDeployment(chainClient(deploymentAnswer({ entryHfFloorWad: 0n })), "0x3333333333333333333333333333333333333333", ROUTER, KEEPER), /entry floor unreadable/);
   // Without the adapter the UI cannot show the floor the chain will enforce on
   // an unwind, so the deployment is refused rather than half-trusted.
   await assert.rejects(() => readDeployment(chainClient(deploymentAnswer({ SWAP: ZERO })), "0x3333333333333333333333333333333333333333", ROUTER, KEEPER), /swap adapter/);

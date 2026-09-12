@@ -4,7 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import type { Address } from "viem";
 import { usePublicClient, useSignTypedData, useWriteContract } from "wagmi";
-import { isCollateralSymbol, lpPoolId, type CollateralSymbol } from "@zyo/shared";
+import { ENTRY_HF_FLOOR, isCollateralSymbol, lpPoolId, type CollateralSymbol } from "@zyo/shared";
 import { BASE_TOKENS, CHAIN_ID, COLLATERAL_ASSETS } from "@/lib/chain";
 import { useAccountRead, useDeployment, useForecast, useGate, useMarket, useSession } from "@/lib/hooks";
 import { gateForDeployment } from "@/lib/gate";
@@ -12,7 +12,7 @@ import { useMode } from "@/lib/mode";
 import { fromAtomic } from "@/lib/math";
 import { buildOpenPlan, deadlineFromNow, type OpenPlanInput } from "@/lib/plan";
 import { grantPoolTokenPricing, grantTokenLimits, poolImpliedUsdPrices, runOpen, type Emit } from "@/lib/execute";
-import { WIZARD_STEPS, defaultWizardState, deriveReview, presetsFor, type WizardState } from "@/lib/wizard";
+import { WIZARD_STEPS, clampEntryHf, defaultWizardState, deriveReview, hfBoundsFor, needsHfAcknowledgment, type WizardState } from "@/lib/wizard";
 import { DEMO_ACCOUNT } from "@/lib/demo";
 import { fmtUsd } from "@/lib/format";
 import Steps from "@/components/Steps";
@@ -50,13 +50,26 @@ function Wizard() {
   const [deadline, setDeadline] = useState(() => deadlineFromNow());
   const patch = (p: Partial<WizardState>) => setState((st) => ({ ...st, ...p }));
 
+  // The registry's entry floor, read from the deployment (the shared constant in demo mode): the slider's minimum.
+  const floor = deployment?.entryHfFloor ?? ENTRY_HF_FLOOR;
+  const bounds = useMemo(() => hfBoundsFor(market, state.collateral, floor), [market, state.collateral, floor]);
+
   // If the live read says the chosen asset is unusable, fall back to the first usable one.
   useEffect(() => {
-    if (!presetsFor(market, state.collateral)) {
-      const usable = (["cbBTC", "WETH"] as CollateralSymbol[]).find((c) => presetsFor(market, c));
+    if (!bounds) {
+      const usable = (["cbBTC", "WETH"] as CollateralSymbol[]).find((c) => hfBoundsFor(market, c, floor));
       if (usable && usable !== state.collateral) setState((st) => ({ ...st, collateral: usable }));
     }
-  }, [market, state.collateral]);
+  }, [market, state.collateral, bounds, floor]);
+
+  // The HF the position is priced at: the chosen one, pulled up to the asset's offered minimum when it
+  // sits under it (the Sheltered mark on an asset whose cap binds above it). Applied at read time, not
+  // written into state, so a switch of collateral re-derives it and a chosen 1.95 survives the switch.
+  const effective = useMemo<WizardState>(() => (bounds ? { ...state, entryHf: clampEntryHf(state.entryHf, bounds) } : state), [state, bounds]);
+  // The sub-mark acknowledgment names the collateral and its drawdown: a change of either voids it.
+  useEffect(() => {
+    setState((st) => (st.hfAcknowledged ? { ...st, hfAcknowledged: false } : st));
+  }, [state.collateral, state.amount]);
 
   // Simple mode never carries Advanced overrides.
   useEffect(() => {
@@ -65,14 +78,12 @@ function Wizard() {
     }
   }, [mode, state.customWidthBps, state.customDelayHours, state.keeperProtection]);
 
-  const presets = presetsFor(market, state.collateral);
-  // The forecast at THIS position: the preset's entry HF and the deposit's USD value (live mode asks
+  // The forecast at THIS position: the chosen entry HF and the deposit's USD value (live mode asks
   // the service for the rate after this borrow; demo mode serves the snapshot at the floor).
-  const presetForQuery = presets?.find((p) => p.id === state.ltvPreset);
   const depositUsdForQuery = (Number(state.amount) || 0) * (market.reserves[state.collateral]?.priceUsd ?? 0);
   const { forecast: servedForecast } = useForecast({
     collateral: state.collateral,
-    entryHf: presetForQuery?.entryHf ?? undefined,
+    entryHf: Number.isFinite(effective.entryHf) ? Math.round(effective.entryHf * 1e4) / 1e4 : undefined,
     depositUsd: depositUsdForQuery > 0 ? depositUsdForQuery : undefined,
   });
   // W3-LOW-3 again: a direct-venue pool is only openable where the deployment has the direct venue.
@@ -80,10 +91,10 @@ function Wizard() {
     () => (deployment?.lpVenueDirect ? servedForecast : { ...servedForecast, cells: servedForecast.cells.filter((c) => c.pool.protocol !== "DIRECT") }),
     [servedForecast, deployment]
   );
-  const review = useMemo(() => deriveReview(state, market, gate, forecast), [state, market, gate, forecast]);
+  const review = useMemo(() => deriveReview(effective, market, gate, forecast, floor), [effective, market, gate, forecast, floor]);
 
   // The acknowledgment names THIS position's numbers; any change to them un-ticks it.
-  const ackKey = `${state.collateral}|${state.amount}|${state.ltvPreset}|${state.strategy?.kind ?? ""}|${state.strategy?.kind === "lp" ? `${state.strategy.entry.poolId}/${state.strategy.entry.setting}` : ""}|${state.customWidthBps ?? ""}|${state.customDelayHours ?? ""}`;
+  const ackKey = `${state.collateral}|${state.amount}|${effective.entryHf}|${state.strategy?.kind ?? ""}|${state.strategy?.kind === "lp" ? `${state.strategy.entry.poolId}/${state.strategy.entry.setting}` : ""}|${state.customWidthBps ?? ""}|${state.customDelayHours ?? ""}`;
   const [ackFor, setAckFor] = useState<string | null>(null);
   useEffect(() => {
     if (state.acknowledged && ackFor !== ackKey) setState((st) => ({ ...st, acknowledged: false }));
@@ -137,9 +148,10 @@ function Wizard() {
   const canNext = (): boolean => {
     switch (step) {
       case 0:
-        return !!presets && Number(state.amount) > 0 && !s.wrongNetwork;
+        return !!bounds && Number(state.amount) > 0 && !s.wrongNetwork;
       case 1:
-        return !!presets?.find((p) => p.id === state.ltvPreset)?.offerable;
+        // A finite HF at or above the offered minimum, acknowledged when it is under the Sheltered mark.
+        return !!bounds && Number.isFinite(effective.entryHf) && effective.entryHf >= bounds.minHf - 1e-9 && (!needsHfAcknowledgment(effective.entryHf) || state.hfAcknowledged);
       case 2:
         return !!state.strategy;
       case 3:
@@ -221,19 +233,21 @@ function Wizard() {
               onAmount={(a) => setState((st) => ({ ...st, amount: a }))}
             />
           )}
-          {step === 1 && presets && (
+          {step === 1 && bounds && (
             <SettingStep
               market={market}
               collateral={state.collateral}
               amount={Number(state.amount) || 0}
-              presets={presets}
-              selected={state.ltvPreset}
-              onSelect={(id) => setState((st) => ({ ...st, ltvPreset: id }))}
+              bounds={bounds}
+              entryHf={effective.entryHf}
+              onChange={(hf) => setState((st) => ({ ...st, entryHf: hf, hfAcknowledged: false }))}
+              acknowledged={state.hfAcknowledged}
+              onAcknowledge={(v) => setState((st) => ({ ...st, hfAcknowledged: v }))}
               keeperProtection={state.keeperProtection}
             />
           )}
           {step === 2 && (
-            <StrategyStep forecast={forecast} state={state} ltvBps={review?.preset.ltvBps ?? 0} borrowAprPct={market.usdcBorrowAprPct} onChange={patch} unsupportedVenues={deployment?.unsupportedVenues ?? []} />
+            <StrategyStep forecast={forecast} state={state} ltvBps={review?.loan.ltvBps ?? 0} borrowAprPct={market.usdcBorrowAprPct} onChange={patch} unsupportedVenues={deployment?.unsupportedVenues ?? []} />
           )}
           {step === 3 && review && <ReviewStep state={state} d={review} calls={calls} marketSource={source} onAcknowledge={acknowledge} />}
           {step === 4 && review && planInput && (
@@ -259,9 +273,9 @@ function Wizard() {
             <dl className="num mt-2 divide-y divide-white/10 text-[13.5px]">
               <P k="Collateral" v={`${state.amount || 0} ${state.collateral}`} />
               <P k="Value" v={fmtUsd(review.loan.collateralUsd)} />
-              <P k="Setting" v={`${review.preset.ltvBps / 100}% LTV`} />
+              <P k="Entry HF" v={Number.isFinite(review.loan.entryHf) ? review.loan.entryHf.toFixed(2) : "∞ (no loan)"} />
+              <P k="Setting" v={`${(review.loan.ltvBps / 100).toFixed(2)}% LTV`} />
               <P k="Borrow" v={`${fmtUsd(review.loan.borrowUsdc)} USDC`} />
-              <P k="Entry HF" v={review.loan.entryHf.toFixed(2)} />
               <P k="Liquidation" v={`−${review.loan.liquidationDropPct.toFixed(1)}%`} />
               <P k="Borrow rate" v={`${review.borrowAprPct.toFixed(2)}%`} />
               {review.yieldPlan && <P k="Net / yr (model)" v={fmtUsd(review.yieldPlan.totalUsd)} tone={review.yieldPlan.totalUsd >= 0 ? "good" : "crit"} />}

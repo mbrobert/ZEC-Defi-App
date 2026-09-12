@@ -1,6 +1,6 @@
 "use client";
 
-import { HF_LADDER } from "@zyo/shared";
+import { HF_LADDER, type HfRung } from "@zyo/shared";
 import { describeGrant, rungPlain, type KeeperGrantRead } from "@/lib/keeper";
 import type { Deployment } from "@/lib/plan";
 import { fromAtomic } from "@/lib/math";
@@ -31,6 +31,7 @@ export default function KeeperPanel({
   busy,
   venueSupported = true,
   livePoolTokens = [],
+  ladder = HF_LADDER,
 }: {
   grant: KeeperGrantRead | null;
   deployment: Deployment | null;
@@ -43,6 +44,8 @@ export default function KeeperPanel({
   venueSupported?: boolean;
   /** Tokens the account's live LP positions pay out; each needs a budget line or no rung can run. */
   livePoolTokens?: readonly { address: `0x${string}`; symbol: string }[];
+  /** The position's ladder (derived from its recorded entry HF, A4); the floor's when nothing is recorded. */
+  ladder?: readonly HfRung[];
 }) {
   const { mode } = useMode();
   const status = describeGrant(grant, { keeperConfigured: !!deployment?.keeper, nowSeconds, venueSupported, livePoolTokens });
@@ -68,7 +71,7 @@ export default function KeeperPanel({
       )}
 
       <ul className="mt-3 space-y-1 text-[12.8px] text-oil-ink2" data-testid="keeper-rungs">
-        {HF_LADDER.map((r) => {
+        {ladder.map((r) => {
           const onChain = r.action !== "notify";
           const ok = onChain && covered.has(r.id);
           return (

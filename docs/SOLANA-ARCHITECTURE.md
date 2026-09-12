@@ -306,8 +306,11 @@ One decision per screen, the risk stated before the button:
    (LTV, threshold, caps, rate curve) at any time. Link to `RISKS.md` §22 and `PRIVACY.md` §6.
 2. **Amount**, with the pool-size gate's verdict live ("this pool can fund up to $X today below the rate we
    publish").
-3. **LTV preset** — 30 % / 40 % / Top, where Top = 40 % today (shared rule 41 %, Kamino's cap 40 %); entry HF
-   and the drop-to-liquidation shown from live LT, never typed.
+3. **Health factor** — the same slider as Base (BUILD-PLAN-2026-09-12 D7 / §2b, `SettingStep` on the site):
+   the entry HF from the registry floor up to "borrow nothing", the borrow following from collateral × LT ÷ HF
+   and a typed borrow driving the HF back; here Kamino's own 40 % LTV cap binds first (on ZEC's 65 % LT that
+   is HF ≥ 1.625, above the Sheltered mark), and the screen names it. Entry HF and the drop-to-liquidation
+   shown from live LT, never typed; the ladder shown is `ladderFor(entryHf)`.
 4. **Protection grant** — what the keeper may do, in the words of §3: repay from idle USDC up to N per day;
    **sell up to M ZEC per day to stop a liquidation** (on by default — decision 1; Advanced mode can set M to
    zero); never move funds anywhere else; you can cancel in one transaction.

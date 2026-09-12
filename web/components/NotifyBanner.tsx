@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { HF_LADDER, type HfRung } from "@zyo/shared";
 import { alertRungFor, bannerStateFor, shouldNotify } from "@/lib/notify";
 import { useNotifyPrefs } from "@/lib/notifyPrefs";
 import { rungPlain } from "@/lib/keeper";
@@ -16,10 +17,10 @@ import { rungPlain } from "@/lib/keeper";
  * Renders nothing when the owner has not opted in, or nothing is firing. An account read that
  * failed renders an "unreadable" alert — never silence (audit wave 2, N-MED-2).
  */
-export default function NotifyBanner({ hf, collateral }: { hf: number | null; collateral: string }) {
+export default function NotifyBanner({ hf, collateral, ladder = HF_LADDER }: { hf: number | null; collateral: string; ladder?: readonly HfRung[] }) {
   const { prefs } = useNotifyPrefs();
-  const state = bannerStateFor(hf);
-  const rung = hf === null ? null : alertRungFor(hf);
+  const state = bannerStateFor(hf, ladder);
+  const rung = hf === null ? null : alertRungFor(hf, ladder);
   const lastNotifiedRungId = useRef<string | null>(null);
 
   useEffect(() => {

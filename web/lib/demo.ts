@@ -17,6 +17,7 @@
  * registry floor (services/yield/scripts/gen-demo-forecast.mjs, 2026-09-12).
  */
 import type { Address } from "viem";
+import { entryHfAtLtvBps } from "@zyo/shared";
 import type { KeeperGrantRead } from "./keeper";
 import type { PendingVenueRead } from "./reads";
 import type { MarketRead } from "./reads";
@@ -117,14 +118,17 @@ export interface DemoAccountState {
   collateral: { symbol: "cbBTC" | "WETH"; amount: number }[];
   /** USDC debt on Aave, human units. */
   debtUsdc: number;
+  /** The entry HF a router would have recorded at the open (A4): LT ÷ LTV at the open's 40 %, four decimals. */
+  entryHf: number;
   positions: DemoPosition[];
   activity: { at: string; kind: "open" | "claim" | "rung" | "rebalance" | "spot"; text: string }[];
 }
 
 /**
- * One cbBTC-backed position opened at the 40% preset. Debt is set to what
- * planLoan() would borrow for 0.5 cbBTC at the snapshot price and 40% LTV, so
- * the dashboard's HF/LTV/liquidation numbers agree with the wizard's. The LP
+ * One cbBTC-backed position opened at 40 % LTV (entry HF 1.95 on the snapshot's 78 % threshold — the
+ * number a router would have recorded, so the dashboard's ladder is that position's own). Debt is
+ * set to what planLoan() would borrow for 0.5 cbBTC at the snapshot price and that HF, so the
+ * dashboard's HF/LTV/liquidation numbers agree with the wizard's. The LP
  * leg is illustrative: at today's numbers the model forecasts a loss on every
  * pool, so a position like this would have been opened by someone who read
  * that forecast and chose to anyway.
@@ -132,6 +136,7 @@ export interface DemoAccountState {
 export const DEMO_ACCOUNT_STATE: DemoAccountState = {
   collateral: [{ symbol: "cbBTC", amount: 0.5 }],
   debtUsdc: 0.5 * DEMO_MARKET.reserves.cbBTC!.priceUsd * 0.4,
+  entryHf: entryHfAtLtvBps(DEMO_MARKET.reserves.cbBTC!.liquidationThresholdBps, 4000),
   positions: [
     {
       id: "demo-1",

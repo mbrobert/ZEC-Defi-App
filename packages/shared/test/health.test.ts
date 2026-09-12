@@ -109,7 +109,7 @@ test("assertBps", () => {
 // ---------------------------------------------------------------------------
 // The derived ladder (BUILD-PLAN-2026-09-12 §2b, step A4)
 // ---------------------------------------------------------------------------
-import { ladderFor, hysteresisFor, hfFromWad, ltvForEntryHfBps, drawdownToLiquidationPct, HF_MARKS, MIN_LADDER_ENTRY_HF, LADDER_RUNG_FACTORS, EMERGENCY_HF_MIN, HF_HYSTERESIS_MIN } from "../dist/index.js";
+import { ladderFor, hysteresisFor, hfFromWad, entryHfAtLtvBps, rungDropPctAtHf, ladderForRecorded, offeredLtvBounds, MAX_OFFERED_LTV_CAP_BPS, ltvForEntryHfBps, drawdownToLiquidationPct, HF_MARKS, MIN_LADDER_ENTRY_HF, LADDER_RUNG_FACTORS, EMERGENCY_HF_MIN, HF_HYSTERESIS_MIN } from "../dist/index.js";
 
 test("ladderFor(1.55) IS today's ladder, rung for rung — HF_LADDER is the floor's derived case", () => {
   assert.deepEqual(ladderFor(1.55), HF_LADDER);
@@ -218,4 +218,42 @@ test("hfFromWad: a router record at 18 decimals becomes the four-decimal number 
   assert.equal(hfFromWad(0n), 0);
   assert.deepEqual(ladderFor(hfFromWad(1_300_000_000_000_000_000n)).map((r) => r.hf), [1.27, 1.19, 1.11, 1.05]);
   assert.throws(() => hfFromWad(-1n), RangeError);
+});
+
+test("entryHfAtLtvBps truncates LT ÷ LTV to four decimals — the number the router records and hfFromWad reads back; rungDropPctAtHf is 1 − rung ÷ entry", () => {
+  assert.equal(entryHfAtLtvBps(7800, 5032), 1.55, "the 1.55 choice after the LTV was floored: 1.55007… → 1.55");
+  assert.equal(entryHfAtLtvBps(7800, 5000), 1.56);
+  assert.equal(entryHfAtLtvBps(8300, 5000), 1.66);
+  assert.equal(entryHfAtLtvBps(6000, 3870), 1.5503);
+  assert.equal(entryHfAtLtvBps(7800, 0), Number.POSITIVE_INFINITY);
+  const warn = ladderFor(1.95)[0]!;
+  assert.ok(Math.abs(rungDropPctAtHf(warn, 1.95) - 100 * (1 - 1.86 / 1.95)) < 1e-9);
+  assert.equal(rungDropPctAtHf(warn, Number.POSITIVE_INFINITY), 100);
+  assert.equal(rungDropPctAtHf(warn, 1.5), 0, "a rung above the entry has already fired: no fall needed, never negative");
+  assert.throws(() => rungDropPctAtHf(warn, 0.9), RangeError);
+});
+
+test("ladderForRecorded is the keeper's fallback rule: a usable record derives its ladder, anything else is the floor's, and it never throws", () => {
+  assert.deepEqual(ladderForRecorded(1.3), { ladder: ladderFor(1.3), derived: true });
+  assert.deepEqual(ladderForRecorded(1.55).ladder.map((r) => r.hf), [1.5, 1.35, 1.2, 1.05]);
+  for (const bad of [null, undefined, 0, 1.05, Number.NaN, Number.POSITIVE_INFINITY]) {
+    const r = ladderForRecorded(bad as number | null | undefined);
+    assert.equal(r.derived, false, String(bad));
+    assert.deepEqual(r.ladder.map((x) => x.hf), [1.5, 1.35, 1.2, 1.05]);
+  }
+});
+
+test("offeredLtvBounds names the cap that stops the slider: the 50 % cap on cbBTC and WETH at the 1.55 floor and still at 1.25; the floor on a 60 % threshold; Aave's LTV when it is the smallest; ties name the floor, then the venue", () => {
+  assert.deepEqual(offeredLtvBounds(7800, 7300), { maxLtvBps: MAX_OFFERED_LTV_CAP_BPS, minHf: 1.56, binding: "product_ltv_cap" });
+  assert.deepEqual(offeredLtvBounds(8300, 8000), { maxLtvBps: 5000, minHf: 1.66, binding: "product_ltv_cap" });
+  assert.deepEqual(offeredLtvBounds(7800, 7300, 1.25), { maxLtvBps: 5000, minHf: 1.56, binding: "product_ltv_cap" }, "62.4 % > 50 %: the cap binds whatever the floor");
+  assert.deepEqual(offeredLtvBounds(6000, 7300), { maxLtvBps: 3870, minHf: 1.5503, binding: "entry_hf_floor" });
+  assert.deepEqual(offeredLtvBounds(6000, 7300, 1.25), { maxLtvBps: 4800, minHf: 1.25, binding: "entry_hf_floor" });
+  assert.deepEqual(offeredLtvBounds(7800, 4500), { maxLtvBps: 4500, minHf: 1.7333, binding: "venue_max_ltv" });
+  assert.deepEqual(offeredLtvBounds(7800, 0), { maxLtvBps: 0, minHf: Number.POSITIVE_INFINITY, binding: "venue_max_ltv" }, "an LTV→0 deprecation offers nothing");
+  // Ties: 7750 / 1.55 = 5000 exactly → the floor is named over the cap; venue 5000 too → the floor still first.
+  assert.equal(offeredLtvBounds(7750, 7300).binding, "entry_hf_floor");
+  assert.equal(offeredLtvBounds(7750, 5000).binding, "entry_hf_floor");
+  assert.equal(offeredLtvBounds(7800, 5000).binding, "venue_max_ltv", "venue and cap tie at 5000: the venue is named");
+  assert.throws(() => offeredLtvBounds(0.78, 7300), RangeError);
 });

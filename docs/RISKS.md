@@ -188,10 +188,19 @@ record, so a resumed action is judged against the ladder that fired it, never
 against a table. A registry floor under 1.10 (`MIN_LADDER_ENTRY_HF`) cannot
 hold four rungs; the keeper then runs the floor's ladder and logs an error
 naming the floor. The ladder closes a fraction of the LP **value** and
-repays (`agent/src/dispatch/policy.ts`). Every HF, rung price and liquidation
-drop the UI shows is computed from the live LT
-(`web/components/wizard/SettingStep.tsx`, shared `ltvPresets`,
-`liquidationDropPct`); tests forbid typed literals.
+repays (`agent/src/dispatch/policy.ts`). The setting the user chooses is the
+entry health factor itself, on a slider from the lowest HF offered on the asset
+up to "borrow nothing" (`web/components/wizard/SettingStep.tsx`, A4.2); the
+borrow follows from debt = collateral × LT ÷ HF and a typed borrow drives the
+HF back; the slider's stop is the smallest of the registry floor, Aave's own max
+LTV and Oilskin's 50 % borrow cap, and the one that binds is named on screen
+(shared `offeredLtvBounds`). With the floor at 1.55 the cap binds on both Base
+assets (lowest HF 1.56 on cbBTC, 1.66 on WETH), so the Sheltered (1.55) and
+Expert (1.30) marks are shown disabled with the reason; a 1.25 floor changes
+nothing there until the cap moves — that is the founder's call, flagged in
+`BUILD-PLAN-2026-09-12.md` §4 A4. Every HF, rung price and liquidation drop
+the UI shows is computed from the live LT and the chosen HF (`ladderFor`,
+`drawdownToLiquidationPct`); tests forbid typed literals.
 
 **On Morpho Blue (when the registry is moved there).** The same floor holds in
 `MorphoBlueVenue.borrow` / `borrowAgainst`, read from the registry and checked

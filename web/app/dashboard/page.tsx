@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { Address } from "viem";
 import { usePublicClient, useSignTypedData, useWriteContract } from "wagmi";
-import { feeBreakdown, shortAddress, type CollateralSymbol } from "@zyo/shared";
+import { feeBreakdown, shortAddress, type CollateralSymbol, ladderForRecorded } from "@zyo/shared";
 import { BASE_CHAIN, BASE_TOKENS, CHAIN_ID } from "@/lib/chain";
 import { useAccountRead, useDeployment, useIndexed, useKeeperGrant, useMarket, usePendingVenues, useSession } from "@/lib/hooks";
 import { useMode } from "@/lib/mode";
@@ -130,7 +130,20 @@ export default function DashboardPage() {
   const claimableGross = view.positions.reduce((a, p) => a + (p.accruedRewardsUsd ?? 0), 0);
   const claimable = feeBreakdown(claimableGross);
   const netValue = view.collateralUsd + lpValue + view.accountUsdc - view.debtUsd;
-  const band = hfBand(view.hf);
+  // The position's ladder (A4, BUILD-PLAN D7): derived from the entry HF the router recorded at the
+  // open — the same `ladderFor` the keeper runs — and the floor's when nothing is recorded, said.
+  const recordedEntryHf = s.mode === "demo" ? DEMO_ACCOUNT_STATE.entryHf : (account?.entryHf ?? null);
+  const { ladder, derived: ladderDerived } = ladderForRecorded(recordedEntryHf);
+  const ladderNote = ladderDerived
+    ? `derived from this position's recorded entry health factor ${recordedEntryHf!.toFixed(2)}`
+    : s.mode === "demo" || !account
+      ? "the floor's ladder"
+      : account.entryHfStatus === "none"
+        ? "no entry health factor is recorded for this account (opened before the record existed), so the keeper runs the floor's ladder"
+        : account.entryHfStatus === "unreadable"
+          ? "the router did not answer the entry-HF read; the floor's ladder is shown"
+          : "no deployment configured; the floor's ladder is shown";
+  const band = hfBand(view.hf, ladder);
   const ltvBps = currentLtvBps(view.collateralUsd, view.debtUsd);
   // Audit wave 2, M-HIGH-2: this page and the keeper read every venue the registry names through
   // ICollateralVenue. An asset on a venue that does not answer it is invisible to both, so say so
@@ -326,7 +339,7 @@ export default function DashboardPage() {
         </div>
       ) : (
         <>
-          <NotifyBanner hf={view.hf} collateral={primary?.symbol ?? "your collateral"} />
+          <NotifyBanner hf={view.hf} collateral={primary?.symbol ?? "your collateral"} ladder={ladder} />
 
           <div className="grid grid-cols-2 gap-2.5 sm:gap-3.5 lg:grid-cols-4">
             <StatTile label="Net value" value={fmtUsd0(netValue)} sub={`collateral ${fmtUsd0(view.collateralUsd)} + LP ${fmtUsd0(lpValue)}${view.accountUsdc > 0 ? ` + USDC ${fmtUsd0(view.accountUsdc)}` : ""} − debt ${fmtUsd0(view.debtUsd)}`} hint="Collateral + LP value + USDC held − debt. What a full unwind returns before exit costs." testId="tile-net" />
@@ -338,7 +351,7 @@ export default function DashboardPage() {
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
             <div className="min-w-0 space-y-4">
               <div className="card p-5">
-                <HealthBand hf={view.hf} priceUsd={primary?.priceUsd ?? 0} liquidationPriceUsd={liqPrice} symbol={primary?.symbol ?? "collateral"} />
+                <HealthBand hf={view.hf} priceUsd={primary?.priceUsd ?? 0} liquidationPriceUsd={liqPrice} symbol={primary?.symbol ?? "collateral"} ladder={ladder} ladderNote={ladderNote} />
                 <div className="num mt-3 flex flex-wrap justify-between gap-2 text-[13px] text-oil-ink2">
                   <span>
                     {view.hasDebt ? (
@@ -404,6 +417,7 @@ export default function DashboardPage() {
                 busy={!!action}
                 venueSupported={venueSupported}
                 livePoolTokens={livePoolTokens}
+                ladder={ladder}
               />
 
               <div className="flex items-baseline justify-between">

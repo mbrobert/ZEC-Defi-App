@@ -1,6 +1,6 @@
 "use client";
 
-import { HF_LADDER } from "@zyo/shared";
+import { HF_LADDER, type HfRung } from "@zyo/shared";
 import { hfBand } from "@/lib/math";
 import { fmtHf, fmtUsd0 } from "@/lib/format";
 import Chip from "./Chip";
@@ -11,21 +11,29 @@ import Chip from "./Chip";
  * the price at which each keeper rung fires (liqPrice × rung.hf — the ladder
  * comes from @zyo/shared, nothing typed here) and where the collateral trades
  * now. Colour zones follow rung severity; every zone is also labelled.
+ *
+ * `ladder` is the POSITION's (A4, BUILD-PLAN D7): derived from the entry HF the router recorded —
+ * or chose, in the wizard — via `ladderFor`; the floor's `HF_LADDER` when nothing is recorded, and
+ * `ladderNote` says which.
  */
 export default function HealthBand({
   hf,
   priceUsd,
   liquidationPriceUsd,
   symbol,
+  ladder = HF_LADDER,
+  ladderNote,
   compact = false,
 }: {
   hf: number | null;
   priceUsd: number;
   liquidationPriceUsd: number;
   symbol: string;
+  ladder?: readonly HfRung[];
+  ladderNote?: string;
   compact?: boolean;
 }) {
-  const band = hfBand(hf);
+  const band = hfBand(hf, ladder);
   if (hf === null) {
     // The read failed: say so, never draw a green band (audit wave 2, N-MED-2).
     return (
@@ -61,7 +69,7 @@ export default function HealthBand({
   }
 
   // Rung boundaries on the price axis, mildest → severest (descending price).
-  const rungs = [...HF_LADDER].sort((a, b) => b.hf - a.hf).map((r) => ({ ...r, price: liquidationPriceUsd * r.hf }));
+  const rungs = [...ladder].sort((a, b) => b.hf - a.hf).map((r) => ({ ...r, price: liquidationPriceUsd * r.hf }));
   const lo = liquidationPriceUsd * 0.72;
   const hi = Math.max(priceUsd * 1.18, liquidationPriceUsd * 2.05);
   const X = (p: number) => Math.max(0, Math.min(100, ((p - lo) / (hi - lo)) * 100));
@@ -106,8 +114,9 @@ export default function HealthBand({
             </span>
           ))}
       </div>
-      <div className="mt-2 text-[11.5px] text-oil-ink3">
-        Keeper ladder: {HF_LADDER.map((r) => `${r.label.toLowerCase()} < ${r.hf.toFixed(2)}`).join(" · ")} (re-arms at rung + {(HF_LADDER[0].disarmHf - HF_LADDER[0].hf).toFixed(2)})
+      <div className="mt-2 text-[11.5px] text-oil-ink3" data-testid="ladder-line">
+        Keeper ladder: {ladder.map((r) => `${r.label.toLowerCase()} < ${r.hf.toFixed(2)}`).join(" · ")} (re-arms at rung + {(ladder[0]!.disarmHf - ladder[0]!.hf).toFixed(2)})
+        {ladderNote ? ` — ${ladderNote}` : ""}
       </div>
     </div>
   );

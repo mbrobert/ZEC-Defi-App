@@ -3,6 +3,30 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-12 (later) — A4.2: the risk slider on the site (BUILD-PLAN D7 §2b, the web half)
+
+- **The setting is a health factor.** `web/components/wizard/SettingStep.tsx` is a slider from the lowest
+  entry HF offered on the asset up to "borrow nothing", labelled with the HF and linear in the borrow; the
+  borrow follows from debt = collateral × LT ÷ HF and a typed borrow drives the HF back, to the cent
+  (`entryHfForBorrow`, `planLoan` over `entryHf`). The slider's stop is the smallest of the registry floor,
+  Aave's own max LTV and Oilskin's 50 % borrow cap, and the one that binds is named on screen (shared
+  `offeredLtvBounds`, `LtvBindingCap`); "Sheltered" 1.55 and "Expert" 1.30 are marks, disabled with the
+  reason when they sit under that stop — which, with the floor at 1.55 and the cap at 50 %, they do on
+  both Base assets (1.56 on cbBTC, 1.66 on WETH). Below the Sheltered mark the user ticks a sentence naming
+  the HF, the drawdown and the first and last rung (`hfAcknowledgmentText`); it is unreachable on Base
+  until the floor AND the cap move. The wizard state carries `entryHf` (+∞ = borrow nothing, refused as a
+  position) and `hfAcknowledged`; `ltvPreset` and `presetsFor` are gone.
+- **The ladder shown is the position's.** Every rung list — Setting, Review, the dashboard's band, keeper
+  panel and notification banner — runs `ladderFor` on the entry HF: the chosen one in the wizard, the one
+  the router recorded on the dashboard (`AccountRead.entryHf` / `entryHfStatus` from `entryHfWad`; the
+  floor's ladder when nothing is recorded, and the band's line says which). The registry floor is read
+  from the deployment (`Deployment.entryHfFloor` from `entryHfFloorWad`; refused when unreadable) and is
+  the slider's minimum; demo mode uses the shared constant. The forecast query carries the chosen HF.
+- Web unit 177 → **180** (179 + 1 skipped), Playwright **14 / 0 / 6** against a private `next dev`.
+- Left: A4.3 the prototypes' slider and derived ladder; A4.4 the yield service reading the registry floor
+  (`/v1/forecast` still serves `ENTRY_HF_FLOOR`); and the founder's floor number — with the cap at 50 %
+  a 1.25 floor is unreachable on Base, so the cap is part of that decision.
+
 ## 2026-09-12 (later) — A4.1: the ladder is the position's own (BUILD-PLAN D7 §2b, the keeper half)
 
 - **Shared** (`packages/shared/src/health.ts`): `ladderFor(entryHf)` — rung = 1 + (entry − 1) × 0.91 / 0.64

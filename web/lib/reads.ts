@@ -16,7 +16,7 @@
  * itself fails, so a missing/reverting multicall never blanks the page.
  */
 import { BaseError, ContractFunctionRevertedError, type Address, type Hex } from "viem";
-import { COLLATERAL_SYMBOLS, describeLpEnumerationFault, isLoanDust, isZeroAddress, type CollateralSymbol } from "@zyo/shared";
+import { COLLATERAL_SYMBOLS, describeLpEnumerationFault, hfFromWad, isLoanDust, isZeroAddress, type CollateralSymbol } from "@zyo/shared";
 import { AAVE_V3, BASE_TOKENS, COLLATERAL_ASSETS } from "./chain";
 import { AAVE_ORACLE_ABI, ERC20_ABI, POOL_ABI, POOL_DATA_PROVIDER_ABI } from "./abi/aave";
 import { AAVE_VENUE_ABI, ACCOUNT_ABI, AERODROME_CLPOOL_ABI, COLLATERAL_REGISTRY_ABI, COLLATERAL_VENUE_ABI, DIRECT_LP_VENUE_ABI, FACTORY_ABI, LP_VENUE_ABI, ROUTER_ABI, SNUGGLE_VAULT_ABI } from "./abi/oilskin";
@@ -220,6 +220,14 @@ export interface AccountRead {
    * which case the page falls back to the Aave leg alone.
    */
   venues: VenueHealth | null;
+  /**
+   * The entry health factor the router recorded for this account at its last open (A4, BUILD-PLAN
+   * D7) — the number the keeper's ladder derives from (`ladderForRecorded`). null with
+   * `entryHfStatus` saying why: "none" (nothing recorded — opened before the record existed, or never
+   * through the router), "unreadable" (the router did not answer), "no_router" (no deployment given).
+   */
+  entryHf: number | null;
+  entryHfStatus: "recorded" | "none" | "unreadable" | "no_router";
   /** Collateral under the account: the Aave pool's rows, plus one row per non-Aave venue holding. */
   collateral: CollateralHolding[];
   debtUsdc: number;
@@ -346,6 +354,8 @@ export interface AccountReadOptions {
   engine?: Address;
   /** CollateralRegistry — enables the venue-aware read. Without it only the Aave leg is read and `venues` is null. */
   registry?: Address;
+  /** StrategyRouter — enables the entry-HF record read (`entryHfWad`); without it `entryHfStatus` is "no_router". */
+  router?: Address;
   /** Wallet ETH balance reader (viem getBalance); optional so tests can omit it. */
   getBalance?: (args: { address: Address }) => Promise<bigint>;
 }
@@ -371,12 +381,15 @@ export async function readDeployment(client: ReadClient, factory: Address, route
   // The swap adapter is what enforces the unwind's price floor; without it the
   // UI cannot show the number the chain will apply, so refuse rather than guess.
   if (typeof swapAdapter !== "string" || isZeroAddress(swapAdapter)) throw new Error("router has no swap adapter");
-  const [aaveVenue, engine] = await safeMulticall(client, [
+  const [aaveVenue, engine, floorWad] = await safeMulticall(client, [
     { address: registry as Address, abi: COLLATERAL_REGISTRY_ABI, functionName: "venueOf", args: [BASE_TOKENS.cbBTC.address] },
     { address: lpVenue as Address, abi: LP_VENUE_ABI, functionName: "ENGINE" },
+    // The one on-chain floor the slider cannot go under (BUILD-PLAN-2026-09-12 D7): read, never assumed.
+    { address: registry as Address, abi: COLLATERAL_REGISTRY_ABI, functionName: "entryHfFloorWad" },
   ]);
   if (typeof aaveVenue !== "string" || isZeroAddress(aaveVenue)) throw new Error("registry has no venue for cbBTC");
   if (typeof engine !== "string" || isZeroAddress(engine)) throw new Error("LP venue has no engine");
+  if (typeof floorWad !== "bigint" || floorWad <= 0n) throw new Error("registry entry floor unreadable — the slider has no minimum without it");
   const unsupportedVenues = await readUnsupportedVenues(client, registry as Address);
   return {
     factory,
@@ -389,6 +402,7 @@ export async function readDeployment(client: ReadClient, factory: Address, route
     engine: engine as Address,
     keeper,
     unsupportedVenues,
+    entryHfFloor: hfFromWad(floorWad),
     demo: false,
   };
 }
@@ -789,6 +803,8 @@ export async function readAccount(
     deployed: false,
     aave: null,
     venues: null,
+    entryHf: null,
+    entryHfStatus: "no_router",
     collateral: [],
     debtUsdc: 0,
     lpPositionIds: [],
@@ -814,6 +830,22 @@ export async function readAccount(
   const code = await client.getCode({ address: account }).catch(() => undefined);
   const deployed = !!code && code !== "0x";
   if (!deployed) return { ...base, account, deployed };
+
+  // The entry HF the router recorded at the last open (A4): read on its own so a failure is
+  // "unreadable", never "none" — those are different statements on the dashboard.
+  let entryHf: number | null = null;
+  let entryHfStatus: AccountRead["entryHfStatus"] = "no_router";
+  if (opts.router) {
+    try {
+      const wad = await client.readContract({ address: opts.router, abi: ROUTER_ABI, functionName: "entryHfWad", args: [account] });
+      if (typeof wad === "bigint") {
+        entryHf = wad > 0n ? hfFromWad(wad) : null;
+        entryHfStatus = wad > 0n ? "recorded" : "none";
+      } else entryHfStatus = "unreadable";
+    } catch {
+      entryHfStatus = "unreadable";
+    }
+  }
 
   const calls: Call[] = [{ address: AAVE_V3.pool, abi: POOL_ABI, functionName: "getUserAccountData", args: [account] }];
   for (const s of COLLATERAL_SYMBOLS) {
@@ -939,7 +971,7 @@ export async function readAccount(
   }
 
   const debtIsDust = aaveDebtIsDust && (venues === null || venues.venues.every((v) => v.debtIsDust));
-  return { ...base, account, deployed, aave, venues, collateral, debtUsdc, lpPositionIds, lpPositionIdsDirect, lpPositions, lpUnreadable, lpUnreadableDirect, lpDirectOverflow, accountUsdc, debtIsDust };
+  return { ...base, account, deployed, aave, venues, entryHf, entryHfStatus, collateral, debtUsdc, lpPositionIds, lpPositionIdsDirect, lpPositions, lpUnreadable, lpUnreadableDirect, lpDirectOverflow, accountUsdc, debtIsDust };
 }
 
 /** The custom error a viem read rejected with, by name, or null when it was not a decoded revert. */

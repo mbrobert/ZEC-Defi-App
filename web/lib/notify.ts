@@ -5,18 +5,19 @@
  * only channel: the health ladder is a pure function of on-chain data the
  * dashboard already reads, so nothing needs to be relayed from the keeper.
  */
-import { rungFor, type HfRung } from "@zyo/shared";
+import { HF_LADDER, rungFor, type HfRung } from "@zyo/shared";
 
 /**
- * The rung currently firing for a live HF, or null when healthy / the HF is
+ * The rung currently firing for a live HF on the ACCOUNT's ladder (derived from its recorded entry
+ * HF since A4; the floor's when nothing is recorded), or null when healthy / the HF is
  * not yet a readable number. Unlike the keeper's own `rungFor`, this never
  * throws: a dashboard mid-load sees `NaN`/`undefined` before the account
  * read resolves, and that must render "no alert", not crash the page. Every
  * other tile on the dashboard already surfaces an unreadable HF on its own.
  */
-export function alertRungFor(hf: number | null | undefined): HfRung | null {
+export function alertRungFor(hf: number | null | undefined, ladder: readonly HfRung[] = HF_LADDER): HfRung | null {
   if (typeof hf !== "number" || Number.isNaN(hf) || hf < 0) return null;
-  return rungFor(hf);
+  return rungFor(hf, ladder);
 }
 
 /**
@@ -26,9 +27,9 @@ export function alertRungFor(hf: number | null | undefined): HfRung | null {
  */
 export type BannerState = { kind: "unreadable" } | { kind: "rung"; rung: HfRung } | null;
 
-export function bannerStateFor(hf: number | null | undefined): BannerState {
+export function bannerStateFor(hf: number | null | undefined, ladder: readonly HfRung[] = HF_LADDER): BannerState {
   if (hf === null || hf === undefined || Number.isNaN(hf)) return { kind: "unreadable" };
-  const rung = alertRungFor(hf);
+  const rung = alertRungFor(hf, ladder);
   return rung ? { kind: "rung", rung } : null;
 }
 

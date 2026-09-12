@@ -8,7 +8,7 @@
  */
 import { AAVE_V3, BASE_TOKENS, CHAINLINK_FEEDS, PYTH, type TokenSymbol } from "./base.js";
 import type { Address } from "./evm.js";
-import { ENTRY_HF_FLOOR, entryHfForLtv, liquidationDropPct, assertBps } from "./health.js";
+import { ENTRY_HF_FLOOR, entryHfForLtv, liquidationDropPct, assertBps, entryHfAtLtvBps } from "./health.js";
 
 export type CollateralSymbol = "cbBTC" | "WETH" | "cbZEC";
 export type CollateralVenueId = "aave-v3" | "morpho-blue";
@@ -139,6 +139,34 @@ export function maxOfferedLtvBps(liquidationThresholdBps: number, entryHfFloor: 
  */
 export function maxOfferedLtvStopBps(liquidationThresholdBps: number, entryHfFloor: number = ENTRY_HF_FLOOR): number {
   return Math.floor(maxOfferedLtvBps(liquidationThresholdBps, entryHfFloor) / 100) * 100;
+}
+
+/** Which limit stops the slider (BUILD-PLAN-2026-09-12 §2b): named on screen, never silent. */
+export type LtvBindingCap = "entry_hf_floor" | "venue_max_ltv" | "product_ltv_cap";
+
+/**
+ * Where the risk slider stops on an asset: the largest LTV Oilskin offers, with the cap that produced
+ * it — the registry floor (LT ÷ floor, whole bps), the venue's own max LTV, or the product cap
+ * (`MAX_OFFERED_LTV_CAP_BPS`). Ties name the floor first, then the venue: what the user cannot
+ * change is said before what Oilskin chose. `minHf` is the entry HF at that LTV (+∞ when nothing
+ * is offered, i.e. the venue's LTV is 0). The registry's own `maxOfferedLtvBps` is the same min.
+ */
+export function offeredLtvBounds(
+  liquidationThresholdBps: number,
+  venueLtvBps: number,
+  entryHfFloor: number = ENTRY_HF_FLOOR
+): { maxLtvBps: number; minHf: number; binding: LtvBindingCap } {
+  assertBps(liquidationThresholdBps, "liquidationThresholdBps");
+  assertBps(venueLtvBps, "venueLtvBps");
+  const byFloor = Math.floor((liquidationThresholdBps * 100) / floorHundredths(entryHfFloor));
+  const candidates: readonly (readonly [LtvBindingCap, number])[] = [
+    ["entry_hf_floor", byFloor],
+    ["venue_max_ltv", venueLtvBps],
+    ["product_ltv_cap", MAX_OFFERED_LTV_CAP_BPS],
+  ];
+  let best = candidates[0]!;
+  for (const c of candidates) if (c[1] < best[1]) best = c;
+  return { maxLtvBps: best[1], minHf: entryHfAtLtvBps(liquidationThresholdBps, best[1]), binding: best[0] };
 }
 
 export type LtvPresetId = "p30" | "p40" | "top";

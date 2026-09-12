@@ -222,6 +222,37 @@ export function rungDropPct(rung: HfRung | HfRungId, ltBps: number, ltvBps: numb
   return Math.max(0, (1 - (r.hf * ltvBps) / ltBps) * 100);
 }
 
+/**
+ * The entry HF the router will record for a position opened at `ltvBps`: LT ÷ LTV truncated to four
+ * decimals — the truncation `hfFromWad` applies to the record — so the ladder the wizard previews is
+ * the ladder the keeper runs. +∞ at zero LTV (no debt).
+ */
+export function entryHfAtLtvBps(ltBps: number, ltvBps: number): number {
+  const hf = entryHfForLtv(ltBps, ltvBps);
+  return Number.isFinite(hf) ? Math.floor(hf * 1e4) / 1e4 : hf;
+}
+
+/** The collateral price fall at which `rung` fires for a position entered at `entryHf`: 100 × (1 − rung ÷ entry), percent; 100 with no debt. */
+export function rungDropPctAtHf(rung: HfRung, entryHf: number): number {
+  if (typeof entryHf !== "number" || Number.isNaN(entryHf) || entryHf < 1) throw new RangeError(`entryHf must be ≥ 1, got ${String(entryHf)}`);
+  if (!Number.isFinite(entryHf)) return 100;
+  return Math.max(0, 100 * (1 - rung.hf / entryHf));
+}
+
+/**
+ * The ladder for a recorded (or chosen) entry HF, or the floor's when there is no usable one — the
+ * rule the keeper applies (`HealthMonitor.resolveLadder`): null, 0, +∞ or under MIN_LADDER_ENTRY_HF
+ * → HF_LADDER, `derived: false`. Never throws: a dashboard must render.
+ */
+export function ladderForRecorded(entryHf: number | null | undefined): { ladder: readonly HfRung[]; derived: boolean } {
+  if (typeof entryHf !== "number" || !Number.isFinite(entryHf) || entryHf < MIN_LADDER_ENTRY_HF) return { ladder: HF_LADDER, derived: false };
+  try {
+    return { ladder: ladderFor(entryHf), derived: true };
+  } catch {
+    return { ladder: HF_LADDER, derived: false };
+  }
+}
+
 export function assertBps(value: number, name: string): void {
   if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 10_000) {
     throw new RangeError(`${name} must be an integer in [0, 10000] bps, got ${String(value)}`);

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FEES, ltvPresets } from "@zyo/shared";
+import { ENTRY_HF_FLOOR, FEES, HF_MARKS, offeredLtvBounds } from "@zyo/shared";
 import { COLLATERAL_ASSETS } from "@/lib/chain";
 import { useMarket, useSession } from "@/lib/hooks";
 import { fmtPct } from "@/lib/format";
@@ -76,8 +76,9 @@ export default function Home() {
           {(["cbBTC", "WETH", "cbZEC"] as const).map((sym) => {
             const asset = COLLATERAL_ASSETS[sym];
             const r = market.reserves[sym];
-            const presets = r ? ltvPresets(r.liquidationThresholdBps) : null;
-            const top = presets?.find((p) => p.id === "top");
+            // The slider's stop on this asset (BUILD-PLAN D7): the lowest entry HF offered and the cap that sets it.
+            const bounds = r ? offeredLtvBounds(r.liquidationThresholdBps, Number.isFinite(r.ltvBps) ? r.ltvBps : 0, ENTRY_HF_FLOOR) : null;
+            const top = bounds && bounds.maxLtvBps > 0 ? bounds : null;
             return (
               <div key={sym} className="rounded-xl border border-oil-line bg-oil-bg2 p-4">
                 <div className="flex items-center gap-2.5">
@@ -89,10 +90,14 @@ export default function Home() {
                   <dl className="num mt-3 grid grid-cols-2 gap-y-1 text-[13px]">
                     <dt className="text-oil-ink3">Liquidation threshold</dt>
                     <dd className="text-right">{fmtPct(r.liquidationThresholdBps / 100, 0)}</dd>
-                    <dt className="text-oil-ink3">Top LTV we offer</dt>
-                    <dd className="text-right">{fmtPct(top.ltvBps / 100, 0)}</dd>
-                    <dt className="text-oil-ink3">Entry HF at top</dt>
-                    <dd className="text-right">{top.entryHf?.toFixed(2)}</dd>
+                    <dt className="text-oil-ink3">Most you can borrow</dt>
+                    <dd className="text-right">{fmtPct(top.maxLtvBps / 100, 0)} LTV</dd>
+                    <dt className="text-oil-ink3">Lowest health factor</dt>
+                    <dd className="text-right">
+                      {top.minHf.toFixed(2)} <span className="text-oil-ink3">({top.binding === "entry_hf_floor" ? "registry floor" : top.binding === "venue_max_ltv" ? "Aave's max LTV" : "Oilskin's cap"})</span>
+                    </dd>
+                    <dt className="text-oil-ink3">Marks</dt>
+                    <dd className="text-right">{HF_MARKS.map((m) => `${m.label} ${m.hf.toFixed(2)}`).join(" · ")}</dd>
                   </dl>
                 ) : (
                   <p className="mt-3 text-[12.5px] leading-relaxed text-oil-ink2">{asset.disabledReason}</p>

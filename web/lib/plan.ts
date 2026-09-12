@@ -26,7 +26,7 @@
  * labelled. Nothing is signable until the addresses come from a deployment.
  */
 import { encodeAbiParameters, encodeFunctionData, maxUint256, type Address, type Hex } from "viem";
-import { RANGE_WIDTH_BOUNDS, lpParamsToChain, type CollateralSymbol, type LpParams } from "@zyo/shared";
+import { ENTRY_HF_FLOOR, RANGE_WIDTH_BOUNDS, lpParamsToChain, type CollateralSymbol, type LpParams } from "@zyo/shared";
 import { BASE_TOKENS, COLLATERAL_ASSETS, PERMIT2, CHAIN_ID } from "./chain";
 import { ERC20_ABI } from "./abi/aave";
 import { ABI_STATUS, ACCOUNT_ABI, FACTORY_ABI, LP_VENUE_ABI, ROUTER_ABI, SELECTORS } from "./abi/oilskin";
@@ -75,6 +75,12 @@ export interface Deployment {
    * enabled asset resolves to a venue that answers — the Aave venue, the Morpho venue, or another.
    */
   unsupportedVenues: CollateralSymbol[];
+  /**
+   * The registry's entry health-factor floor (`CollateralRegistry.entryHfFloorWad`), the slider's
+   * minimum and the venue's refusal line (BUILD-PLAN-2026-09-12 D7). Read from chain; the shared
+   * constant in demo mode.
+   */
+  entryHfFloor: number;
   /** True for the synthetic demo deployment (never signable). */
   demo: boolean;
 }
@@ -790,5 +796,6 @@ export const DEMO_DEPLOYMENT: Deployment = {
   engine: "0x8888888888888888888888888888888888888888",
   keeper: "0x9999999999999999999999999999999999999999",
   unsupportedVenues: [],
+  entryHfFloor: ENTRY_HF_FLOOR,
   demo: true,
 };

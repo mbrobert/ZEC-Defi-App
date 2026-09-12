@@ -1,12 +1,12 @@
 "use client";
 
-import { ENTRY_HF_FLOOR, FEES } from "@zyo/shared";
+import { FEES } from "@zyo/shared";
 import { fmtHalfWidth } from "@/lib/math";
 import { reasonPlain, reasonText } from "@/lib/gate";
 import { acknowledgmentText, DISCLOSURE_TEXT, type ForecastDisclosureId } from "@/lib/forecast";
 import { rungPlain } from "@/lib/keeper";
 import { KEEPER_GRANT_EXPIRY_DAYS, type PlannedCall } from "@/lib/plan";
-import type { ReviewDerivation, WizardState } from "@/lib/wizard";
+import { bindingPlain, needsHfAcknowledgment, SHELTERED_MARK, type ReviewDerivation, type WizardState } from "@/lib/wizard";
 import { fmtAmount, fmtPct, fmtSignedPct, fmtUsd, fmtUsd0 } from "@/lib/format";
 import Disclosures from "@/components/Disclosures";
 import Chip from "@/components/Chip";
@@ -42,9 +42,12 @@ export default function ReviewStep({ state, d, calls, marketSource, onAcknowledg
         <Sec>Loan</Sec>
         <Row k="Collateral" v={`${fmtAmount(d.amount, 8)} ${d.asset.symbol} ≈ ${fmtUsd(d.loan.collateralUsd)} at ${fmtUsd(d.priceUsd)}`} />
         <Row k="Liquidation threshold (Aave, read)" v={fmtPct(d.liquidationThresholdBps / 100, 0)} />
-        <Row k="Setting" v={`${fmtPct(d.preset.ltvBps / 100, 0)} LTV${d.preset.id === "top" ? " (top for this asset)" : ""}`} />
+        <Row k="Health factor at entry" v={`${Number.isFinite(d.loan.entryHf) ? d.loan.entryHf.toFixed(2) : "∞"} (your choice; floor ${d.bounds.floor.toFixed(2)}; lowest offered ${d.bounds.minHf.toFixed(2)} — ${bindingPlain(d.bounds.binding, d.bounds.floor)})`} />
+        <Row k="Setting" v={`${fmtPct(d.loan.ltvBps / 100, 2)} LTV`} />
         <Row k="Borrow" v={`${fmtUsd(d.loan.borrowUsdc)} USDC at ${fmtPct(d.borrowAprPct)} variable (${fmtUsd(d.loan.borrowCostUsdPerYear)}/yr today)`} />
-        <Row k="Health factor at entry" v={`${d.loan.entryHf.toFixed(2)} (floor ${ENTRY_HF_FLOOR})`} />
+        {needsHfAcknowledgment(d.loan.entryHf) && (
+          <Row k="Under the Sheltered mark" v={`${d.loan.entryHf.toFixed(2)} is under ${SHELTERED_MARK.hf.toFixed(2)}; ${state.hfAcknowledged ? "acknowledged on the Setting step" : "not yet acknowledged on the Setting step"}`} tone={state.hfAcknowledged ? undefined : "crit"} />
+        )}
         <Row k="Liquidation begins" v={`${d.asset.symbol} at ${fmtUsd0(d.loan.liquidationPriceUsd)} (−${d.loan.liquidationDropPct.toFixed(1)}%)`} tone="crit" />
         {d.loan.rungs.map(({ rung, priceUsd, dropPct }) => (
           <Row

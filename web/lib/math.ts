@@ -10,9 +10,11 @@ import {
   BPS_DENOMINATOR,
   FEES,
   HF_LADDER,
-  entryHfForLtv,
-  liquidationDropPct,
-  rungDropPct,
+  assertBps,
+  drawdownToLiquidationPct,
+  ladderForRecorded,
+  ltvForEntryHfBps,
+  rungDropPctAtHf,
   rungFor,
   type HfRung,
 } from "@zyo/shared";
@@ -63,42 +65,58 @@ export interface LoanPlanInput {
   collateralPriceUsd: number;
   /** Venue liquidation threshold for this asset, bps, READ FROM CHAIN. */
   liquidationThresholdBps: number;
-  /** User-chosen LTV, bps (must already be an offerable preset). */
-  ltvBps: number;
+  /**
+   * The entry health factor the user chose on the slider (BUILD-PLAN-2026-09-12 D7 / §2b); must be
+   * at or above the offered minimum (`offeredLtvBounds`), which the caller checks. +∞ = borrow nothing.
+   */
+  entryHf: number;
   /** Live USDC variable borrow APR, percent. */
   borrowAprPct: number;
 }
 
 export interface LoanPlan {
   collateralUsd: number;
+  /** debt = collateral × LT ÷ HF — the identity of §2b, so typing a borrow and reading the HF back is exact. */
   borrowUsdc: number;
   entryHf: number;
+  /** LTV at entry = LT ÷ HF, whole bps (what the forecast's user-net ladder is priced at). */
+  ltvBps: number;
   /** Collateral price at which HF = 1.0. */
   liquidationPriceUsd: number;
   liquidationDropPct: number;
-  /** Ladder rungs with the collateral price at which each fires. */
+  /** The ladder for THIS entry HF (`ladderFor`), each rung with the collateral price at which it fires. */
   rungs: { rung: HfRung; priceUsd: number; dropPct: number }[];
+  /** How far above its trigger a fired rung re-arms, for this ladder. */
+  hysteresis: number;
   /** Interest owed per year at today's rate. */
   borrowCostUsdPerYear: number;
 }
 
 export function planLoan(i: LoanPlanInput): LoanPlan {
+  assertBps(i.liquidationThresholdBps, "liquidationThresholdBps");
+  if (typeof i.entryHf !== "number" || Number.isNaN(i.entryHf) || i.entryHf < 1) {
+    throw new RangeError(`planLoan: entryHf must be a number ≥ 1, got ${String(i.entryHf)}`);
+  }
+  const finite = Number.isFinite(i.entryHf);
   const collateralUsd = i.collateralAmount * i.collateralPriceUsd;
-  const borrowUsdc = (collateralUsd * i.ltvBps) / BPS_DENOMINATOR;
-  const entryHf = entryHfForLtv(i.liquidationThresholdBps, i.ltvBps);
-  const drop = liquidationDropPct(i.liquidationThresholdBps, i.ltvBps);
-  const liquidationPriceUsd = i.ltvBps === 0 ? 0 : i.collateralPriceUsd * (1 - drop / 100);
-  const rungs = HF_LADDER.map((rung) => {
-    const dropPct = rungDropPct(rung, i.liquidationThresholdBps, i.ltvBps);
+  const borrowUsdc = finite ? (collateralUsd * i.liquidationThresholdBps) / BPS_DENOMINATOR / i.entryHf : 0;
+  const ltvBps = finite ? ltvForEntryHfBps(i.liquidationThresholdBps, i.entryHf) : 0;
+  const drop = finite ? drawdownToLiquidationPct(i.entryHf) : 100;
+  const liquidationPriceUsd = finite ? i.collateralPriceUsd * (1 - drop / 100) : 0;
+  const { ladder } = ladderForRecorded(finite ? i.entryHf : null);
+  const rungs = ladder.map((rung) => {
+    const dropPct = rungDropPctAtHf(rung, i.entryHf);
     return { rung, dropPct, priceUsd: i.collateralPriceUsd * (1 - dropPct / 100) };
   });
   return {
     collateralUsd,
     borrowUsdc,
-    entryHf,
+    entryHf: i.entryHf,
+    ltvBps,
     liquidationPriceUsd,
     liquidationDropPct: drop,
     rungs,
+    hysteresis: Math.round((ladder[0]!.disarmHf - ladder[0]!.hf) * 100) / 100,
     borrowCostUsdPerYear: (borrowUsdc * i.borrowAprPct) / 100,
   };
 }
@@ -203,14 +221,17 @@ export function fmtHalfWidth(rangeWidthBps: number): string {
   return `±${h.toFixed(h < 10 ? 2 : 1)}%`;
 }
 
-/** Health-factor label for a chip, from the shared ladder (null rung = healthy). */
-export function hfBand(hf: number | null): { rung: HfRung | null; label: string; kind: "good" | "warn" | "crit" } {
+/**
+ * Health-factor label for a chip (null rung = healthy). `ladder` is the ACCOUNT's — derived from
+ * its recorded entry HF (`ladderForRecorded`) — and the floor's when nothing is recorded.
+ */
+export function hfBand(hf: number | null, ladder: readonly HfRung[] = HF_LADDER): { rung: HfRung | null; label: string; kind: "good" | "warn" | "crit" } {
   // `null` = the account read failed or has not resolved. It used to be substituted with +∞ and
   // rendered "No debt" (audit wave 2, N-MED-2); an unreadable health factor is a warning, not a
   // green tile.
   if (hf === null) return { rung: null, label: "Unreadable", kind: "warn" };
   // rungFor throws on NaN/negative (fail closed) and treats +Infinity as healthy.
-  const rung = rungFor(hf);
+  const rung = rungFor(hf, ladder);
   if (hf === Number.POSITIVE_INFINITY) return { rung: null, label: "No debt", kind: "good" };
   if (!rung) return { rung: null, label: "Healthy", kind: "good" };
   return { rung, label: rung.label, kind: rung.severity >= 3 ? "crit" : "warn" };

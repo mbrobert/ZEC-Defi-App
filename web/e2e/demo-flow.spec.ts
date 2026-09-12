@@ -29,7 +29,7 @@ test.describe("Oilskin demo mode", () => {
     await page.goto("/");
     await expect(page.getByTestId("demo-banner")).toContainText("Demo mode");
     await expect(page.getByRole("heading", { level: 1 })).toContainText("cbBTC or WETH");
-    await expect(page.getByText("Top LTV we offer").first()).toBeVisible();
+    await expect(page.getByText("Lowest health factor").first()).toBeVisible();
     await expect(page.getByTestId("mode-simple")).toHaveAttribute("aria-checked", "true");
 
     // Client-side navigation, as a user would: a hard `goto` here would abort the Coinbase SDK's
@@ -81,14 +81,39 @@ test.describe("Oilskin demo mode", () => {
     await page.getByTestId("amount").fill("0.5");
     await page.getByTestId("wizard-next").click();
 
-    await expect(page.getByTestId("preset-p30")).toHaveAttribute("data-ltv", "3000");
-    await expect(page.getByTestId("preset-p40")).toHaveAttribute("data-ltv", "4000");
-    await expect(page.getByTestId("preset-top")).toHaveAttribute("data-ltv", "5000");
-    await page.getByTestId("preset-p40").click();
+    // The risk slider (BUILD-PLAN D7 / §2b). On cbBTC the lowest HF offered today is 1.56: Oilskin's 50 % cap
+    // binds (registry floor 1.55, Aave's max LTV 73 %), so both marks sit under it, disabled, with the reason.
+    const slider = page.getByTestId("hf-slider");
+    await expect(slider).toHaveAttribute("data-min-hf", "1.56");
+    await expect(slider).toHaveAttribute("data-binding", "product_ltv_cap");
+    await expect(page.getByTestId("entry-hf")).toHaveText("1.56"); // the default mark, pulled up to the offered minimum
+    await expect(page.getByTestId("entry-floor")).toHaveText("1.55");
+    await expect(page.getByTestId("mark-sheltered")).toBeDisabled();
+    await expect(page.getByTestId("mark-expert")).toBeDisabled();
+    await expect(page.getByTestId("mark-why")).toContainText("Oilskin's 50% cap on any borrow");
+    await expect(page.getByTestId("hf-acknowledgment")).toHaveCount(0); // never under the Sheltered mark on Base today
+    // Type a health factor: the borrow follows (debt = collateral × LT ÷ HF; 38,570.415 × 0.78 ÷ 1.95).
+    await page.getByTestId("hf-input").fill("1.95");
+    await page.getByTestId("hf-input").press("Enter");
     await expect(page.getByTestId("entry-hf")).toHaveText("1.95");
     await expect(page.getByTestId("borrow-usdc")).toContainText("15,428.17");
-    // The ladder says what actually happens, and that the first rung is a message.
+    await expect(page.getByTestId("ltv-line")).toContainText("40.0% LTV");
+    // Type a borrow: the HF follows (30,084.92 ÷ 12,000 = 2.5071) — and one above the offered maximum is pulled back to it.
+    await page.getByTestId("borrow-input").fill("12000");
+    await page.getByTestId("borrow-input").press("Enter");
+    await expect(page.getByTestId("entry-hf")).toHaveText("2.51");
+    await page.getByTestId("borrow-input").fill("30000");
+    await page.getByTestId("borrow-input").press("Enter");
+    await expect(page.getByTestId("entry-hf")).toHaveText("1.56");
+    await expect(page.getByTestId("borrow-usdc")).toContainText("19,285.21"); // 30,084.92 ÷ 1.56
+    await page.getByTestId("hf-input").fill("1.95");
+    await page.getByTestId("hf-input").press("Enter");
+    await expect(page.getByTestId("entry-hf")).toHaveText("1.95");
+    // The ladder is THIS entry HF's — ladderFor(1.95): warn 1.86 … emergency 1.09 — and says what actually
+    // happens, and that the first rung is a message.
     const ladder = page.getByTestId("rung-ladder");
+    await expect(ladder).toContainText("Warning (HF < 1.86");
+    await expect(ladder).toContainText("Emergency (HF < 1.09");
     await expect(ladder).toContainText("a message, not a transaction");
     await expect(ladder).toContainText("the position is closed, the loan repaid and your cbBTC returned to you");
     await expect(ladder).toContainText("only if you grant the keeper permission");
@@ -118,8 +143,9 @@ test.describe("Oilskin demo mode", () => {
 
     const review = page.getByTestId("review");
     await expect(review).toContainText("Liquidation threshold (Aave, read)");
-    await expect(review).toContainText("1.95 (floor 1.55)");
-    await expect(review).toContainText("Emergency rung (HF < 1.05)");
+    await expect(review).toContainText("1.95 (your choice; floor 1.55; lowest offered 1.56 — Oilskin's 50% cap on any borrow)");
+    await expect(review).toContainText("40.00% LTV");
+    await expect(review).toContainText("Emergency rung (HF < 1.09)");
     await expect(review).toContainText("the position is closed, the loan repaid and your cbBTC returned to you");
     await expect(review).toContainText("expires in 30 days unless renewed");
     await expect(review).toContainText("Net carry per year");
@@ -165,8 +191,7 @@ test.describe("Oilskin demo mode", () => {
     await setMode(page, "advanced");
     await page.getByTestId("amount").fill("0.5");
     await page.getByTestId("wizard-next").click();
-    await page.getByTestId("preset-top").click();
-    await expect(page.getByTestId("entry-hf")).toHaveText("1.56"); // 0.78 / 0.50
+    await expect(page.getByTestId("entry-hf")).toHaveText("1.56"); // the default: the offered minimum, 0.78 / 0.50 (the cap binds)
     await page.getByTestId("wizard-next").click();
 
     // No empty-menu banner any more: every pool × setting is a card with both models' numbers.
@@ -219,7 +244,11 @@ test.describe("Oilskin demo mode", () => {
     await expect(page.getByTestId("tile-hf")).toContainText("1.95");
     await expect(page.getByTestId("tile-hf")).toContainText("Healthy");
     await expect(page.getByTestId("tile-debt")).toContainText("40.0% LTV");
-    await expect(page.getByTestId("health-band")).toContainText("warning < 1.50");
+    // The dashboard's ladder is the POSITION's (A4): the demo account opened at 40 % LTV → entry HF 1.95 →
+    // ladderFor(1.95) = 1.86 / 1.61 / 1.34 / 1.09, and the line says where the numbers come from.
+    await expect(page.getByTestId("health-band")).toContainText("warning < 1.86");
+    await expect(page.getByTestId("ladder-line")).toContainText("derived from this position's recorded entry health factor 1.95");
+    await expect(page.getByTestId("keeper-rungs")).toContainText("Warning (HF < 1.86)");
     await expect(page.getByTestId("account-link")).toHaveText("0x2222…2222");
 
     const card = page.getByTestId("position-card").first();

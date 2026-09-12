@@ -169,6 +169,8 @@ export function useAccountRead(market: MarketRead) {
       engine: deployment && !deployment.demo ? deployment.engine : undefined,
       // The registry turns the read venue-aware: every venue it names is asked for the account's health.
       registry: deployment && !deployment.demo ? deployment.registry : undefined,
+      // The router carries the entry-HF record the account's ladder derives from (A4).
+      router: deployment && !deployment.demo ? deployment.router : undefined,
       getBalance: client ? (a: { address: Address }) => client.getBalance(a) : undefined,
     }),
     [deployment, client],

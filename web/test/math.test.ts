@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ENTRY_HF_FLOOR, HF_LADDER, FEES } from "@zyo/shared";
+import { ENTRY_HF_FLOOR, HF_LADDER, FEES, ladderFor } from "@zyo/shared";
 import {
   baseUnitsToUsd,
   clearsGate,
@@ -48,40 +48,54 @@ test("toAtomic / fromAtomic round-trip across decimals", () => {
   assert.throws(() => toAtomic("1e5", 8), RangeError);
 });
 
-test("planLoan: cbBTC at LT 7800 (chain read) and the 40% preset", () => {
-  const p = planLoan({ collateralAmount: 0.5, collateralPriceUsd: 79_630.89, liquidationThresholdBps: 7800, ltvBps: 4000, borrowAprPct: 4.828 });
+test("planLoan: cbBTC at LT 7800 (chain read), entry HF 1.95 — the borrow is collateral × LT ÷ HF (the old 40 % setting exactly) and the ladder is ladderFor(1.95), not the floor's", () => {
+  const p = planLoan({ collateralAmount: 0.5, collateralPriceUsd: 79_630.89, liquidationThresholdBps: 7800, entryHf: 1.95, borrowAprPct: 4.828 });
   close(p.collateralUsd, 39_815.445);
   close(p.borrowUsdc, 15_926.178);
-  close(p.entryHf, 1.95); // 0.78 / 0.40
+  assert.equal(p.ltvBps, 4000); // LT ÷ HF, whole bps
+  close(p.entryHf, 1.95);
   assert.ok(p.entryHf >= ENTRY_HF_FLOOR);
-  close(p.liquidationDropPct, (1 - 4000 / 7800) * 100);
-  close(p.liquidationPriceUsd, 79_630.89 * (4000 / 7800), 1e-6);
+  close(p.liquidationDropPct, (1 - 1 / 1.95) * 100);
+  close(p.liquidationPriceUsd, 79_630.89 / 1.95, 1e-6);
   close(p.borrowCostUsdPerYear, 15_926.178 * 0.04828);
-  // Every ladder rung present, in ladder order, at price = liq × rung.hf
-  assert.equal(p.rungs.length, HF_LADDER.length);
-  p.rungs.forEach(({ rung, priceUsd }, i) => {
-    assert.equal(rung.id, HF_LADDER[i].id);
+  // Every rung of THIS ladder, in ladder order, at price = liq × rung.hf.
+  const ladder = ladderFor(1.95);
+  assert.deepEqual(ladder.map((r) => r.hf), [1.86, 1.61, 1.34, 1.09]);
+  assert.notDeepEqual(ladder.map((r) => r.hf), HF_LADDER.map((r) => r.hf));
+  assert.equal(p.rungs.length, ladder.length);
+  p.rungs.forEach(({ rung, priceUsd, dropPct }, i) => {
+    assert.equal(rung.id, ladder[i]!.id);
+    assert.equal(rung.hf, ladder[i]!.hf);
     close(priceUsd, p.liquidationPriceUsd * rung.hf, 1e-6);
+    close(dropPct, 100 * (1 - rung.hf / 1.95));
   });
+  assert.equal(p.hysteresis, 0.09, "max(0.02, 0.05 × 0.95 ÷ 0.55)");
 });
 
-test("planLoan: WETH at LT 8300 and the top (50%) preset opens above the floor", () => {
-  const p = planLoan({ collateralAmount: 5, collateralPriceUsd: 2453.45, liquidationThresholdBps: 8300, ltvBps: 5000, borrowAprPct: 4.828 });
-  close(p.entryHf, 1.66);
-  assert.ok(p.entryHf >= ENTRY_HF_FLOOR);
-  close(p.liquidationDropPct, (1 - 5000 / 8300) * 100);
+test("planLoan: at the floor's HF the ladder is HF_LADDER itself; WETH at LT 8300 and HF 1.66 is the 50 % setting", () => {
+  const atFloor = planLoan({ collateralAmount: 1, collateralPriceUsd: 100, liquidationThresholdBps: 7800, entryHf: ENTRY_HF_FLOOR, borrowAprPct: 5 });
+  assert.deepEqual(atFloor.rungs.map((x) => x.rung.hf), HF_LADDER.map((r) => r.hf));
+  assert.equal(atFloor.hysteresis, 0.05);
+  const p = planLoan({ collateralAmount: 5, collateralPriceUsd: 2453.45, liquidationThresholdBps: 8300, entryHf: 1.66, borrowAprPct: 4.828 });
+  assert.equal(p.ltvBps, 5000);
+  close(p.borrowUsdc, (5 * 2453.45 * 0.83) / 1.66);
+  close(p.liquidationDropPct, (1 - 1 / 1.66) * 100);
 });
 
-test("planLoan: zero LTV = no debt, no liquidation", () => {
-  const p = planLoan({ collateralAmount: 1, collateralPriceUsd: 100, liquidationThresholdBps: 7800, ltvBps: 0, borrowAprPct: 5 });
+test("planLoan: borrow nothing (HF +∞) = no debt, no liquidation, the floor's ladder at a 100 % drop", () => {
+  const p = planLoan({ collateralAmount: 1, collateralPriceUsd: 100, liquidationThresholdBps: 7800, entryHf: Number.POSITIVE_INFINITY, borrowAprPct: 5 });
   assert.equal(p.borrowUsdc, 0);
+  assert.equal(p.ltvBps, 0);
   assert.equal(p.entryHf, Number.POSITIVE_INFINITY);
   assert.equal(p.liquidationPriceUsd, 0);
+  assert.equal(p.liquidationDropPct, 100);
+  assert.ok(p.rungs.every((x) => x.dropPct === 100));
 });
 
-test("planLoan rejects non-bps thresholds (fail closed)", () => {
-  assert.throws(() => planLoan({ collateralAmount: 1, collateralPriceUsd: 1, liquidationThresholdBps: 0.78, ltvBps: 4000, borrowAprPct: 5 }), RangeError);
-  assert.throws(() => planLoan({ collateralAmount: 1, collateralPriceUsd: 1, liquidationThresholdBps: 7800, ltvBps: NaN, borrowAprPct: 5 }), RangeError);
+test("planLoan rejects non-bps thresholds and an unreadable or sub-1 HF (fail closed)", () => {
+  assert.throws(() => planLoan({ collateralAmount: 1, collateralPriceUsd: 1, liquidationThresholdBps: 0.78, entryHf: 1.95, borrowAprPct: 5 }), RangeError);
+  assert.throws(() => planLoan({ collateralAmount: 1, collateralPriceUsd: 1, liquidationThresholdBps: 7800, entryHf: NaN, borrowAprPct: 5 }), RangeError);
+  assert.throws(() => planLoan({ collateralAmount: 1, collateralPriceUsd: 1, liquidationThresholdBps: 7800, entryHf: 0.9, borrowAprPct: 5 }), RangeError);
 });
 
 test("planYield mirrors the yield model: fees split from served gross/net, lpNet + supply − borrow", () => {
@@ -157,7 +171,12 @@ test("N-MED-2: an unreadable health factor is a warning, never 'No debt'", () =>
   assert.equal(accountHf({ aave: { healthFactor: 1.1 }, venues: null }), 1.1, "no registry known → the Aave leg alone, as before");
 });
 
-test("hfBand follows the shared ladder", () => {
+test("hfBand follows the shared ladder — the floor's by default, the position's when given", () => {
+  const own = ladderFor(1.3);
+  assert.equal(hfBand(1.45, own).rung, null, "1.45 is healthy on a 1.30 position (warn at 1.27)");
+  assert.equal(hfBand(1.26, own).rung?.id, "warn");
+  assert.equal(hfBand(1.18, own).rung?.id, "repay");
+  assert.equal(hfBand(1.10, own).kind, "crit");
   assert.equal(hfBand(Number.POSITIVE_INFINITY).label, "No debt");
   assert.equal(hfBand(1.95).rung, null);
   assert.equal(hfBand(1.95).kind, "good");

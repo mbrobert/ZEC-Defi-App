@@ -2,8 +2,25 @@
  * Wizard state + derivations (pure). The page owns the state; everything
  * numeric on Review is produced by `deriveReview` from chain-read inputs, the
  * served forecast cell and the gate verdict (informational since 2026-09-12).
+ *
+ * The setting is a health factor (BUILD-PLAN-2026-09-12 D7 / §2b): the user chooses the entry HF on
+ * a continuous slider from the registry floor up to "borrow nothing"; the borrow follows from
+ * debt = collateral × LT ÷ HF and typing a borrow drives the HF back. "Sheltered" and "Expert"
+ * are marks on that slider, not modes. Below the Sheltered mark the user ticks an acknowledgment
+ * that names the drawdown they chose.
  */
-import { ltvPresets, presetToLpParams, validateLpParams, type CollateralSymbol, type LpParams, type LtvPreset, type LtvPresetId } from "@zyo/shared";
+import {
+  ENTRY_HF_FLOOR,
+  HF_MARKS,
+  MAX_OFFERED_LTV_CAP_BPS,
+  offeredLtvBounds,
+  presetToLpParams,
+  validateLpParams,
+  type CollateralSymbol,
+  type HfRung,
+  type LpParams,
+  type LtvBindingCap,
+} from "@zyo/shared";
 import { COLLATERAL_ASSETS } from "./chain";
 import { findCell, refusalPlain, type ForecastCell, type ForecastView } from "./forecast";
 import { findVerdict, type GateEntry, type GateView } from "./gate";
@@ -14,10 +31,24 @@ import type { MarketRead } from "./reads";
 
 export type StrategyChoice = { kind: "lp"; entry: GateEntry } | { kind: "hold" } | { kind: "spot" };
 
+/** The two quick-click marks (D7). The Sheltered one is also the line under which the acknowledgment is required. */
+export const SHELTERED_MARK = HF_MARKS.find((m) => m.id === "sheltered")!;
+export const EXPERT_MARK = HF_MARKS.find((m) => m.id === "expert")!;
+
 export interface WizardState {
   collateral: CollateralSymbol;
   amount: string;
-  ltvPreset: LtvPresetId;
+  /**
+   * The entry health factor chosen on the slider (D7). +∞ = "borrow nothing", the slider's far end,
+   * which the review refuses as a position (there is nothing to deploy). Kept at full precision when
+   * it was derived from a typed borrow, so the borrow reads back to the cent.
+   */
+  entryHf: number;
+  /**
+   * Ticked on the Setting step when `entryHf` is under the Sheltered mark; the sentence names the
+   * drawdown to liquidation the user chose (§2b). Reset whenever the HF, collateral or amount moves.
+   */
+  hfAcknowledged: boolean;
   strategy: StrategyChoice | null;
   /** Advanced only: override the preset's width / delay (on-chain bounds enforced). null = preset value. */
   customWidthBps: number | null;
@@ -40,7 +71,9 @@ export function defaultWizardState(collateral: CollateralSymbol = "cbBTC"): Wiza
   return {
     collateral,
     amount: collateral === "cbBTC" ? "0.5" : "5",
-    ltvPreset: "p40",
+    // The Sheltered mark; the page clamps it up to the asset's offered minimum when that is higher.
+    entryHf: SHELTERED_MARK.hf,
+    hfAcknowledged: false,
     strategy: null,
     customWidthBps: null,
     customDelayHours: null,
@@ -55,22 +88,93 @@ export function amountNumber(s: string): number {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
+export interface HfMark {
+  id: "sheltered" | "expert";
+  hf: number;
+  label: string;
+  /** False when the mark sits under the lowest HF offered on this asset today; `why` says which cap. */
+  offered: boolean;
+  why: string | null;
+}
+
+/** The slider's bounds on one asset, from the LIVE reserve and the registry floor. */
+export interface HfBounds {
+  /** The lowest entry HF offered — the slider's right-hand stop — and the cap that put it there. */
+  minHf: number;
+  binding: LtvBindingCap;
+  /** LTV at `minHf`, whole bps. */
+  maxLtvBps: number;
+  /** The registry's entry floor (read from the deployment; the shared constant in demo mode). */
+  floor: number;
+  ltBps: number;
+  venueLtvBps: number;
+  marks: HfMark[];
+}
+
+/** What stops the slider, in words. */
+export function bindingPlain(binding: LtvBindingCap, floor: number): string {
+  switch (binding) {
+    case "entry_hf_floor":
+      return `the registry's entry floor of ${floor.toFixed(2)}`;
+    case "venue_max_ltv":
+      return "Aave's own maximum LTV for this asset";
+    case "product_ltv_cap":
+      return `Oilskin's ${MAX_OFFERED_LTV_CAP_BPS / 100}% cap on any borrow`;
+  }
+}
+
 /**
- * Presets for the chosen asset from the LIVE liquidation threshold; null when
- * the reserve is unreadable or unusable.
- *
- * The registry's own `maxOfferedLtvBps` is `min(LT / floor, venue.maxLtvBps,
- * 5000)` — it respects the venue's MAX LTV as well as its liquidation
- * threshold, so an Aave LTV→0 deprecation takes the offer to zero instead of
- * advertising a setting under which every open reverts. This mirrors that: a
- * preset above the venue's own LTV is marked NOT offerable, and the UI says
- * "not offered right now" rather than rendering "0 %".
+ * Bounds for the chosen asset from the LIVE liquidation threshold, the venue's own max LTV and the
+ * registry floor; null when the reserve is unreadable, unusable, or offers nothing (an Aave LTV→0
+ * deprecation takes the offer to zero instead of advertising a setting under which every open reverts —
+ * the registry's own `maxOfferedLtvBps` is the same min, so what is shown is what the chain accepts).
  */
-export function presetsFor(market: MarketRead, collateral: CollateralSymbol): LtvPreset[] | null {
+export function hfBoundsFor(market: MarketRead, collateral: CollateralSymbol, floor: number = ENTRY_HF_FLOOR): HfBounds | null {
   const r = market.reserves[collateral];
   if (!r || !r.usageAsCollateralEnabled || !r.isActive || r.isFrozen) return null;
-  const venueLtv = Number.isFinite(r.ltvBps) ? r.ltvBps : 0;
-  return ltvPresets(r.liquidationThresholdBps).map((p) => (p.ltvBps > venueLtv ? { ...p, offerable: false } : p));
+  if (!Number.isFinite(r.liquidationThresholdBps) || r.liquidationThresholdBps <= 0) return null;
+  const venueLtvBps = Number.isFinite(r.ltvBps) ? r.ltvBps : 0;
+  const b = offeredLtvBounds(r.liquidationThresholdBps, venueLtvBps, floor);
+  if (b.maxLtvBps <= 0 || !Number.isFinite(b.minHf)) return null;
+  const marks: HfMark[] = HF_MARKS.map((m) => {
+    const offered = m.hf >= b.minHf - 1e-9;
+    return {
+      id: m.id,
+      hf: m.hf,
+      label: m.label,
+      offered,
+      why: offered ? null : `${m.label} (${m.hf.toFixed(2)}) is under the lowest health factor offered for ${collateral} today, ${b.minHf.toFixed(2)} — ${bindingPlain(b.binding, floor)}.`,
+    };
+  });
+  return { minHf: b.minHf, binding: b.binding, maxLtvBps: b.maxLtvBps, floor, ltBps: r.liquidationThresholdBps, venueLtvBps, marks };
+}
+
+/** A chosen HF pulled up to the offered minimum; +∞ (borrow nothing) passes through. */
+export function clampEntryHf(hf: number, b: HfBounds): number {
+  if (!Number.isFinite(hf)) return hf;
+  return hf < b.minHf ? b.minHf : hf;
+}
+
+/** The HF that a typed borrow means, from the identity HF = collateral × LT ÷ debt; +∞ for no borrow. */
+export function entryHfForBorrow(borrowUsdc: number, collateralUsd: number, ltBps: number): number {
+  if (!(borrowUsdc > 0) || !(collateralUsd > 0)) return Number.POSITIVE_INFINITY;
+  return (collateralUsd * ltBps) / 10_000 / borrowUsdc;
+}
+
+export function needsHfAcknowledgment(entryHf: number): boolean {
+  return Number.isFinite(entryHf) && entryHf < SHELTERED_MARK.hf - 1e-9;
+}
+
+/** The sentence the user ticks under the slider when the HF is below the Sheltered mark (§2b). */
+export function hfAcknowledgmentText(i: { entryHf: number; collateral: string; drawdownPct: number; rungs: readonly HfRung[] }): string {
+  const first = i.rungs[0]!;
+  const last = i.rungs[i.rungs.length - 1]!;
+  return (
+    `I chose an entry health factor of ${i.entryHf.toFixed(2)}, under the Sheltered mark of ${SHELTERED_MARK.hf.toFixed(2)}. ` +
+    `A ${i.drawdownPct.toFixed(1)}% fall in ${i.collateral} from today's price liquidates this position. ` +
+    `The keeper's first step, a message, comes at HF ${first.hf.toFixed(2)} and its last, closing the position, at ${last.hf.toFixed(2)} — and only while the permission I grant it is live. ` +
+    `Nothing here is advice or a promise.`
+  );
 }
 
 export interface ReviewDerivation {
@@ -79,7 +183,8 @@ export interface ReviewDerivation {
   priceUsd: number;
   liquidationThresholdBps: number;
   supplyAprPct: number;
-  preset: LtvPreset;
+  /** The slider's bounds on this asset (the floor, the binding cap, the marks). */
+  bounds: HfBounds;
   loan: LoanPlan;
   borrowAprPct: number;
   /** The verdict the review is priced on (re-fetched from the current gate view). */
@@ -100,15 +205,30 @@ export interface ReviewDerivation {
   problems: string[];
 }
 
-export function deriveReview(state: WizardState, market: MarketRead, gate: GateView, forecast: ForecastView | null = null): ReviewDerivation | null {
+export function deriveReview(
+  state: WizardState,
+  market: MarketRead,
+  gate: GateView,
+  forecast: ForecastView | null = null,
+  /** The registry's entry floor as read from the deployment; the shared constant when unknown (demo). */
+  floor: number = ENTRY_HF_FLOOR,
+): ReviewDerivation | null {
   const r = market.reserves[state.collateral];
-  const presets = presetsFor(market, state.collateral);
-  if (!r || !presets) return null;
-  const preset = presets.find((p) => p.id === state.ltvPreset) ?? presets[0];
+  const bounds = hfBoundsFor(market, state.collateral, floor);
+  if (!r || !bounds) return null;
   const amount = amountNumber(state.amount);
   const problems: string[] = [];
   if (amount <= 0) problems.push("Enter a collateral amount.");
-  if (!preset.offerable) problems.push(`The ${preset.label} setting is not offered for ${state.collateral} at today's liquidation threshold.`);
+  if (!(typeof state.entryHf === "number") || Number.isNaN(state.entryHf) || state.entryHf < 1) {
+    problems.push("The health factor is not a readable number.");
+  } else if (!Number.isFinite(state.entryHf)) {
+    problems.push("Borrow nothing is the far end of the slider: with no loan there is nothing to deploy. Move it to borrow, or leave without opening a position.");
+  } else if (state.entryHf < bounds.minHf - 1e-9) {
+    problems.push(`A health factor of ${state.entryHf.toFixed(2)} is under the lowest offered for ${state.collateral} today, ${bounds.minHf.toFixed(2)} (${bindingPlain(bounds.binding, floor)}).`);
+  }
+  if (needsHfAcknowledgment(state.entryHf) && !state.hfAcknowledged) {
+    problems.push(`Tick the acknowledgment under the slider: you chose a health factor under the Sheltered mark of ${SHELTERED_MARK.hf.toFixed(2)}.`);
+  }
   if (!Number.isFinite(r.priceUsd) || r.priceUsd <= 0) problems.push("Collateral price unreadable — refusing to size the borrow.");
   if (!Number.isFinite(market.usdcBorrowAprPct)) problems.push("USDC borrow rate unreadable.");
   if (!state.strategy) problems.push("Choose a strategy.");
@@ -120,7 +240,7 @@ export function deriveReview(state: WizardState, market: MarketRead, gate: GateV
     collateralAmount: amount,
     collateralPriceUsd: r.priceUsd,
     liquidationThresholdBps: r.liquidationThresholdBps,
-    ltvBps: preset.ltvBps,
+    entryHf: Number.isFinite(state.entryHf) && state.entryHf >= 1 ? state.entryHf : Number.POSITIVE_INFINITY,
     borrowAprPct: market.usdcBorrowAprPct,
   });
   const supplyInterest = (loan.collateralUsd * r.supplyAprPct) / 100;
@@ -176,7 +296,7 @@ export function deriveReview(state: WizardState, market: MarketRead, gate: GateV
     priceUsd: r.priceUsd,
     liquidationThresholdBps: r.liquidationThresholdBps,
     supplyAprPct: r.supplyAprPct,
-    preset,
+    bounds,
     loan,
     borrowAprPct: market.usdcBorrowAprPct,
     verdict,

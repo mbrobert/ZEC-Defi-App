@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { HF_LADDER } from "@zyo/shared";
+import { HF_LADDER, ladderFor } from "@zyo/shared";
 import { alertRungFor, bannerStateFor, shouldNotify } from "../lib/notify";
 
 test("alertRungFor: healthy / no-debt / unreadable HF all mean no alert", () => {
@@ -44,4 +44,14 @@ test("N-MED-2: bannerStateFor — a failed read is an 'unreadable' alert, a rung
   const s = bannerStateFor(1.1);
   assert.equal(s?.kind, "rung");
   assert.equal(s?.kind === "rung" ? s.rung.id : null, "derisk");
+});
+
+test("A4: the banner runs the POSITION's ladder when given one — on a 1.30 entry, 1.45 is no alert and 1.26 is the warn rung; the floor's ladder stays the default", () => {
+  const own = ladderFor(1.3);
+  assert.equal(alertRungFor(1.45, own), null);
+  assert.equal(alertRungFor(1.26, own)?.id, "warn");
+  assert.equal(alertRungFor(1.18, own)?.id, "repay");
+  assert.deepEqual(bannerStateFor(1.26, own), { kind: "rung", rung: own[0] });
+  assert.equal(bannerStateFor(1.45, own), null);
+  assert.equal(alertRungFor(1.45)?.id, "warn", "without a ladder: HF_LADDER");
 });

@@ -1,53 +1,94 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ENTRY_HF_FLOOR, MAX_OFFERED_LTV_CAP_BPS, maxOfferedLtvBps } from "@zyo/shared";
+import { ENTRY_HF_FLOOR, MAX_OFFERED_LTV_CAP_BPS, ladderFor, maxOfferedLtvBps } from "@zyo/shared";
+import { BANNED_WORDS } from "../lib/copy";
 import { DEMO_MARKET, demoForecast, demoGate } from "../lib/demo";
 import { findCell } from "../lib/forecast";
+import { planLoan } from "../lib/math";
 import type { MarketRead } from "../lib/reads";
-import { defaultWizardState, deriveReview, presetsFor } from "../lib/wizard";
+import { bindingPlain, clampEntryHf, defaultWizardState, deriveReview, entryHfForBorrow, hfAcknowledgmentText, hfBoundsFor, needsHfAcknowledgment } from "../lib/wizard";
 
-test("presetsFor computes 30/40/top from the reserve's liquidation threshold", () => {
-  const btc = presetsFor(DEMO_MARKET, "cbBTC")!;
-  assert.deepEqual(
-    btc.map((p) => p.ltvBps),
-    [3000, 4000, 5000],
-  );
-  assert.ok(btc.every((p) => p.offerable));
-  assert.ok(btc.every((p) => (p.entryHf ?? 0) >= ENTRY_HF_FLOOR));
-  const weth = presetsFor(DEMO_MARKET, "WETH")!;
-  assert.equal(weth[2].ltvBps, 5000);
-  assert.equal(weth[2].ltvBps, Math.min(MAX_OFFERED_LTV_CAP_BPS, Math.floor(8300 / ENTRY_HF_FLOOR)));
+test("hfBoundsFor: the slider's stop on each asset is the LOWEST of the floor, Aave's max LTV and Oilskin's cap, named — today the 50 % cap binds on both assets, so the marks sit under it", () => {
+  const btc = hfBoundsFor(DEMO_MARKET, "cbBTC")!;
+  assert.equal(btc.floor, ENTRY_HF_FLOOR);
+  assert.equal(btc.maxLtvBps, MAX_OFFERED_LTV_CAP_BPS, "floor(7800/1.55) = 5032 and Aave's 7300 both sit above the 5000 cap");
+  assert.equal(btc.binding, "product_ltv_cap");
+  assert.equal(btc.minHf, 1.56, "0.78 / 0.50");
+  assert.equal(btc.maxLtvBps, maxOfferedLtvBps(7800));
+  assert.deepEqual(btc.marks.map((m) => [m.id, m.hf, m.offered]), [["sheltered", 1.55, false], ["expert", 1.3, false]]);
+  assert.match(btc.marks[0]!.why!, /Sheltered \(1\.55\) is under the lowest health factor offered for cbBTC today, 1\.56 — Oilskin's 50% cap on any borrow/);
+  const weth = hfBoundsFor(DEMO_MARKET, "WETH")!;
+  assert.equal(weth.maxLtvBps, 5000);
+  assert.equal(weth.minHf, 1.66, "0.83 / 0.50");
+  assert.equal(weth.binding, "product_ltv_cap");
+  assert.equal(bindingPlain("entry_hf_floor", 1.25), "the registry's entry floor of 1.25");
+  assert.equal(bindingPlain("venue_max_ltv", 1.55), "Aave's own maximum LTV for this asset");
 });
 
-test("presetsFor: cbZEC (not listed → null reserve) yields no presets", () => {
-  assert.equal(presetsFor(DEMO_MARKET, "cbZEC"), null);
+test("hfBoundsFor: with the floor moved to 1.25 the cap STILL binds on cbBTC (62.4 % > 50 %) — the floor cannot be reached on Base until the cap moves; on a 60 % threshold the floor binds", () => {
+  const at125 = hfBoundsFor(DEMO_MARKET, "cbBTC", 1.25)!;
+  assert.equal(at125.binding, "product_ltv_cap");
+  assert.equal(at125.minHf, 1.56);
+  assert.equal(at125.marks[1]!.offered, false, "Expert 1.30 is still under 1.56");
+  const m: MarketRead = { ...DEMO_MARKET, reserves: { ...DEMO_MARKET.reserves, WETH: { ...DEMO_MARKET.reserves.WETH!, liquidationThresholdBps: 6000 } } };
+  const low = hfBoundsFor(m, "WETH")!;
+  assert.equal(low.maxLtvBps, 3870, "floor(6000 × 100 / 155)");
+  assert.equal(low.binding, "entry_hf_floor");
+  assert.equal(low.minHf, 1.5503, "0.60 / 0.3870, four decimals");
+  const low125 = hfBoundsFor(m, "WETH", 1.25)!;
+  assert.equal(low125.maxLtvBps, 4800);
+  assert.equal(low125.minHf, 1.25);
+  assert.deepEqual(low125.marks.map((x) => x.offered), [true, true], "both marks reachable once the floor is 1.25 and the cap does not bind");
 });
 
-test("presetsFor: a low-threshold asset gets a computed, lower top and unofferable rungs", () => {
-  const m: MarketRead = {
-    ...DEMO_MARKET,
-    reserves: { ...DEMO_MARKET.reserves, WETH: { ...DEMO_MARKET.reserves.WETH!, liquidationThresholdBps: 6000 } },
-  };
-  const p = presetsFor(m, "WETH")!;
-  assert.equal(p[2].ltvBps, maxOfferedLtvBps(6000));
-  assert.equal(p[2].ltvBps, 3870);
-  assert.equal(p[0].offerable, true); // 30%
-  assert.equal(p[1].offerable, false); // 40% > 38.7%
+test("hfBoundsFor: Aave's max LTV binds when it is the smallest; an LTV→0 deprecation offers nothing (null), as do a frozen reserve and an unlisted asset", () => {
+  const venue = { ...DEMO_MARKET, reserves: { ...DEMO_MARKET.reserves, cbBTC: { ...DEMO_MARKET.reserves.cbBTC!, ltvBps: 4500 } } };
+  const b = hfBoundsFor(venue, "cbBTC")!;
+  assert.equal(b.binding, "venue_max_ltv");
+  assert.equal(b.maxLtvBps, 4500);
+  assert.equal(b.minHf, 1.7333);
+  const zero = { ...DEMO_MARKET, reserves: { ...DEMO_MARKET.reserves, cbBTC: { ...DEMO_MARKET.reserves.cbBTC!, ltvBps: 0 } } };
+  assert.equal(hfBoundsFor(zero, "cbBTC"), null);
+  const frozen: MarketRead = { ...DEMO_MARKET, reserves: { ...DEMO_MARKET.reserves, cbBTC: { ...DEMO_MARKET.reserves.cbBTC!, isFrozen: true } } };
+  assert.equal(hfBoundsFor(frozen, "cbBTC"), null);
+  assert.equal(hfBoundsFor(DEMO_MARKET, "cbZEC"), null);
 });
 
-test("presetsFor: frozen / non-collateral reserve is refused", () => {
-  const m: MarketRead = { ...DEMO_MARKET, reserves: { ...DEMO_MARKET.reserves, cbBTC: { ...DEMO_MARKET.reserves.cbBTC!, isFrozen: true } } };
-  assert.equal(presetsFor(m, "cbBTC"), null);
+test("the identity both ways: a typed borrow gives the HF, the HF gives the borrow back to the cent; the clamp pulls a low HF up to the offered minimum and lets +∞ (borrow nothing) through", () => {
+  const b = hfBoundsFor(DEMO_MARKET, "cbBTC")!;
+  const collateralUsd = 0.5 * DEMO_MARKET.reserves.cbBTC!.priceUsd;
+  const hf = entryHfForBorrow(15_428.17, collateralUsd, 7800);
+  assert.ok(Math.abs(hf - 1.95) < 1e-6, `${hf}`);
+  const loan = planLoan({ collateralAmount: 0.5, collateralPriceUsd: DEMO_MARKET.reserves.cbBTC!.priceUsd, liquidationThresholdBps: 7800, entryHf: hf, borrowAprPct: 4.5174 });
+  assert.equal(loan.borrowUsdc.toFixed(2), "15428.17");
+  assert.equal(entryHfForBorrow(0, collateralUsd, 7800), Number.POSITIVE_INFINITY);
+  assert.equal(clampEntryHf(1.3, b), 1.56);
+  assert.equal(clampEntryHf(1.95, b), 1.95);
+  assert.equal(clampEntryHf(Number.POSITIVE_INFINITY, b), Number.POSITIVE_INFINITY);
+  assert.equal(needsHfAcknowledgment(1.549), true);
+  assert.equal(needsHfAcknowledgment(1.55), false);
+  assert.equal(needsHfAcknowledgment(Number.POSITIVE_INFINITY), false);
+});
+
+test("the sub-mark acknowledgment names the HF, the drawdown and the first and last rungs of THAT ladder, in plain words", () => {
+  const text = hfAcknowledgmentText({ entryHf: 1.3, collateral: "cbBTC", drawdownPct: 100 * (1 - 1 / 1.3), rungs: ladderFor(1.3) });
+  assert.match(text, /entry health factor of 1\.30, under the Sheltered mark of 1\.55/);
+  assert.match(text, /A 23\.1% fall in cbBTC/);
+  assert.match(text, /a message, comes at HF 1\.27 and its last, closing the position, at 1\.05/);
+  assert.match(text, /Nothing here is advice or a promise/);
+  for (const w of BANNED_WORDS) assert.ok(!new RegExp(`\\b${w}\\b`, "i").test(text), `banned word ${w}`);
 });
 
 test("deriveReview (hold): every number derived; problems empty for a valid selection", () => {
   const gate = demoGate();
-  const st = { ...defaultWizardState("cbBTC"), strategy: { kind: "hold" as const } };
+  const st = { ...defaultWizardState("cbBTC"), entryHf: 1.95, strategy: { kind: "hold" as const } };
   const d = deriveReview(st, DEMO_MARKET, gate)!;
   assert.deepEqual(d.problems, []);
-  assert.equal(d.preset.ltvBps, 4000);
+  assert.equal(d.loan.ltvBps, 4000, "LTV at entry = LT ÷ HF");
+  assert.equal(d.bounds.minHf, 1.56);
   assert.equal(d.liquidationThresholdBps, 7800);
   assert.ok(Math.abs(d.loan.entryHf - 1.95) < 1e-9);
+  assert.deepEqual(d.loan.rungs.map((x) => x.rung.hf), ladderFor(1.95).map((r) => r.hf), "the ladder is this entry HF's, not the floor's");
   assert.equal(d.verdict, null);
   assert.equal(d.yieldPlan, null);
   // carry = borrow cost − supply interest
@@ -58,7 +99,7 @@ test("deriveReview (lp): a pool the model forecasts at a loss is priced, flagged
   const gate = demoGate();
   const forecast = demoForecast();
   const entry = gate.verdicts.find((e) => e.poolId === "aero-cbbtc-usdc" && e.setting === "sheltered" && e.collateral === "cbBTC")!;
-  const st = { ...defaultWizardState("cbBTC"), strategy: { kind: "lp" as const, entry } };
+  const st = { ...defaultWizardState("cbBTC"), entryHf: 1.95, strategy: { kind: "lp" as const, entry } };
   const d = deriveReview(st, DEMO_MARKET, gate, forecast)!;
   assert.equal(d.gateOk, false, "informational: it does not beat the borrow");
   assert.deepEqual(d.problems, [], "a negative forecast is not a problem");
@@ -98,7 +139,7 @@ test("deriveReview: the acknowledgment starts un-ticked, and the liquidity hard-
   const cell = findCell(forecast, { poolId: "aero-cbbtc-usdc", setting: "sheltered", collateral: "cbBTC" })!;
   const refusing = { ...forecast, cells: forecast.cells.map((c) => (c === cell ? { ...c, refusals: ["borrow_paused" as const], allowed: false } : c)) };
   const entry = gate.verdicts.find((e) => e.poolId === "aero-cbbtc-usdc" && e.setting === "sheltered" && e.collateral === "cbBTC")!;
-  const d = deriveReview({ ...defaultWizardState("cbBTC"), strategy: { kind: "lp", entry } }, DEMO_MARKET, gate, refusing)!;
+  const d = deriveReview({ ...defaultWizardState("cbBTC"), entryHf: 1.95, strategy: { kind: "lp", entry } }, DEMO_MARKET, gate, refusing)!;
   assert.ok(d.problems.some((p) => /paused USDC borrowing/.test(p)));
 });
 
@@ -107,7 +148,7 @@ test("deriveReview (lp): a clearing verdict yields a positive plan and no gate p
   const base = gate.verdicts.find((e) => e.poolId === "aero-cbbtc-usdc" && e.setting === "sheltered" && e.collateral === "cbBTC")!;
   const clearing = { ...base, qualifies: true, reason: null, lpNetPct: 12, emissionsRealizedPct: 27.25, dragPct: -15.25 };
   const view = { ...gate, verdicts: gate.verdicts.map((v) => (v === base ? clearing : v)) };
-  const d = deriveReview({ ...defaultWizardState("cbBTC"), strategy: { kind: "lp", entry: clearing } }, DEMO_MARKET, view)!;
+  const d = deriveReview({ ...defaultWizardState("cbBTC"), entryHf: 1.95, strategy: { kind: "lp", entry: clearing } }, DEMO_MARKET, view)!;
   assert.equal(d.gateOk, true);
   assert.deepEqual(d.problems, []);
   assert.ok(d.yieldPlan!.totalUsd > 0);
@@ -116,20 +157,35 @@ test("deriveReview (lp): a clearing verdict yields a positive plan and no gate p
 test("deriveReview (lp): a verdict for a different collateral than chosen is refused", () => {
   const gate = demoGate();
   const entry = gate.verdicts.find((e) => e.collateral === "WETH")!;
-  const d = deriveReview({ ...defaultWizardState("cbBTC"), strategy: { kind: "lp", entry } }, DEMO_MARKET, gate)!;
+  const d = deriveReview({ ...defaultWizardState("cbBTC"), entryHf: 1.95, strategy: { kind: "lp", entry } }, DEMO_MARKET, gate)!;
   // the WETH verdict for the same pool × setting exists for cbBTC too, so it is re-fetched for cbBTC
   assert.equal(d.verdict?.collateral, "cbBTC");
 });
 
-test("deriveReview flags: missing amount, missing strategy, unofferable preset", () => {
+test("deriveReview flags: missing amount, missing strategy, an HF under the offered minimum (the default 1.55 mark on cbBTC, where the cap binds at 1.56), borrow nothing, and the sub-mark acknowledgment", () => {
   const gate = demoGate();
-  const d1 = deriveReview({ ...defaultWizardState("cbBTC"), amount: "0" }, DEMO_MARKET, gate)!;
+  const d1 = deriveReview({ ...defaultWizardState("cbBTC"), amount: "0", entryHf: 1.95 }, DEMO_MARKET, gate)!;
   assert.ok(d1.problems.some((p) => /amount/i.test(p)));
   assert.ok(d1.problems.some((p) => /strategy/i.test(p)));
 
+  // The default state carries the Sheltered mark (1.55); on cbBTC the offered minimum is 1.56 (the page clamps it up, the review names it).
+  const d2 = deriveReview({ ...defaultWizardState("cbBTC"), strategy: { kind: "hold" } }, DEMO_MARKET, gate)!;
+  assert.ok(d2.problems.some((p) => /1\.55 is under the lowest offered for cbBTC today, 1\.56 \(Oilskin's 50% cap on any borrow\)/.test(p)), d2.problems.join(" | "));
+
+  const none = deriveReview({ ...defaultWizardState("cbBTC"), entryHf: Number.POSITIVE_INFINITY, strategy: { kind: "hold" } }, DEMO_MARKET, gate)!;
+  assert.ok(none.problems.some((p) => /nothing to deploy/.test(p)));
+  assert.equal(none.loan.borrowUsdc, 0);
+
+  // Where the floor is 1.25 and the cap does not bind (LT 60 %), 1.30 is offered — and needs the acknowledgment.
   const m: MarketRead = { ...DEMO_MARKET, reserves: { ...DEMO_MARKET.reserves, cbBTC: { ...DEMO_MARKET.reserves.cbBTC!, liquidationThresholdBps: 6000 } } };
-  const d2 = deriveReview({ ...defaultWizardState("cbBTC"), ltvPreset: "p40", strategy: { kind: "hold" } }, m, gate)!;
-  assert.ok(d2.problems.some((p) => /not offered/i.test(p)));
+  const unticked = deriveReview({ ...defaultWizardState("cbBTC"), entryHf: 1.3, strategy: { kind: "hold" } }, m, gate, null, 1.25)!;
+  assert.deepEqual(unticked.problems, ["Tick the acknowledgment under the slider: you chose a health factor under the Sheltered mark of 1.55."]);
+  const ticked = deriveReview({ ...defaultWizardState("cbBTC"), entryHf: 1.3, hfAcknowledged: true, strategy: { kind: "hold" } }, m, gate, null, 1.25)!;
+  assert.deepEqual(ticked.problems, []);
+  assert.equal(ticked.bounds.binding, "entry_hf_floor");
+  assert.equal(ticked.bounds.minHf, 1.25);
+  assert.equal(ticked.loan.ltvBps, 4615, "floor(6000 / 1.30)");
+  assert.deepEqual(ticked.loan.rungs.map((x) => x.rung.hf), [1.27, 1.19, 1.11, 1.05]);
 });
 
 test("deriveReview returns null when the collateral reserve is unreadable", () => {
