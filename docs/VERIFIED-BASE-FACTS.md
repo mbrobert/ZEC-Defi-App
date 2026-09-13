@@ -897,7 +897,8 @@ protocol's share of the supply-side interest, and the borrow rate above is what 
 0.012 % / 1.843 % supply, the 2026-09-05 prices) and the yield gate from the 2026-09-12 sample (4.5174 %). The
 snapshot is now the sample's own block, so the web demo, the prototypes and the model quote one set of digits.
 
-**How.** A bash script of `cast call --block 51226072` / `cast code` calls, one per line and paced 0.4 s, against
+**How.** `scripts/ledger-read.sh <rpc> <block>` (committed the same evening) — `cast call --block 51226072` /
+`cast code` calls, one per line and paced 0.4 s, against
 `https://mainnet.base.org` (`https://base-rpc.publicnode.com` refuses pinned-block calls without a token — HTTP 403
 "Archive requests require a personal token" — and `mainnet.base.org` rate-limits bursts, hence the pacing). No key,
 nothing signed. A first pass at the tip (block 51,227,849, 20:30:45Z) is kept only for the pool-liquidity observation

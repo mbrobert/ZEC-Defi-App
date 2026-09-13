@@ -3,6 +3,12 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-12 — `scripts/ledger-read.sh`: the Addendum 14 ledger re-read as a committed, parameterised script
+
+- The read-only `cast call --block` script behind VERIFIED-BASE-FACTS Addendum 14 is in the repo:
+  `scripts/ledger-read.sh [rpc] [block]`, so the next re-read (paired with the yield sample's block) is one
+  command and not a session's scratch file. Nothing else changed.
+
 ## 2026-09-12 — Keeper valuation: CI's one red on `51273f5` was a property test's premise (HF poisons replace, they do not add); the evaluator was right
 
 - The `agent` job on `51273f5` failed "UNKNOWN is sticky" once (fast-check seed `-1022574623`, path
