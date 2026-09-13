@@ -428,6 +428,43 @@ test("a cross-chain cell is priced against KAMINO's rate and Kamino's collateral
   assert.ok(ok.borrowAprAfterPct !== null && ok.borrowAprAfterPct > ok.borrowAprNowPct!, "a borrow moves Kamino's curve");
 });
 
+test("FIX FORECAST-LOW-1: a STALE Kamino sample is refused and no number is derived from it — the rule the Base branch and /v1/solana/borrow already apply", () => {
+  const fresh = evaluateForecast(inputs({ depositUsd: 10_000, entryHf: 1.625, venueBorrow: kaminoVenue() }));
+  const stale = evaluateForecast(inputs({ depositUsd: 10_000, entryHf: 1.625, venueBorrow: kaminoVenue({ stale: true }) }));
+
+  assert.deepEqual(stale.refusals, ["rates_stale"]);
+  assert.equal(stale.allowed, false);
+  // The venue is still NAMED — the user is told which chain's loan was refused — but every number a
+  // reader could mistake for current is absent. The card renders the rate and the net BESIDE the
+  // refusal, not instead of it, so a priced stale cell would put stale figures on the screen.
+  assert.equal(stale.borrowVenue, "kamino", "which venue refused is not itself a stale number");
+  for (const [field, value] of [
+    ["borrowAprNowPct", stale.borrowAprNowPct],
+    ["borrowAprAfterPct", stale.borrowAprAfterPct],
+    ["collateralSupplyAprPct", stale.collateralSupplyAprPct],
+    ["liquidationThresholdBps", stale.liquidationThresholdBps],
+    ["venueMaxLtvBps", stale.venueMaxLtvBps],
+    ["poolAvailableUsd", stale.poolAvailableUsd],
+    ["ltvAtEntryBps", stale.ltvAtEntryBps],
+    ["borrowUsd", stale.borrowUsd],
+  ] as const) {
+    assert.equal(value, null, `${field} must not be derived from a stale sample`);
+  }
+  // …and every one of them IS served when the same sample is fresh, so the test is about staleness
+  // and not about a field that is simply never set on this path.
+  for (const [field, value] of [
+    ["borrowAprNowPct", fresh.borrowAprNowPct],
+    ["borrowAprAfterPct", fresh.borrowAprAfterPct],
+    ["liquidationThresholdBps", fresh.liquidationThresholdBps],
+    ["venueMaxLtvBps", fresh.venueMaxLtvBps],
+    ["poolAvailableUsd", fresh.poolAvailableUsd],
+    ["ltvAtEntryBps", fresh.ltvAtEntryBps],
+    ["borrowUsd", fresh.borrowUsd],
+  ] as const) {
+    assert.notEqual(value, null, `${field} is served when the sample is fresh`);
+  }
+});
+
 test("a borrow Kamino cannot fund is REFUSED, not priced: more than the pool has, and past its borrow limit", () => {
   // The pool holds ≈ 355,600 USDC. At the 40 % cap a $1.2 M deposit borrows $480 K — more than that.
   const tooBig = evaluateForecast(inputs({ depositUsd: 1_200_000, entryHf: 1.625, venueBorrow: kaminoVenue() }));

@@ -3,6 +3,33 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-13 — A8 closed: the forecast audited, and a stale Kamino sample no longer priced
+
+**FORECAST-1 (Low, `AUDIT-2026-09-13.md` Part 4).** The forecast's two branches disagreed about a stale
+sample. On Base, `rates.stale` pushes the refusal and the whole block is skipped, so **no** cell field is
+set. On the cross-chain path the branch pushed the same refusal and then carried on: the borrow rate, the
+liquidation threshold, the venue's LTV cap, the pool depth, and in §2 the entry LTV, the borrow amount and
+the rate-after-borrow were all derived from a read the service had already declared too old. The sibling
+view enforces the opposite on the same sample — `solanaBorrow.ts` refuses a stale read and returns with the
+comment *"shows NO number derived from it (Base's rates_stale rule)"*.
+
+The user-visible part: the strategy card renders a cell's numbers **beside** its refusal, not instead of it,
+so a stale Kamino sample put a borrow rate and a year's net on screen under a red "rates are stale" line.
+Nothing could be done with it — `allowed` is false and the button disabled — which is why it is Low.
+
+**Fix:** one symmetric rule. A `venueUsable` binding is null when the sample is stale; the refusal and *which*
+venue refused are still reported, and every derived field reads `venueUsable`, so a stale cross-chain sample
+now yields exactly what a stale Base one yields — the refusal and nothing else.
+
+- **Regression test verified to fail without the fix**: with `forecast.ts` reverted that subtest reads
+  `not ok`; restored, `@zyo/yield` is **179 / 179** (+1).
+- **Checked and found sound** in the same pass: the borrow curve cannot divide by zero on any input the
+  reader admits (`optimalUsageRatio` of 0 throws at read; a 10,000 optimal makes the other branch
+  unreachable); a pool that cannot fund a borrow yields `null` and the `pool_cannot_fund` refusal on both
+  venues, never an optimistic rate; and `MAX_ENTRY_HF = 1_000` is safe now only because D10 caps the ladder —
+  recorded because the two are safe together, not separately.
+- **A8 is closed.** Every BUILD-PLAN step A1–A9 has had an internal audit pass.
+
 ## 2026-09-13 — Audit inquiries are out; both RFP packages re-measured at the current tree, and H1 reconciled
 
 - **The founder sent the audit inquiries on 2026-09-13.** That was §0 of the roadmap — the one item with no

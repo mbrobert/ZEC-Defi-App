@@ -248,21 +248,34 @@ export function evaluateForecast(input: ForecastInputs): ForecastCell {
   let borrowNow: number | null = null;
   let supply: number | null = null;
   const venue = input.venueBorrow ?? null;
+  /**
+   * The venue sample only where it may be DERIVED FROM. A read past `staleAfterMs` is refused and
+   * yields no number — the same rule the Base branch below applies to `rates.stale`, and the one
+   * `/v1/solana/borrow` states in so many words ("a read past staleAfterMs is refused and shows NO
+   * number derived from it"). Before FORECAST-LOW-1 this branch pushed the refusal and then priced
+   * the cell anyway, so a stale Kamino sample still produced a borrow rate, a liquidation threshold
+   * and a pool depth — and the card renders those beside the refusal, not instead of it.
+   */
+  const venueUsable = venue && !venue.stale ? venue : null;
   if (venue) {
     // Cross-chain: the loan is Kamino's. Base's own rates say nothing about what it costs, so their staleness
     // is not a refusal here — the venue's own is.
     cell.borrowVenue = venue.venue;
     for (const r of venue.refusals) refusals.push(r);
     if (venue.stale) refusals.push("rates_stale");
-    borrowNow = venue.borrowAprNowPct;
-    supply = venue.supplyAprPct;
+  }
+  if (venueUsable) {
+    borrowNow = venueUsable.borrowAprNowPct;
+    supply = venueUsable.supplyAprPct;
     cell.borrowAprNowPct = borrowNow;
     cell.collateralSupplyAprPct = supply;
-    cell.liquidationThresholdBps = venue.liquidationThresholdBps;
-    cell.venueMaxLtvBps = venue.venueMaxLtvBps;
-    const availUnits = BigInt(venue.availableUnits);
-    cell.poolAvailableUsd = Number(availUnits) / 10 ** venue.decimals;
+    cell.liquidationThresholdBps = venueUsable.liquidationThresholdBps;
+    cell.venueMaxLtvBps = venueUsable.venueMaxLtvBps;
+    const availUnits = BigInt(venueUsable.availableUnits);
+    cell.poolAvailableUsd = Number(availUnits) / 10 ** venueUsable.decimals;
     disclosures.add("liquidation_at_chosen_hf");
+  } else if (venue) {
+    // stale: refused above, nothing derived
   } else if (!rates) refusals.push("rates_unavailable");
   else if (rates.stale) refusals.push("rates_stale");
   else {
@@ -287,9 +300,9 @@ export function evaluateForecast(input: ForecastInputs): ForecastCell {
 
   // ---- 2. The position at the chosen HF ---------------------------------------
   let borrowAfter: number | null = null;
-  const ltBps = venue ? venue.liquidationThresholdBps : (reserve?.liquidationThresholdBps ?? null);
-  const maxLtvBps = venue ? venue.venueMaxLtvBps : (reserve?.ltvBps ?? null);
-  if (ltBps !== null && maxLtvBps !== null && (venue !== null || (rates !== null && !rates.stale))) {
+  const ltBps = venueUsable ? venueUsable.liquidationThresholdBps : (reserve?.liquidationThresholdBps ?? null);
+  const maxLtvBps = venueUsable ? venueUsable.venueMaxLtvBps : (reserve?.ltvBps ?? null);
+  if (ltBps !== null && maxLtvBps !== null && (venueUsable !== null || (rates !== null && !rates.stale))) {
     const { ltvAtEntryBps } = hfIdentity(ltBps, entryHf);
     cell.ltvAtEntryBps = ltvAtEntryBps;
     let cap: ForecastBindingCap = entryHf === entryHfFloor ? "entry_hf_floor" : "chosen_hf";
@@ -302,8 +315,8 @@ export function evaluateForecast(input: ForecastInputs): ForecastCell {
       cell.borrowUsd = round2(borrowUsd);
       // Whose pool has to fund it: Kamino's for a cross-chain position, Aave's otherwise. Either way a pool
       // that cannot is a REFUSAL, never a priced cell with an optimistic rate.
-      const after = venue
-        ? venueBorrowAprAfterPct(venue, borrowUsd)
+      const after = venueUsable
+        ? venueBorrowAprAfterPct(venueUsable, borrowUsd)
         : aaveBorrowAprAfterPct(rates!.borrowCurve, rates!.borrow, unitsOfUsd(borrowUsd, rates!.borrow.decimals));
       if (after === null) {
         refusals.push("pool_cannot_fund");
