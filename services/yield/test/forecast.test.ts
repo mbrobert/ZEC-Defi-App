@@ -4,16 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { ENTRY_HF_FLOOR, hfFromWad, poolById } from "@zyo/shared";
-import {
-  aaveBorrowAprAfterPct,
-  aaveVariableBorrowAprPct,
-  availableUnits,
-  evaluateForecast,
-  evaluateForecastPool,
-  hfIdentity,
-  MAX_ENTRY_HF,
-  type ForecastInputs,
-} from "../src/forecast.js";
+import { aaveBorrowAprAfterPct, aaveVariableBorrowAprPct, availableUnits, evaluateForecast, evaluateForecastPool, hfIdentity, MAX_ENTRY_HF, type ForecastInputs, venueBorrowAprAfterPct, type ForecastVenueBorrow } from "../src/forecast.js";
 import { evaluateGate } from "../src/gate.js";
 import { SETTINGS } from "../src/model.js";
 import { YieldServer } from "../src/server.js";
@@ -384,4 +375,104 @@ test("GET /v1/forecast with a registry (A4.4): the floor is the chain's, said so
   } finally {
     await b2.close();
   }
+});
+
+// ---------------------------------------------------------------------------
+// The cross-chain cell (BUILD-PLAN D6; CROSSCHAIN-LOOP-2026-09-12 §6 item 1)
+// ---------------------------------------------------------------------------
+
+/** Kamino's ZCASH market as the forecast consumes it: ZEC's parameters, USDC's pool and curve. */
+function kaminoVenue(over: Partial<ForecastVenueBorrow> = {}): ForecastVenueBorrow {
+  return {
+    chain: "solana",
+    venue: "kamino",
+    borrowAprNowPct: 2.78,
+    supplyAprPct: 0,
+    liquidationThresholdBps: 6500, // ZEC's LT on the ZCASH market
+    venueMaxLtvBps: 4000, // Kamino's own 40 % cap
+    availableUnits: "355599950997", // ≈ 355,600 USDC available (the 2026-09-12 capture)
+    borrowedUnits: "446186304801",
+    borrowLimitUnits: "2000000000000",
+    decimals: 6,
+    borrowCurve: [
+      [0, 119],
+      [5000, 279],
+      [9000, 725],
+      [9200, 897],
+      [10000, 3860],
+    ],
+    refusals: [],
+    stale: false,
+    ...over,
+  };
+}
+
+test("a cross-chain cell is priced against KAMINO's rate and Kamino's collateral parameters — not Base's", () => {
+  const base = evaluateForecast(inputs({ depositUsd: 10_000 }));
+  const cross = evaluateForecast(inputs({ depositUsd: 10_000, entryHf: ENTRY_HF_FLOOR, venueBorrow: kaminoVenue() }));
+  assert.equal(base.borrowVenue, "aave");
+  assert.equal(cross.borrowVenue, "kamino");
+  assert.equal(cross.borrowAprNowPct, 2.78, "Kamino's rate, not Aave's");
+  assert.notEqual(base.borrowAprNowPct, cross.borrowAprNowPct);
+  // The loan is sized by ZEC on Kamino: LT 65 % at the 1.25 floor is 52 % LTV, under Kamino's own 40 % cap…
+  assert.equal(cross.liquidationThresholdBps, 6500);
+  assert.equal(cross.venueMaxLtvBps, 4000);
+  assert.equal(cross.ltvAtEntryBps, 5200);
+  assert.deepEqual(cross.refusals, ["venue_ltv_exceeded"], "…so 52 % is above what Kamino allows and is refused by name");
+  assert.equal(cross.bindingCap, "venue_max_ltv");
+  // At an entry HF Kamino's cap does allow, the cell is allowed and carries Kamino's numbers.
+  const ok = evaluateForecast(inputs({ depositUsd: 10_000, entryHf: 1.625, venueBorrow: kaminoVenue() }));
+  assert.deepEqual(ok.refusals, []);
+  assert.equal(ok.ltvAtEntryBps, 4000, "LT 65 ÷ 1.625 = the cap exactly");
+  assert.equal(ok.collateralSupplyAprPct, 0, "ZEC on the ZCASH market is collateral-only and earns nothing");
+  assert.ok(ok.borrowAprAfterPct !== null && ok.borrowAprAfterPct > ok.borrowAprNowPct!, "a borrow moves Kamino's curve");
+});
+
+test("a borrow Kamino cannot fund is REFUSED, not priced: more than the pool has, and past its borrow limit", () => {
+  // The pool holds ≈ 355,600 USDC. At the 40 % cap a $1.2 M deposit borrows $480 K — more than that.
+  const tooBig = evaluateForecast(inputs({ depositUsd: 1_200_000, entryHf: 1.625, venueBorrow: kaminoVenue() }));
+  assert.ok(tooBig.refusals.includes("pool_cannot_fund"));
+  assert.equal(tooBig.allowed, false);
+  assert.equal(tooBig.borrowAprAfterPct, null, "no rate is invented for a loan the pool cannot make");
+  assert.equal(tooBig.bindingCap, "pool_liquidity");
+  // The same amount against a pool with the liquidity but a borrow limit already reached.
+  const capped = evaluateForecast(
+    inputs({ depositUsd: 10_000, entryHf: 1.625, venueBorrow: kaminoVenue({ borrowLimitUnits: "446186304801" }) })
+  );
+  assert.ok(capped.refusals.includes("pool_cannot_fund"), "the borrow limit refuses it too");
+  // And a borrow the pool CAN fund is priced.
+  const fine = evaluateForecast(inputs({ depositUsd: 10_000, entryHf: 1.625, venueBorrow: kaminoVenue() }));
+  assert.equal(fine.allowed, true);
+  assert.ok(fine.borrowAprAfterPct !== null);
+});
+
+test("the venue's own refusals reach the cell, and Base's rates being stale does not refuse a loan that is not Base's", () => {
+  const paused = evaluateForecast(inputs({ entryHf: 1.625, venueBorrow: kaminoVenue({ refusals: ["borrow_paused"] }) }));
+  assert.deepEqual(paused.refusals, ["borrow_paused"]);
+  const staleVenue = evaluateForecast(inputs({ entryHf: 1.625, venueBorrow: kaminoVenue({ stale: true }) }));
+  assert.ok(staleVenue.refusals.includes("rates_stale"));
+  // Aave's rates are stale, but the loan is Kamino's: the cell is still allowed, and still priced by Kamino.
+  const baseStale = evaluateForecast(
+    inputs({ entryHf: 1.625, rates: { ...ratesFixture(), stale: true }, venueBorrow: kaminoVenue() })
+  );
+  assert.deepEqual(baseStale.refusals, [], "Base's borrow rate says nothing about the cost of a Kamino loan");
+  assert.equal(baseStale.borrowAprNowPct, 2.78);
+  assert.equal(baseStale.lpPriced, true, "and the LP slice, which IS Base's, is still priced");
+});
+
+test("venueBorrowAprAfterPct: the curve moves with the borrow, and every way the pool says no is null", () => {
+  const v = kaminoVenue();
+  const now = venueBorrowAprAfterPct(v, 0);
+  const after = venueBorrowAprAfterPct(v, 100_000);
+  assert.ok(now !== null && after !== null);
+  assert.ok(after! > now!, "borrowing more raises the rate");
+  // 355,600 available: one unit more than that cannot be funded.
+  assert.equal(venueBorrowAprAfterPct(v, 355_600), null);
+  assert.ok(venueBorrowAprAfterPct(v, 355_000) !== null);
+  // A borrow limit already at the debt refuses any amount.
+  assert.equal(venueBorrowAprAfterPct(kaminoVenue({ borrowLimitUnits: "446186304801" }), 1), null);
+  // A limit of zero is "no limit", the way klend reads it.
+  assert.ok(venueBorrowAprAfterPct(kaminoVenue({ borrowLimitUnits: "0" }), 1000) !== null);
+  // An empty pool funds nothing.
+  assert.equal(venueBorrowAprAfterPct(kaminoVenue({ availableUnits: "0", borrowedUnits: "0" }), 1), null);
 });

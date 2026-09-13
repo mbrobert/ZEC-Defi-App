@@ -125,6 +125,8 @@ changed against the proposal above.
    measured on devnet ↔ Sepolia (Stream C).
 4. **Neither burn can be mis-addressed:** the Solana Account records the user's Base account and the Base
    router records the Account's Solana USDC token account; each side's burn goes only there.
-5. Still open, as before: a `venueBorrowAprPct` input so a Base LP cell is priced against Kamino's rate
-   (the forecast, `services/yield`), and whether the keeper may run the deploy-direction `openLpOnly`
-   automatically (§14.6 — the founder's call).
+5. **Done 2026-09-13**: the forecast takes a `venueBorrow` input, so a cross-chain cell is priced against
+   **Kamino's** rate and Kamino's collateral parameters, and a borrow Kamino's pool cannot fund is refused
+   (`pool_cannot_fund`) rather than priced at an optimistic rate. `GET /v1/forecast?crossChain=1` serves it.
+   Still open: whether the keeper may run the deploy-direction `openLpOnly` automatically (§14.6 — the
+   founder's call).

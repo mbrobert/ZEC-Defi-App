@@ -144,3 +144,57 @@ test("no SOLANA_RPC_URL: the route answers kamino_unavailable and says the sourc
     assert.ok(!health.body.degraded.some((d: string) => d.startsWith("kamino")));
   });
 });
+
+test("/v1/forecast?crossChain=1: the loop's cells are priced against Kamino, refused when Kamino cannot fund the borrow, and 503 when Kamino cannot be read at all", async () => {
+  await withServer(async (dir, track) => {
+    const c = clock();
+    const server = new YieldServer(cfg(dir), { gecko: geckoOff, registry: null, kamino: kaminoStub(c), volatility: volatilityFixture(), mcCalibration: mcCalibrationDocFixture(), now: c.now });
+    const http = await server.start();
+    track(server, http);
+
+    // A Base position. This rig has no Aave source, so its borrow side is unread — which is exactly the
+    // contrast that matters: the cell is NOT priced by Kamino unless the loop is asked for.
+    const base = await get(port(http), "/v1/forecast?collateral=cbBTC&pool=aero-cbbtc-usdc&setting=sheltered");
+    assert.equal(base.status, 200);
+    assert.notEqual(base.body.cells[0].borrowVenue, "kamino");
+
+    // The same cell for a cross-chain position: Kamino's rate, Kamino's collateral parameters.
+    const cross = await get(port(http), "/v1/forecast?collateral=cbBTC&pool=aero-cbbtc-usdc&setting=sheltered&entryHf=1.625&crossChain=1");
+    assert.equal(cross.status, 200);
+    const cell = cross.body.cells[0];
+    assert.equal(cell.borrowVenue, "kamino");
+    assert.equal(cell.liquidationThresholdBps, 6500, "ZEC's liquidation threshold on the ZCASH market");
+    assert.equal(cell.venueMaxLtvBps, 4000, "Kamino's own cap");
+    assert.equal(cell.ltvAtEntryBps, 4000, "LT 65 ÷ 1.625");
+    assert.ok(cell.borrowAprNowPct > 0, "Kamino's live rate, read from its curve");
+    assert.notEqual(cell.borrowAprNowPct, base.body.cells[0].borrowAprNowPct, "a different pool, a different rate");
+    assert.equal(cell.collateralSupplyAprPct, 0, "ZEC is collateral-only on that market");
+
+    // A deposit whose borrow is larger than Kamino's pool: refused by name, and no rate is invented for it.
+    const tooBig = await get(port(http), "/v1/forecast?collateral=cbBTC&pool=aero-cbbtc-usdc&setting=sheltered&entryHf=1.625&deposit=2000000&crossChain=1");
+    assert.equal(tooBig.status, 200);
+    assert.ok(tooBig.body.cells[0].refusals.includes("pool_cannot_fund"));
+    assert.equal(tooBig.body.cells[0].allowed, false);
+    assert.equal(tooBig.body.cells[0].borrowAprAfterPct, null);
+    // …and one it can fund is priced, at a rate the borrow itself moved.
+    const fits = await get(port(http), "/v1/forecast?collateral=cbBTC&pool=aero-cbbtc-usdc&setting=sheltered&entryHf=1.625&deposit=10000&crossChain=1");
+    assert.ok(!fits.body.cells[0].refusals.includes("pool_cannot_fund"));
+    assert.ok(fits.body.cells[0].borrowAprAfterPct > fits.body.cells[0].borrowAprNowPct);
+
+    assert.equal((await get(port(http), "/v1/forecast?crossChain=maybe")).status, 400);
+  });
+});
+
+test("/v1/forecast?crossChain=1 without a Solana RPC: 503 naming why, never a Base-priced cell pretending to be the loop", async () => {
+  await withServer(async (dir, track) => {
+    const c = clock();
+    const server = new YieldServer(cfg(dir), { gecko: geckoOff, registry: null, kamino: null, volatility: volatilityFixture(), mcCalibration: mcCalibrationDocFixture(), now: c.now });
+    const http = await server.start();
+    track(server, http);
+    const r = await get(port(http), "/v1/forecast?crossChain=1");
+    assert.equal(r.status, 503);
+    assert.match(r.body.error, /Kamino/);
+    // the ordinary forecast is unaffected
+    assert.equal((await get(port(http), "/v1/forecast")).status, 200);
+  });
+});

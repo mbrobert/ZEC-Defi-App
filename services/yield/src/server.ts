@@ -44,12 +44,13 @@ import {
   CURATED_POOLS,
   ENTRY_HF_FLOOR,
   isCollateralSymbol,
+  kaminoCurveAprBps,
   type CollateralSymbol,
   type CuratedPool,
 } from "@zyo/shared";
 import { mixUserBand } from "./bands.js";
 import { loadVolatility, type VolatilityInputs, type YieldConfig } from "./config.js";
-import { evaluateForecastPool, MAX_ENTRY_HF, MIN_ENTRY_HF } from "./forecast.js";
+import { evaluateForecastPool, MAX_ENTRY_HF, MIN_ENTRY_HF, type ForecastVenueBorrow } from "./forecast.js";
 import { evaluatePool, evaluateGate } from "./gate.js";
 import { calibrationIndex, loadMcCalibration, type McCalibration, type McCalibrationCell } from "./mc-calibration.js";
 import { ENGINE_FEE_BPS, SETTINGS, type Setting } from "./model.js";
@@ -61,7 +62,7 @@ import { AERO_ADDRESS, GaugeSource, onchainToken1 } from "./sources/gauges.js";
 import { RpcClient } from "./sources/rpc.js";
 import { KaminoSource, type KaminoSample } from "./sources/kamino.js";
 import { evaluateSolanaBorrow, type SolanaBorrowView } from "./solanaBorrow.js";
-import type { AaveRatesSample, Address, EmissionsSample, ForecastCell, ForecastResponse, GateVerdict, PoolBands, PoolLiveSample, PoolPayload, PoolsResponse } from "./types.js";
+import type { AaveRatesSample, Address, EmissionsSample, ForecastCell, ForecastRefusal, ForecastResponse, GateVerdict, PoolBands, PoolLiveSample, PoolPayload, PoolsResponse } from "./types.js";
 
 /** Demo-prototype pool ids ↔ curated registry ids (the demo abbreviates). */
 export const DEMO_ID_MAP: Record<string, string> = {
@@ -508,6 +509,16 @@ export class YieldServer {
       collaterals = [collateralParam];
     }
     const rates = this.ratesForServe();
+    // ?crossChain=1 — the loop of BUILD-PLAN D6: the USDC is borrowed on Kamino and worked on Base.
+    const crossChainParam = q.get("crossChain");
+    if (crossChainParam !== null && !["1", "true", "0", "false"].includes(crossChainParam)) {
+      return { error: "crossChain must be 1 or 0", status: 400 };
+    }
+    const crossChain = crossChainParam === "1" || crossChainParam === "true";
+    const venueRead = crossChain ? this.venueBorrowForServe() : { venue: null, reason: null };
+    if (crossChain && !venueRead.venue) {
+      return { error: `a cross-chain forecast needs Kamino's pool: ${venueRead.reason}`, status: 503 };
+    }
     const pools = CURATED_POOLS.filter((p) => p.dex === "AERODROME" && (poolId === null || p.id === poolId));
     const nowSeconds = Math.floor(this.now() / 1000);
     const priceOf = (c: CollateralSymbol): number | null =>
@@ -529,6 +540,7 @@ export class YieldServer {
               entryHfFloor: floor.floor,
               depositUsd,
               collateralPriceUsd: priceOf(collateral),
+              venueBorrow: venueRead.venue,
             }).filter((c) => c.setting === setting.id)
           );
         }
@@ -562,6 +574,56 @@ export class YieldServer {
   private kaminoForServe(): (KaminoSample & { stale: boolean }) | null {
     const v = this.kaminoEntry.value;
     return v ? { ...v, stale: this.isStale(this.kaminoEntry) } : null;
+  }
+
+  /**
+   * Kamino's borrow side as the forecast consumes it for a CROSS-CHAIN position (BUILD-PLAN D6;
+   * `CROSSCHAIN-LOOP-2026-09-12.md` §6 item 1). The loan lives on Kamino, so its rate, the collateral
+   * parameters that size it and whether the pool can fund it are Kamino's — a Base LP cell priced against
+   * Base's borrow rate would be telling the user the cost of a loan they are not taking.
+   *
+   * The venue's own refusals are mapped onto the forecast's vocabulary, which already carries these meanings:
+   * a paused market or a disabled borrow is `borrow_paused`; an inactive reserve is `collateral_not_active`;
+   * a stale or out-of-band oracle is `rates_stale`; no sample at all is `rates_unavailable`. Amount-dependent
+   * refusals are NOT mapped here — the forecast computes them per cell, because every cell borrows a different
+   * amount (`venueBorrowAprAfterPct`).
+   */
+  private venueBorrowForServe(): { venue: ForecastVenueBorrow | null; reason: string | null } {
+    if (this.kamino === undefined) return { venue: null, reason: "no Solana RPC is configured, so Kamino cannot be read" };
+    const sample = this.kaminoForServe();
+    if (!sample) return { venue: null, reason: "Kamino has not been read yet" };
+    const { zec, usdc, market, scopeZec, scopeUsdc } = sample;
+    const refusals: ForecastRefusal[] = [];
+    if (market.emergencyMode || market.borrowDisabled) refusals.push("borrow_paused");
+    if (zec.status !== 0 || usdc.status !== 0) refusals.push("collateral_not_active");
+    const oracleAgeS = sample.chainTimeS - Number(scopeZec.unixTimestamp);
+    if (oracleAgeS > zec.maxAgePriceSeconds || oracleAgeS < -300) refusals.push("rates_stale");
+    const zecUsd = scopeZec.priceUsd;
+    const usdcUsd = scopeUsdc.priceUsd;
+    if (!(zecUsd >= zec.heuristicLowerUsd && zecUsd <= zec.heuristicUpperUsd)) refusals.push("rates_stale");
+    if (!(usdcUsd >= usdc.heuristicLowerUsd && usdcUsd <= usdc.heuristicUpperUsd)) refusals.push("rates_stale");
+    const supplied = usdc.availableUnits + usdc.borrowedUnits;
+    const utilBps = supplied > 0n ? Number((usdc.borrowedUnits * 10_000n) / supplied) : 0;
+    return {
+      venue: {
+        chain: "solana",
+        venue: "kamino",
+        borrowAprNowPct: Math.round(kaminoCurveAprBps(usdc.borrowRateCurve, utilBps) * 100) / 10_000,
+        // The ZCASH market's ZEC reserve is collateral-only (its borrow limit is zero), so deposited ZEC earns
+        // nothing while it sits there. Stated rather than assumed: a non-zero number here would flatter the net.
+        supplyAprPct: 0,
+        liquidationThresholdBps: zec.liquidationThresholdPct * 100,
+        venueMaxLtvBps: zec.loanToValuePct * 100,
+        availableUnits: usdc.availableUnits.toString(),
+        borrowedUnits: usdc.borrowedUnits.toString(),
+        borrowLimitUnits: usdc.borrowLimitUnits.toString(),
+        decimals: usdc.mintDecimals,
+        borrowCurve: usdc.borrowRateCurve,
+        refusals,
+        stale: sample.stale,
+      },
+      reason: null,
+    };
   }
 
   /**

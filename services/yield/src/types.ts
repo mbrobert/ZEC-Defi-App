@@ -538,6 +538,12 @@ export interface ForecastCell {
   userNetBorrowBasis: "after" | "now" | null;
   /** USDC the pool can lend right now (totalAToken − totalVariableDebt), whole units. */
   poolAvailableUsd: number | null;
+  /**
+   * Which venue the loan this cell is funded with lives on: "aave" for a Base position, "kamino" for a
+   * cross-chain one (BUILD-PLAN D6). It decides whose rate `borrowAprNowPct` is, whose liquidation threshold
+   * sized the borrow, and whose pool had to be able to fund it. Null when no venue could be read.
+   */
+  borrowVenue: "aave" | "kamino" | null;
   collateralSupplyAprPct: number | null;
 
   // --- the LP slice, priced whenever the inputs exist (the gate stops earlier) ---

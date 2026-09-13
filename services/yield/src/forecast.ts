@@ -20,7 +20,7 @@
  * new number. The gate itself is unchanged and /v1/gate still serves it.
  */
 
-import { COLLATERAL_ASSETS, ENTRY_HF_FLOOR, type CollateralSymbol, type CuratedPool } from "@zyo/shared";
+import { COLLATERAL_ASSETS, ENTRY_HF_FLOOR, kaminoCurveAprBps, type CollateralSymbol, type CuratedPool } from "@zyo/shared";
 import type { VolatilityInputs } from "./config.js";
 import { MAX_ABS_NET_PCT, MAX_EMISSIONS_APR_PCT, MIN_GATE_STAKED_SAMPLES } from "./gate.js";
 import { applyMcCalibration, type McCalibrationCell } from "./mc-calibration.js";
@@ -72,6 +72,57 @@ export interface ForecastInputs {
   depositUsd: number | null;
   /** The collateral's USD price, for the liquidation price; null when the service has none. */
   collateralPriceUsd: number | null;
+  /**
+   * A CROSS-CHAIN position (BUILD-PLAN D6; `CROSSCHAIN-LOOP-2026-09-12.md` §6 item 1): the loan is on another
+   * chain's venue — Kamino — so the rate it costs, the collateral parameters that size it and whether the pool
+   * can fund it at all are that venue's. Only the LP slice stays Base's. Absent = an ordinary Base position.
+   */
+  venueBorrow?: ForecastVenueBorrow | null;
+}
+
+/**
+ * The borrow side of a cross-chain position, as the yield service reads it from Kamino. It carries the POOL
+ * STATE rather than a single answer, because each cell borrows a different amount: the rate after this cell's
+ * own borrow is computed here, the same way Aave's is, instead of being taken on trust from the caller.
+ */
+export interface ForecastVenueBorrow {
+  chain: "solana";
+  venue: "kamino";
+  /** The borrow APR at the pool right now. */
+  borrowAprNowPct: number;
+  /** What the collateral earns at that venue while it sits there. */
+  supplyAprPct: number;
+  liquidationThresholdBps: number;
+  venueMaxLtvBps: number;
+  /** Pool state in the loan token's own units, as decimal strings (they are bigints on the wire). */
+  availableUnits: string;
+  borrowedUnits: string;
+  borrowLimitUnits: string;
+  decimals: number;
+  /** Kamino's piecewise-linear curve: (utilisation bps, APR bps). */
+  borrowCurve: readonly (readonly [number, number])[];
+  /** What the venue refuses whatever the amount — paused, stale oracle, out of band. */
+  refusals: readonly ForecastRefusal[];
+  stale: boolean;
+}
+
+/**
+ * The borrow APR at the other venue after `borrowUsd` more is borrowed, or **null when that pool cannot fund
+ * it** — which is the `pool_cannot_fund` refusal, not a rate. Null covers three ways Kamino says no: more than
+ * the reserve has available, past its borrow limit, and a utilisation the curve cannot be read at.
+ */
+export function venueBorrowAprAfterPct(v: ForecastVenueBorrow, borrowUsd: number): number | null {
+  const units = unitsOfUsd(borrowUsd, v.decimals);
+  if (units < 0n) return null;
+  const available = BigInt(v.availableUnits);
+  const borrowed = BigInt(v.borrowedUnits);
+  const limit = BigInt(v.borrowLimitUnits);
+  if (units > available) return null;
+  if (limit > 0n && borrowed + units > limit) return null;
+  const supplied = available + borrowed;
+  if (supplied <= 0n) return null;
+  const utilizationBps = Number(((borrowed + units) * 10_000n) / supplied);
+  return Math.round(kaminoCurveAprBps(v.borrowCurve, Math.min(10_000, utilizationBps)) * 100) / 10_000;
 }
 
 // ---------------------------------------------------------------------------
@@ -165,6 +216,7 @@ export function evaluateForecast(input: ForecastInputs): ForecastCell {
     borrowAprAfterPct: null,
     userNetBorrowBasis: null,
     poolAvailableUsd: null,
+    borrowVenue: null,
     collateralSupplyAprPct: null,
     lpPriced: false,
     lpUnpricedReason: null,
@@ -195,7 +247,23 @@ export function evaluateForecast(input: ForecastInputs): ForecastCell {
   let reserve: AaveReserve | null = null;
   let borrowNow: number | null = null;
   let supply: number | null = null;
-  if (!rates) refusals.push("rates_unavailable");
+  const venue = input.venueBorrow ?? null;
+  if (venue) {
+    // Cross-chain: the loan is Kamino's. Base's own rates say nothing about what it costs, so their staleness
+    // is not a refusal here — the venue's own is.
+    cell.borrowVenue = venue.venue;
+    for (const r of venue.refusals) refusals.push(r);
+    if (venue.stale) refusals.push("rates_stale");
+    borrowNow = venue.borrowAprNowPct;
+    supply = venue.supplyAprPct;
+    cell.borrowAprNowPct = borrowNow;
+    cell.collateralSupplyAprPct = supply;
+    cell.liquidationThresholdBps = venue.liquidationThresholdBps;
+    cell.venueMaxLtvBps = venue.venueMaxLtvBps;
+    const availUnits = BigInt(venue.availableUnits);
+    cell.poolAvailableUsd = Number(availUnits) / 10 ** venue.decimals;
+    disclosures.add("liquidation_at_chosen_hf");
+  } else if (!rates) refusals.push("rates_unavailable");
   else if (rates.stale) refusals.push("rates_stale");
   else {
     const r = rates.collateral[collateral];
@@ -212,25 +280,31 @@ export function evaluateForecast(input: ForecastInputs): ForecastCell {
       cell.venueMaxLtvBps = r.ltvBps;
       const avail = availableUnits(rates.borrow);
       cell.poolAvailableUsd = Number(avail) / 10 ** rates.borrow.decimals;
+      cell.borrowVenue = "aave";
       disclosures.add("liquidation_at_chosen_hf");
     }
   }
 
   // ---- 2. The position at the chosen HF ---------------------------------------
   let borrowAfter: number | null = null;
-  if (reserve && rates && !rates.stale) {
-    const { ltvAtEntryBps } = hfIdentity(reserve.liquidationThresholdBps, entryHf);
+  const ltBps = venue ? venue.liquidationThresholdBps : (reserve?.liquidationThresholdBps ?? null);
+  const maxLtvBps = venue ? venue.venueMaxLtvBps : (reserve?.ltvBps ?? null);
+  if (ltBps !== null && maxLtvBps !== null && (venue !== null || (rates !== null && !rates.stale))) {
+    const { ltvAtEntryBps } = hfIdentity(ltBps, entryHf);
     cell.ltvAtEntryBps = ltvAtEntryBps;
     let cap: ForecastBindingCap = entryHf === entryHfFloor ? "entry_hf_floor" : "chosen_hf";
-    if (ltvAtEntryBps > reserve.ltvBps) {
+    if (ltvAtEntryBps > maxLtvBps) {
       refusals.push("venue_ltv_exceeded");
       cap = "venue_max_ltv";
     }
     if (depositUsd !== null) {
       const borrowUsd = (depositUsd * ltvAtEntryBps) / 10_000;
       cell.borrowUsd = round2(borrowUsd);
-      const units = unitsOfUsd(borrowUsd, rates.borrow.decimals);
-      const after = aaveBorrowAprAfterPct(rates.borrowCurve, rates.borrow, units);
+      // Whose pool has to fund it: Kamino's for a cross-chain position, Aave's otherwise. Either way a pool
+      // that cannot is a REFUSAL, never a priced cell with an optimistic rate.
+      const after = venue
+        ? venueBorrowAprAfterPct(venue, borrowUsd)
+        : aaveBorrowAprAfterPct(rates!.borrowCurve, rates!.borrow, unitsOfUsd(borrowUsd, rates!.borrow.decimals));
       if (after === null) {
         refusals.push("pool_cannot_fund");
         cap = "pool_liquidity";
