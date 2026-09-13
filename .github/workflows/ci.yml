@@ -393,3 +393,57 @@ jobs:
         run: npm run build -w @zyo/shared
       - name: Ladder seam (generated/ladder.rs == packages/shared)
         run: npm test -w @zyo/solana
+
+  # The Solana program with the real toolchain (2026-09-13): Rust 1.98.1 (the version the program was first
+  # built with, solana/SETUP.md), Agave 4.2.2 from release.anza.xyz, anchor-cli 1.2.0 from crates.io (the
+  # `solana-foundation/anchor` GitHub repository redirects today, so the crate is the stable source). Proves:
+  # the generated constants equal packages/shared, `anchor build` compiles both programs, the host unit tests
+  # pass, and the COMMITTED IDL (solana/idl, which the keeper's 77-check seam is pinned to) equals the build.
+  # The localnet specs (26) are NOT run here: they clone the ZCASH market from mainnet through a public RPC
+  # that rate-limits a runner; solana/SETUP.md is the way to run them. Cold run ≈ 25 min (anchor-cli compile);
+  # warm runs reuse the cargo and anchor caches.
+  solana-program:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install shared + solana workspaces
+        run: npm install -w @zyo/shared -w @zyo/solana
+      - name: Build shared
+        run: npm run build -w @zyo/shared
+      - name: Generated constants equal packages/shared (ladder + addresses)
+        run: node solana/scripts/gen-ladder.mjs --check && node solana/scripts/gen-addresses.mjs --check
+      - name: Rust 1.98.1
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: solana -> target
+          cache-on-failure: true
+      - name: Solana CLI (Agave 4.2.2)
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/v4.2.2/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+      - name: Cache anchor-cli 1.2.0
+        id: anchor-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/anchor
+          key: anchor-cli-1.2.0-${{ runner.os }}-rust-1.98.1
+      - name: Install anchor-cli 1.2.0 (crates.io)
+        if: steps.anchor-cache.outputs.cache-hit != 'true'
+        run: cargo install anchor-cli --version 1.2.0 --locked
+      - name: Versions
+        run: rustc --version && solana --version && anchor --version
+      - name: anchor build (oilskin + mock_scope)
+        working-directory: solana
+        run: anchor build
+      - name: Program host unit tests (health.rs, keeper_protect.rs)
+        working-directory: solana
+        run: cargo test --manifest-path programs/oilskin/Cargo.toml --lib
+      - name: Committed IDL equals the build (solana/idl — the keeper's seam is pinned to it)
+        run: node solana/scripts/sync-idl.mjs --check

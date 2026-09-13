@@ -3,6 +3,20 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-13 — CI builds the Solana program with the real toolchain; the Squads hand-over is a read-only check
+
+- **`solana-program` CI job**: Rust 1.98.1, Agave 4.2.2, anchor-cli 1.2.0 (crates.io); proves the generated
+  ladder and address constants equal `packages/shared`, both programs compile, the 7 host unit tests pass, and
+  the committed `solana/idl/*.json` (the keeper's 77-check seam is pinned to it) equals the build. Caches cargo
+  and the anchor binary; the localnet specs remain a local run because they clone mainnet through a
+  rate-limited public RPC.
+- **`solana/scripts/authority.mjs`** (zero dependencies, read-only): decodes the BPF upgradeable loader's
+  Program → ProgramData → authority chain, checks a Squads v4 vault exists and is system-owned (refuses an absent
+  account so a typo cannot become the authority), prints the exact `solana program set-upgrade-authority …
+  --skip-new-upgrade-authority-signer-check` command for the founder and exits 2 while pending, 0 once done.
+  `docs/SOLANA-DEPLOY.md` (deploy → verify → hand over → upgrade through the multisig) and a Solana table in
+  `DEPLOYMENTS.md`. +5 Solana seam tests (12). Squads v4's program read live: immutable.
+
 ## 2026-09-13 — Solana B5, part 1: the yield service reads Kamino's ZCASH market and shows the rate after the borrow
 
 - **`/v1/solana/borrow`** (`services/yield/src/sources/kamino.ts`, `src/solanaBorrow.ts`; `SOLANA-ARCHITECTURE.md`

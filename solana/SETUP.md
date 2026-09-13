@@ -94,6 +94,14 @@ and logs as such: on mainnet the keeper needs Jupiter's quote to agree with Scop
 full variable list is in `agent/src/solana/config.ts`. `tests/keeper.spec.ts` does exactly this in-process
 (five ticks, a generated key under `fixtures/local-keeper.json`), so the spec is the worked example.
 
+## Deploying, and handing the upgrade authority to Squads
+
+`docs/SOLANA-DEPLOY.md` is the runbook (the founder signs; the repository only reads). Two read-only checks any
+shell can run: `node scripts/sync-idl.mjs --check` (the committed IDL equals the build) and
+`node scripts/authority.mjs --program <id> [--expect <squads vault>]` (who holds the upgrade authority, and the
+exact hand-over command when it is still the deployer). CI's `solana-program` job builds both programs with the
+real toolchain on every push (`.github/workflows/ci.yml`).
+
 ## Key hygiene (the rules in `CLAUDE.md`, applied here)
 
 - `target/deploy/*-keypair.json`, `~/.config/solana/`, `fixtures/*.json` are never committed and never read

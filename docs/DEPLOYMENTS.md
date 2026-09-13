@@ -51,6 +51,23 @@ Chainlink BTC/USD `0x0FB99723Aee6f420beAD13e6bBB79b7E6F034298`, ETH/USD
 Permit2 `0x000000000022D473030F116dDEE9F6B43aC78BA3`. These are in `packages/shared` `CHAINS[84532]`
 and are never typed into an env file.
 
+## Solana mainnet-beta — the Oilskin program (nothing deployed yet; `SOLANA-DEPLOY.md` is the runbook)
+
+| Key | Value | Where it comes from |
+|---|---|---|
+| cluster | mainnet-beta | fixed |
+| programId | | the keypair `anchor keys sync` bound (`target/deploy/oilskin-keypair.json`, never committed); `Gw2UE3MixYgA8c7nLZC9UF2z3z5dWfzrFW7ESmi5Scog` on the founder's localnet |
+| programData | | `node solana/scripts/authority.mjs --program <id>` |
+| deployedAtSlot / deployedAtUtc | | the same script's "last deploy slot"; the wall clock, ISO 8601 |
+| deployer | | the key `anchor deploy --provider.wallet` used (the upgrade authority until the hand-over) |
+| idlCommit | | the commit whose `solana/idl/oilskin.json` equals the deployed build (`sync-idl.mjs --check`) |
+| auditReport | | decision 7: the report on that commit, before this row is filled |
+| squadsMultisig | | the Squads v4 multisig config account (from the Squads app) |
+| squadsVault | | the vault PDA that signs as the multisig — the upgrade authority after the hand-over |
+| squadsThreshold / squadsMembers | | m of n (numbers only; no names here) |
+| handoverTxSignature | | the `set-upgrade-authority` transaction; `authority.mjs --expect <vault>` prints DONE afterwards |
+| keeperPubkey | | the keeper's Solana key, when one exists (observe-only has none) |
+
 ## Base mainnet (chain id 8453)
 
 Not deployed. No section is added here until the founder deploys with `contracts/script/Deploy.s.sol`
