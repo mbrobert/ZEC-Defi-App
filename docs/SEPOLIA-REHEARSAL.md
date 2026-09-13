@@ -32,8 +32,16 @@ provision; RPC = remote procedure call.
 ### The feed bounds the keeper will derive (computed by the keeper's own code, 2026-09-12)
 
 `node scripts/sepolia-feed-policy.mjs` — `agent/src/engine/feeds.ts` `buildFeedPolicies` against
-the live aggregators at block **46,734,590** (18:24:28 UTC), the keeper's defaults (6 rounds,
-slack × 2, floor 300 s, fallback 10,800 s):
+the live aggregators at block **46,734,590** (18:24:28 UTC), the keeper's defaults **as they were on
+2026-09-12** (6 rounds, slack × 2, floor 300 s, fallback 10,800 s):
+
+> **The probe changed on 2026-09-13 (finding FEED-MED-1): the bound is measured over a 24-hour
+> WINDOW of rounds, capped at 120 reads, not over six rounds.** Six rounds sampled in an active
+> market contain only deviation-driven gaps, so the bound could land under a feed's own heartbeat.
+> The measurement below stands as a record of that day; the bounds it derives are superseded.
+> Re-read 2026-09-13 at block 46,782,519: **cbBTC/USD and WETH/USD 2,464 s** (a 1,232 s heartbeat
+> inside the window, 101 and 113 rounds read), **USDC/USD 172,824 s** (86,412 s, two rounds) — every
+> row `probe`, none `probe-short`.
 
 | Keeper symbol | Sepolia feed | Gaps observed, newest first (s) | Max gap (s) | **Bound enforced (s)** | Round age at read (s) |
 |---|---|---|---|---|---|

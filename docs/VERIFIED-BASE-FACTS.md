@@ -833,6 +833,14 @@ aggregators, before any deployment exists there (`scripts/sepolia-feed-policy.mj
 historical rounds per feed read with `cast` first (`getRoundData`), then the keeper's six-round
 window through its own code. Nothing was signed.
 
+> **The probe changed on 2026-09-13 (finding FEED-MED-1): the bound is measured over a 24-hour
+> WINDOW of rounds, capped at 120 reads, not over six rounds.** Six rounds sampled in an active
+> market contain only deviation-driven gaps, so the bound could land under a feed's own heartbeat.
+> The measurement below stands as a record of that day; the bounds it derives are superseded.
+> Re-read 2026-09-13 at block 46,782,519: **cbBTC/USD and WETH/USD 2,464 s** (a 1,232 s heartbeat
+> inside the window, 101 and 113 rounds read), **USDC/USD 172,824 s** (86,412 s, two rounds) — every
+> row `probe`, none `probe-short`.
+
 | Feed (keeper symbol) | Address | Latest at the read | Gaps between the last 10 rounds (s, newest first) | Keeper's 6-round window: max gap → bound (× 2, floor 300) |
 |---|---|---|---|---|
 | BTC / USD (cbBTC) | `0x0FB99723Aee6f420beAD13e6bBB79b7E6F034298` | 77,172.94 at 18:05:32 UTC | 1222, 1230, 542, 1230, 1222, 1220, 1222, 1230, 1212, 1220 | 1,230 → **2,460 s** |
