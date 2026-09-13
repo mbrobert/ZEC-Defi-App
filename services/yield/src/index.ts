@@ -13,10 +13,10 @@ const server = new YieldServer(cfg);
 
 const httpServer = await server.start();
 console.log(
-  `oilskin yield api listening on :${cfg.port} — /healthz /v1/pools /v1/rates /v1/gate /v1/band /v1/forecast`
+  `oilskin yield api listening on :${cfg.port} — /healthz /v1/pools /v1/rates /v1/gate /v1/band /v1/forecast /v1/solana/borrow`
 );
 console.log(
-  `sources: gecko(live) aave(${AAVE_V3.poolDataProvider}) gauges(${cfg.baseRpcUrl ? "rpc" : cfg.blockscoutKey ? "blockscout" : "OFF — set BASE_RPC_URL"}) bands(${cfg.dataDir}/bands.json)`
+  `sources: gecko(live) aave(${AAVE_V3.poolDataProvider}) gauges(${cfg.baseRpcUrl ? "rpc" : cfg.blockscoutKey ? "blockscout" : "OFF — set BASE_RPC_URL"}) bands(${cfg.dataDir}/bands.json) kamino(${cfg.solanaRpcUrl ? "solana-rpc" : "OFF — set SOLANA_RPC_URL"})`
 );
 
 for (const sig of ["SIGINT", "SIGTERM"] as const) {

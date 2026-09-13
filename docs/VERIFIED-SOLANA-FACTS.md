@@ -312,3 +312,56 @@ Solana-side reserve for exactly that reason (`CROSSCHAIN-LOOP-2026-09-12.md` §3
 3. The upgrade authorities of the two CCTP programs and the admins of the Base proxies.
 4. Whether Base's `TokenMinterV2` maps Solana USDC (`EPjF…Dt1v`) as domain 5's remote token
    (`remoteTokensToLocalTokens`) — a read, not yet done.
+
+## Addendum 2 (2026-09-13 02:42 UTC, slot 446,591,426) · klend byte offsets, the LendingMarket flags, Squads Protocol v4
+
+Read live from `api.mainnet-beta.solana.com`; the offsets computed from klend-sdk 12.0.0's borsh layouts
+(`Reserve.layout.offsetOf`, `ReserveConfig.layout().offsetOf`, …) and checked byte for byte against the
+2026-09-12 capture (slot 446,506,191, `services/yield/test/fixtures/solana-mainnet-2026-09-12.json`, the same
+bytes `agent/test/fixtures/solana/` holds) and the LendingMarket read here. `services/yield/src/sources/kamino.ts`
+and `agent/src/solana/layouts.ts` decode at these offsets; both are pinned to the captures.
+
+| `Reserve` (8,624 bytes; discriminator sha256("account:Reserve")[..8]) | Offset | Type |
+|---|---|---|
+| `lastUpdate.slot` / `.stale` / `.priceStatus` | 16 / 24 / 25 | u64 / u8 / u8 |
+| `lendingMarket` | 32 | pubkey |
+| `liquidity.mintPubkey` / `.totalAvailableAmount` / `.borrowedAmountSf` / `.marketPriceSf` / `.mintDecimals` | 128 / 224 / 232 / 248 / 272 | pubkey / u64 / u128 (2^60) / u128 / u64 |
+| `collateral.mintTotalSupply` | 2,592 | u64 |
+| `config.status` / `.loanToValuePct` / `.liquidationThresholdPct` | 4,856 / 4,872 / 4,873 | u8 |
+| `config.borrowRateCurve` | 4,920 | 11 × { utilizationRateBps u32, borrowRateBps u32 } |
+| `config.borrowFactorPct` / `.depositLimit` / `.borrowLimit` | 5,008 / 5,016 / 5,024 | u64 |
+| `config.tokenInfo.name` / `.heuristic {lower, upper, exp}` / `.maxTwapDivergenceBps` / `.maxAgePriceSeconds` / `.maxAgeTwapSeconds` | 5,032 / 5,064 · 5,072 · 5,080 / 5,088 / 5,096 / 5,104 | [u8;32] / u64 ×3 / u64 / u64 / u64 |
+| `config.tokenInfo.scopeConfiguration {priceFeed, priceChain[4], twapChain[4]}` | 5,112 / 5,144 / 5,152 | pubkey / u16 ×4 / u16 ×4 (65535 = unused) |
+| `config.depositWithdrawalCap` / `.debtWithdrawalCap` — `{configCapacity i64, currentTotal i64, lastIntervalStartTimestamp u64, configIntervalLengthSeconds u64}` | 5,416 / 5,448 | 32 bytes each |
+| `config.utilizationLimitBlockBorrowingAbovePct` / `.borrowLimitOutsideElevationGroup` | 5,501 / 5,504 | u8 / u64 |
+
+| `LendingMarket` (4,664 bytes; discriminator `f6 72 32 62 48 9d 1c 78`) | Offset |
+|---|---|
+| `lendingMarketOwner` | 24 |
+| `emergencyMode` / `autodeleverageEnabled` / `borrowDisabled` | 122 / 123 / 124 |
+
+Scope `OraclePrices` (28,712 bytes): entry *i* at 40 + 56·*i* — `price.value u64`, `price.exp u64`,
+`lastUpdatedSlot u64`, `unixTimestamp u64`.
+
+**Values at the 2026-09-12 capture (slot 446,506,191), decoded by SDK and by offset alike:** USDC available
+355,599.950997, borrowed 446,186.304801 (`borrowedAmountSf` 514417785866375382064880048244), utilisation
+55.65 %, curve APR **3.4199 %**; debt-withdrawal cap current total 3,622.993258 USDC in the window; ZEC supplied
+1,202.60719100, deposit-withdrawal cap current total **−111.01606145 ZEC**; heuristics ZEC `4000 / 20000 / exp 1`
+($400–$2,000) and USDC `98 / 102 / exp 2` ($0.98–$1.02); max TWAP divergence 1,000 / 300 bps; Scope chains
+[430, 65535…] / [13, 65535…], TWAP [429…] / [456…]. **LendingMarket at slot 446,591,426:** owner
+`A11EznxnJM3JrjUvAq16wqoVyPRNz522mdQm6mSmzMeR`, `emergencyMode` 0, `autodeleverageEnabled` 0, `borrowDisabled` 0.
+
+**What the negative counter settles.** klend's `deposit_withdrawal_cap` accumulates **withdrawals** of
+deposits per interval and deposits subtract from it (hence −111 ZEC after a day of net deposits);
+`debt_withdrawal_cap` accumulates **borrows** and repayments subtract. Deposits are bounded by `depositLimit`
+alone; borrows by `borrowLimit` and the 1,000,000 USDC / 86,400 s cap; withdrawals by the 3,000 ZEC / 86,400 s
+cap. The earlier reading of the 3,000 ZEC cap as a deposit cap (SOLANA-ARCHITECTURE.md §7, first draft) was
+wrong and is corrected there.
+
+**Squads Protocol v4 (the multisig the program's upgrade authority goes to, §12 (2)).** Program
+`SMPLecH534NA9acpos4G6x7uf3LWbCAwZQE9e8ZekMu`: `executable`, owner the BPF upgradeable loader; its
+`ProgramData` `Q1xCTDDfdfB4jk2Wicw1HdutFVdRik5LMKYMcZdT2rU`, last deploy slot 178,977,035, **upgrade authority
+NONE — the program is immutable.** Read 2026-09-13 02:42 UTC. What it settles: the multisig program itself cannot
+be changed under a vault that holds our upgrade authority. Not read here: the multisig and vault PDA seeds;
+the hand-over script (`solana/scripts/authority.mjs`) checks a vault by its owner program on chain, not by
+re-deriving seeds.

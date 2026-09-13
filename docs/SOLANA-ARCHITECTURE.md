@@ -272,29 +272,61 @@ The keeper and the web select every address by **network**, never by a fallback:
 `SupportedChainId` (8453 | 84532) gains a sibling `SolanaCluster` ("mainnet-beta" | "localnet"); a localnet
 table exists only so the harness cannot silently read mainnet.
 
-## 7 · The pool-size gate (yield service)
+## 7 · The pool view and the rate after this borrow (yield service) — built 2026-09-13
 
-Base's yield gate answers "does this pool clear the borrow rate?" Solana's question is "can this pool fund this
-borrow at a rate below the threshold, without the borrower *becoming* the market?" — fail-closed, live inputs,
-same shape as `gate.ts`.
+Base's yield service asked "does this pool clear the borrow rate?"; under BUILD-PLAN-2026-09-12 D4/D5 nothing
+is gated on profitability any more. Solana's question is therefore the honest one: **what does this borrow do
+to the pool, and to the rate the depositor will pay** — shown live, with the slot — and the only refusals are
+the venue's own safety conditions, the ones klend would refuse too.
 
-New source `services/yield/src/sources/kamino.ts`: strict byte decode of the USDC reserve (available,
-borrowed, total supply, curve points, borrow limit, 24-h caps, `status`, `borrowDisabled`), the ZEC reserve (LT,
-LTV, deposit limit, remaining cap, oracle max ages), and Scope 430/13 (price, age). `sampledAt` only; `stale` is
-serve-time. New verdict `evaluateSolanaBorrowGate({ amountUsdc, collateralZec })` with reasons added to
-`GateReason`:
+**Source** `services/yield/src/sources/kamino.ts` (zero dependencies, like the rest of the service): one
+`getMultipleAccounts` reads the LendingMarket, both reserves and Scope `OraclePrices` at `confirmed`, then
+`getBlockTime` for the chain time of that slot. Strict byte decode at offsets computed from klend-sdk 12.0.0's
+borsh layouts and checked against two mainnet captures (`VERIFIED-SOLANA-FACTS.md` Addendum 2): the market's
+`emergencyMode` / `borrowDisabled` / owner; per reserve the status, LTV, LT, the 11-point borrow curve
+(deduplicated, checked sorted and spanning 0–100 %), deposit and borrow limits, both `WithdrawalCaps`, the
+utilisation block, the token-info heuristic band and max ages, the Scope feed and chain; Scope entries 430 and
+13 with their timestamps. A wrong size, discriminator, market, mint, Scope feed or Scope chain is refused, never
+misread. `SOLANA_RPC_URL` turns it on; the refresh cadence and `staleAfterMs` are the service's.
 
-| Reason | Rule (today's numbers) |
+**View** `services/yield/src/solanaBorrow.ts` `evaluateSolanaBorrow({ collateralZec?, amountUsdc?, entryHf? })`,
+served at **`GET /v1/solana/borrow[?collateral=<ZEC>&amount=<USDC>&entryHf=<hf>]`**:
+
+| Shown (never a refusal — D4) | From |
 |---|---|
-| `venue_paused` / `borrow_disabled` | reserve status ≠ 0 or market `borrowDisabled` |
-| `deposit_cap_reached` | `collateralZec` > remaining deposit limit (13,000 − 1,192 ZEC) or > remaining 24-h cap |
-| `pool_depth_insufficient` | `amountUsdc` > available − reserve buffer (available $358,199) |
-| *(shown, not a refusal — decision 4)* `projectedBorrowAprPct` | `kaminoCurveAprBps(curve, utilAfter)`: the rate the depositor will pay after this borrow (+$84 K takes it past Base's Aave rate today); displayed beside the amount |
-| *(shown, not a refusal — decision 4)* `poolSharePct` | the account's share of the pool's debt after the borrow (one obligation is 58.8 % today) |
-| `rates_stale` / `oracle_stale` | as on Base |
+| `borrowAprNowPct`, `utilizationNowPct` | the curve at borrowed ÷ (available + borrowed) |
+| `borrowAprAfterPct`, `utilizationAfterPct`, `poolSharePctAfter` | the curve re-priced with this borrow added — +$84 K takes today's pool past Base's Aave rate (facts file) |
+| `poolAvailableUsdc`, `remainingBorrowLimitUsdc`, `remaining24hBorrowUsdc`, `maxFundableUsdc` | liquidity, the 2 M borrow limit, the per-interval borrow cap; the minimum is what this pool can lend to anyone right now |
+| `ltvCapBps` 4000, `liquidationThresholdBps` 6500, `hfAtVenueCap` 1.625 | the reserve's own config |
+| `borrowAtChosenHfUsdc`, `borrowAtVenueCapUsdc`, `borrowAtFloorUsdc`, `borrowSuggestedUsdc`, `bindingCap` | the identity debt = collateral × LT ÷ HF; the proposal is the chosen HF (else the floor) inside Kamino's cap and the pool's depth, and `bindingCap` names which one decided (`chosen_hf` / `entry_hf_floor` / `venue_max_ltv` / `pool_liquidity` / `borrow_limit` / `borrow_cap_24h`) |
+| `hfAtEntry`, `ltvAtEntryBps`, `liquidationPriceUsd`, `drawdownToLiquidationPct` | for the typed or suggested borrow |
+| `remainingDepositZec`, `remaining24hWithdrawZec` | the 13,000 ZEC deposit limit; the per-interval WITHDRAWAL cap an exit would meet |
+| `zecPriceUsd`, `usdcPriceUsd`, `oracleAgeS`, `oracleMaxAgeS` | Scope, with its age against the reserve's 180 s |
 
-Served at `/v1/solana/gate`; the web refuses to offer an amount the gate refused and shows the reason in plain
-words. The projection table in `VERIFIED-SOLANA-FACTS.md` is what this code recomputes live.
+| Refusal (safety only — §2 of the plan) | Rule |
+|---|---|
+| `kamino_unavailable` / `kamino_stale` | no sample, or one past `staleAfterMs` — and then NO number is served from it |
+| `venue_paused` / `borrow_disabled` / `reserve_not_active` | market `emergencyMode`, market `borrowDisabled`, reserve `status` ≠ 0 |
+| `oracle_stale` / `oracle_out_of_band` | Scope 430 older than the reserve's max age at the sample's chain time; ZEC or USDC outside the reserve's own heuristic band ($400–$2,000; $0.98–$1.02) |
+| `pool_cannot_fund` / `borrow_limit_reached` / `borrow_cap_24h_reached` / `utilization_limit_reached` | amount > available; borrowed + amount > borrow limit; amount > the interval's remaining cap (reset once the interval has passed, as klend does); utilisation after > the block (off today) |
+| `deposit_limit_reached` | supplied + collateral > the deposit limit |
+| `entry_hf_below_floor` / `venue_ltv_exceeded` | HF at the typed amount under the floor the program enforces; amount above Kamino's LTV cap |
+
+The disclosures ride with the view by id (`bridged_zec`, `kamino_parameters_mutable`, `usdc_freezable`,
+`program_exit_only`, `borrow_rate_moves`, `liquidation_at_chosen_hf`, `forecast_not_advice`); the words are
+the web's (§8, copy rules). `/healthz` carries the Kamino sample's slot and staleness, or `not_configured`.
+
+**A correction the bytes forced.** klend's `deposit_withdrawal_cap` counts **withdrawals** of deposits per
+interval (deposits subtract — the ZEC reserve's counter reads −111 ZEC after a day of net deposits) and
+`debt_withdrawal_cap` counts **borrows** (repayments subtract). So a deposit is bounded by the deposit limit
+alone, a borrow by the borrow limit AND the 1 M USDC per day cap, and an exit by the 3,000 ZEC per day cap
+— which the view now reports for the close, not for the open.
+
+Tests: `services/yield/test/kamino.test.ts` (8: the captures decode to the facts file; every refusal of a wrong
+buffer; the source's two calls with owners checked), `solana-borrow.test.ts` (6: the projection table
+recomputed, the identity with the cap named, klend's limits and caps, every safety refusal),
+`solana-route.test.ts` (4: the route, 400s, serve-time staleness and the kept last good sample, not
+configured). The web flow (§8) consumes this route.
 
 ## 8 · The deposit flow and what it must say (web, Simple mode; Advanced adds the choices)
 

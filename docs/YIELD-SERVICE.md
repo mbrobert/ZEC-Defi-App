@@ -189,6 +189,7 @@ signature in the test suite. After any engine upgrade run
 #   BASE_RPC_URL=…            # any Base RPC url — needed for Aave rates + gauges
 #   BLOCKSCOUT_PRO_API_KEY=…  # optional; enables decoded-transfer receipts + verify-events
 #   COLLATERAL_REGISTRY_ADDRESS=…  # optional; when set, /v1/forecast judges the entry floor from the registry (else shared's, said)
+#   SOLANA_RPC_URL=…               # optional; when set, Kamino's ZCASH market is sampled and /v1/solana/borrow served (else it says not configured)
 
 set -a; . ./.env; set +a
 
@@ -199,6 +200,9 @@ npm run yield                  # serve http://127.0.0.1:8787
 ```
 
 Endpoints: `/healthz`, `/v1/pools`, `/v1/rates`, `/v1/gate[?pool=&setting=&collateral=]`,
+`/v1/solana/borrow[?collateral=<ZEC>&amount=<USDC>&entryHf=]` (since 2026-09-13: Kamino's ZCASH market as it
+is and what a borrow does to it — `src/sources/kamino.ts`, `src/solanaBorrow.ts`, `SOLANA-ARCHITECTURE.md` §7;
+refusals are safety only, the rate after the borrow is shown),
 `/v1/band?ltv=0.40&mix=aweth,acbbtc&collateral=cbBTC`, and since 2026-09-12
 `/v1/forecast[?collateral=&entryHf=&deposit=&pool=&setting=]` — the forecast
 (`src/forecast.ts`): every pool × setting at the chosen entry health factor, both

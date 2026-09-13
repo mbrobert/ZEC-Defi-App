@@ -24,6 +24,12 @@ export interface YieldConfig {
    * is served and the payload says so (`entryHfFloorSource: "shared"`).
    */
   collateralRegistry?: string;
+  /**
+   * A Solana JSON-RPC endpoint (`SOLANA_RPC_URL`). When set, the server samples Kamino's ZCASH market
+   * (`sources/kamino.ts`) on the refresh cadence and serves `/v1/solana/borrow` (SOLANA-ARCHITECTURE.md §7);
+   * unset, that route answers `kamino_unavailable` and says the source is not configured.
+   */
+  solanaRpcUrl?: string;
   port: number;
   /** Where backfill JSONL + state live. */
   dataDir: string;
@@ -96,8 +102,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): YieldConfig {
   if (collateralRegistry !== undefined && !/^0x[0-9a-f]{40}$/.test(collateralRegistry)) {
     throw new ConfigError("COLLATERAL_REGISTRY_ADDRESS", "not an address");
   }
+  const solanaRpcUrl = opt(env, "SOLANA_RPC_URL");
+  if (solanaRpcUrl !== undefined && !/^https?:\/\//.test(solanaRpcUrl)) throw new ConfigError("SOLANA_RPC_URL", "must be an http(s) URL");
   return {
     baseRpcUrl: opt(env, "BASE_RPC_URL"),
+    solanaRpcUrl,
     blockscoutKey: opt(env, "BLOCKSCOUT_PRO_API_KEY"),
     engineVault: vault,
     collateralRegistry,

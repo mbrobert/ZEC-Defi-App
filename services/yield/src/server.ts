@@ -59,6 +59,8 @@ import { BlockscoutSource } from "./sources/blockscout.js";
 import { GeckoSource } from "./sources/gecko.js";
 import { AERO_ADDRESS, GaugeSource, onchainToken1 } from "./sources/gauges.js";
 import { RpcClient } from "./sources/rpc.js";
+import { KaminoSource, type KaminoSample } from "./sources/kamino.js";
+import { evaluateSolanaBorrow, type SolanaBorrowView } from "./solanaBorrow.js";
 import type { AaveRatesSample, Address, EmissionsSample, ForecastCell, ForecastResponse, GateVerdict, PoolBands, PoolLiveSample, PoolPayload, PoolsResponse } from "./types.js";
 
 /** Demo-prototype pool ids ↔ curated registry ids (the demo abbreviates). */
@@ -134,6 +136,9 @@ export class YieldServer {
   /** The registry's entry floor, read with the rates (A4.4); absent = no registry configured. */
   private readonly registry?: RegistrySource;
   private floor: CacheEntry<EntryHfFloorSample> = { value: null, at: 0 };
+  /** Kamino's ZCASH market (SOLANA_RPC_URL); absent = the Solana route says so. */
+  private readonly kamino?: KaminoSource;
+  private kaminoEntry: CacheEntry<KaminoSample> = { value: null, at: 0 };
   private readonly now: () => number;
 
   constructor(
@@ -144,6 +149,8 @@ export class YieldServer {
       gauges?: GaugeSource;
       /** The registry floor source; null = none (tests), undefined = build one from the config when it names a registry. */
       registry?: RegistrySource | null;
+      /** The Kamino source; null = none (tests), undefined = build one when the config names a Solana RPC. */
+      kamino?: KaminoSource | null;
       volatility?: VolatilityInputs;
       /** MC calibration of the closed form; null = every cell refuses (fail closed). */
       mcCalibration?: McCalibration | null;
@@ -168,6 +175,7 @@ export class YieldServer {
           ? new RegistrySource(rpc, cfg.collateralRegistry as Address, this.now)
           : undefined
         : (deps.registry ?? undefined);
+    this.kamino = deps?.kamino === undefined ? (cfg.solanaRpcUrl ? new KaminoSource(cfg.solanaRpcUrl, this.now) : undefined) : (deps.kamino ?? undefined);
     this.volatility = deps?.volatility ?? loadVolatility(join(cfg.samplesDir, VOLATILITY_FILE));
     this.mcCalibration =
       deps?.mcCalibration !== undefined
@@ -240,6 +248,15 @@ export class YieldServer {
           this.floor = { value: await this.registry.entryHfFloor(), at: this.now() };
         } catch (e) {
           this.floor = { ...this.floor, error: (e as Error).message };
+        }
+      }
+
+      // Kamino rides the same cadence; a failed read keeps the last good sample (stale past staleAfterMs).
+      if (!deadline.aborted && this.kamino) {
+        try {
+          this.kaminoEntry = { value: await this.kamino.sample(), at: this.now() };
+        } catch (e) {
+          this.kaminoEntry = { ...this.kaminoEntry, error: (e as Error).message };
         }
       }
 
@@ -539,6 +556,44 @@ export class YieldServer {
     };
   }
 
+  private kaminoForServe(): (KaminoSample & { stale: boolean }) | null {
+    const v = this.kaminoEntry.value;
+    return v ? { ...v, stale: this.isStale(this.kaminoEntry) } : null;
+  }
+
+  /**
+   * GET /v1/solana/borrow[?collateral=<ZEC>&amount=<USDC>&entryHf=<hf>] — Kamino's ZCASH market as it is, and
+   * what a borrow would do to it (SOLANA-ARCHITECTURE.md §7, BUILD-PLAN D4/D5: refusals are safety only).
+   */
+  private solanaBorrowPayload(url: URL): (SolanaBorrowView & Record<string, unknown> & { status?: number }) | (Record<string, unknown> & { status: number }) {
+    const q = url.searchParams;
+    const num = (name: string, max: number): number | null | "bad" => {
+      const raw = q.get(name);
+      if (raw === null) return null;
+      const n = Number(raw);
+      return Number.isFinite(n) && n > 0 && n <= max ? n : "bad";
+    };
+    const collateralZec = num("collateral", 1e9);
+    if (collateralZec === "bad") return { error: "collateral must be a positive amount of ZEC", status: 400 };
+    const amountUsdc = num("amount", 1e12);
+    if (amountUsdc === "bad") return { error: "amount must be a positive amount of USDC", status: 400 };
+    const entryHfParam = q.get("entryHf");
+    const entryHf = entryHfParam === null ? null : Number(entryHfParam);
+    if (entryHf !== null && !(Number.isFinite(entryHf) && entryHf >= MIN_ENTRY_HF && entryHf <= MAX_ENTRY_HF)) {
+      return { error: `entryHf must be a number in [${MIN_ENTRY_HF}, ${MAX_ENTRY_HF}]`, status: 400 };
+    }
+    const floor = this.entryHfFloorForServe();
+    const view = evaluateSolanaBorrow({ sample: this.kaminoForServe(), collateralZec, amountUsdc, entryHf, entryHfFloor: floor.floor });
+    return {
+      ...view,
+      configured: this.kamino !== undefined,
+      entryHfFloorSource: floor.source,
+      entryHfFloorReadAt: floor.readAt,
+      generatedAt: new Date(this.now()).toISOString(),
+      methodologyUrl: "https://github.com/mbrobert/ZEC-Defi-App/blob/main/docs/SOLANA-ARCHITECTURE.md",
+    };
+  }
+
   private bandPayload(url: URL): Record<string, unknown> & { status?: number } {
     const ltv = Number(url.searchParams.get("ltv"));
     // Lower bound 0.01: an ltv like 1e-300 is either a typo or a probe, and
@@ -635,6 +690,11 @@ export class YieldServer {
     if (live.fresh === 0 && live.total > 0) degraded.push("live_samples_stale");
     if (emissions.fresh === 0 && emissions.total > 0) degraded.push("emissions_stale");
     if (!this.mcCalibration) degraded.push("mc_calibration_unavailable");
+    const kaminoStale = this.isStale(this.kaminoEntry);
+    if (this.kamino) {
+      if (!this.kaminoEntry.value) degraded.push("kamino_unavailable");
+      else if (kaminoStale) degraded.push("kamino_stale");
+    }
     return {
       ok: degraded.length === 0,
       degraded,
@@ -646,6 +706,7 @@ export class YieldServer {
         livePools: live,
         volatilityAsOf: this.volatility.asOf,
         mcCalibrationGeneratedAt: this.mcCalibration?.generatedAt ?? null,
+        kamino: this.kamino ? (this.kaminoEntry.value ? { sampledAt: this.kaminoEntry.value.sampledAt, slot: this.kaminoEntry.value.slot, stale: kaminoStale } : null) : "not_configured",
       },
     };
   }
@@ -704,6 +765,8 @@ export class YieldServer {
           return sendPayload(this.bandPayload(url));
         case "/v1/forecast":
           return sendPayload(this.forecastPayload(url) as Record<string, unknown> & { status?: number });
+        case "/v1/solana/borrow":
+          return sendPayload(this.solanaBorrowPayload(url) as Record<string, unknown> & { status?: number });
         default:
           return send(404, { error: "not found" });
       }

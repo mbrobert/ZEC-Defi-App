@@ -3,6 +3,22 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-13 — Solana B5, part 1: the yield service reads Kamino's ZCASH market and shows the rate after the borrow
+
+- **`/v1/solana/borrow`** (`services/yield/src/sources/kamino.ts`, `src/solanaBorrow.ts`; `SOLANA-ARCHITECTURE.md`
+  §7 rewritten as built): one `getMultipleAccounts` reads the LendingMarket, both reserves and Scope, decoded
+  strictly at byte offsets computed from klend-sdk 12.0.0's layouts and pinned to two mainnet captures
+  (`VERIFIED-SOLANA-FACTS.md` Addendum 2). Shown, never gated (D4/D5): the borrow rate now and **after this
+  borrow** on the reserve's own curve, utilisation, the pool's depth against its limit and its per-interval cap,
+  the account's share, the identity at the chosen HF with `bindingCap` naming what decided (the chosen HF, the
+  floor, Kamino's 40 % cap, the pool), the liquidation price and drawdown, the deposit room and the exit's
+  per-interval withdrawal room, Scope's age. Refused only for safety: venue paused, borrowing disabled, an
+  inactive reserve, a stale or out-of-band oracle, a borrow the pool cannot fund or its limits forbid, a deposit
+  over the limit, an entry under the floor or over the cap, a stale read (then no number is served). `SOLANA_RPC_URL`
+  turns the source on; `/healthz` carries its slot and staleness. +18 yield tests (167). Correction recorded: the
+  3,000 ZEC / day cap bounds **withdrawals**, the 1 M USDC / day cap **borrows**; deposits meet the deposit limit
+  alone. Also read live: Squads Protocol v4's program is immutable (Addendum 2).
+
 ## 2026-09-12 — `scripts/ledger-read.sh`: the Addendum 14 ledger re-read as a committed, parameterised script
 
 - The read-only `cast call --block` script behind VERIFIED-BASE-FACTS Addendum 14 is in the repo:
