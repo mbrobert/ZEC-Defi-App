@@ -298,14 +298,21 @@ pull requests, and no job can go green over a suite it did not run:
 | `contracts` (three jobs: `unit`, `audit-regressions`, `invariant`) | `forge test -vv --threads 1 --match-path <group>` — `test/*.t.sol` minus the sub-directories (forge's `*` crosses `/`, so `--no-match-path "test/{audit-regressions,invariant,fork,halmos}/**"`; 9 files / 250 tests), `test/audit-regressions/*.t.sol` (17 / 132), `test/invariant/*.t.sol` (1 / 11); each job prints `contracts (<group>): P passed / F failed / S skipped of T` into the run summary | the 31 suites at `foundry.toml`'s 256 × 40, split so that no job compiles every test contract at once (below: why) |
 | `contracts-build` | `forge build --skip test`, uploads `contracts/out` | one compile of the product contracts and scripts, shared by the two seam jobs (they read product artifacts only) |
 | `abi-seam` | `node scripts/verify-abi.mjs`, then `VERIFY_ABI_STRICT=1 node agent/scripts/verify-abi.mjs`, both on the downloaded artifacts | the committed bundle equals the compiled artifacts (exit 1 on drift) and the keeper's seam runs with nothing skipped — before this slice the keeper job had no artifacts, printed `verify-abi: SKIP` on every run and stayed green |
-| `agent` | `VERIFY_ABI_STRICT=1 npm test -w @zyo/agent`, `npm test -w @zyo/yield`, on the artifacts | keeper 110/110 strict + IDL seam 77/77 + 263 tests; yield 131 |
-| `shared` | `npm test -w @zyo/shared` | 75 |
-| `web` | `npm run typecheck -w @zyo/web`, `VERIFY_ABI_STRICT=1 npm test -w @zyo/web` | tsc clean; 167 tests, the ABI-drift test and both model pins RUN |
+| `agent` | `VERIFY_ABI_STRICT=1 npm test -w @zyo/agent`, `npm test -w @zyo/yield`, on the artifacts | keeper 123/123 strict + IDL seam 77/77 + 311 tests; yield 178 |
+| `shared` | `npm test -w @zyo/shared` | 98 |
+| `web` | `npm run typecheck -w @zyo/web`, `VERIFY_ABI_STRICT=1 npm test -w @zyo/web` | tsc clean; 199 tests, the ABI-drift test and both model pins RUN |
 | `prototypes` | Playwright's Chromium (`playwright install --with-deps chromium`), `services/yield/samples/MODEL-NUMBERS.md` copied to `/tmp/build/` so `verify-toggle`'s model pin runs | 118 · 109 · 56 · 6 |
 | `fork` | `forge test --match-path test/fork/BaseFork.t.sol -vv` at `FORK_BLOCK` (pinned in the workflow's `env`: 51,222,568) with `secrets.BASE_RPC_URL` as `FORK_URL`, then `scripts/check-cbzec-b20.sh` at the same block; the log is uploaded | the 11 fork tests and the B20 read. **Without the secret the job FAILS and its own summary line reads `fork: 11 skipped = NOT VERIFIED`** — the green check over eleven skipped tests is what this slice removed. With the secret, a skip (an engine entry the suite selects by property has vanished) also fails, by name. An RPC that no longer serves state at the pinned block fails with the RPC's error: move `FORK_BLOCK` forward deliberately, re-run, record the block |
 | `static-analysis` | Slither (`--fail-high`), Aderyn, halmos — the halmos steps under `FOUNDRY_PROFILE=halmos` (`test = "test/halmos"`, so forge compiles src + the two harnesses, and `dynamic_test_linking = false`, because halmos has no `deployCode` cheat) | fails on a High or a violated account property (`AccountGrantHalmos` 4 / 4 locally, 2026-09-12); the router property is `continue-on-error` |
-| `solana-seam` | `npm test -w @zyo/solana` | 12 |
+| `solana-seam` | `npm test -w @zyo/solana` | 14 |
 | `solana-program` | Rust 1.98.1 + Agave 4.2.2 + anchor-cli 1.2.0 (crates.io): `gen-ladder --check`, `gen-addresses --check`, `anchor build`, `cargo test --lib`, `sync-idl.mjs --check` | the generated constants equal shared, both programs compile, 7 host tests, the committed IDL equals the build (the localnet 26 are not run in CI: they clone mainnet through a rate-limited public RPC) |
+
+**The fork job is VERIFIED on CI since 2026-09-13.** `secrets.BASE_RPC_URL` was set that afternoon and run
+`34768905298` was the first fully green run in the repository's history: **12 passed / 0 failed / 0 skipped at
+block 51,222,568**, every other job green with it. Until then the job failed by design and printed
+"NOT VERIFIED" rather than skipping quietly, which is why the red was honest and worth keeping. What it now
+actually proves against Base mainnet includes the CCTP burn leg: an `OilskinAccount` burning 1,000 native USDC
+through Circle's live TokenMessengerV2, with the FiatToken supply falling by exactly that.
 
 Every Foundry job restores `contracts/cache` + `contracts/out` from
 `actions/cache`, keyed on every `.sol` and `foundry.toml` (per group for the
