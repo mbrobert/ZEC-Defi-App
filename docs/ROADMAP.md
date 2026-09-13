@@ -141,7 +141,7 @@ This is written down now so that in November it is a checkbox, not an argument.
    everything schedules backwards from it.
 2. **Not-on-the-roadmap work needs a trade.** Building something new means
    naming what comes off.
-3. **Non-safety bugs go to `docs/BACKLOG.md`**, not to today. A bug is "safety"
+3. **Non-safety bugs go to `docs/BACKLOG.md`** — which now exists (created 2026-09-13) — not to today. A bug is "safety"
    only if it can lose or lock a user's funds, or let the keeper exceed its
    grant. Everything else waits.
 4. **Two-strike rule.** Two failed attempts at the same fix → stop, write up

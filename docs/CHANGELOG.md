@@ -3,6 +3,26 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-13 — `docs/BACKLOG.md`, the file ROADMAP rule 3 has been pointing at
+
+Rule 3 says non-safety bugs go to `docs/BACKLOG.md`. The file did not exist, so everything deliberately
+deferred was scattered across four audit ledgers as observations a reader had to go and find. It exists now,
+gathered from what was already recorded — nothing new was invented, and nothing safety-related is in it.
+
+Sixteen entries in six groups: the five open cross-chain observations (O-1, O-3 to O-6); the two limits D9
+left on purpose (the owner's raw `exec` bypassing the re-record, and Solana's `deposit` not re-recording
+because it only raises the health factor); the feed policy being derived once at startup, and the fact that
+no measurement can bound a deviation-only feed's heartbeat; the forecast's display-only precision gap; the
+two decisions the founder has deferred (`ChainlinkOracleAdapter.maxAge`, and the untracked `docs/handoff/`
+bundle that is the only thing between `git status` and clean); and the eight handler actions the invariant
+fuzzer cannot reach.
+
+Each entry says **why it waits**, and three carry a "revisit before" — O-3 before any launch wider than D8's
+25 addresses, O-4 as a question for the audit firm, and the eight fuzz gaps before the freeze, because an
+auditor will ask what the invariants actually explore and eight named gaps is a better answer than a number
+of runs. The file also says what is *not* in it: anything that can lose or lock funds, unbuilt scope, and
+polish.
+
 ## 2026-09-13 — TESTING.md carries the command and the number, and nothing else (ROADMAP rule 7)
 
 Rule 7 has been on the roadmap since it was written: *"`docs/TESTING.md` rows have become multi-page
