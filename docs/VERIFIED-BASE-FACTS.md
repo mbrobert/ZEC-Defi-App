@@ -766,7 +766,29 @@ Purpose: the first all-green run of `contracts/test/fork/BaseFork.t.sol`, at a b
 at the same block with `cast`. Nothing was signed or broadcast. Every derived figure below is
 computed from the raw word beside it.
 
-### Scorecard: 11 passed / 0 failed / 0 skipped (12 → 11 tests)
+### Re-read on the CI runner, 2026-09-13 (12 tests, all green)
+
+The same block, proved a second time and by a second machine: GitHub Actions run `34768905298`
+(`workflow_dispatch`, head `16cf235`, job `103754763916`, 16:32:50 UTC) with `BASE_RPC_URL` set to an
+archive-capable Base endpoint. The job's summary line and the B20 step, verbatim:
+
+```
+fork: 12 passed / 0 failed / 0 skipped of 12 at block 51222568 (chain tip at run time: 51264012)
+check-cbzec-b20: OK at block 51222568 (pinned), chain 8453
+  code(cbZEC)   = 0xef  (B20 native contract; no fork EVM can execute it)
+  decimals()    = 8
+  symbol()      = cbZEC
+  multiplier()  = 1000000000000000000  (1.000000000000000000 × — a rebase factor, printed not pinned)
+```
+
+Twelve tests, not the eleven below: A5.1 added `test_fork_cctpV2_theAccountsBurnLegBurnsNativeUsdcToASolanaRecipient`
+(2026-09-13). The chain tip had moved to 51,264,012 by then — about 41,400 blocks past `FORK_BLOCK` — which is why
+the endpoint must keep ARCHIVE state: a pruned node serves the tip and answers
+`state at block #51222569 is pruned` for the pin (`docs/TESTING.md` "CI" records the three secret values it took).
+The suite itself was also walked cold on the founder's Mac the same day against `https://mainnet.base.org`
+(`--no-storage-caching`, no warm `~/.foundry/cache`): 12 / 12 in 85.6 s, the same block, the same B20 words.
+
+### Scorecard, first run (founder's Mac, 2026-09-12): 11 passed / 0 failed / 0 skipped (12 → 11 tests)
 
 `test_fork_cbzecIsAB20WithLiveMultiplier` is retired — its first external call died
 `OpcodeNotFound` at every block it was ever run (Addendum 3) because cbZEC's code is the single B20

@@ -28,6 +28,22 @@ liquidity provision; EIP = Ethereum Improvement Proposal.
   (D3) and not this commit. Suites re-run because they parse the facts file: shared **93**, web **197**,
   yield **172**, agent **286**, prototypes **130 · 116 · 62 · 6**, all green.
 
+## 2026-09-13 — The fork job is VERIFIED on the runner: `12 passed / 0 failed / 0 skipped at block 51,222,568`
+
+- Run `34768905298` (`workflow_dispatch`, head `16cf235`, job `103754763916`, 16:32:50 UTC), with an archive
+  endpoint in `BASE_RPC_URL`, printed the line the job was written to print:
+  `fork: 12 passed / 0 failed / 0 skipped of 12 at block 51222568 (chain tip at run time: 51264012)`, the suite in
+  78.84 s, and beside it `check-cbzec-b20: OK at block 51222568 (pinned), chain 8453` (code `0xef`, decimals 8,
+  symbol cbZEC, `multiplier()` 1e18). Every other job in that run is green.
+- **Every job in `ci.yml` has now proved itself on the runner** — not true from slice I (2026-09-12) until now.
+  The fork job stayed NOT VERIFIED for a day and a half through three distinct causes, in order: no secret at all;
+  a secret whose value was not a URL (`vm.createSelectFork: invalid rpc url`, Foundry then resolving it as a path
+  under `contracts/`); and a secret pointing at a pruned node (`state at block #51222569 is pruned`). Each was
+  read from the job's own output; the secret itself was never looked at.
+- Recorded in `docs/TESTING.md` (the "Contracts, fork" row and the CI section) and `VERIFIED-BASE-FACTS.md`
+  Addendum 10, which now carries the runner's line beside the founder's Mac's first run and says why the endpoint
+  must keep archive state: the tip had moved ~41,400 blocks past `FORK_BLOCK` by then.
+
 ## 2026-09-13 — The fork job's second blocker: the RPC secret points at a pruned node, not an archive node
 
 - With the URL fixed (secret updated 14:34:46 UTC) the job gets past `invalid rpc url` — it reads the chain tip
