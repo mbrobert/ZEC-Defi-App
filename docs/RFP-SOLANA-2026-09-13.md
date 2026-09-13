@@ -79,13 +79,26 @@ Asserted on localnet against the cloned mainnet world, plus host unit tests:
    denylist account can change the outcome.
 6. Arithmetic: Kamino's scaled fractions (2^60), the cToken exchange-rate rounding, and the integer ladder.
 
-## 5 · Launch parameters — **the founder to complete before kickoff**
+## 5 · Launch parameters (decided by the founder, 2026-09-13)
 
-- Deposit cap at launch: **\_\_\_**
-- Allowlist size at launch: **\_\_\_**
-- Day-one funds at risk: **\_\_\_**
-- Note for sizing: Kamino's ZCASH market held ≈ 355,600 USDC available and ≈ 1,202 ZEC supplied when last
-  read; one borrower is 59 % of its debt. The market's own depth, not our cap alone, bounds the product.
+| Parameter | Value |
+|---|---|
+| Deposit cap per user | **$25,000** |
+| Allowlist at launch | **25 addresses** |
+| **Day-one funds at risk** | **$250,000** |
+| Chains at launch | Base and Solana, together |
+
+**The total is the binding number, and it is deliberately below the other two.** Twenty-five addresses at a
+$25,000 cap would allow $625,000; the launch stops at $250,000, so **$250,000** is the figure to size this
+engagement and any bug bounty against. The cap and the allowlist bound how that total can be distributed — no
+single depositor can be more than a tenth of the book.
+
+**For scale on this chain, which is the tighter of the two.** Kamino's ZCASH market held about **355,600 USDC**
+available to borrow and about **1,202 ZEC** supplied when last read, and **one borrower already holds 59 % of
+its debt** (`VERIFIED-SOLANA-FACTS.md`). If the entire $250,000 sat here as ZEC collateral, Kamino's own 40 %
+cap bounds the USDC borrowed against it at **$100,000** — roughly 28 % of that market's available USDC, and
+enough to move its borrow rate. The market's depth, not our cap alone, is what bounds this side of the
+product, and the yield service refuses a borrow the pool cannot fund rather than pricing it.
 
 ## 6 · The six questions (asked identically of every firm, so that quotes compare)
 
