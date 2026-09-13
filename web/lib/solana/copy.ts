@@ -10,14 +10,20 @@ import type { SolanaDisclosureId } from "./yield";
 export const KAMINO_WORDING = wording as { source: string; readAt: string; learnMore: string; quote: string };
 
 /** The disclosures the yield route names by id; the words are ours. */
-export const SOLANA_DISCLOSURES: Record<SolanaDisclosureId, { title: string; body: string }> = {
+/**
+ * Every disclosure the Solana route can name, plus the two the CROSS-CHAIN loop owes a user (BUILD-PLAN D6;
+ * `CROSSCHAIN-LOOP-2026-09-12.md` §4). Those two are the web's own: the yield service never emits them,
+ * because the loop is a choice made on the site rather than a state Kamino reports.
+ */
+export type SolanaCopyId = SolanaDisclosureId | "cross_chain_circle" | "cross_chain_two_chains";
+export const SOLANA_DISCLOSURES: Record<SolanaCopyId, { title: string; body: string }> = {
   forecast_not_advice: {
     title: "Numbers, not advice",
     body: "Every figure on this screen is read from Solana at a stated slot or computed from those reads. It describes the position as it would be today; it is not a forecast of what ZEC will do, and it is not advice.",
   },
   bridged_zec: {
     title: "Your ZEC on Solana is a bridged token",
-    body: "The ZEC used here is minted on Solana by a bridge program when ZEC is locked elsewhere. That bridge program can be upgraded by its operators, and it is the only thing that mints or redeems this token. It is not a coin on the Zcash chain.",
+    body: "The ZEC used here is minted on Solana by a bridge program when ZEC is locked elsewhere. That bridge program can be upgraded by its operators, and it is the only thing that mints or redeems this token. It is not a coin on the Zcash chain, and none of the protections Zcash's own chain can give apply to it here: every amount, address and movement on this side is visible to anyone reading Solana, and the bridge operator sees the crossing.",
   },
   kamino_parameters_mutable: {
     title: "Kamino's market owner can change the rules",
@@ -39,6 +45,14 @@ export const SOLANA_DISCLOSURES: Record<SolanaDisclosureId, { title: string; bod
     title: "Liquidation at the health factor you chose",
     body: "If ZEC falls far enough, Kamino liquidates part of your collateral at a penalty Kamino sets (2–7 % today). The price at which that begins follows from the health factor you chose and is shown before you sign. The keeper you may authorise acts before that point, within the limits you set — only while its permission is live and only if it is running.",
   },
+  cross_chain_circle: {
+    title: "The loop to Base depends on Circle",
+    body: "Moving your borrowed USDC to Base burns it on Solana and mints it on Base through Circle's Cross-Chain Transfer Protocol. Between those two moments the money exists only as a message Circle's attesters must sign: if they do not sign it, nothing arrives, and no one else can make it arrive. The fast path takes seconds and charges a fee; the standard path waits for Base to finalise, which is minutes. Circle can also refuse a particular account. Anyone can deliver the message once it is signed — it can only pay the account named in it, which is yours — so the wait is on Circle, not on Oilskin.",
+  },
+  cross_chain_two_chains: {
+    title: "Protection across two chains is not one transaction",
+    body: "When your collateral is on Solana and the borrowed USDC is working on Base, a protective step is five steps on two chains: close on Base, burn, wait for Circle, deliver on Solana, repay. Each one can be delayed by the thing that made it necessary — a falling market is also when fees spike and networks are busiest. While that sequence runs, the position on Solana is not yet improving. That is why Oilskin holds back USDC on Solana that can repay without crossing anything, and why a cross-chain position starts with more room than a Base-only one.",
+  },
 };
 
 /** Oilskin's own risk list for the Solana review and positions pages. */
@@ -51,6 +65,14 @@ export const SOLANA_RISKS: readonly { id: string; title: string; body: string }[
     id: "keeper-sells",
     title: "The keeper may sell your ZEC",
     body: "If you grant the keeper protection, it can repay from your account's idle USDC and, when liquidation threatens, sell your ZEC to it: it pays USDC in and takes ZEC out at no worse than a fixed allowance under Kamino's oracle price — up to the daily budgets you sign, for the days you sign, and never more than the program checks on chain. Revoke it at any time. If the keeper is down or the permission has lapsed, nobody acts for you; you can always act yourself.",
+  },
+  {
+    id: "cross-chain-circle",
+    ...SOLANA_DISCLOSURES.cross_chain_circle,
+  },
+  {
+    id: "cross-chain-two-chains",
+    ...SOLANA_DISCLOSURES.cross_chain_two_chains,
   },
   {
     id: "oracle",

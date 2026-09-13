@@ -53,3 +53,25 @@ test("every program error has plain words or is shown by name", () => {
   assert.match(solanaErrorPlain("InsufficientUsdcToClose"), /Top it up/);
   assert.match(solanaErrorPlain(null), /Nothing moved/);
 });
+
+test("the cross-chain loop's two disclosures are said: what Circle's part is, and that protection across two chains is not one transaction", () => {
+  const circle = SOLANA_DISCLOSURES.cross_chain_circle;
+  const chains = SOLANA_DISCLOSURES.cross_chain_two_chains;
+  for (const d of [circle, chains]) assert.ok(d.title.length > 3 && d.body.length > 200, d.title);
+  // Circle: the dependency, the wait, and who can finish it
+  assert.match(circle.body, /Cross-Chain Transfer Protocol/);
+  assert.match(circle.body, /attesters must sign/i);
+  assert.match(circle.body, /standard path waits for Base to finalise/i);
+  assert.match(circle.body, /can also refuse a particular account/i);
+  assert.match(circle.body, /Anyone can deliver the message once it is signed/i, "the honest mitigation, not a promise");
+  // Two chains: the five steps, the timing, and the reserve's reason
+  assert.match(chains.body, /five steps on two chains/i);
+  assert.match(chains.body, /not yet improving/i, "the worst case is stated, not hidden");
+  assert.match(chains.body, /holds back USDC on Solana/i);
+  // the bridge disclosure now carries the privacy point, without claiming any privacy of our own
+  assert.match(SOLANA_DISCLOSURES.bridged_zec.body, /visible to anyone reading Solana/i);
+  assert.match(SOLANA_DISCLOSURES.bridged_zec.body, /bridge operator sees the crossing/i);
+  // both appear in the risk list a review screen renders
+  const ids = SOLANA_RISKS.map((r) => r.id);
+  assert.ok(ids.includes("cross-chain-circle") && ids.includes("cross-chain-two-chains"));
+});

@@ -108,7 +108,7 @@ export default function StrategyStep({
           )}
           {refused && (
             <div className="mt-0.5 text-[12.3px] text-status-crit" data-testid={`refusal-${c.poolId}-${c.setting}`}>
-              {c.refusals.map(refusalPlain).join(" ")}
+              {c.refusals.map((r) => refusalPlain(r, c.borrowVenue)).join(" ")}
             </div>
           )}
           {c.pool.note && <div className="mt-0.5 text-[12px] text-oil-ink3">{c.pool.note}</div>}

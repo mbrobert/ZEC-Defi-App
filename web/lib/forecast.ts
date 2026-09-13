@@ -57,6 +57,8 @@ export interface ForecastCell {
   borrowAprAfterPct: number | null;
   userNetBorrowBasis: "after" | "now" | null;
   poolAvailableUsd: number | null;
+  /** Which venue's loan funds this cell: "aave" on Base, "kamino" for the cross-chain loop, null when unread. */
+  borrowVenue: "aave" | "kamino" | null;
   collateralSupplyAprPct: number | null;
   lpPriced: boolean;
   lpUnpricedReason: string | null;
@@ -105,16 +107,27 @@ export interface ForecastView {
 // ---------------------------------------------------------------------------
 
 /** One plain sentence per safety refusal — the only reasons a position may not be opened. */
+/**
+ * Whose rule stopped you. `{venue}` is filled in from the cell's `borrowVenue`, because the same refusal means
+ * a different thing depending on where the loan lives: on a Base position the lender is Aave, on the
+ * cross-chain loop it is Kamino, and telling a user "Aave has paused it" about a Kamino loan would be wrong.
+ */
+const VENUE_NAME: Record<string, string> = { aave: "Aave", kamino: "Kamino" };
 const REFUSAL_PLAIN: Record<ForecastRefusal, string> = {
-  entry_hf_below_floor: "This health factor is under the floor Oilskin's registry sets, so the contracts would refuse the borrow.",
+  // Since the floor was pinned at 1.25 with no product cap (2026-09-12), Oilskin's own floor binds well before
+  // the venue's cap — 62.4 % against Aave's 73 % on cbBTC — so this, not the venue's limit, is the refusal a
+  // user meets on ordinary drift. The words have to say whose rule it is and how to clear it.
+  entry_hf_below_floor:
+    "This is Oilskin's own limit, not the lending venue's. Oilskin refuses a borrow that would open at a health factor under its floor, and that floor stops you well before the venue would: on cbBTC it caps the loan at 62.4% of your collateral where Aave itself would allow 73%. Borrow less, or add collateral, and it clears.",
   collateral_disabled: "Oilskin does not accept this asset as collateral right now.",
   rates_unavailable: "We could not read what borrowing costs today, and nothing opens without that number.",
   rates_stale: "Our reading of the borrowing cost is too old to trust; nothing opens until it refreshes.",
-  collateral_not_active: "Aave is not accepting this asset as collateral right now.",
-  collateral_paused: "Aave has paused this collateral, so nothing can be supplied or borrowed against it until they unpause it.",
-  borrow_paused: "Aave has paused USDC borrowing, so there is nothing to borrow right now.",
-  venue_ltv_exceeded: "This borrow is above the largest loan-to-value the lending venue itself allows for this asset.",
-  pool_cannot_fund: "The lending pool does not hold enough USDC to lend this much right now.",
+  collateral_not_active: "{venue} is not accepting this asset as collateral right now.",
+  collateral_paused: "{venue} has paused this collateral, so nothing can be supplied or borrowed against it until they unpause it.",
+  borrow_paused: "{venue} has paused USDC borrowing, so there is nothing to borrow right now.",
+  venue_ltv_exceeded:
+    "This borrow is above the largest loan-to-value {venue} itself allows for this asset. That is the venue's own ceiling, a different limit from Oilskin's floor, and the one the venue enforces on chain.",
+  pool_cannot_fund: "{venue}'s pool does not hold enough USDC to lend this much right now.",
 };
 
 /** Why the LP slice has no number — shown beside the cell, never a reason to refuse it. */
@@ -143,8 +156,13 @@ export const DISCLOSURE_TEXT: Record<ForecastDisclosureId, string> = {
   impermanent_loss: "A concentrated-liquidity position changes token mix as the price moves and can be worth less than holding. The model charges for that as the drag shown.",
 };
 
-export function refusalPlain(r: ForecastRefusal | string): string {
-  return REFUSAL_PLAIN[r as ForecastRefusal] ?? "The contracts would refuse this position for a reason this page has no words for yet.";
+/**
+ * The sentence for a refusal. `venue` is the cell's `borrowVenue` — pass it so the words name the lender the
+ * loan actually lives with; without it the sentence says "the lending venue", which is true of either.
+ */
+export function refusalPlain(r: ForecastRefusal | string, venue?: string | null): string {
+  const text = REFUSAL_PLAIN[r as ForecastRefusal] ?? "The contracts would refuse this position for a reason this page has no words for yet.";
+  return text.replace(/\{venue\}/g, VENUE_NAME[venue ?? ""] ?? "The lending venue").replace(/^(.)/, (c) => c.toUpperCase());
 }
 export function unpricedPlain(reason: string | null): string {
   if (!reason) return "";
@@ -252,6 +270,7 @@ export function normalizeForecast(raw: unknown, source: ForecastView["source"]):
       borrowAprAfterPct: num(c.borrowAprAfterPct),
       userNetBorrowBasis: c.userNetBorrowBasis === "after" || c.userNetBorrowBasis === "now" ? c.userNetBorrowBasis : null,
       poolAvailableUsd: num(c.poolAvailableUsd),
+      borrowVenue: c.borrowVenue === "aave" || c.borrowVenue === "kamino" ? c.borrowVenue : null,
       collateralSupplyAprPct: num(c.collateralSupplyAprPct),
       lpPriced: c.lpPriced === true && num(c.lpNetPct) !== null,
       lpUnpricedReason: strOrNull(c.lpUnpricedReason),

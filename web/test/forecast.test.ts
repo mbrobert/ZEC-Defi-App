@@ -139,3 +139,30 @@ test("normalizeForecast: unreadable cells are dropped, `allowed` is re-derived f
   assert.equal(forecastPath({ collateral: "cbBTC", entryHf: 1.55, depositUsd: 39815.445 }), "/v1/forecast?collateral=cbBTC&entryHf=1.55&deposit=39815.445");
   assert.equal(forecastPath({ collateral: "WETH", depositUsd: 0, pool: "acbbtc", setting: "steady" }), "/v1/forecast?collateral=WETH&pool=acbbtc&setting=steady");
 });
+
+test("the refusal words name WHOSE rule stopped you: the entry floor is Oilskin's and says so with the numbers; the venue-dependent ones follow the cell's borrow venue", () => {
+  // Since the floor was pinned at 1.25 with no product cap, Oilskin's floor binds before Aave's own 73 % cap,
+  // so this is the refusal ordinary drift produces — and the words must not blame the venue for it.
+  const floor = refusalPlain("entry_hf_below_floor");
+  assert.match(floor, /Oilskin's own limit, not the lending venue's/);
+  assert.match(floor, /62\.4%/);
+  assert.match(floor, /73%/);
+  assert.match(floor, /Borrow less, or add collateral/);
+  // The same code, a different lender, different words.
+  assert.match(refusalPlain("borrow_paused", "aave"), /^Aave has paused/);
+  assert.match(refusalPlain("borrow_paused", "kamino"), /^Kamino has paused/);
+  assert.match(refusalPlain("pool_cannot_fund", "kamino"), /^Kamino's pool does not hold enough USDC/);
+  assert.match(refusalPlain("collateral_not_active", "aave"), /^Aave is not accepting/);
+  // Without a venue the sentence is still true of either, and never leaves a placeholder behind.
+  for (const r of SERVICE_REFUSALS) {
+    for (const venue of [undefined, null, "aave", "kamino", "something-else"]) {
+      const text = refusalPlain(r, venue as string | null | undefined);
+      assert.ok(!text.includes("{venue}"), `${r}/${venue}: placeholder left in the copy`);
+      assert.ok(text.length > 30 && !text.includes("_"), `${r}/${venue}`);
+    }
+  }
+  assert.match(refusalPlain("pool_cannot_fund"), /^The lending venue's pool/);
+  // venue_ltv_exceeded is the venue's ceiling and says it is a different limit from Oilskin's floor
+  assert.match(refusalPlain("venue_ltv_exceeded", "kamino"), /Kamino itself allows/);
+  assert.match(refusalPlain("venue_ltv_exceeded", "kamino"), /different limit from Oilskin's floor/);
+});
