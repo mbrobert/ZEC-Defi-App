@@ -60,7 +60,7 @@ contract BaseForkTest is Test {
         acct = OilskinAccount(payable(factory.createAccount(alice)));
         // The venue enforces the registry's entry floor and offer flags, so the fork needs the same
         // wiring the deploy script builds: registry first, then the venue, then the assets.
-        registry = new CollateralRegistry(address(this), 1.55e18, 2 days);
+        registry = new CollateralRegistry(address(this), 1.25e18, 2 days);
         aaveVenue = new AaveV3Venue(
             IPoolAddressesProvider(BaseAddresses.AAVE_POOL_ADDRESSES_PROVIDER),
             ICollateralRegistry(address(registry))

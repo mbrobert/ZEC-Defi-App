@@ -195,14 +195,15 @@ contract RouterDonationRegressionTest is Fixture {
         _ownerExec(address(aaveVenue), abi.encodeCall(ICollateralVenue.borrow, (address(weth), 5e18)));
 
         uint256[] memory none = new uint256[](0);
-        // Clear ALL the USDC debt and withdraw 0.2 cbBTC in one call. The USDC debt is gone, so the
-        // old per-asset gate disabled itself and the account came out at HF 1.35 against a 1.55
-        // floor, silently. The gate is global now.
+        // Clear ALL the USDC debt and withdraw most of the cbBTC in one call. The USDC debt is gone,
+        // so the old per-asset gate disabled itself and the account came out below the floor,
+        // silently. The gate is global now.
         // 1 cbBTC at $79,593.77 and LT 7800 is $62,083 of borrowing power; 5 WETH at $2,453.45 is
-        // $12,267 of residual debt. Withdrawing 0.75 cbBTC leaves HF 1.265 — comfortably above
-        // Aave's own HF-1 refusal, and squarely below the 1.55 floor the product advertises. That
-        // is exactly the band the old per-asset gate let a user walk out into, silently.
-        StrategyRouter.UnwindParams memory u = _unwind(none, type(uint256).max, 0.75e8);
+        // $12,267 of residual debt. Withdrawing 0.78 cbBTC leaves 0.22 × $79,593.77 × 0.78 = $13,658
+        // over $12,267: HF 1.113 — above Aave's own HF-1 refusal, and squarely below the 1.25 floor
+        // the product advertises. That is exactly the band the old per-asset gate let a user walk
+        // out into, silently.
+        StrategyRouter.UnwindParams memory u = _unwind(none, type(uint256).max, 0.78e8);
         bytes memory data = abi.encodeCall(StrategyRouter.unwind, (u));
         vm.prank(alice);
         vm.expectPartialRevert(StrategyRouter.ExitHfTooLow.selector);

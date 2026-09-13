@@ -141,8 +141,8 @@ contract StrategyRouterTest is Fixture {
     }
 
     function test_openLeveragedLp_entryHfFloorEnforced() public {
-        // 55 % LTV → HF = 0.78 / 0.55 = 1.418 < 1.55 → refused even though Aave (LTV 73 %) allows it.
-        uint256 borrow = (PRICE_CBBTC_E8 * 55) / 100 / 100;
+        // 65 % LTV → HF = 0.78 / 0.65 = 1.20 < 1.25 → refused even though Aave (LTV 73 %) allows it.
+        uint256 borrow = (PRICE_CBBTC_E8 * 65) / 100 / 100;
         StrategyRouter.OpenParams memory p = _open(COLLATERAL, borrow, 1);
         bytes memory data = abi.encodeCall(StrategyRouter.openLeveragedLp, (p));
         vm.prank(alice);
@@ -150,12 +150,12 @@ contract StrategyRouterTest is Fixture {
         acct.execWithCallback(address(router), 0, data);
         assertEq(aaveVenue.debt(address(acct), address(usdc)), 0, "atomic: nothing borrowed");
         assertEq(cbbtc.balanceOf(alice), 10e8, "atomic: nothing pulled");
-        // exactly the offered maximum (50 %) passes: HF 1.56
+        // exactly the offered maximum (62.40 % = floor(7800 × 100 / 125)) passes: HF 1.25, the floor
         borrow = (PRICE_CBBTC_E8 * registry.maxOfferedLtvBps(address(cbbtc))) / 10_000 / 100;
         p = _open(COLLATERAL, borrow, 1);
         (, uint256 hf) = _openViaAccount(p);
         assertGe(hf, ENTRY_HF_FLOOR_WAD);
-        assertApproxEqRel(hf, 1.56e18, 1e14);
+        assertApproxEqRel(hf, 1.25e18, 1e14);
     }
 
     function test_openLeveragedLp_disabledAssetReverts() public {

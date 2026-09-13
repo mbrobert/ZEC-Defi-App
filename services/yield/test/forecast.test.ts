@@ -140,8 +140,9 @@ test("a gauge that pays nothing is a priced cell — the LP slice is the drag al
 });
 
 test("the safety refusals, each by name: below the floor, disabled asset, no rates, stale rates, inactive, paused (both sides), the venue's LTV, and a borrow the pool cannot fund", () => {
-  const floor = evaluateForecast(inputs({ entryHf: 1.5 }));
+  const floor = evaluateForecast(inputs({ entryHf: 1.2 }));   // under the pinned 1.25 floor
   assert.deepEqual(floor.refusals, ["entry_hf_below_floor"]);
+  assert.deepEqual(evaluateForecast(inputs({ entryHf: 1.5 })).refusals, [], "1.50 was under the old 1.55 floor; it is allowed at 1.25");
   assert.equal(floor.allowed, false);
   assert.equal(floor.lpPriced, true, "the numbers are still shown beside the refusal");
   assert.deepEqual(evaluateForecast(inputs({ collateral: "cbZEC" })).refusals, ["collateral_disabled", "collateral_not_active"]);
@@ -169,7 +170,8 @@ test("with a deposit size the borrow is priced AFTER itself on the venue curve, 
   assert.ok(f.borrowAprAfterPct! > 4.5146 && f.borrowAprAfterPct! < 4.55, `after: ${f.borrowAprAfterPct}`);
   assert.equal(f.userNetBorrowBasis, "after");
   assert.equal(f.liquidationPriceUsd, Math.round((115_000 / 1.55) * 10_000) / 10_000);
-  assert.equal(f.bindingCap, "entry_hf_floor", "sitting exactly on the floor");
+  assert.equal(f.bindingCap, "chosen_hf", "1.55 sits above the pinned 1.25 floor: the chosen HF binds");
+  assert.equal(evaluateForecast(inputs({ entryHf: 1.25, depositUsd: 1_000_000 })).bindingCap, "entry_hf_floor", "sitting exactly on the floor");
   const looser = evaluateForecast(inputs({ entryHf: 2, depositUsd: 1_000_000 }));
   assert.equal(looser.bindingCap, "chosen_hf");
   assert.equal(looser.ltvAtEntryBps, 3900);
@@ -285,7 +287,9 @@ test("GET /v1/forecast: defaults to the floor, filters by pool/setting/collatera
     assert.equal(c.collateralPriceUsd, 115_000, "read from the live sample, never typed");
     assert.equal(c.liquidationPriceUsd, Math.round((115_000 / 1.3) * 10_000) / 10_000);
     assert.equal(c.userNetBorrowBasis, "after");
-    assert.deepEqual(c.refusals, ["entry_hf_below_floor"], "1.30 is under the shared 1.55 floor this server runs without a registry; with one it is judged against the chain's (the next test)");
+    assert.deepEqual(c.refusals, [], "1.30 is above the shared 1.25 floor this server runs without a registry (the pinned deploy default); with a registry it is judged against the chain's (the next test)");
+    const underShared = (await get(b.port, `/v1/forecast?collateral=cbBTC&entryHf=1.2&pool=acbbtc&setting=sheltered`)).body as ForecastResponse;
+    assert.deepEqual(underShared.cells[0]!.refusals, ["entry_hf_below_floor"], "1.20 is under 1.25");
     assert.equal(c.lpPriced, true);
     // Malformed queries are 400s, never a guess.
     for (const q of ["entryHf=0.9", "entryHf=abc", "entryHf=1001", "deposit=-1", "deposit=0", "pool=nope", "setting=nope", "collateral=DOGE"]) {
@@ -329,37 +333,55 @@ test("GET /v1/forecast with no rates or stale rates still answers 200: the refus
   }
 });
 
-test("GET /v1/forecast with a registry (A4.4): the floor is the chain's, said so; 1.30 on cbBTC is allowed at a 1.25 floor; a read that fails past staleness falls back to shared's and says so, with the last read time kept", async () => {
+test("GET /v1/forecast with a registry (A4.4): the floor is the chain's, said so — a registry raised to 1.35 refuses 1.30 that the shared 1.25 would allow; a read that fails past staleness serves the STRICTER of the last read and shared's, says registry_stale, keeps the read time", async () => {
   const fail = { v: false };
   const c0 = clock();
-  const b = await boot({ v: false }, registryStub(1_250_000_000_000_000_000n, c0, fail));
+  const b = await boot({ v: false }, registryStub(1_350_000_000_000_000_000n, c0, fail));
   try {
     const first = await get(b.port, "/v1/forecast?collateral=cbBTC&entryHf=1.3&pool=acbbtc&setting=sheltered&deposit=250000");
     assert.equal(first.status, 200);
     const body = first.body as ForecastResponse;
-    assert.equal(body.entryHfFloor, 1.25);
+    assert.equal(body.entryHfFloor, 1.35);
     assert.equal(body.entryHfFloorSource, "registry");
     assert.ok(body.entryHfFloorReadAt, "the read time is carried");
     const cell = body.cells.find((x) => x.collateral === "cbBTC")!;
-    assert.deepEqual(cell.refusals, [], "1.30 ≥ 1.25: allowed");
-    assert.equal(cell.bindingCap, "chosen_hf");
+    assert.deepEqual(cell.refusals, ["entry_hf_below_floor"], "1.30 < 1.35: refused against the chain's floor, not the constant's");
+    const above = (await get(b.port, "/v1/forecast?collateral=cbBTC&entryHf=1.4&pool=acbbtc&setting=sheltered&deposit=250000")).body as ForecastResponse;
+    assert.deepEqual(above.cells[0]!.refusals, []);
+    assert.equal(above.cells[0]!.bindingCap, "chosen_hf");
     // The default entry HF is the served floor, not the constant.
     const dflt = (await get(b.port, "/v1/forecast")).body as ForecastResponse;
-    assert.equal(dflt.entryHf, 1.25);
-    // Under the chain's floor: refused by name against 1.25.
-    const under = (await get(b.port, "/v1/forecast?collateral=cbBTC&entryHf=1.2&pool=acbbtc&setting=sheltered")).body as ForecastResponse;
-    assert.deepEqual(under.cells[0]!.refusals, ["entry_hf_below_floor"]);
+    assert.equal(dflt.entryHf, 1.35);
 
-    // The read fails and the clock passes staleAfterMs: the shared constant is served, said, the old read time still shown.
+    // The read fails and the clock passes staleAfterMs: the stricter of the last read (1.35) and shared's (1.25) is
+    // served — a floor the chain may have raised must not be lowered by going stale — marked registry_stale.
     fail.v = true;
     b.c.advance(STALE_AFTER + 1);
     await b.srv.refresh();
     const stale = (await get(b.port, "/v1/forecast?collateral=cbBTC&entryHf=1.3&pool=acbbtc&setting=sheltered")).body as ForecastResponse;
-    assert.equal(stale.entryHfFloor, ENTRY_HF_FLOOR);
-    assert.equal(stale.entryHfFloorSource, "shared");
+    assert.equal(stale.entryHfFloor, 1.35);
+    assert.equal(stale.entryHfFloorSource, "registry_stale");
     assert.equal(stale.entryHfFloorReadAt, body.entryHfFloorReadAt, "the last good read's time, so the staleness is visible");
-    assert.deepEqual(stale.cells[0]!.refusals, ["entry_hf_below_floor"], "judged against 1.55 again — fail closed on the higher floor");
+    assert.deepEqual(stale.cells[0]!.refusals, ["entry_hf_below_floor"], "still judged against 1.35 — fail closed on the higher floor");
   } finally {
     await b.close();
+  }
+
+  // A registry UNDER the shared default (1.15): fresh, the chain's number rules; stale, the stricter shared 1.25 is served.
+  const fail2 = { v: false };
+  const b2 = await boot({ v: false }, registryStub(1_150_000_000_000_000_000n, clock(), fail2));
+  try {
+    const fresh = (await get(b2.port, "/v1/forecast?collateral=cbBTC&entryHf=1.2&pool=acbbtc&setting=sheltered")).body as ForecastResponse;
+    assert.equal(fresh.entryHfFloor, 1.15);
+    assert.deepEqual(fresh.cells[0]!.refusals, []);
+    fail2.v = true;
+    b2.c.advance(STALE_AFTER + 1);
+    await b2.srv.refresh();
+    const stale2 = (await get(b2.port, "/v1/forecast?collateral=cbBTC&entryHf=1.2&pool=acbbtc&setting=sheltered")).body as ForecastResponse;
+    assert.equal(stale2.entryHfFloor, 1.25);
+    assert.equal(stale2.entryHfFloorSource, "registry_stale");
+    assert.deepEqual(stale2.cells[0]!.refusals, ["entry_hf_below_floor"]);
+  } finally {
+    await b2.close();
   }
 });

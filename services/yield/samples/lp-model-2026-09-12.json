@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-09-12T19:44:42+00:00",
+ "generatedAt": "2026-09-13T02:43:16+00:00",
  "inputs": {
   "asOf": "2026-09-12T19:31:31+00:00",
   "gaugeSample": {
@@ -49,7 +49,7 @@
      },
      {
       "id": "top",
-      "ltvBps": 5000,
+      "ltvBps": 6240,
       "offerable": true
      }
     ]
@@ -70,7 +70,7 @@
      },
      {
       "id": "top",
-      "ltvBps": 5000,
+      "ltvBps": 6640,
       "offerable": true
      }
     ]
@@ -187,9 +187,9 @@
        "userNetPct": -6.161905697288571
       },
       "top": {
-       "ltvBps": 5000,
+       "ltvBps": 6240,
        "offerable": true,
-       "userNetPct": -7.705257121610713
+       "userNetPct": -9.61901288777017
       }
      },
      "WETH": {
@@ -204,9 +204,9 @@
        "userNetPct": -4.43120569728857
       },
       "top": {
-       "ltvBps": 5000,
+       "ltvBps": 6640,
        "offerable": true,
-       "userNetPct": -5.974557121610713
+       "userNetPct": -8.505653457499028
       }
      }
     }
@@ -256,9 +256,9 @@
        "userNetPct": -13.451776939960583
       },
       "top": {
-       "ltvBps": 5000,
+       "ltvBps": 6240,
        "offerable": true,
-       "userNetPct": -16.817596174950726
+       "userNetPct": -20.991212026338506
       }
      },
      "WETH": {
@@ -273,9 +273,9 @@
        "userNetPct": -11.721076939960582
       },
       "top": {
-       "ltvBps": 5000,
+       "ltvBps": 6640,
        "offerable": true,
-       "userNetPct": -15.086896174950727
+       "userNetPct": -20.606839720334566
       }
      }
     }
@@ -325,9 +325,9 @@
        "userNetPct": -28.41863180676976
       },
       "top": {
-       "ltvBps": 5000,
+       "ltvBps": 6240,
        "offerable": true,
-       "userNetPct": -35.5261647584622
+       "userNetPct": -44.33950561856083
       }
      },
      "WETH": {
@@ -342,9 +342,9 @@
        "userNetPct": -26.68793180676976
       },
       "top": {
-       "ltvBps": 5000,
+       "ltvBps": 6640,
        "offerable": true,
-       "userNetPct": -33.7954647584622
+       "userNetPct": -45.451818799237806
       }
      }
     }
@@ -416,9 +416,9 @@
        "userNetPct": -24.490306983525453
       },
       "top": {
-       "ltvBps": 5000,
+       "ltvBps": 6240,
        "offerable": true,
-       "userNetPct": -30.615758729406817
+       "userNetPct": -38.21131889429971
       }
      },
      "WETH": {
@@ -433,9 +433,9 @@
        "userNetPct": -22.759606983525455
       },
       "top": {
-       "ltvBps": 5000,
+       "ltvBps": 6640,
        "offerable": true,
-       "userNetPct": -28.88505872940682
+       "userNetPct": -38.930799592652264
       }
      }
     }
@@ -485,9 +485,9 @@
        "userNetPct": -37.71128054577412
       },
       "top": {
-       "ltvBps": 5000,
+       "ltvBps": 6240,
        "offerable": true,
-       "userNetPct": -47.141975682217655
+       "userNetPct": -58.836037651407636
       }
      },
      "WETH": {
@@ -502,9 +502,9 @@
        "userNetPct": -35.980580545774124
       },
       "top": {
-       "ltvBps": 5000,
+       "ltvBps": 6640,
        "offerable": true,
-       "userNetPct": -45.411275682217656
+       "userNetPct": -60.87761570598505
       }
      }
     }
@@ -576,9 +576,9 @@
        "userNetPct": -18.734575413501503
       },
       "top": {
-       "ltvBps": 5000,
+       "ltvBps": 6240,
        "offerable": true,
-       "userNetPct": -23.421094266876878
+       "userNetPct": -29.232377645062343
       }
      },
      "WETH": {
@@ -593,9 +593,9 @@
        "userNetPct": -17.003875413501504
       },
       "top": {
-       "ltvBps": 5000,
+       "ltvBps": 6640,
        "offerable": true,
-       "userNetPct": -21.69039426687688
+       "userNetPct": -29.3762851864125
       }
      }
     }
@@ -645,9 +645,9 @@
        "userNetPct": -34.956564099400765
       },
       "top": {
-       "ltvBps": 5000,
+       "ltvBps": 6240,
        "offerable": true,
-       "userNetPct": -43.69858012425095
+       "userNetPct": -54.53867999506519
       }
      },
      "WETH": {
@@ -662,9 +662,9 @@
        "userNetPct": -33.225864099400766
       },
       "top": {
-       "ltvBps": 5000,
+       "ltvBps": 6640,
        "offerable": true,
-       "userNetPct": -41.967880124250954
+       "userNetPct": -56.30478640500527
       }
      }
     }

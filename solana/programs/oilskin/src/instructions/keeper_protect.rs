@@ -200,14 +200,19 @@ mod tests {
 
     #[test]
     fn the_most_severe_allowed_crossed_rung_is_expected() {
-        // ladder: warn 1.50, repay 1.35, derisk 1.20, emergency 1.05
+        // ladder (generated from shared, the 1.25 floor's): warn 1.23, repay 1.16, derisk 1.09, emergency 1.05
         assert_eq!(expected_rung(16_000, 0b1111), None);
-        assert_eq!(expected_rung(14_000, 0b1111), Some(0)); // warn crossed only
-        assert_eq!(expected_rung(13_000, 0b1111), Some(1)); // repay
-        assert_eq!(expected_rung(11_000, 0b1111), Some(2)); // derisk
+        assert_eq!(expected_rung(12_000, 0b1111), Some(0)); // warn crossed only
+        assert_eq!(expected_rung(11_300, 0b1111), Some(1)); // repay
+        assert_eq!(expected_rung(10_700, 0b1111), Some(2)); // derisk
         assert_eq!(expected_rung(10_000, 0b1111), Some(3)); // emergency
-        assert_eq!(expected_rung(11_000, 0b0010), Some(1)); // only repay allowed: still "repay" while below it
-        assert_eq!(expected_rung(11_000, 0b1000), None); // only emergency allowed, not crossed
+        assert_eq!(expected_rung(10_700, 0b0010), Some(1)); // only repay allowed: still "repay" while below it
+        assert_eq!(expected_rung(10_700, 0b1000), None); // only emergency allowed, not crossed
+        // the numbers above are inside the generated bands, whatever the exact rungs are
+        assert!(LADDER[1].hf_bps < 12_000 && 12_000 < LADDER[0].hf_bps);
+        assert!(LADDER[2].hf_bps < 11_300 && 11_300 < LADDER[1].hf_bps);
+        assert!(LADDER[3].hf_bps < 10_700 && 10_700 < LADDER[2].hf_bps);
+        assert!(10_000 < LADDER[3].hf_bps);
     }
 
     #[test]

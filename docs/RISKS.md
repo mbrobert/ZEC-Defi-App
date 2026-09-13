@@ -169,7 +169,7 @@ cbBTC and 83.00 % WETH.
 (`CollateralRegistry.maxOfferedLtvBps`; 5000 for both assets at the 2026-09-05
 read), so an Aave LTV→0 deprecation takes the offer to 0 instead of advertising
 a loan that reverts inside Aave. **`AaveV3Venue.borrow` itself reverts
-`EntryHfTooLow` below the 1.55 floor**, so the floor holds on every path
+`EntryHfTooLow` below the registry floor (1.25, pinned 2026-09-12)**, so the floor holds on every path
 through the venue — the router's leveraged open, the new `openBorrowOnly`, a
 raw owner `execBatch`, a keeper call — and `unwind` reverts `ExitHfTooLow`
 (on the **global** health factor) if a withdrawal would leave debt below it.
@@ -178,10 +178,11 @@ The keeper ladder is the position's own since A4 (2026-09-12, BUILD-PLAN D7):
 (`entryHfWad[account]`, event `EntryHfRecorded`), the keeper reads it each tick
 and runs shared `ladderFor(entryHf)` — rung = 1 + (entry − 1) × 0.91 / 0.64 /
 0.36 / 0.09, emergency never under 1.05, hysteresis max(0.02, 0.05 × (entry − 1)
-÷ 0.55) — so a position opened at the 1.55 floor still runs warn 1.50, repay
-1.35, derisk 1.20, emergency 1.05 with 0.05 of hysteresis (`HF_LADDER`, the
-same numbers as before), and one opened at 1.30 runs 1.27 / 1.19 / 1.11 / 1.05
-with 0.03. An account with no record (opened before the record existed, or a
+÷ 0.55) — so a position opened at the 1.25 floor runs warn 1.23, repay 1.16,
+derisk 1.09, emergency 1.05 with 0.02 of hysteresis (`HF_LADDER`, the floor's
+own ladder), one opened at 1.30 runs 1.27 / 1.19 / 1.11 / 1.05 with 0.03, and
+one opened at the Sheltered mark 1.55 runs the 1.50 / 1.35 / 1.20 / 1.05 table
+the product ran before the pin, with 0.05. An account with no record (opened before the record existed, or a
 router that reads 0) runs the floor's ladder and its store record says
 `entryHf: null`; the disarm threshold a rung fired at travels on the dispatch
 record, so a resumed action is judged against the ladder that fired it, never
@@ -192,13 +193,13 @@ repays (`agent/src/dispatch/policy.ts`). The setting the user chooses is the
 entry health factor itself, on a slider from the lowest HF offered on the asset
 up to "borrow nothing" (`web/components/wizard/SettingStep.tsx`, A4.2); the
 borrow follows from debt = collateral × LT ÷ HF and a typed borrow drives the
-HF back; the slider's stop is the smallest of the registry floor, Aave's own max
-LTV and Oilskin's 50 % borrow cap, and the one that binds is named on screen
-(shared `offeredLtvBounds`). With the floor at 1.55 the cap binds on both Base
-assets (lowest HF 1.56 on cbBTC, 1.66 on WETH), so the Sheltered (1.55) and
-Expert (1.30) marks are shown disabled with the reason; a 1.25 floor changes
-nothing there until the cap moves — that is the founder's call, flagged in
-`BUILD-PLAN-2026-09-12.md` §4 A4. Every HF, rung price and liquidation drop
+HF back; the slider's stop is the smaller of the registry floor and Aave's own
+max LTV, and the one that binds is named on screen (shared `offeredLtvBounds`).
+There is no product cap any more (founder, 2026-09-12): with the floor at 1.25
+the stop is HF 1.25 on both Base assets — 62.40 % LTV on cbBTC, 66.40 % on WETH
+— and both marks are offered; a mark under the stop (as Expert would be under a
+1.55 floor) is shown disabled with the reason. Under the Sheltered mark the user
+ticks a sentence naming the fall that liquidates them. Every HF, rung price and liquidation drop
 the UI shows is computed from the live LT and the chosen HF (`ladderFor`,
 `drawdownToLiquidationPct`); tests forbid typed literals.
 
@@ -303,8 +304,8 @@ protection — and a venue-pessimistic one is acted on at the venue's figure
 because that is the price it liquidates at. Morpho has ONE threshold: a
 borrow is allowed up to the 86 % LLTV and liquidated below it, with no gap
 between "max LTV" and "liquidation threshold" as on Aave, so the registry's
-derived offer is min(86 / 1.55 = 55.5 %, 86 %, 50 % cap) = 50 %, and a position
-opened at 50 % has HF 1.72. Two things the Aave path does not have: (1) the
+derived offer is min(86 / 1.25 = 68.8 %, 86 %) = 68.8 % (no product cap since
+2026-09-12), and a position opened there has HF 1.25. Two things the Aave path does not have: (1) the
 cbBTC market's oracle is Chainlink **BTC/USD** with no cbBTC leg — it assumes
 cbBTC = BTC, so a cbBTC depeg does not move that market's price and the venue's
 health factor, which reads the market's oracle, would not see it until

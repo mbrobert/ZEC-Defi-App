@@ -72,7 +72,7 @@ function record(action: string, rung: string, hf: number, over: Partial<Dispatch
 }
 
 /** The PoC's account: two dust ids enumerated FIRST, four big ones after. */
-async function dustFirstRig(hf = 1.3) {
+async function dustFirstRig(hf = 1.15) {
   const chain = newMockChain();
   cbBtcPosition(chain, ACCOUNT_A, debtForHf(hf));
   const oil = new MockOilskin(chain, { router: ROUTER, lpVenue: LP_VENUE });
@@ -117,22 +117,22 @@ async function dustFirstRig(hf = 1.3) {
 
 describe("FIX C-9/C-10: the rung is sized by value and need, so a replay cannot compound", () => {
   it("FIX C-10: a repay with dust at the front of the enumeration closes VALUE, not the first ids", async () => {
-    const r = await dustFirstRig(1.3);
+    const r = await dustFirstRig(1.15);
     const before = await r.valuation();
-    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: before });
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.15), valuation: before });
     assert.equal(res.status, "SENT");
     const left = r.idsLeft();
-    // Was: ids [1,2] closed — $20 repaid against a $47,760 debt, CONFIRMED, latched.
+    // Was: ids [1,2] closed — $20 repaid against a ~$53,990 debt, CONFIRMED, latched.
     assert.ok(left.includes(1) && left.includes(2), `the dust ids must survive: ${JSON.stringify(left)}`);
     assert.ok(left.length < 6, "something real was closed");
     const after = await r.valuation();
     assert.ok(after.hf > before.hf + 0.05, `HF must actually move: ${before.hf} → ${after.hf}`);
-    assert.ok(after.hf >= 1.4, `the repay rung's disarm must be reached: ${after.hf}`);
+    assert.ok(after.hf >= HF_LADDER.find((x) => x.id === "repay")!.disarmHf, `the repay rung's disarm must be reached: ${after.hf}`);
   });
 
   it("FIX C-9: a crash between the send and the store write does NOT close another slice", async () => {
-    const r = await dustFirstRig(1.3);
-    const rec = record("repay", "repay", 1.3);
+    const r = await dustFirstRig(1.15);
+    const rec = record("repay", "repay", 1.15);
     // The keeper persists its nonce and the ids BEFORE broadcasting …
     const preSend: { nonce?: number; closeIds: bigint[] }[] = [];
     const res = await r.dispatcher.dispatch({
@@ -157,7 +157,7 @@ describe("FIX C-9/C-10: the rung is sized by value and need, so a replay cannot 
   });
 
   it("FIX C-9: when the world is still under the disarm, the replay is sized by what is STILL needed", async () => {
-    const r = await dustFirstRig(1.15); // derisk territory: one id cannot fix it
+    const r = await dustFirstRig(1.08); // derisk territory (under the 1.09 rung)
     const v = await r.valuation();
     const rung = HF_LADDER.find((x) => x.id === "derisk")!;
     const needBefore = usdcNeededFor(v, rung.disarmHf, USDC)!;
@@ -190,7 +190,7 @@ describe("FIX C-9/C-10: the rung is sized by value and need, so a replay cannot 
       ],
       dominantCollateral: { asset: USDC, symbol: "USDC", valueBase: 0n, liquidationThresholdBps: 0n },
     };
-    // HF 1.30 → disarm 1.40 on a $47,760 debt: Σ(collateral×LT) = 1.30 × 47,760.
+    // HF 1.30 → a 1.40 target (a 1.55-entry account's repay disarm) on a $47,760 debt: Σ(collateral×LT) = 1.30 × 47,760.
     const need = usdcNeededFor(v, 1.4, USDC)!;
     const expected = 47_760_000_000n - (47_760_000_000n * 13n) / 14n;
     assert.ok(need > 0n && need <= v.debt[0].amount);

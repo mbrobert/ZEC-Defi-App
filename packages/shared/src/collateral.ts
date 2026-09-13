@@ -108,9 +108,6 @@ export function tokenForCollateral(symbol: CollateralSymbol): (typeof BASE_TOKEN
 // Offered LTV — derived, never typed
 // ---------------------------------------------------------------------------
 
-/** Product-wide ceiling on the LTV we will ever offer, whatever the venue allows. */
-export const MAX_OFFERED_LTV_CAP_BPS = 5000;
-
 /** A floor expressed in hundredths so the floor division is exact integer math. */
 function floorHundredths(entryHfFloor: number): number {
   if (typeof entryHfFloor !== "number" || !Number.isFinite(entryHfFloor) || entryHfFloor <= 1) {
@@ -120,36 +117,36 @@ function floorHundredths(entryHfFloor: number): number {
 }
 
 /**
- * Highest LTV we offer for an asset whose venue liquidation threshold is
- * `liquidationThresholdBps`: min(cap, floor(LT / entryHfFloor)). The floor is the registry's
- * (`entryHfFloorWad`, read live where a surface can); the shared ENTRY_HF_FLOOR is the deploy
- * default. Integer arithmetic so 7800 → 5032 → 5000 and 6000 → 3870 exactly at 1.55.
- * Mirrors CollateralRegistry.maxOfferedLtvBps on-chain.
+ * Highest LTV the floor allows for an asset whose venue liquidation threshold is
+ * `liquidationThresholdBps`: floor(LT / entryHfFloor), whole bps. There is no product cap any more
+ * (founder, 2026-09-12: "remove the cap to the Aave limit") — the only other ceiling is the venue's
+ * own max LTV, which `offeredLtvBounds` and `CollateralRegistry.maxOfferedLtvBps` apply. The floor
+ * is the registry's (`entryHfFloorWad`, read live where a surface can); the shared ENTRY_HF_FLOOR is
+ * the deploy default. Integer arithmetic: 7800 → 6240 and 8300 → 6640 at 1.25; 6000 → 3870 at 1.55.
  */
 export function maxOfferedLtvBps(liquidationThresholdBps: number, entryHfFloor: number = ENTRY_HF_FLOOR): number {
   assertBps(liquidationThresholdBps, "liquidationThresholdBps");
-  const derived = Math.floor((liquidationThresholdBps * 100) / floorHundredths(entryHfFloor));
-  return Math.min(MAX_OFFERED_LTV_CAP_BPS, derived);
+  return Math.floor((liquidationThresholdBps * 100) / floorHundredths(entryHfFloor));
 }
 
 /**
  * Whole-percent "stop" for UI selectors: maxOfferedLtvBps floored to the
  * nearest 100 bps so web and prototypes round the same way.
- * 7000 → 4516 → 4500; 7800 → 5000.
+ * 7000 → 5600 at 1.25; 7800 → 6200.
  */
 export function maxOfferedLtvStopBps(liquidationThresholdBps: number, entryHfFloor: number = ENTRY_HF_FLOOR): number {
   return Math.floor(maxOfferedLtvBps(liquidationThresholdBps, entryHfFloor) / 100) * 100;
 }
 
 /** Which limit stops the slider (BUILD-PLAN-2026-09-12 §2b): named on screen, never silent. */
-export type LtvBindingCap = "entry_hf_floor" | "venue_max_ltv" | "product_ltv_cap";
+export type LtvBindingCap = "entry_hf_floor" | "venue_max_ltv";
 
 /**
- * Where the risk slider stops on an asset: the largest LTV Oilskin offers, with the cap that produced
- * it — the registry floor (LT ÷ floor, whole bps), the venue's own max LTV, or the product cap
- * (`MAX_OFFERED_LTV_CAP_BPS`). Ties name the floor first, then the venue: what the user cannot
- * change is said before what Oilskin chose. `minHf` is the entry HF at that LTV (+∞ when nothing
- * is offered, i.e. the venue's LTV is 0). The registry's own `maxOfferedLtvBps` is the same min.
+ * Where the risk slider stops on an asset: the largest LTV Oilskin offers, with the limit that
+ * produced it — the registry floor (LT ÷ floor, whole bps) or the venue's own max LTV; nothing
+ * else (the 50 % product cap was removed 2026-09-12). A tie names the floor. `minHf` is the entry
+ * HF at that LTV (+∞ when nothing is offered, i.e. the venue's LTV is 0). The registry's own
+ * `maxOfferedLtvBps` is the same min.
  */
 export function offeredLtvBounds(
   liquidationThresholdBps: number,
@@ -162,7 +159,6 @@ export function offeredLtvBounds(
   const candidates: readonly (readonly [LtvBindingCap, number])[] = [
     ["entry_hf_floor", byFloor],
     ["venue_max_ltv", venueLtvBps],
-    ["product_ltv_cap", MAX_OFFERED_LTV_CAP_BPS],
   ];
   let best = candidates[0]!;
   for (const c of candidates) if (c[1] < best[1]) best = c;
@@ -177,7 +173,7 @@ export interface LtvPreset {
   ltvBps: number;
   /** ltvBps floored to a whole percent (nearest 100 bps) — what a selector displays. */
   ltvStopBps: number;
-  /** false when this LTV would open below ENTRY_HF_FLOOR for this asset. */
+  /** false when this LTV would open below the entry floor for this asset. */
   offerable: boolean;
   /** LT / LTV. null when ltvBps is 0 (asset unlisted). */
   entryHf: number | null;

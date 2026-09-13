@@ -200,7 +200,7 @@ contract DeploySepolia is Deploy {
         c.registryOwner = vm.envOr("REGISTRY_OWNER", address(0));
         c.deployer = deployer;
         c.performanceBps = vm.envOr("PERFORMANCE_BPS", uint256(1000));
-        c.entryHfFloorWad = vm.envOr("ENTRY_HF_FLOOR_WAD", uint256(1.55e18));
+        c.entryHfFloorWad = vm.envOr("ENTRY_HF_FLOOR_WAD", uint256(1.25e18));
         c.registryTimelockDelay = vm.envOr("REGISTRY_TIMELOCK_DELAY", uint256(2 days));
         c.deployPythAdapter = vm.envOr("DEPLOY_PYTH_ADAPTER", false);
         c.pythMaxAge = vm.envOr("PYTH_MAX_AGE", uint256(60));

@@ -16,7 +16,6 @@ import {
   ENTRY_HF_FLOOR,
   FEES,
   LTV_PRESET_FIXED_BPS,
-  MAX_OFFERED_LTV_CAP_BPS,
   RANGE_PRESETS,
 } from "@zyo/shared";
 import { ENGINE_FEE_BPS, SETTINGS } from "../dist/src/model.js";
@@ -36,9 +35,10 @@ const inputs = {
     };
   }),
   fees: { performanceBps: FEES.performanceBps, engineFeeBps: ENGINE_FEE_BPS },
+  // The floor is the only product-side bound on the top preset (the 50 % cap was removed 2026-09-12);
+  // the venue's own max LTV is applied where a venue is read, not here.
   ltv: {
     entryHfFloor: ENTRY_HF_FLOOR,
-    maxOfferedLtvCapBps: MAX_OFFERED_LTV_CAP_BPS,
     fixedBps: { ...LTV_PRESET_FIXED_BPS },
   },
   pools: Object.fromEntries(

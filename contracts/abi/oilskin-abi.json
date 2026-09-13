@@ -4118,11 +4118,6 @@
           "stateMutability": "view",
           "outputs": "uint256"
         },
-        "MAX_OFFERED_LTV_CAP_BPS()": {
-          "selector": "0x79306d58",
-          "stateMutability": "view",
-          "outputs": "uint256"
-        },
         "MAX_TIMELOCK_DELAY()": {
           "selector": "0x2a083ca3",
           "stateMutability": "view",
@@ -4372,19 +4367,6 @@
         {
           "type": "function",
           "name": "BPS",
-          "inputs": [],
-          "outputs": [
-            {
-              "name": "",
-              "type": "uint256",
-              "internalType": "uint256"
-            }
-          ],
-          "stateMutability": "view"
-        },
-        {
-          "type": "function",
-          "name": "MAX_OFFERED_LTV_CAP_BPS",
           "inputs": [],
           "outputs": [
             {

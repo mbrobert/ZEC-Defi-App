@@ -78,8 +78,9 @@ falling; at 40 % LTV the distance from entry (HF 1.625) to liquidation (HF 1.0) 
 2. **Earlier triggers for cross-chain positions.** Derisk at 1.30 instead of 1.20,
    warn at 1.55. The ladder in `packages/shared` is per-venue-class, so this is
    a config, not a rewrite.
-3. **Lower offered LTV.** The registry rule already caps at min(50 %, LT/1.55) = 40 %
-   here; a cross-chain class could cap at 30 % (−53.8 % to liquidation).
+3. **Lower offered LTV.** The registry rule already stops at min(LT/1.25 = 52 %, Kamino's
+   own 40 %) = 40 % here (the 50 % product cap is gone, 2026-09-12); a cross-chain class
+   could stop at 30 % (−53.8 % to liquidation).
 4. **A keeper with keys and gas on both chains, and a runbook for each step
    failing.** This doubles the keeper's audit surface and adds Circle to the
    trust list.

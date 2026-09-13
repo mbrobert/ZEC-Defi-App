@@ -81,18 +81,32 @@ test.describe("Oilskin demo mode", () => {
     await page.getByTestId("amount").fill("0.5");
     await page.getByTestId("wizard-next").click();
 
-    // The risk slider (BUILD-PLAN D7 / §2b). On cbBTC the lowest HF offered today is 1.56: Oilskin's 50 % cap
-    // binds (registry floor 1.55, Aave's max LTV 73 %), so both marks sit under it, disabled, with the reason.
+    // The risk slider (BUILD-PLAN D7 / §2b) at the pinned 1.25 floor with no product cap: on cbBTC the slider stops at
+    // HF 1.25 (LTV 62.40 %), the registry floor binds (Aave's max LTV 73 % sits above), both marks are offered.
     const slider = page.getByTestId("hf-slider");
-    await expect(slider).toHaveAttribute("data-min-hf", "1.56");
-    await expect(slider).toHaveAttribute("data-binding", "product_ltv_cap");
-    await expect(page.getByTestId("entry-hf")).toHaveText("1.56"); // the default mark, pulled up to the offered minimum
-    await expect(page.getByTestId("entry-floor")).toHaveText("1.55");
-    await expect(page.getByTestId("mark-sheltered")).toBeDisabled();
-    await expect(page.getByTestId("mark-expert")).toBeDisabled();
-    await expect(page.getByTestId("mark-why")).toContainText("Oilskin's 50% cap on any borrow");
-    await expect(page.getByTestId("hf-acknowledgment")).toHaveCount(0); // never under the Sheltered mark on Base today
-    // Type a health factor: the borrow follows (debt = collateral × LT ÷ HF; 38,570.415 × 0.78 ÷ 1.95).
+    await expect(slider).toHaveAttribute("data-min-hf", "1.25");
+    await expect(slider).toHaveAttribute("data-binding", "entry_hf_floor");
+    await expect(page.getByTestId("entry-hf")).toHaveText("1.55"); // the default: the Sheltered mark, offered as is
+    await expect(page.getByTestId("borrow-usdc")).toContainText("19,409.63"); // 38,570.415 × 0.78 ÷ 1.55
+    await expect(page.getByTestId("ltv-line")).toContainText("50.3% LTV");
+    await expect(page.getByTestId("entry-floor")).toHaveText("1.25");
+    await expect(page.getByTestId("mark-sheltered")).toBeEnabled();
+    await expect(page.getByTestId("mark-expert")).toBeEnabled();
+    await expect(page.getByTestId("mark-why")).toHaveCount(0);
+    await expect(page.getByTestId("hf-acknowledgment")).toHaveCount(0); // at or above the Sheltered mark
+    // The Expert mark (1.30): under the Sheltered mark, so the acknowledgment appears, names the drawdown and this
+    // entry's first and last rung (ladderFor(1.30) = 1.27 … 1.05), and holds Continue until ticked.
+    await page.getByTestId("mark-expert").click();
+    await expect(page.getByTestId("entry-hf")).toHaveText("1.30");
+    await expect(page.getByTestId("borrow-usdc")).toContainText("23,142.25"); // 30,084.92 ÷ 1.30
+    await expect(page.getByTestId("hf-acknowledgment")).toHaveCount(1);
+    await expect(page.getByTestId("hf-ack-text")).toContainText("entry health factor of 1.30, under the Sheltered mark of 1.55");
+    await expect(page.getByTestId("hf-ack-text")).toContainText("A 23.1% fall in cbBTC");
+    await expect(page.getByTestId("hf-ack-text")).toContainText("comes at HF 1.27 and its last, closing the position, at 1.05");
+    await expect(page.getByTestId("wizard-next")).toBeDisabled();
+    await page.getByTestId("hf-ack").check();
+    await expect(page.getByTestId("wizard-next")).toBeEnabled();
+    // Type a health factor: the borrow follows (debt = collateral × LT ÷ HF; 38,570.415 × 0.78 ÷ 1.95); the tick is voided by the change.
     await page.getByTestId("hf-input").fill("1.95");
     await page.getByTestId("hf-input").press("Enter");
     await expect(page.getByTestId("entry-hf")).toHaveText("1.95");
@@ -102,10 +116,13 @@ test.describe("Oilskin demo mode", () => {
     await page.getByTestId("borrow-input").fill("12000");
     await page.getByTestId("borrow-input").press("Enter");
     await expect(page.getByTestId("entry-hf")).toHaveText("2.51");
+    await expect(page.getByTestId("hf-acknowledgment")).toHaveCount(0);
     await page.getByTestId("borrow-input").fill("30000");
     await page.getByTestId("borrow-input").press("Enter");
-    await expect(page.getByTestId("entry-hf")).toHaveText("1.56");
-    await expect(page.getByTestId("borrow-usdc")).toContainText("19,285.21"); // 30,084.92 ÷ 1.56
+    await expect(page.getByTestId("entry-hf")).toHaveText("1.25");
+    await expect(page.getByTestId("borrow-usdc")).toContainText("24,067.94"); // 30,084.92 ÷ 1.25, the floor's own ladder 1.23 / 1.16 / 1.09 / 1.05
+    await expect(page.getByTestId("rung-ladder")).toContainText("Warning (HF < 1.23");
+    await expect(page.getByTestId("hf-acknowledgment")).toHaveCount(1); // 1.25 is under the Sheltered mark too
     await page.getByTestId("hf-input").fill("1.95");
     await page.getByTestId("hf-input").press("Enter");
     await expect(page.getByTestId("entry-hf")).toHaveText("1.95");
@@ -143,7 +160,7 @@ test.describe("Oilskin demo mode", () => {
 
     const review = page.getByTestId("review");
     await expect(review).toContainText("Liquidation threshold (Aave, read)");
-    await expect(review).toContainText("1.95 (your choice; floor 1.55; lowest offered 1.56 — Oilskin's 50% cap on any borrow)");
+    await expect(review).toContainText("1.95 (your choice; floor 1.25; lowest offered 1.25 — the registry's entry floor of 1.25)");
     await expect(review).toContainText("40.00% LTV");
     await expect(review).toContainText("Emergency rung (HF < 1.09)");
     await expect(review).toContainText("the position is closed, the loan repaid and your cbBTC returned to you");
@@ -191,7 +208,7 @@ test.describe("Oilskin demo mode", () => {
     await setMode(page, "advanced");
     await page.getByTestId("amount").fill("0.5");
     await page.getByTestId("wizard-next").click();
-    await expect(page.getByTestId("entry-hf")).toHaveText("1.56"); // the default: the offered minimum, 0.78 / 0.50 (the cap binds)
+    await expect(page.getByTestId("entry-hf")).toHaveText("1.55"); // the default: the Sheltered mark, offered at the 1.25 floor
     await page.getByTestId("wizard-next").click();
 
     // No empty-menu banner any more: every pool × setting is a card with both models' numbers.

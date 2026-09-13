@@ -79,18 +79,19 @@ test("shared carries no LTV, LT or rate for Solana outside the dated snapshot ob
   for (const k of keys) assert.ok(!/ltv|threshold|rate|apr|apy/i.test(k), `reserve ref must not carry ${k}`);
 });
 
-test("the entry rule on Kamino's numbers: shared says 41 %, Kamino's own cap is 40 %, the offer is 40 % at HF 1.625", () => {
+test("the entry rule on Kamino's numbers: the 1.25 floor says 52 %, Kamino's own cap is 40 %, the offer is 40 % at HF 1.625", () => {
   const lt = KAMINO_ZCASH_SNAPSHOT_2026_09_12.zec.liquidationThresholdPct * 100;
   const venueLtv = KAMINO_ZCASH_SNAPSHOT_2026_09_12.zec.loanToValuePct * 100;
-  assert.equal(maxOfferedLtvBps(lt), 4193);
-  assert.equal(maxOfferedLtvStopBps(lt), 4100);
+  assert.equal(maxOfferedLtvBps(lt), 5200);
+  assert.equal(maxOfferedLtvStopBps(lt), 5200);
   const offered = Math.min(maxOfferedLtvStopBps(lt), venueLtv);
   assert.equal(offered, 4000);
   assert.equal(entryHfForLtv(lt, offered), 1.625);
   const drop = (id: "warn" | "repay" | "derisk" | "emergency") => Math.round(rungDropPct(id, lt, offered) * 10) / 10;
-  assert.equal(drop("warn"), 7.7);
-  assert.equal(drop("repay"), 16.9);
-  assert.equal(drop("derisk"), 26.2);
+  // the floor's ladder (1.23 / 1.16 / 1.09 / 1.05) on a 1.625 entry — the Solana keeper reads the global table until the program carries the entry HF
+  assert.equal(drop("warn"), 24.3);
+  assert.equal(drop("repay"), 28.6);
+  assert.equal(drop("derisk"), 32.9);
   assert.equal(drop("emergency"), 35.4);
   assert.equal(Math.round(liquidationDropPct(lt, offered) * 10) / 10, 38.5);
 });

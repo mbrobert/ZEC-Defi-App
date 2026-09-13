@@ -559,7 +559,7 @@ contract SlipstreamLpVenueTest is Fixture {
         StrategyRouter.OpenParams memory p = _routerOpen(COLLATERAL, BORROW, 1);
         bytes memory ret = _ownerExec(address(router), abi.encodeCall(StrategyRouter.openLeveragedLp, (p)));
         (uint256 id, uint256 hf) = abi.decode(ret, (uint256, uint256));
-        assertGt(hf, 1.55e18);
+        assertGe(hf, ENTRY_HF_FLOOR_WAD); // 30,000 USDC against 1 cbBTC: HF ~ 2.07, above the floor
         assertTrue(gaugeCbzec.stakedContains(address(acct), id), "opened on the direct venue, staked");
         assertEq(lpVenue.positionsOf(address(acct)).length, 0, "nothing on the engine venue");
         assertEq(directVenue.positionsOf(address(acct)).length, 1);

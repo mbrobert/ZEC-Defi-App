@@ -10,7 +10,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Keypair, PublicKey } from "@solana/web3.js";
-import { LOAN_DUST_UNITS } from "@zyo/shared";
+import { LOAN_DUST_UNITS, rungById } from "@zyo/shared";
 import { Logger, memorySink } from "../src/log.js";
 import type { Delivery, KeeperEvent, Notifier } from "../src/notify/notifier.js";
 import { SolanaObserveOnlyDispatcher, type SolanaDispatchIntent, type SolanaDispatchRecord, type SolanaDispatchResult, type SolanaDispatcher } from "../src/solana/dispatcher.js";
@@ -35,6 +35,15 @@ const freshPath = () => join(dir, `m${++n}.json`);
 const ONE_ZEC = 100_000_000n;
 const ONE_USDC = 1_000_000n;
 const LT = 0.65;
+const R = { warn: rungById("warn"), repay: rungById("repay"), derisk: rungById("derisk"), emergency: rungById("emergency") };
+/** Midway between two adjacent rungs' thresholds: inside the milder rung's band, above the more severe one. */
+const between = (mild: typeof R.warn, severe: typeof R.warn) => (mild.hf + severe.hf) / 2;
+/** The price that puts the fixture (10 ZEC, 3,990 USDC of debt) at `hf`. */
+const priceAt = (hf: number) => (hf * 3_990) / (10 * LT);
+/** Inside the repay band of the floor's ladder: under repay (1.16), above de-risk (1.09) → HF 1.125, ≈ $690.58 (−31 %). */
+const P_REPAY = priceAt(between(R.repay, R.derisk));
+/** After a repay: above repay's disarm level (1.18) but under warn's (1.25) → HF 1.215. */
+const HF_REPAY_CLEARED = (R.repay.disarmHf + R.warn.disarmHf) / 2;
 /** USD → Kamino scaled fraction (2^60). */
 const usdSf = (usd: number): bigint => (BigInt(Math.round(usd * 1e9)) * SF_ONE) / 1_000_000_000n;
 /** The debt (USDC base units) that puts a position at `hf` — the same arithmetic the valuation recomputes. */
@@ -192,7 +201,7 @@ async function rig(makeDispatcher?: (path: string, log: Logger, notifier: Record
 describe("Solana monitor: discovery and a healthy position", () => {
   it("registers every Account the program owns (owner from the account bytes) and records the HF Kamino reports; nothing fires", async () => {
     const r = await rig();
-    const id = r.world.add(10n * ONE_ZEC, 3_990n * ONE_USDC); // the top preset at $1,000 → HF 1.629
+    const id = r.world.add(10n * ONE_ZEC, 3_990n * ONE_USDC); // Kamino's 40 % cap at $1,000 → HF 1.629
     const first = await r.tick();
     assert.equal(first.discovered, 1);
     assert.equal(first.evaluated, 1);
@@ -225,19 +234,21 @@ describe("Solana monitor: discovery and a healthy position", () => {
 });
 
 describe("Solana monitor: the ladder", () => {
-  it("price −20 % (HF 1.30) crosses warn and repay: the most severe rung fires once, its record is on disk as PENDING before the dispatcher runs, then CONFIRMED with the signature; re-arms at the disarm level; the episode ends when the account is healthy again", async () => {
+  it("price into the repay band (HF 1.125, −31 %) crosses warn and repay: the most severe rung fires once, its record is on disk as PENDING before the dispatcher runs, then CONFIRMED with the signature; re-arms at the disarm level; the episode ends when the account is healthy again", async () => {
     const r = await rig();
     const id = r.world.add(10n * ONE_ZEC, 3_990n * ONE_USDC, 3_990n * ONE_USDC);
     await r.tick();
-    r.world.zecUsd = 800;
-    assert.ok(Math.abs(r.world.hf(id) - 1.303) < 0.001);
+    r.world.zecUsd = P_REPAY;
+    const hfNow = between(R.repay, R.derisk);
+    assert.ok(Math.abs(r.world.hf(id) - hfNow) < 0.001);
+    assert.ok(r.world.hf(id) < R.repay.hf && r.world.hf(id) > R.derisk.hf);
     const rep = await r.tick();
     assert.equal(rep.outcomes[0].fired, "repay");
     assert.equal(r.fake.calls.length, 1);
     const call = r.fake.calls[0];
     assert.equal(call.intent.record.rung, "repay");
     assert.equal(call.intent.record.action, "repay");
-    assert.ok(Math.abs(call.intent.record.hf - 1.303) < 0.001);
+    assert.ok(Math.abs(call.intent.record.hf - hfNow) < 0.001);
     // idempotency: the record existed on disk, PENDING, before the dispatcher was invoked
     const onDisk = call.storeOnDisk.dispatches.find((d) => d.key === call.intent.record.key);
     assert.ok(onDisk, "dispatch record persisted before dispatch");
@@ -254,8 +265,8 @@ describe("Solana monitor: the ladder", () => {
     assert.ok(kinds.includes("rung-fired") && kinds.includes("dispatch"));
     assert.ok(r.notifier.events.every((e) => e.detail?.chain === "solana"));
 
-    // The repay took effect: HF 1.45 clears repay's disarm level (1.40) but not warn's (1.55).
-    r.world.positions.get(id)!.debtUsdc = debtForHf(10n * ONE_ZEC, 800, 1.45);
+    // The repay took effect: HF 1.215 clears repay's disarm level (1.18) but not warn's (1.25).
+    r.world.positions.get(id)!.debtUsdc = debtForHf(10n * ONE_ZEC, P_REPAY, HF_REPAY_CLEARED);
     const after = await r.tick();
     assert.equal(after.outcomes[0].fired, null);
     assert.equal(r.fake.calls.length, 1, "nothing new dispatched");
@@ -264,11 +275,12 @@ describe("Solana monitor: the ladder", () => {
 
     // Fully healthy again → warn re-arms, the episode ends.
     r.world.zecUsd = 1000;
+    assert.ok(r.world.hf(id) >= R.warn.disarmHf);
     await r.tick();
     assert.deepEqual(r.store.getAccount(id)!.ladder.fired, []);
     assert.equal(r.store.getAccount(id)!.episode, null);
     // and a second fall starts a NEW episode with a new key
-    r.world.zecUsd = 800;
+    r.world.zecUsd = P_REPAY;
     r.world.positions.get(id)!.debtUsdc = 3_990n * ONE_USDC;
     await r.tick();
     assert.equal(r.fake.calls.length, 2);
@@ -281,7 +293,7 @@ describe("Solana monitor: the ladder", () => {
     const r = await rig();
     r.world.add(10n * ONE_ZEC, 3_990n * ONE_USDC);
     await r.tick();
-    r.world.zecUsd = 800;
+    r.world.zecUsd = P_REPAY;
     const h = r.watchdog.beginTick();
     const ac = new AbortController();
     ac.abort(new Error("shutdown: SIGTERM"));
@@ -298,7 +310,7 @@ describe("Solana monitor: fail closed", () => {
     const r = await rig();
     const id = r.world.add(10n * ONE_ZEC, 3_990n * ONE_USDC, 3_990n * ONE_USDC);
     await r.tick();
-    r.world.zecUsd = 800; // would cross repay if the read were trusted
+    r.world.zecUsd = P_REPAY; // would cross repay if the read were trusted
     r.world.scopeAgeS = 600; // S3: older than the 180 s the reserve allows
     const t1 = await r.tick();
     assert.equal(t1.outcomes[0].valuation, "UNKNOWN");
@@ -327,7 +339,7 @@ describe("Solana monitor: fail closed", () => {
     const r = await rig();
     const a = r.world.add(10n * ONE_ZEC, 3_990n * ONE_USDC, 3_990n * ONE_USDC);
     await r.tick();
-    r.world.zecUsd = 800;
+    r.world.zecUsd = P_REPAY;
     r.fake.script.push(() => ({ status: "REFUSED", reason: "GrantNotLive", permanent: true }));
     await r.tick();
     let rec = r.store.listDispatches({ account: a })[0];
@@ -345,7 +357,7 @@ describe("Solana monitor: fail closed", () => {
     const r2 = await rig();
     const b = r2.world.add(10n * ONE_ZEC, 3_990n * ONE_USDC, 3_990n * ONE_USDC);
     await r2.tick();
-    r2.world.zecUsd = 800;
+    r2.world.zecUsd = P_REPAY;
     r2.fake.script.push(() => ({ status: "FAILED", error: "blockhash not found" }), () => ({ status: "FAILED", error: "blockhash not found" }), () => ({ status: "FAILED", error: "blockhash not found" }));
     await r2.tick();
     assert.equal(r2.store.listDispatches({ account: b })[0].status, "FAILED");
@@ -369,7 +381,7 @@ describe("Solana monitor: fail closed", () => {
     const r = await rig();
     const id = r.world.add(10n * ONE_ZEC, 3_990n * ONE_USDC, 3_990n * ONE_USDC);
     await r.tick();
-    r.world.zecUsd = 800;
+    r.world.zecUsd = P_REPAY;
     let persistedBeforeReturn = false;
     r.fake.script.push(async (i) => {
       await i.persistBeforeSend!({ signature: SIG(9), plan: {} as never });
@@ -382,7 +394,7 @@ describe("Solana monitor: fail closed", () => {
     assert.equal(rec.status, "SENT");
     assert.equal(rec.txHash, SIG(9));
     // the sent repay took effect on chain before the next tick (else the confirmed-but-ineffective rule re-arms it, by design)
-    r.world.positions.get(id)!.debtUsdc = debtForHf(10n * ONE_ZEC, 800, 1.45);
+    r.world.positions.get(id)!.debtUsdc = debtForHf(10n * ONE_ZEC, P_REPAY, HF_REPAY_CLEARED);
     const t = await r.tick();
     assert.equal(t.resumed, 1);
     assert.equal(r.fake.confirms.length, 1);
@@ -399,7 +411,7 @@ describe("Solana monitor: observe-only", () => {
     const r = await rig((_p, log, notifier) => new SolanaObserveOnlyDispatcher(log, notifier));
     const id = r.world.add(10n * ONE_ZEC, 3_990n * ONE_USDC);
     await r.tick();
-    r.world.positions.get(id)!.debtUsdc = debtForHf(10n * ONE_ZEC, 1000, 1.48); // crosses warn (1.50) only
+    r.world.positions.get(id)!.debtUsdc = debtForHf(10n * ONE_ZEC, 1000, between(R.warn, R.repay)); // crosses warn (1.23) only: HF 1.195
     await r.tick();
     let rec = r.store.listDispatches({ account: id })[0];
     assert.equal(rec.action, "notify");
@@ -408,7 +420,7 @@ describe("Solana monitor: observe-only", () => {
     await r.tick();
     rec = r.store.listDispatches({ account: id })[0];
     assert.equal(rec.status, "NOTIFIED", "the resume path re-delivers and upgrades the record");
-    r.world.positions.get(id)!.debtUsdc = debtForHf(10n * ONE_ZEC, 1000, 1.3); // crosses repay (1.35), not derisk (1.20)
+    r.world.positions.get(id)!.debtUsdc = debtForHf(10n * ONE_ZEC, 1000, between(R.repay, R.derisk)); // crosses repay (1.16), not derisk (1.09): HF 1.125
     await r.tick();
     const repay = r.store.listDispatches({ account: id }).find((d) => d.rung === "repay")!;
     assert.equal(repay.status, "REFUSED");

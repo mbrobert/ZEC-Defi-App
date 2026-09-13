@@ -88,7 +88,7 @@ library BaseAddresses {
 ///   REGISTRY_OWNER           CollateralRegistry owner — a Safe on mainnet (required on mainnet)
 ///   AERODROME_SWAP_ROUTER    Slipstream SwapRouter — PROBED, not in VERIFIED-BASE-FACTS (required)
 ///   PERFORMANCE_BPS          default 1000  (packages/shared FEES.performanceBps; capped on chain)
-///   ENTRY_HF_FLOOR_WAD       default 1.55e18 (packages/shared ENTRY_HF_FLOOR)
+///   ENTRY_HF_FLOOR_WAD       default 1.25e18 (packages/shared ENTRY_HF_FLOOR, pinned 2026-09-12)
 ///   REGISTRY_TIMELOCK_DELAY  default 172800 (2 days) — the IMMUTABLE delay on replacing an
 ///                            asset's venue. Bounded [1 hours, 30 days] by the registry.
 ///   MORPHO_MARKET_IDS        comma-separated bytes32 market ids for MorphoBlueVenue (default: the
@@ -221,7 +221,7 @@ contract Deploy is Script {
         c.registryOwner = vm.envOr("REGISTRY_OWNER", address(0));
         c.deployer = msg.sender;
         c.performanceBps = vm.envOr("PERFORMANCE_BPS", uint256(1000));
-        c.entryHfFloorWad = vm.envOr("ENTRY_HF_FLOOR_WAD", uint256(1.55e18));
+        c.entryHfFloorWad = vm.envOr("ENTRY_HF_FLOOR_WAD", uint256(1.25e18));
         c.registryTimelockDelay = vm.envOr("REGISTRY_TIMELOCK_DELAY", uint256(2 days));
         c.deployPythAdapter = vm.envOr("DEPLOY_PYTH_ADAPTER", false);
         c.pythMaxAge = vm.envOr("PYTH_MAX_AGE", uint256(60));

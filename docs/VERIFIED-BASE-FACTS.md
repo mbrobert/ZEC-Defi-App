@@ -217,8 +217,9 @@ params do not hash back to it, an id that lends anything but USDC, or two ids fo
 is read from `idToMarketParams` on every call (`liquidationThresholdBps` = `maxLtvBps` = lltv / 1e14 =
 **8600**; Morpho has one threshold). Debt is computed the way Morpho's `_accrueInterest` computes it
 (`MorphoMath.expectedBorrowTotals`, third-order Taylor on `borrowRateView`), so a full repay approves
-exactly what Morpho pulls. The registry's derived offer is min(8600 / 1.55 = 5548, 8600, cap 5000) =
-**50 %**, the same as on Aave. The oracle for the cbBTC market is Chainlink **BTC/USD** with no quote feed
+exactly what Morpho pulls. The registry's derived offer was min(8600 / 1.55 = 5548, 8600, cap 5000) =
+**50 %** under the rule of the day, the same as on Aave (since 2026-09-12 the floor is 1.25 and there is no
+cap: min(8600 / 1.25 = 6880, 8600) = **68.8 %**). The oracle for the cbBTC market is Chainlink **BTC/USD** with no quote feed
 (USDC taken as $1); the WETH market's is Chainlink ETH/USD over USDC/USD. Both are the oracles already on the
 markets; the venue does not choose an oracle and uses no Pyth feed. `docs/RISKS.md` §8 carries the
 cbBTC = BTC assumption.
@@ -254,8 +255,9 @@ Aave data provider and oracle were derived from the pool's own `ADDRESSES_PROVID
 Mainnet comparison: WETH is 8000/8300 on mainnet, 8350/8500 here; there is no cbBTC reserve on Sepolia
 (WBTC is the nearest stand-in and cannot be borrowed, which is fine — we only supply it). Because
 `AaveV3Venue` and `CollateralRegistry` read LT/LTV live, the Sepolia registry will offer
-`min(5000, floor(8500/1.55)) = 5000` bps for WETH and `min(5000, floor(8300/1.55)) = 5000` for WBTC —
-same top rung as mainnet. The Sepolia USDC borrow rate (2.96 %) is a test-pool artefact; never quote it.
+`min(5000, floor(8500/1.55)) = 5000` bps for WETH and `min(5000, floor(8300/1.55)) = 5000` for WBTC under the
+rule of the day — same top rung as mainnet; since 2026-09-12 (floor 1.25, no cap) that is `min(floor(8500/1.25) = 6800,
+venue LTV)` and `min(floor(8300/1.25) = 6640, venue LTV)`. The Sepolia USDC borrow rate (2.96 %) is a test-pool artefact; never quote it.
 
 ### Price feeds
 

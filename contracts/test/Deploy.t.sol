@@ -39,7 +39,7 @@ contract DeployTest is Fixture {
         c.registryOwner = registryOwner;
         c.deployer = address(script);
         c.performanceBps = 1000;
-        c.entryHfFloorWad = 1.55e18;
+        c.entryHfFloorWad = 1.25e18;
         c.registryTimelockDelay = REGISTRY_TIMELOCK;
         // The fixture chain is 31337: opt in by default; the mainnet tests set what they need.
         c.allowAnyChain = true;
@@ -167,14 +167,15 @@ contract DeployTest is Fixture {
         assertEq(d.lpVenue.performanceBps(), 1000);
         assertEq(d.lpVenue.treasury(), treasury);
         assertEq(d.lpVenue.REWARD_TOKEN(), address(aero));
-        assertEq(d.registry.entryHfFloorWad(), 1.55e18);
+        assertEq(d.registry.entryHfFloorWad(), 1.25e18);
         assertTrue(d.registry.isEnabled(address(cbbtc)));
         assertTrue(d.registry.isEnabled(address(weth)));
         CollateralRegistry.AssetConfig memory z = d.registry.config(address(cbzec));
         assertFalse(z.enabled);
         assertEq(z.note, "no collateral market on Base yet");
         assertEq(z.decimals, 8);
-        assertEq(d.registry.maxOfferedLtvBps(address(cbbtc)), 5000);
+        // floor(7800 × 100 / 125) = 6240, under Aave's LTV 7300; no product cap above it.
+        assertEq(d.registry.maxOfferedLtvBps(address(cbbtc)), 6240);
         assertEq(d.registry.maxOfferedLtvBps(address(cbzec)), 0);
         assertEq(d.registry.owner(), address(script), "deployer owns until the Safe accepts");
         assertEq(d.registry.pendingOwner(), registryOwner);

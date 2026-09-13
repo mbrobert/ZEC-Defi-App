@@ -217,11 +217,14 @@ above. None of the words in `web/lib/copy.ts` `BANNED_WORDS` may be used to desc
 
 ## What this settles for the build
 
-- **Entry rule on Solana.** `maxOfferedLtvBps(6500)` from `packages/shared` = min(5000, floor(6500 / 1.55)) =
-  4193 → the 41 % stop; **Kamino's own LTV cap is 40 %**, so the offer is min(shared rule, venue LTV) = **40 %**,
-  entry HF = 65 / 40 = **1.625** (above the 1.55 floor). Rungs at 40 % LTV against LT 65 %: warn fires after a
-  **7.7 %** ZEC drop, repay **16.9 %**, de-risk **26.2 %**, emergency **35.4 %**, liquidation **38.5 %**
-  (`rungDropPct` / `liquidationDropPct`, shared).
+- **Entry rule on Solana.** `maxOfferedLtvBps(6500)` from `packages/shared` = floor(6500 / 1.25) = 5200 →
+  the 52 % stop (since 2026-09-12: floor 1.25, no product cap; under the earlier rule it was min(5000,
+  floor(6500 / 1.55)) = 4193); **Kamino's own LTV cap is 40 %**, so the offer is min(shared rule, venue LTV) =
+  **40 %** either way, entry HF = 65 / 40 = **1.625** (above the floor). Rungs of the floor's ladder (1.23 /
+  1.16 / 1.09 / 1.05, what the Solana keeper runs until the program carries the entry HF) at 40 % LTV against
+  LT 65 %: warn fires after a **24.3 %** ZEC drop, repay **28.6 %**, de-risk **32.9 %**, emergency **35.4 %**,
+  liquidation **38.5 %** (`rungDropPct` / `liquidationDropPct`, shared; the old 1.55 table gave 7.7 / 16.9 /
+  26.2 / 35.4 %).
 - **The pool is small and lopsided.** $358 K borrowable; +$84 K of new borrowing prices Kamino above Base's Aave;
   one borrower is 59 % of the debt. The yield service's pool-size gate (`SOLANA-ARCHITECTURE.md` §7) reads
   these three numbers live and refuses to offer what the pool cannot fund below the threshold.

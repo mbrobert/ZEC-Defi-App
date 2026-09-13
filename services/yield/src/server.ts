@@ -321,14 +321,17 @@ export class YieldServer {
 
   /**
    * The floor `/v1/forecast` judges `entry_hf_below_floor` against: the registry's, when a read is
-   * fresh; otherwise the shared constant — the deploy default — with the source said. A stale read is
-   * not served: a floor the chain may have RAISED since would let the forecast allow what the venue
-   * refuses. The last read time is carried either way so a stale read is visible.
+   * fresh; the STRICTER of the last good read and the shared deploy default when the read is stale
+   * ("registry_stale" — a floor the chain may have raised since must not be lowered by going stale);
+   * the shared constant with no read at all. The last read time is carried so a stale read is visible.
    */
-  private entryHfFloorForServe(): { floor: number; source: "registry" | "shared"; readAt: string | null } {
+  private entryHfFloorForServe(): { floor: number; source: "registry" | "registry_stale" | "shared"; readAt: string | null } {
     const v = this.floor.value;
     if (v && !this.isStale(this.floor)) return { floor: v.floor, source: "registry", readAt: v.sampledAt };
-    return { floor: ENTRY_HF_FLOOR, source: "shared", readAt: v?.sampledAt ?? null };
+    // Stale: the chain may have RAISED the floor since, never assume it lowered it — serve the stricter
+    // of the last good read and the shared deploy default, and say the read is stale.
+    if (v) return { floor: Math.max(v.floor, ENTRY_HF_FLOOR), source: "registry_stale", readAt: v.sampledAt };
+    return { floor: ENTRY_HF_FLOOR, source: "shared", readAt: null };
   }
 
   private emissionsForServe(poolId: string): (EmissionsSample & { stale: boolean }) | null {

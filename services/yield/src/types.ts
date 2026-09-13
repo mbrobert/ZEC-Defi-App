@@ -572,8 +572,12 @@ export interface ForecastResponse {
   entryHf: number;
   /** The floor every cell's `entry_hf_below_floor` was judged against: the registry's when read, else shared's. */
   entryHfFloor: number;
-  /** "registry" = `CollateralRegistry.entryHfFloorWad` read live and fresh; "shared" = the deploy-default constant (no registry configured, no read yet, or the last read stale). */
-  entryHfFloorSource: "registry" | "shared";
+  /**
+   * "registry" = `CollateralRegistry.entryHfFloorWad` read live and fresh; "registry_stale" = the last read
+   * is past `staleAfterMs` and the served floor is the stricter of it and the shared constant; "shared" = the
+   * deploy-default constant (no registry configured, or no read yet).
+   */
+  entryHfFloorSource: "registry" | "registry_stale" | "shared";
   /** When the registry was last read successfully, or null. Present even when the served floor fell back to shared's, so a stale read is visible. */
   entryHfFloorReadAt: string | null;
   depositUsd: number | null;

@@ -11,9 +11,10 @@ import {AaveV3Venue} from "../../src/venues/AaveV3Venue.sol";
 ///         router's `entryHfWad[account]`, written by every open (leveraged or borrow-only) as the
 ///         venue measured it, and emitted as `EntryHfRecorded`.
 ///
-///   The floor is the founder's number (1.25 proposed; 1.55 deployed until he pins it). These tests
-///   move it with the owner's setter and prove what the record says at 1.30 and at 1.25, and that a
-///   borrow under the floor still reverts `EntryHfTooLow` at the venue with nothing recorded.
+///   The floor is the founder's number, 1.25 (pinned 2026-09-12; the fixture and the deploy script
+///   carry it, packages/shared `ENTRY_HF_FLOOR`). These tests set it through the owner's setter too
+///   and prove what the record says at 1.30 and at 1.25, and that a borrow under the floor still
+///   reverts `EntryHfTooLow` at the venue with nothing recorded.
 contract EntryHfRecordedRegressionTest is Fixture {
     uint256 constant ONE_CBBTC = 1e8;
 
@@ -61,13 +62,14 @@ contract EntryHfRecordedRegressionTest is Fixture {
     }
 
     function test_A4_anOpenRecordsTheEntryHfTheVenueMeasuredAndEmitsIt() public {
-        uint256 borrow_ = _borrowFor(registry.maxOfferedLtvBps(address(cbbtc))); // 50 % → HF 1.56
+        // The offered top, floor(7800 × 100 / 125) = 62.4 %: HF 1.25, exactly the floor.
+        uint256 borrow_ = _borrowFor(registry.maxOfferedLtvBps(address(cbbtc)));
         vm.expectEmit(true, false, false, false, address(router));
         emit StrategyRouter.EntryHfRecorded(address(acct), 0);
         uint256 hf = _open(ONE_CBBTC, borrow_, 1);
         assertEq(router.entryHfWad(address(acct)), hf, "the record is the returned health factor");
         assertEq(hf, aaveVenue.healthFactor(address(acct)), "which is the venue's own measurement");
-        assertApproxEqAbs(hf, 1.56e18, 1e15, "LT 78 % over LTV 50 %");
+        assertApproxEqAbs(hf, 1.25e18, 1e15, "LT 78 % over LTV 62.4 % = floor(7800 x 100 / 125)");
         assertGe(hf, registry.entryHfFloorWad());
     }
 
@@ -93,8 +95,8 @@ contract EntryHfRecordedRegressionTest is Fixture {
         assertEq(registry.entryHfFloorWad(), 1.25e18);
         assertEq(
             registry.maxOfferedLtvBps(address(cbbtc)),
-            5000,
-            "the 50 % product cap still binds the OFFER on cbBTC at a 1.25 floor (62.4 % derived)"
+            6240,
+            "no product cap: the offer on cbBTC is floor(7800 x 100 / 125) = 6240, under Aave's 7300"
         );
 
         uint256 hf130 = _open(ONE_CBBTC, _borrowFor(6000), 4);

@@ -12,7 +12,6 @@
 import {
   ENTRY_HF_FLOOR,
   HF_MARKS,
-  MAX_OFFERED_LTV_CAP_BPS,
   offeredLtvBounds,
   presetToLpParams,
   validateLpParams,
@@ -118,14 +117,13 @@ export function bindingPlain(binding: LtvBindingCap, floor: number): string {
       return `the registry's entry floor of ${floor.toFixed(2)}`;
     case "venue_max_ltv":
       return "Aave's own maximum LTV for this asset";
-    case "product_ltv_cap":
-      return `Oilskin's ${MAX_OFFERED_LTV_CAP_BPS / 100}% cap on any borrow`;
   }
 }
 
 /**
  * Bounds for the chosen asset from the LIVE liquidation threshold, the venue's own max LTV and the
- * registry floor; null when the reserve is unreadable, unusable, or offers nothing (an Aave LTV→0
+ * registry floor — the only two limits since the 50 % product cap was removed (2026-09-12); null when
+ * the reserve is unreadable, unusable, or offers nothing (an Aave LTV→0
  * deprecation takes the offer to zero instead of advertising a setting under which every open reverts —
  * the registry's own `maxOfferedLtvBps` is the same min, so what is shown is what the chain accepts).
  */

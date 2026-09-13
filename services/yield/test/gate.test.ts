@@ -65,7 +65,7 @@ test("user net per LTV comes from the LIVE liquidation threshold via shared ltvP
   // a lower liquidation threshold lowers the top preset (D2 lesson: at LT 0.70 the top is below 50 %)
   const low = evaluateGate(inputs({ rates: { ...ratesFixture({ collateral: { cbBTC: { ...ratesFixture().collateral.cbBTC!, liquidationThresholdBps: 7000 }, WETH: ratesFixture().collateral.WETH! } }), stale: false } }));
   assert.equal(low.userNet[2]!.ltvBps, maxOfferedLtvBps(7000));
-  assert.ok(low.userNet[2]!.ltvBps < 5000);
+  assert.ok(low.userNet[2]!.ltvBps < maxOfferedLtvBps(7800), "5600 at LT 70 % under 6240 at LT 78 % — no product cap since 2026-09-12");
   // WETH collateral: its own supply APR and LT
   const weth = evaluateGate(inputs({ collateral: "WETH" }));
   assert.equal(weth.collateralSupplyAprPct, 1.843);

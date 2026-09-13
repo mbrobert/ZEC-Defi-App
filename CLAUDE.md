@@ -39,11 +39,12 @@ it. Hard refusals are safety only: the registry entry floor, a borrow the
 pool cannot fund, a stale oracle, a paused venue, a disabled asset, an
 unfunded cross-chain reserve. Risk is the user's choice on a continuous
 health-factor (HF) slider — HF ↔ borrow amount, both directions — above one
-registry floor (proposed 1.25; the founder's number, not pinned until he
-confirms it); "Sheltered" 1.55 and "Expert" 1.30 are quick-click marks, not
-modes; the ladder's rungs derive from the entry HF the user chose (BUILD-PLAN
-§2b, D7). Until steps A3 and A4 land, the code still carries the gate and the
-fixed 1.55 floor; BUILD-PLAN §6 names the stale phrases to strip with them.
+registry floor — **1.25, pinned 2026-09-12**; the venue's own max LTV is the
+only other ceiling (the 50 % product cap was removed the same day); "Sheltered"
+1.55 and "Expert" 1.30 are quick-click marks, not modes; the ladder's rungs
+derive from the entry HF the user chose (BUILD-PLAN §2b, D7), and the floor's
+own ladder is 1.23 / 1.16 / 1.09 / 1.05 with 0.02 of hysteresis. A3 and A4 have
+landed; BUILD-PLAN §6 still lists the phrases that must not come back.
 
 A loan never crosses a chain. Shared across chains: the ladder, the slider
 rules, the forecast math, the copy rules, the one website. Nothing is

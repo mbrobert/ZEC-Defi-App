@@ -147,9 +147,11 @@ budgets and within the band it committed to. Do **not** grant `openLeveragedLp`,
 
 ### Health factor floor (what the chain enforces, what the UI may claim)
 
-* `CollateralRegistry.entryHfFloorWad()` (1.55e18, from packages/shared `ENTRY_HF_FLOOR`), bounded
+* `CollateralRegistry.entryHfFloorWad()` (1.25e18, from packages/shared `ENTRY_HF_FLOOR`, pinned 2026-09-12), bounded
   (1, 10] and settable by the registry owner **without a timelock**.
-* `CollateralRegistry.maxOfferedLtvBps(asset)` = `min(LT/floor, venue.maxLtvBps(asset), 5000)`, both
+* `CollateralRegistry.maxOfferedLtvBps(asset)` = `min(LT/floor, venue.maxLtvBps(asset))` — the floor and
+  the venue's own max LTV are the only two ceilings (the 50 % product cap and its
+  `MAX_OFFERED_LTV_CAP_BPS` getter were removed 2026-09-12, BUILD-PLAN D7) — both
   venue parameters read live; 0 if disabled. A `0` means "not offerable right now", not a bug —
   Aave deprecates by zeroing the LTV while keeping the threshold. **Never type an LTV.**
 * **`AaveV3Venue.borrow` reverts `EntryHfTooLow(hf, floor)`** when the borrow would leave the
@@ -364,7 +366,7 @@ Constructor: `(address initialOwner, uint256 entryHfFloorWad, uint256 timelockDe
 
 | selector | function |
 |---|---|
-| `0x370f8b5c` | `maxOfferedLtvBps(address asset) → uint256` — `min(LT/floor, venue.maxLtvBps, 5000)`, 0 if disabled |
+| `0x370f8b5c` | `maxOfferedLtvBps(address asset) → uint256` — `min(LT/floor, venue.maxLtvBps)`, no product cap (2026-09-12), 0 if disabled |
 | `0xcc36b103` | `entryHfForLtv(address asset,uint256 ltvBps) → uint256` — **reverts** for a disabled / unlisted asset |
 | `0xe2baeb4e` | `entryHfFloorWad() → uint256` |
 | `0x0e68ec95` | `config(address asset) → (address venue,uint8 decimals,address priceFeed,bool enabled,string note)` |
@@ -376,7 +378,7 @@ Constructor: `(address initialOwner, uint256 entryHfFloorWad, uint256 timelockDe
 | `0x5e043289` | `pendingVenue(address asset) → (address venue,address priceFeed,uint40 eta)` — **watch this**: a non-zero `venue` is a pending redirection of user funds |
 | `0x7267d09a` | `setEnabled(address asset,bool enabled,string note)` (owner) — **immediate in both directions** |
 | `0xca0f0725` | `setEntryHfFloor(uint256 wad)` (owner, (1,10] WAD) — **immediate, not timelocked** |
-| `0x5ba1c1a9` | `TIMELOCK_DELAY()` · `0x169070eb` `MIN_TIMELOCK_DELAY()` (1 h) · `0x2a083ca3` `MAX_TIMELOCK_DELAY()` (30 d) · `0x79306d58` `MAX_OFFERED_LTV_CAP_BPS()` (5000) · `0x6a146024` `WAD()` · `0x249d39e9` `BPS()` |
+| `0x5ba1c1a9` | `TIMELOCK_DELAY()` · `0x169070eb` `MIN_TIMELOCK_DELAY()` (1 h) · `0x2a083ca3` `MAX_TIMELOCK_DELAY()` (30 d) · `0x6a146024` `WAD()` · `0x249d39e9` `BPS()` |
 | OZ | `owner() pendingOwner() transferOwnership(address) acceptOwnership() renounceOwnership()` |
 
 Events `AssetRegistered(address indexed asset,address indexed venue,uint8 decimals,address priceFeed,bool enabled)` (`0x59232194…`) · `AssetEnabled(address indexed asset,bool enabled,string note)` (`0x42a6f4a9…`) · `EntryHfFloorSet(uint256)` (`0x98b6d9d9…`) · **new:** `VenueChangeProposed(address indexed asset,address indexed currentVenue,address indexed proposedVenue,address priceFeed,uint40 eta)` (`0xabc5b6d3…`) · `VenueChangeCancelled(address indexed asset,address indexed proposedVenue)` (`0xe2ab07b5…`) · `VenueChangeAccepted(address indexed asset,address indexed previousVenue,address indexed newVenue)` (`0xc81b3a86…`) (+ OZ ownership events). **New (wave-2 M-HIGH-1):** `previousVenues(address asset) → address[]` — every venue the asset was pointed at before the current one; `acceptVenue` appends the venue it replaces (a venue that becomes current again leaves the list). `StrategyRouter.unwind` repays EVERY venue in `[venueOf(asset), ...previousVenues(asset)]` the calling account still owes USDC on, lowest health factor first (one `VenueRepaid` each, 2026-09-09), and withdraws from the first venue holding the position, so a switch never strands an open position; opens still use `venueOf` only.

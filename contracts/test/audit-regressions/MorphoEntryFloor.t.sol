@@ -18,7 +18,7 @@ import {Call} from "../../src/interfaces/IOilskinAccount.sol";
 ///
 ///   A-HIGH-1 (again)  Morpho's LLTV is 86 %, higher than Aave's 73 % LTV, so a hand-built
 ///                     `execBatch([permit2, supply, borrow])` against this venue would open at
-///                     HF 1.16 against an advertised 1.55 — unless the floor is a property of the
+///                     HF 1.16 against an advertised 1.25 — unless the floor is a property of the
 ///                     VENUE CALL here too. It is. Every borrow through this venue re-reads the
 ///                     registry's floor and the account's WORST market health factor.
 ///   The registry     cbBTC and WETH point at Aave at deploy time. The ONLY road to this venue is
@@ -112,8 +112,9 @@ contract MorphoEntryFloorRegressionTest is Fixture {
         assertEq(morphoVenue.collateral(address(acct), address(cbbtc)), 0, "atomic: nothing supplied");
         assertEq(cbbtc.balanceOf(alice), 10e8, "atomic: nothing pulled from the wallet");
 
-        // 86 % / 1.55 = 55.5 %, capped at 50 %. What the registry advertises works, same batch.
-        assertEq(registry.maxOfferedLtvBps(address(cbbtc)), 5000);
+        // floor(8600 × 100 / 125) = 6880, under Morpho's 8600: the floor is the only ceiling. What
+        // the registry advertises works, same batch.
+        assertEq(registry.maxOfferedLtvBps(address(cbbtc)), 6880);
         uint256 offered = _usdc(PRICE_CBBTC_E8, registry.maxOfferedLtvBps(address(cbbtc)));
         calls = _holdBatch(address(acct), alice, aliceKey, ONE_CBBTC, offered, 2);
         vm.prank(alice);
@@ -121,7 +122,8 @@ contract MorphoEntryFloorRegressionTest is Fixture {
         uint256 hf = morphoVenue.healthFactor(address(acct));
         console2.log("hold-path HF at the advertised maximum (Morpho):", hf);
         assertGe(hf, registry.entryHfFloorWad(), "what the registry advertises is what the chain enforces");
-        assertEq(registry.entryHfForLtv(address(cbbtc), 5000), 1.72e18, "LLTV / LTV, from the live market");
+        // LLTV / LTV from the live market: 8600e18 / 6880 lands exactly on the floor.
+        assertEq(registry.entryHfForLtv(address(cbbtc), 6880), 1.25e18, "LLTV / LTV, from the live market");
     }
 
     /// A FIRST-TIME user: account created and maxed out in one transaction. Refused, atomically.
@@ -142,12 +144,15 @@ contract MorphoEntryFloorRegressionTest is Fixture {
         assertEq(predicted.code.length, 0, "atomic: not even the account was created");
     }
 
-    /// No attacker, no client bug: the wizard quotes 50 %, cbBTC drops 20 % on the MARKET's oracle
-    /// inside the permit deadline, the borrow is fixed in USDC. The chain re-checks it now.
+    /// No attacker, no client bug: the wizard quotes the registry's 68.8 % maximum, cbBTC drops 10 %
+    /// on the MARKET's oracle inside the permit deadline, the borrow is fixed in USDC: 76.4 % of the
+    /// new price — inside Morpho's 86 % LLTV, so Morpho would lend — HF 0.86 / 0.764 = 1.125 against
+    /// the 1.25 floor. The chain re-checks it now. (A 20 % drop lands exactly on the LLTV, where
+    /// Morpho's own refusal and the floor's meet; 10 % keeps the test on the floor alone.)
     function test_FIX_M3b_priceDriftOnTheMarketOracleIsCaught() public {
-        uint256 quotedBorrow = _usdc(PRICE_CBBTC_E8, 5000);
+        uint256 quotedBorrow = _usdc(PRICE_CBBTC_E8, registry.maxOfferedLtvBps(address(cbbtc)));
         Call[] memory calls = _holdBatch(address(acct), alice, aliceKey, ONE_CBBTC, quotedBorrow, 11);
-        morphoOracleCbbtc.setPrice(_morphoPrice36((PRICE_CBBTC_E8 * 8000) / 10_000, 8));
+        morphoOracleCbbtc.setPrice(_morphoPrice36((PRICE_CBBTC_E8 * 9000) / 10_000, 8));
 
         vm.prank(alice);
         vm.expectPartialRevert(MorphoBlueVenue.EntryHfTooLow.selector);
@@ -239,7 +244,8 @@ contract MorphoEntryFloorRegressionTest is Fixture {
     /// The web's exact protection grant (target = router, selector = unwind, USDC budget) works
     /// against the Morpho venue and is still bounded by its budget.
     function test_FIX_M6_theShippedKeeperGrantProtectsAMorphoPosition() public {
-        uint256 offered = _usdc(PRICE_CBBTC_E8, 5000);
+        // Opened at the advertised maximum, floor(8600 × 100 / 125) = 6880 bps: HF 1.25, the floor.
+        uint256 offered = _usdc(PRICE_CBBTC_E8, registry.maxOfferedLtvBps(address(cbbtc)));
         _ownerExec(address(router), abi.encodeCall(StrategyRouter.openBorrowOnly, (_borrowOnly(ONE_CBBTC, offered, 5))));
         vm.prank(alice);
         acct.grant(
@@ -253,7 +259,8 @@ contract MorphoEntryFloorRegressionTest is Fixture {
         vm.prank(keeper);
         acct.execAsKeeper(_one(_callP(address(router), abi.encodeCall(StrategyRouter.unwind, (u)))));
         assertEq(morphoVenue.debt(address(acct), address(usdc)), offered - 10_000e6);
-        assertGt(morphoVenue.healthFactor(address(acct)), 1.72e18);
+        // 10,000 of the 54,760 USDC repaid: 68,450 / 44,760 = HF 1.53, up from the 1.25 it opened at.
+        assertGt(morphoVenue.healthFactor(address(acct)), registry.entryHfFloorWad());
 
         u.repayAmount = 1;
         vm.prank(keeper);
@@ -283,10 +290,11 @@ contract MorphoEntryFloorRegressionTest is Fixture {
             IMorphoBlue(address(morpho)), ICollateralRegistry(address(registry)), address(usdc), ids
         );
         assertEq(other.liquidationThresholdBps(address(aero)), 7700);
-        // The registry derives the offer from the live number: 77 % / 1.55 = 49.7 %, under the cap.
+        // The registry derives the offer from the live number: floor(7700 × 100 / 125) = 6160, under
+        // the market's own 7700.
         vm.prank(registryOwner);
         registry.register(address(aero), address(other), address(0), true, "");
-        assertEq(registry.maxOfferedLtvBps(address(aero)), 4967);
+        assertEq(registry.maxOfferedLtvBps(address(aero)), 6160);
     }
 
     // =====================================================================

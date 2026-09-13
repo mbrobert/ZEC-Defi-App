@@ -1,4 +1,5 @@
-// The ladder on localnet: a position at the top preset, the ZEC price walked down by the Scope mock, and
+// The ladder on localnet: a position at Kamino's 40 % cap, the ZEC price walked down by the Scope mock into each
+// band of the 1.25 floor's ladder (prices derived from the bands at run time, never typed), and
 // keeper_protect exercised at every rung — refusals by name first, then the repay-only path from idle USDC,
 // then the sale path (keeper pays USDC in, the program repays, releases ZEC at the Scope floor, delegates it),
 // then revocation. Every threshold from the generated ladder; every address from @zyo/shared.
@@ -16,7 +17,7 @@ import {
 } from "@solana/spl-token";
 import { expect } from "chai";
 import { readFileSync } from "node:fs";
-import { KAMINO_ZCASH_MARKET, SOLANA_PROGRAMS, SOLANA_TOKENS, HF_LADDER, rungById } from "@zyo/shared";
+import { KAMINO_ZCASH_MARKET, SOLANA_PROGRAMS, SOLANA_TOKENS, rungById, type HfRung } from "@zyo/shared";
 import type { Oilskin } from "../target/types/oilskin";
 import { keepWebSocketWarm } from "./support/wsKeepalive";
 
@@ -36,6 +37,15 @@ const SF = 1n << 60n;
 const u128 = (b: Buffer, o: number) => b.readBigUInt64LE(o) + (b.readBigUInt64LE(o + 8) << 64n);
 const keyFile = (p: string) => Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(p, "utf8"))));
 const RUNG = { warn: 0, repay: 1, derisk: 2, emergency: 3 } as const;
+/** The cloned ZEC reserve's liquidation threshold and LTV cap (VERIFIED-SOLANA-FACTS.md); the program reads both from the reserve. */
+const LT = 0.65;
+const KAMINO_LTV_CAP = 0.4;
+const SLIPPAGE_BPS = 200;
+/** Over the disarm level a repay aims 2 %: the interest accrued between the read and the refresh, and integer rounding. */
+const HEADROOM = 1.02;
+const RUNGS = { warn: rungById("warn"), repay: rungById("repay"), derisk: rungById("derisk"), emergency: rungById("emergency") };
+/** Midway between two adjacent rungs' thresholds: inside the milder rung's band, above the more severe one. */
+const between = (mild: HfRung, severe: HfRung) => (mild.hf + severe.hf) / 2;
 
 describe("ladder (localnet, Scope mock walks the ZEC price)", () => {
   const provider = anchor.AnchorProvider.env();
@@ -95,7 +105,17 @@ describe("ladder (localnet, Scope mock walks the ZEC price)", () => {
   const hfAt = async (priceUsd: number) => {
     const ob = await readObligation();
     const collateralUsd = (Number(ob.deposited) / 1e8) * priceUsd;
-    return (collateralUsd * 0.65) / (Number(ob.usdcDebt) / 1e6);
+    return (collateralUsd * LT) / (Number(ob.usdcDebt) / 1e6);
+  };
+  /** The ZEC price at which the current obligation sits at `hf`: hf × D ÷ (C × LT). */
+  const priceForHf = async (hf: number) => {
+    const ob = await readObligation();
+    return (hf * (Number(ob.usdcDebt) / 1e6)) / ((Number(ob.deposited) / 1e8) * LT);
+  };
+  /** USDC (base units) that lifts the current obligation to `hf` at `priceUsd` with no collateral change: D − C·P·LT ÷ hf. */
+  const usdcToLift = async (hf: number, priceUsd: number) => {
+    const ob = await readObligation();
+    return BigInt(Math.ceil((Number(ob.usdcDebt) / 1e6 - ((Number(ob.deposited) / 1e8) * priceUsd * LT) / hf) * 1e6));
   };
   const errCode = async (p: Promise<unknown>) => {
     try {
@@ -115,6 +135,10 @@ describe("ladder (localnet, Scope mock walks the ZEC price)", () => {
 
   let entryPrice = 0;
   let borrowed = 0n;
+  let repayPrice = 0;
+  let deriskPrice = 0;
+  let repaid = 0n;
+  let salePayment = 0n;
 
   before(async () => {
     releaseWs = keepWebSocketWarm(conn);
@@ -136,11 +160,12 @@ describe("ladder (localnet, Scope mock walks the ZEC price)", () => {
     await program.methods.initAccount().accounts({ owner: owner.publicKey, account, zecMint: ZEC_MINT, usdcMint: USDC_MINT, accountZec, accountUsdc, userMetadata, obligation, lendingMarket: MARKET, klendProgram: KLEND, rent: SYSVAR_RENT_PUBKEY, systemProgram: SystemProgram.programId, tokenProgram: TOKEN_PROGRAM_ID, associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID } as any).preInstructions(cu).signers([owner]).rpc();
     await stamp();
     await program.methods.deposit(new BN((10n * ONE_ZEC).toString())).accounts({ owner: owner.publicKey, account, obligation, userMetadata, rent: SYSVAR_RENT_PUBKEY, systemProgram: SystemProgram.programId, ownerZec, accountZec, kamino, tokenProgram: TOKEN_PROGRAM_ID } as any).preInstructions(cu).signers([owner]).rpc();
-    // Borrow at the top preset: 40 % of $10,000 → HF 1.625.
+    // Borrow at Kamino's 40 % cap: 40 % of $10,000 → HF 1.625, above every rung of the floor's ladder.
     borrowed = 3_990n * ONE_USDC;
     await stamp();
     await program.methods.borrow(new BN(borrowed.toString())).accounts({ owner: owner.publicKey, account, obligation, accountUsdc, kamino } as any).preInstructions(cu).signers([owner]).rpc();
-    expect((await readObligation()).hf).to.be.closeTo(1.629, 0.01);
+    expect((await readObligation()).hf).to.be.closeTo(LT / KAMINO_LTV_CAP, 0.01);
+    expect((await readObligation()).hf).to.be.greaterThan(RUNGS.warn.hf);
     // Grant: repay 5,000 USDC / day, sell 5 ZEC / day, 2 % slippage allowance, every rung named.
     const now = Math.floor(Date.now() / 1000);
     await program.methods
@@ -168,51 +193,80 @@ describe("ladder (localnet, Scope mock walks the ZEC price)", () => {
     expect(code).to.not.equal("OK");
   });
 
-  it("price −20 % → HF 1.30 crosses repay: naming derisk is refused (not crossed); repay from the Account's idle USDC lifts HF to the disarm level", async () => {
-    await setZecPrice(entryPrice * 0.8);
+  it("price into the repay band (HF midway between repay and de-risk, ≈ −31 %) crosses repay: naming derisk is refused (not crossed); a repay that cannot reach the disarm level is refused as ineffective; a repay from the Account's idle USDC sized to the disarm level clears it", async () => {
+    // On the floor's ladder: repay fires under 1.16, de-risk under 1.09 → the band's middle is 1.125, ≈ $690 here.
+    const target = between(RUNGS.repay, RUNGS.derisk);
+    repayPrice = await priceForHf(target);
+    await setZecPrice(repayPrice);
     // The obligation's cached values only move on refresh; the program refreshes inside keeper_protect. Off-chain:
-    const hf = await hfAt(entryPrice * 0.8);
-    expect(hf).to.be.closeTo(1.30, 0.01);
-    expect(rungById("repay").hf).to.be.greaterThan(hf);
+    const hf = await hfAt(repayPrice);
+    expect(hf).to.be.closeTo(target, 0.005);
+    expect(hf).to.be.lessThan(RUNGS.repay.hf);
+    expect(hf).to.be.greaterThan(RUNGS.derisk.hf);
     expect(await errCode(protect(RUNG.derisk, 100n * ONE_USDC, 0n))).to.equal("RungNotCrossed");
     // Too small an action must fail as ineffective: 10 USDC lifts nothing.
     await stamp();
     expect(await errCode(protect(RUNG.repay, 10n * ONE_USDC, 0n))).to.equal("ProtectionIneffective");
-    // 400 USDC of the Account's idle USDC (it still holds what it borrowed) lifts HF to ≥ 1.40.
+    // The Account still holds what it borrowed; the repay is sized to the disarm level (1.18) plus the headroom.
+    repaid = await usdcToLift(RUNGS.repay.disarmHf * HEADROOM, repayPrice);
+    expect(Number(repaid)).to.be.greaterThan(Number(10n * ONE_USDC));
     await stamp();
-    await protect(RUNG.repay, 400n * ONE_USDC, 0n);
+    await protect(RUNG.repay, repaid, 0n);
     const after = await readObligation();
-    expect(after.hf).to.be.greaterThanOrEqual(rungById("repay").disarmHf);
+    expect(after.hf).to.be.greaterThanOrEqual(RUNGS.repay.disarmHf);
+    expect(after.hf, "sized to the level, not a blanket repay: warn's disarm level is not reached").to.be.lessThan(RUNGS.warn.disarmHf);
     const g = await program.account.grant.fetch(grantPda);
-    expect(g.repayUsdcSpent.toString()).to.equal((400n * ONE_USDC).toString());
+    expect(g.repayUsdcSpent.toString()).to.equal(repaid.toString());
   });
 
-  it("price −34 % → HF 1.17 crosses de-risk: naming repay is refused as understated; a sale below the Scope floor is refused; the keeper pays USDC in, the program repays, releases ZEC and delegates exactly that", async () => {
-    await setZecPrice(entryPrice * 0.66);
-    const hf = await hfAt(entryPrice * 0.66);
-    expect(hf).to.be.lessThan(rungById("derisk").hf);
-    expect(hf).to.be.greaterThan(rungById("emergency").hf);
+  it("price into the de-risk band (HF midway between de-risk and emergency, ≈ −39 %) crosses de-risk: naming repay is refused as understated; a sale below the Scope floor is refused by name; the keeper pays USDC in, the program repays, releases 1 ZEC and delegates exactly that", async () => {
+    // On the floor's ladder: de-risk fires under 1.09, emergency under 1.05 → the band's middle is 1.07, ≈ $614 here.
+    const target = between(RUNGS.derisk, RUNGS.emergency);
+    deriskPrice = await priceForHf(target);
+    await setZecPrice(deriskPrice);
+    const hf = await hfAt(deriskPrice);
+    expect(hf).to.be.closeTo(target, 0.005);
+    expect(hf).to.be.lessThan(RUNGS.derisk.hf);
+    expect(hf).to.be.greaterThan(RUNGS.emergency.hf);
     expect(await errCode(protect(RUNG.repay, 100n * ONE_USDC, 0n))).to.equal("RungUnderstated");
 
-    // The keeper's USDC comes in with the same transaction. 700 USDC for 1 ZEC at $660 × 0.98 = 646.8 floor → OK;
-    // 600 USDC for 1 ZEC → below the floor.
+    // The keeper's USDC comes in with the same transaction. Three bounds size what it must pay for Y ZEC, all
+    // derived here: the Scope floor, Y × price × (1 − the 2 % allowance); the disarm level with C − Y ZEC left;
+    // and Kamino's 40 % cap — klend refuses to release collateral while LTV stays above it, so after the repay
+    // debt ÷ ((C − Y) × price) must be ≤ 40 %. On this market the cap needs the most.
+    const ob = await readObligation();
+    const debtUsd = Number(ob.usdcDebt) / 1e6;
+    const collateral = Number(ob.deposited) / 1e8;
+    const floorFor = (y: number) => y * deriskPrice * (1 - SLIPPAGE_BPS / 10_000);
+    const disarmNeeds = (y: number) => debtUsd - ((collateral - y) * deriskPrice * LT) / (RUNGS.derisk.disarmHf * HEADROOM);
+    const capNeeds = (y: number) => debtUsd - (collateral - y) * deriskPrice * KAMINO_LTV_CAP;
     const payIn = (usdc: bigint) => [createTransferInstruction(keeperUsdc, accountUsdc, keeper.publicKey, usdc)];
-    // Kamino also refuses to release collateral while LTV stays above 40 %, so the repayment must be large
-    // enough for the withdraw to be allowed at all: after repaying 1,500, debt ≈ 2,090 against 9 × $660 = $5,940 (35 %).
+
+    // Below the floor, BY NAME: the floor grows with Y faster than the cap's need does, so for a large enough Y a
+    // payment that lets klend release the collateral is still under the floor for that much ZEC.
+    let yBelow = Math.ceil((debtUsd - collateral * deriskPrice * KAMINO_LTV_CAP) / (deriskPrice * (1 - SLIPPAGE_BPS / 10_000 - KAMINO_LTV_CAP)));
+    if (!(floorFor(yBelow) > capNeeds(yBelow))) yBelow += 1;
+    expect(yBelow).to.be.at.most(5, "inside the grant's 5 ZEC per period");
+    const shortPay = BigInt(Math.ceil(((capNeeds(yBelow) + floorFor(yBelow)) / 2) * 1e6));
     await stamp();
-    expect(await errCode(protect(RUNG.derisk, 600n * ONE_USDC, 1n * ONE_ZEC, payIn(600n * ONE_USDC)))).to.not.equal("OK");
+    expect(await errCode(protect(RUNG.derisk, shortPay, BigInt(yBelow) * ONE_ZEC, payIn(shortPay)))).to.equal("SaleBelowFloor");
+
+    // The sale: 1 ZEC for the largest of the three needs plus 2 % (the cap is the binding one here).
+    expect(capNeeds(1), "Kamino's cap needs more than the disarm level on this market").to.be.greaterThan(disarmNeeds(1));
+    salePayment = BigInt(Math.ceil(Math.max(floorFor(1), disarmNeeds(1), capNeeds(1)) * HEADROOM * 1e6));
     await stamp();
     const zecBefore = (await getAccount(conn, accountZec)).amount;
-    await protect(RUNG.derisk, 1_500n * ONE_USDC, 1n * ONE_ZEC, payIn(1_500n * ONE_USDC));
+    await protect(RUNG.derisk, salePayment, 1n * ONE_ZEC, payIn(salePayment));
     const after = await readObligation();
-    expect(after.hf).to.be.greaterThanOrEqual(rungById("derisk").disarmHf);
+    expect(after.hf).to.be.greaterThanOrEqual(RUNGS.derisk.disarmHf);
+    expect(after.ltv, "released inside Kamino's cap").to.be.lessThanOrEqual(KAMINO_LTV_CAP + 1e-4);
     const acct = await getAccount(conn, accountZec);
     expect(Number(acct.amount - zecBefore)).to.be.closeTo(Number(ONE_ZEC), 1000);
     expect(acct.delegate?.equals(keeper.publicKey), "the keeper is the delegate").to.equal(true);
     expect(Number(acct.delegatedAmount)).to.be.closeTo(Number(ONE_ZEC), 1000);
     const g = await program.account.grant.fetch(grantPda);
     expect(g.sellZecSpent.toString()).to.equal((1n * ONE_ZEC).toString());
-    expect(g.repayUsdcSpent.toString()).to.equal((1_900n * ONE_USDC).toString());
+    expect(g.repayUsdcSpent.toString()).to.equal((repaid + salePayment).toString());
     // The keeper pulls what it earned — and not one unit more.
     const pull = new Transaction().add(createTransferInstruction(accountZec, keeperZec, keeper.publicKey, acct.delegatedAmount));
     await provider.sendAndConfirm(pull, [keeper]);
@@ -223,9 +277,12 @@ describe("ladder (localnet, Scope mock walks the ZEC price)", () => {
     expect(pulledMore).to.equal(false);
   });
 
-  it("budgets bind: a repay above what is left in the period is refused", async () => {
+  it("budgets bind: a repay one unit above what is left in the period is refused", async () => {
+    const g = await program.account.grant.fetch(grantPda);
+    const left = BigInt(g.repayUsdcPerPeriod.toString()) - BigInt(g.repayUsdcSpent.toString());
+    expect(left).to.equal(5_000n * ONE_USDC - repaid - salePayment);
     await stamp();
-    expect(await errCode(protect(RUNG.derisk, 4_000n * ONE_USDC, 0n))).to.equal("RepayBudgetExceeded");
+    expect(await errCode(protect(RUNG.derisk, left + 1n, 0n))).to.equal("RepayBudgetExceeded");
   });
 
   it("after revoke_all the keeper is refused by name", async () => {

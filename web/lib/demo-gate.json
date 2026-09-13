@@ -8,8 +8,8 @@
   },
   "asOf": "2026-09-12T19:31:31+00:00",
   "stakedLiquidityProvenance": "one verified block read; marked corroborated because demo mode records a warm service. A live sample must earn corroboration from MIN_STAKED_SAMPLES independent readings.",
-  "modelGeneratedAt": "2026-09-12T19:44:42+00:00",
-  "mcCalibrationGeneratedAt": "2026-09-12T19:44:42+00:00",
+  "modelGeneratedAt": "2026-09-13T02:38:48+00:00",
+  "mcCalibrationGeneratedAt": "2026-09-13T02:38:48+00:00",
   "borrowAprPct": 4.5174,
   "liquidationThresholdBps": {
     "cbBTC": 7800,
@@ -69,9 +69,9 @@
           "userNetPct": -6.16
         },
         {
-          "ltvBps": 5000,
+          "ltvBps": 6240,
           "offerable": true,
-          "userNetPct": -7.71
+          "userNetPct": -9.62
         }
       ],
       "qualifies": false,
@@ -107,9 +107,9 @@
           "userNetPct": -4.43
         },
         {
-          "ltvBps": 5000,
+          "ltvBps": 6640,
           "offerable": true,
-          "userNetPct": -5.97
+          "userNetPct": -8.51
         }
       ],
       "qualifies": false,
@@ -167,9 +167,9 @@
           "userNetPct": -13.45
         },
         {
-          "ltvBps": 5000,
+          "ltvBps": 6240,
           "offerable": true,
-          "userNetPct": -16.82
+          "userNetPct": -20.99
         }
       ],
       "qualifies": false,
@@ -205,9 +205,9 @@
           "userNetPct": -11.72
         },
         {
-          "ltvBps": 5000,
+          "ltvBps": 6640,
           "offerable": true,
-          "userNetPct": -15.09
+          "userNetPct": -20.61
         }
       ],
       "qualifies": false,
@@ -265,9 +265,9 @@
           "userNetPct": -28.42
         },
         {
-          "ltvBps": 5000,
+          "ltvBps": 6240,
           "offerable": true,
-          "userNetPct": -35.53
+          "userNetPct": -44.34
         }
       ],
       "qualifies": false,
@@ -303,9 +303,9 @@
           "userNetPct": -26.69
         },
         {
-          "ltvBps": 5000,
+          "ltvBps": 6640,
           "offerable": true,
-          "userNetPct": -33.8
+          "userNetPct": -45.45
         }
       ],
       "qualifies": false,
@@ -429,9 +429,9 @@
           "userNetPct": -24.49
         },
         {
-          "ltvBps": 5000,
+          "ltvBps": 6240,
           "offerable": true,
-          "userNetPct": -30.62
+          "userNetPct": -38.21
         }
       ],
       "qualifies": false,
@@ -467,9 +467,9 @@
           "userNetPct": -22.76
         },
         {
-          "ltvBps": 5000,
+          "ltvBps": 6640,
           "offerable": true,
-          "userNetPct": -28.89
+          "userNetPct": -38.93
         }
       ],
       "qualifies": false,
@@ -527,9 +527,9 @@
           "userNetPct": -37.71
         },
         {
-          "ltvBps": 5000,
+          "ltvBps": 6240,
           "offerable": true,
-          "userNetPct": -47.14
+          "userNetPct": -58.84
         }
       ],
       "qualifies": false,
@@ -565,9 +565,9 @@
           "userNetPct": -35.98
         },
         {
-          "ltvBps": 5000,
+          "ltvBps": 6640,
           "offerable": true,
-          "userNetPct": -45.41
+          "userNetPct": -60.88
         }
       ],
       "qualifies": false,
@@ -691,9 +691,9 @@
           "userNetPct": -18.73
         },
         {
-          "ltvBps": 5000,
+          "ltvBps": 6240,
           "offerable": true,
-          "userNetPct": -23.42
+          "userNetPct": -29.23
         }
       ],
       "qualifies": false,
@@ -729,9 +729,9 @@
           "userNetPct": -17
         },
         {
-          "ltvBps": 5000,
+          "ltvBps": 6640,
           "offerable": true,
-          "userNetPct": -21.69
+          "userNetPct": -29.38
         }
       ],
       "qualifies": false,
@@ -789,9 +789,9 @@
           "userNetPct": -34.96
         },
         {
-          "ltvBps": 5000,
+          "ltvBps": 6240,
           "offerable": true,
-          "userNetPct": -43.7
+          "userNetPct": -54.54
         }
       ],
       "qualifies": false,
@@ -827,9 +827,9 @@
           "userNetPct": -33.23
         },
         {
-          "ltvBps": 5000,
+          "ltvBps": 6640,
           "offerable": true,
-          "userNetPct": -41.97
+          "userNetPct": -56.3
         }
       ],
       "qualifies": false,
@@ -2047,5 +2047,5 @@
     }
   ],
   "qualifying": [],
-  "generatedAt": "2026-09-12T19:44:42+00:00"
+  "generatedAt": "2026-09-13T02:38:48+00:00"
 }

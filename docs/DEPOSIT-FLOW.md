@@ -30,7 +30,7 @@ strategy.
    Permit2 (once), one Permit2 typed-data signature per deposit (exact amount,
    nonce, deadline), one transaction per deposit.
 4. **The entry floor is enforced by the venue, not the UI.** `AaveV3Venue.borrow`
-   reverts `EntryHfTooLow` below the registry's `entryHfFloorWad()` (1.55). No
+   reverts `EntryHfTooLow` below the registry's `entryHfFloorWad()` (1.25). No
    path — Simple, Advanced, hand-built batch — can open under it.
 5. **The keeper can do exactly one thing.** The grant names one target
    (`StrategyRouter`), one selector (`unwind`), per-token daily budgets, and an
@@ -82,7 +82,7 @@ flowchart TD
         X["registry.isEnabled(asset) · venueOf(asset)<br/>LP pool must contain USDC"] --> X1
         X1["Permit2.permitTransferFrom<br/>collateral: wallet → account"] --> X2
         X2["AaveV3Venue.supply(asset, amount)<br/>onBehalfOf = account"] --> X3
-        X3["AaveV3Venue.borrowAgainst(asset, USDC, borrowAmount)<br/>(borrow(USDC, amount) when collateralAmount = 0)<br/>reverts EntryHfTooLow if HF &lt; 1.55"] --> X4{hold or LP?}
+        X3["AaveV3Venue.borrowAgainst(asset, USDC, borrowAmount)<br/>(borrow(USDC, amount) when collateralAmount = 0)<br/>reverts EntryHfTooLow if HF &lt; the registry floor (1.25)"] --> X4{hold or LP?}
         X4 -- hold --> X5["done: USDC sits in the account"]
         X4 -- LP --> X6["SnuggleLpVenue.open(poolId, USDC single-sided,<br/>width, delay, price band, deadline)"]
         X6 --> X7["engine.depositSingleSided → NFT id minted to the account<br/>any bounce folded single-sided in the same tx"]
@@ -112,7 +112,7 @@ flowchart TD
     W[Connect wallet] --> A["factory.accountOf(owner) · isDeployed"]
 
     A --> C1["Collateral: cbBTC · WETH<br/>+ 'already supplied' (collateralAmount = 0,<br/>borrow against existing collateral)"]
-    C1 --> C2["LTV: any value ≤ registry.maxOfferedLtvBps(asset)<br/>= min(floor(LT / 1.55), venue.maxLtvBps(asset), 50% cap)<br/>entry HF shown live from registry.entryHfForLtv"]
+    C1 --> C2["LTV: any value ≤ registry.maxOfferedLtvBps(asset)<br/>= min(floor(LT / 1.25), venue.maxLtvBps(asset)) — no product cap<br/>entry HF shown live from registry.entryHfForLtv"]
     C2 --> C3{strategy}
     C3 -- hold --> H["router.openBorrowOnly"]
     C3 -- LP --> C4["Pool: any curated USDC pool<br/>gate result shown per pool, not hidden"]
@@ -182,7 +182,7 @@ flowchart TD
         X5{"repayAmount?"} -- "&gt; 0" --> X6["venue.repay(USDC, min(owed, held)) on EVERY venue the account owes,<br/>lowest health factor first, until the amount is spent<br/>one VenueRepaid(account, venue, repaid) each"]
         X5 -- 0 --> X7
         X6 --> X7{"withdrawAmount?"}
-        X7 -- "&gt; 0" --> X8["withdraw venue.withdraw(collateralAsset, amount)<br/>then THAT venue's HF must be ≥ 1.55 or revert ExitHfTooLow"]
+        X7 -- "&gt; 0" --> X8["withdraw venue.withdraw(collateralAsset, amount)<br/>then THAT venue's HF must be ≥ the registry floor (1.25) or revert ExitHfTooLow"]
         X7 -- 0 --> X9
         X8 --> X9["assert router balances unchanged<br/>emit LeveragedLpUnwound(closed, failed, usdcFromLp, repaid, withdrawn, worst HF across the venues)"]
     end
@@ -217,7 +217,7 @@ for a future delivery channel, not a delivery channel itself yet.
 | after `AaveV3Venue.borrow` | Aave (collateral) | **account** (debt = account's) | — |
 | hold: end of tx 2 | Aave | **account** | — |
 | LP: after `SnuggleLpVenue.open` | Aave | in the engine position (staked in the Aerodrome gauge) | minted to the **account** |
-| after `unwind` | Aave, or wallet if withdrawn and HF ≥ 1.55 | repaid to Aave; remainder in the account | burned / closed |
+| after `unwind` | Aave, or wallet if withdrawn and HF ≥ the floor (1.25) | repaid to Aave; remainder in the account | burned / closed |
 | after `claim` + `sweep` | — | rewards (AERO) and USDC swept to the **wallet** | — |
 
 Nothing ever sits in the router, a venue, the swap adapter, or any address

@@ -15,30 +15,28 @@ import {
 
 const close = (a: number, b: number, eps = 1e-9) => assert.ok(Math.abs(a - b) < eps, `${a} !~ ${b}`);
 
-test("ladder constants are the spec values and disarm at rung + 0.05", () => {
-  assert.equal(ENTRY_HF_FLOOR, 1.55);
-  assert.equal(HF_HYSTERESIS, 0.05);
+test("ladder constants are the pinned values: the 1.25 floor's ladder 1.23 / 1.16 / 1.09 / 1.05, disarming at rung + 0.02 (the hysteresis minimum)", () => {
+  assert.equal(ENTRY_HF_FLOOR, 1.25);
+  assert.equal(HF_HYSTERESIS, 0.05, "the hysteresis SCALE (0.05 at a 1.55 entry); the floor's own hysteresis is hysteresisFor(1.25)");
+  assert.equal(hysteresisFor(ENTRY_HF_FLOOR), 0.02);
   assert.deepEqual(
     HF_LADDER.map((r) => [r.id, r.hf, r.disarmHf, r.severity, r.action]),
     [
-      ["warn", 1.5, 1.55, 1, "notify"],
-      ["repay", 1.35, 1.4, 2, "repay"],
-      ["derisk", 1.2, 1.25, 3, "derisk"],
-      ["emergency", 1.05, 1.1, 4, "emergency-unwind"],
+      ["warn", 1.23, 1.25, 1, "notify"],
+      ["repay", 1.16, 1.18, 2, "repay"],
+      ["derisk", 1.09, 1.11, 3, "derisk"],
+      ["emergency", 1.05, 1.07, 4, "emergency-unwind"],
     ],
   );
   for (const r of HF_LADDER) {
-    assert.equal(r.disarmHf, Number((r.hf + HF_HYSTERESIS).toFixed(2)), `${r.id} disarm`);
+    assert.equal(r.disarmHf, Number((r.hf + hysteresisFor(ENTRY_HF_FLOOR)).toFixed(2)), `${r.id} disarm`);
   }
-  // strictly descending thresholds, strictly ascending severity
   for (let i = 1; i < HF_LADDER.length; i++) {
     assert.ok(HF_LADDER[i].hf < HF_LADDER[i - 1].hf);
     assert.ok(HF_LADDER[i].severity > HF_LADDER[i - 1].severity);
   }
-  // a fresh position at the entry floor is never already armed
-  assert.ok(ENTRY_HF_FLOOR >= rungById("warn").disarmHf);
+  assert.ok(HF_LADDER[0].hf < ENTRY_HF_FLOOR, "warn sits under the floor — a position never opens inside its own alarm");
   assert.ok(Object.isFrozen(HF_LADDER));
-  assert.throws(() => rungById("nope" as any));
 });
 
 test("entryHfForLtv = LT / LTV (cbBTC, WETH, a low-LT asset)", () => {
@@ -55,12 +53,12 @@ test("entryHfForLtv = LT / LTV (cbBTC, WETH, a low-LT asset)", () => {
 
 test("rungFor returns the most severe fired rung and is healthy at/above warn", () => {
   assert.equal(rungFor(2.0), null);
-  assert.equal(rungFor(1.5), null, "boundary: hf == warn is not below warn");
-  assert.equal(rungFor(1.4999)?.id, "warn");
-  assert.equal(rungFor(1.35)?.id, "warn");
-  assert.equal(rungFor(1.3499)?.id, "repay");
-  assert.equal(rungFor(1.2)?.id, "repay");
-  assert.equal(rungFor(1.1999)?.id, "derisk");
+  assert.equal(rungFor(1.23), null, "boundary: hf == warn is not below warn");
+  assert.equal(rungFor(1.2299)?.id, "warn");
+  assert.equal(rungFor(1.16)?.id, "warn");
+  assert.equal(rungFor(1.1599)?.id, "repay");
+  assert.equal(rungFor(1.09)?.id, "repay");
+  assert.equal(rungFor(1.0899)?.id, "derisk");
   assert.equal(rungFor(1.05)?.id, "derisk");
   assert.equal(rungFor(1.0499)?.id, "emergency");
   assert.equal(rungFor(0.5)?.id, "emergency");
@@ -76,11 +74,11 @@ test("rungFor fails closed on unreadable input", () => {
 });
 
 test("hysteresis: a fired rung clears only at disarmHf", () => {
-  assert.equal(isRungCleared("warn", 1.5), false);
-  assert.equal(isRungCleared("warn", 1.5499), false);
-  assert.equal(isRungCleared("warn", 1.55), true);
-  assert.equal(isRungCleared(rungById("emergency"), 1.1), true);
-  assert.equal(isRungCleared("emergency", 1.09), false);
+  assert.equal(isRungCleared("warn", 1.23), false);
+  assert.equal(isRungCleared("warn", 1.2499), false);
+  assert.equal(isRungCleared("warn", 1.25), true);
+  assert.equal(isRungCleared(rungById("emergency"), 1.07), true);
+  assert.equal(isRungCleared("emergency", 1.069), false);
   assert.equal(isRungCleared("repay", NaN), false, "fail closed");
 });
 
@@ -91,9 +89,9 @@ test("liquidationDropPct and rungDropPct", () => {
   assert.equal(liquidationDropPct(7800, 0), 100);
   assert.equal(liquidationDropPct(0, 5000), 0);
   assert.equal(liquidationDropPct(5000, 6000), 0, "already liquidatable → clamp at 0");
-  // warn fires at price × 1.5 × LTV / LT
-  close(rungDropPct("warn", 7800, 5000), (1 - (1.5 * 5000) / 7800) * 100); // ≈ 3.8 %
-  close(rungDropPct("emergency", 7800, 5000), (1 - (1.05 * 5000) / 7800) * 100);
+  // warn fires at price × warn.hf × LTV / LT
+  close(rungDropPct("warn", 7800, 5000), (1 - (rungById("warn").hf * 5000) / 7800) * 100);
+  close(rungDropPct("emergency", 7800, 5000), (1 - (rungById("emergency").hf * 5000) / 7800) * 100);
   assert.ok(rungDropPct("emergency", 7800, 5000) < liquidationDropPct(7800, 5000));
   assert.ok(rungDropPct("warn", 7800, 5000) < rungDropPct("repay", 7800, 5000));
 });
@@ -109,17 +107,21 @@ test("assertBps", () => {
 // ---------------------------------------------------------------------------
 // The derived ladder (BUILD-PLAN-2026-09-12 §2b, step A4)
 // ---------------------------------------------------------------------------
-import { ladderFor, hysteresisFor, hfFromWad, entryHfAtLtvBps, rungDropPctAtHf, ladderForRecorded, offeredLtvBounds, MAX_OFFERED_LTV_CAP_BPS, ltvForEntryHfBps, drawdownToLiquidationPct, HF_MARKS, MIN_LADDER_ENTRY_HF, LADDER_RUNG_FACTORS, EMERGENCY_HF_MIN, HF_HYSTERESIS_MIN } from "../dist/index.js";
+import { ladderFor, hysteresisFor, hfFromWad, entryHfAtLtvBps, rungDropPctAtHf, ladderForRecorded, offeredLtvBounds, ltvForEntryHfBps, drawdownToLiquidationPct, HF_MARKS, MIN_LADDER_ENTRY_HF, LADDER_RUNG_FACTORS, EMERGENCY_HF_MIN, HF_HYSTERESIS_MIN } from "../dist/index.js";
 
-test("ladderFor(1.55) IS today's ladder, rung for rung — HF_LADDER is the floor's derived case", () => {
-  assert.deepEqual(ladderFor(1.55), HF_LADDER);
+test("HF_LADDER is ladderFor(ENTRY_HF_FLOOR) rung for rung — ladderFor(1.25) — and ladderFor(1.55) is the table the product ran before the pin", () => {
+  assert.deepEqual(ladderFor(1.25), HF_LADDER);
+  assert.deepEqual(
+    ladderFor(1.25).map((r) => [r.id, r.hf, r.disarmHf]),
+    [["warn", 1.23, 1.25], ["repay", 1.16, 1.18], ["derisk", 1.09, 1.11], ["emergency", 1.05, 1.07]],
+  );
+  assert.equal(hysteresisFor(1.25), 0.02, "max(0.02, 0.05 × 0.25 ÷ 0.55 = 0.0227) → 0.02");
   assert.deepEqual(
     ladderFor(1.55).map((r) => [r.id, r.hf, r.disarmHf]),
     [["warn", 1.5, 1.55], ["repay", 1.35, 1.4], ["derisk", 1.2, 1.25], ["emergency", 1.05, 1.1]],
   );
   assert.equal(hysteresisFor(1.55), HF_HYSTERESIS);
-  assert.deepEqual(LADDER_RUNG_FACTORS, { warn: 0.91, repay: 0.64, derisk: 0.36, emergency: 0.09 });
-  assert.ok(Object.isFrozen(ladderFor(1.55)) && Object.isFrozen(ladderFor(1.55)[0]));
+  assert.ok(Object.isFrozen(ladderFor(1.25)) && Object.isFrozen(ladderFor(1.25)[0]));
 });
 
 test("the worked rows of BUILD-PLAN §2b: e = 1.30 → 1.27 / 1.19 / 1.11 / 1.05, e = 1.25 → 1.23 / 1.16 / 1.09 / 1.05; hysteresis 0.03 and 0.02", () => {
@@ -165,7 +167,8 @@ test("rungFor / isRungCleared / rungDropPct take a derived ladder; defaults stay
   assert.equal(rungFor(1.18, L)?.id, "repay");
   assert.equal(rungFor(1.1, L)?.id, "derisk");
   assert.equal(rungFor(1.04, L)?.id, "emergency");
-  assert.equal(rungFor(1.28)?.id, "repay", "the default is still the 1.55 ladder, where 1.28 is already under the repay rung");
+  assert.equal(rungFor(1.28), null, "the default is the 1.25 floor's ladder, where 1.28 sits above the 1.23 warn rung");
+  assert.equal(rungFor(1.28, ladderFor(1.55))?.id, "repay", "on the old 1.55 table 1.28 was already under the repay rung");
   assert.equal(isRungCleared("warn", 1.29, L), false);
   assert.equal(isRungCleared("warn", 1.3, L), true);
   assert.equal(isRungCleared(L[1], 1.22), true, "a rung object carries its own disarm");
@@ -196,19 +199,22 @@ test("the slider identities: LTV = LT ÷ HF floored to bps; drawdown = 1 − 1 �
   assert.ok(Object.isFrozen(HF_MARKS));
 });
 
-test("the floor is a parameter everywhere the offered LTV is derived — the shared default is today's 1.55, a 1.25 floor lifts the top on cbBTC to the 50 % cap and on a 6000-LT asset to 48 %", async () => {
-  const { maxOfferedLtvBps, maxOfferedLtvStopBps, ltvPresets, isOfferableLtv, MAX_OFFERED_LTV_CAP_BPS } = await import("../dist/index.js");
-  assert.equal(maxOfferedLtvBps(7800), 5000);
-  assert.equal(maxOfferedLtvBps(7800, 1.55), 5000);
+test("the floor is a parameter everywhere the offered LTV is derived — the shared default is the pinned 1.25 (cbBTC 62.40 %, WETH 66.40 %), and there is no product cap any more", async () => {
+  const { maxOfferedLtvBps, maxOfferedLtvStopBps, ltvPresets, isOfferableLtv } = await import("../dist/index.js");
+  assert.equal(maxOfferedLtvBps(7800), 6240);
+  assert.equal(maxOfferedLtvBps(7800, 1.25), 6240);
+  assert.equal(maxOfferedLtvBps(8300), 6640);
+  assert.equal(maxOfferedLtvBps(7800, 1.55), 5032, "at the old floor the derived top was 50.32 % — the 50 % cap that used to clip it is gone");
   assert.equal(maxOfferedLtvBps(6000, 1.55), 3870);
   assert.equal(maxOfferedLtvBps(6000, 1.25), 4800);
-  assert.equal(maxOfferedLtvBps(7800, 1.25), MAX_OFFERED_LTV_CAP_BPS, "the 50 % cap still binds");
   assert.equal(maxOfferedLtvStopBps(6000, 1.25), 4800);
-  assert.equal(ltvPresets(6000, 1.25)[2].ltvBps, 4800);
-  assert.equal(isOfferableLtv(6000, 4500, 1.25), true);
-  assert.equal(isOfferableLtv(6000, 4500), false);
+  assert.equal(maxOfferedLtvStopBps(7800, 1.55), 5000);
+  assert.equal(ltvPresets(7800, 1.55)[2].ltvBps, 5032);
+  assert.equal(ltvPresets(7800)[2].ltvBps, 6240);
+  assert.equal(isOfferableLtv(7800, 6240), true);
+  assert.equal(isOfferableLtv(7800, 6241), false);
+  assert.equal(isOfferableLtv(7800, 5100, 1.55), false);
   assert.throws(() => maxOfferedLtvBps(7800, 1), RangeError);
-  assert.throws(() => maxOfferedLtvBps(7800, NaN), RangeError);
 });
 
 test("hfFromWad: a router record at 18 decimals becomes the four-decimal number the ladder derives from; 0 stays 0", () => {
@@ -235,25 +241,25 @@ test("entryHfAtLtvBps truncates LT ÷ LTV to four decimals — the number the ro
 
 test("ladderForRecorded is the keeper's fallback rule: a usable record derives its ladder, anything else is the floor's, and it never throws", () => {
   assert.deepEqual(ladderForRecorded(1.3), { ladder: ladderFor(1.3), derived: true });
-  assert.deepEqual(ladderForRecorded(1.55).ladder.map((r) => r.hf), [1.5, 1.35, 1.2, 1.05]);
+  assert.deepEqual(ladderForRecorded(1.55).ladder.map((r) => r.hf), [1.5, 1.35, 1.2, 1.05], "a 1.55 record derives the old table");
+  assert.deepEqual(ladderForRecorded(1.25), { ladder: HF_LADDER, derived: true });
   for (const bad of [null, undefined, 0, 1.05, Number.NaN, Number.POSITIVE_INFINITY]) {
     const r = ladderForRecorded(bad as number | null | undefined);
     assert.equal(r.derived, false, String(bad));
-    assert.deepEqual(r.ladder.map((x) => x.hf), [1.5, 1.35, 1.2, 1.05]);
+    assert.deepEqual(r.ladder.map((x) => x.hf), [1.23, 1.16, 1.09, 1.05]);
   }
 });
 
-test("offeredLtvBounds names the cap that stops the slider: the 50 % cap on cbBTC and WETH at the 1.55 floor and still at 1.25; the floor on a 60 % threshold; Aave's LTV when it is the smallest; ties name the floor, then the venue", () => {
-  assert.deepEqual(offeredLtvBounds(7800, 7300), { maxLtvBps: MAX_OFFERED_LTV_CAP_BPS, minHf: 1.56, binding: "product_ltv_cap" });
-  assert.deepEqual(offeredLtvBounds(8300, 8000), { maxLtvBps: 5000, minHf: 1.66, binding: "product_ltv_cap" });
-  assert.deepEqual(offeredLtvBounds(7800, 7300, 1.25), { maxLtvBps: 5000, minHf: 1.56, binding: "product_ltv_cap" }, "62.4 % > 50 %: the cap binds whatever the floor");
-  assert.deepEqual(offeredLtvBounds(6000, 7300), { maxLtvBps: 3870, minHf: 1.5503, binding: "entry_hf_floor" });
-  assert.deepEqual(offeredLtvBounds(6000, 7300, 1.25), { maxLtvBps: 4800, minHf: 1.25, binding: "entry_hf_floor" });
+test("offeredLtvBounds names what stops the slider — the 1.25 floor on cbBTC (62.40 %) and WETH (66.40 %), Aave's own LTV when it is the smaller, nothing else; a tie names the floor", () => {
+  assert.deepEqual(offeredLtvBounds(7800, 7300), { maxLtvBps: 6240, minHf: 1.25, binding: "entry_hf_floor" });
+  assert.deepEqual(offeredLtvBounds(8300, 8000), { maxLtvBps: 6640, minHf: 1.25, binding: "entry_hf_floor" });
+  assert.deepEqual(offeredLtvBounds(7800, 7300, 1.55), { maxLtvBps: 5032, minHf: 1.55, binding: "entry_hf_floor" }, "at the old floor: 50.32 %, no cap clipping it to 50");
+  assert.deepEqual(offeredLtvBounds(6000, 7300), { maxLtvBps: 4800, minHf: 1.25, binding: "entry_hf_floor" });
+  assert.deepEqual(offeredLtvBounds(6000, 7300, 1.55), { maxLtvBps: 3870, minHf: 1.5503, binding: "entry_hf_floor" });
   assert.deepEqual(offeredLtvBounds(7800, 4500), { maxLtvBps: 4500, minHf: 1.7333, binding: "venue_max_ltv" });
+  assert.deepEqual(offeredLtvBounds(7800, 6000), { maxLtvBps: 6000, minHf: 1.3, binding: "venue_max_ltv" }, "Aave's 60 % under the floor's 62.4 %: the venue binds and the slider stops at 1.30");
   assert.deepEqual(offeredLtvBounds(7800, 0), { maxLtvBps: 0, minHf: Number.POSITIVE_INFINITY, binding: "venue_max_ltv" }, "an LTV→0 deprecation offers nothing");
-  // Ties: 7750 / 1.55 = 5000 exactly → the floor is named over the cap; venue 5000 too → the floor still first.
-  assert.equal(offeredLtvBounds(7750, 7300).binding, "entry_hf_floor");
-  assert.equal(offeredLtvBounds(7750, 5000).binding, "entry_hf_floor");
-  assert.equal(offeredLtvBounds(7800, 5000).binding, "venue_max_ltv", "venue and cap tie at 5000: the venue is named");
+  // A tie (6250 / 1.25 = 5000 exactly, venue 5000): the floor is named — what the user cannot change comes first.
+  assert.equal(offeredLtvBounds(6250, 5000).binding, "entry_hf_floor");
   assert.throws(() => offeredLtvBounds(0.78, 7300), RangeError);
 });

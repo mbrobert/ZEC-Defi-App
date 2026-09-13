@@ -82,7 +82,7 @@ abstract contract Fixture is Test {
     /// @dev The direct venue's one pool id: the pool address, left-padded (set in setUp).
     bytes32 POOL_ID_DIRECT;
 
-    uint256 constant ENTRY_HF_FLOOR_WAD = 1.55e18; // packages/shared ENTRY_HF_FLOOR
+    uint256 constant ENTRY_HF_FLOOR_WAD = 1.25e18; // packages/shared ENTRY_HF_FLOOR (pinned 2026-09-12)
     uint256 constant PERF_BPS = 1000; // packages/shared FEES.performanceBps
     uint256 constant REGISTRY_TIMELOCK = 2 days; // Deploy.s.sol REGISTRY_TIMELOCK_DELAY default
 

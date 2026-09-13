@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { createWalletClient, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { base } from "viem/chains";
+import { rungById } from "@zyo/shared";
 import { GRANT_SELECTORS } from "../src/abi/oilskin.js";
 import { runKeeper } from "../src/keeper.js";
 import { memorySink } from "../src/log.js";
@@ -64,7 +65,7 @@ describe("FIX C-7: every rung and every escalation leaves the keeper host", () =
   it("FIX C-7: the warn rung and the on-chain rungs both reach a real channel", async () => {
     const chain = newMockChain();
     chain.emitAccountCreated(OWNER_A, ACCOUNT_A, 1n);
-    cbBtcPosition(chain, ACCOUNT_A, debtForHf(1.45)); // warn
+    cbBtcPosition(chain, ACCOUNT_A, debtForHf(1.2)); // warn
     const oil = new MockOilskin(chain, { router: ROUTER, lpVenue: LP_VENUE });
     oil.install([ACCOUNT_A]);
     oil.grant(KEEPER, ROUTER, GRANT_SELECTORS["StrategyRouter.unwind"]);
@@ -86,7 +87,7 @@ describe("FIX C-7: every rung and every escalation leaves the keeper host", () =
     assert.ok(delivered.some((e) => e.kind === "rung-fired"));
     const notify = delivered.find((e) => e.kind === "notify")!;
     assert.equal(notify.account, ACCOUNT_A.toLowerCase());
-    assert.ok(typeof notify.hf === "number" && notify.hf < 1.5);
+    assert.ok(typeof notify.hf === "number" && notify.hf < rungById("warn").hf);
     assert.ok(notify.at.length > 0);
 
     // …and an on-chain rung reports its outcome on the same channel.
@@ -131,7 +132,7 @@ describe("FIX C-7: every rung and every escalation leaves the keeper host", () =
   it("FIX C-7: a webhook is POSTed per event, and a keeper with NO channel says so loudly at startup", async () => {
     const chain = newMockChain();
     chain.emitAccountCreated(OWNER_A, ACCOUNT_A, 1n);
-    cbBtcPosition(chain, ACCOUNT_A, debtForHf(1.45));
+    cbBtcPosition(chain, ACCOUNT_A, debtForHf(1.2));
     const oil = new MockOilskin(chain, { router: ROUTER, lpVenue: LP_VENUE });
     oil.install([ACCOUNT_A]);
 
@@ -184,7 +185,7 @@ describe("FIX C-7: every rung and every escalation leaves the keeper host", () =
     // warning is LOGGED_ONLY, never NOTIFIED.
     const sink3 = memorySink();
     const logOnlyChain = newMockChain();
-    cbBtcPosition(logOnlyChain, ACCOUNT_A, debtForHf(1.45)); // warn rung
+    cbBtcPosition(logOnlyChain, ACCOUNT_A, debtForHf(1.2)); // warn rung
     logOnlyChain.emitAccountCreated(OWNER_A, ACCOUNT_A, 5n);
     const logOnlyOil = new MockOilskin(logOnlyChain, { router: ROUTER, lpVenue: LP_VENUE });
     logOnlyOil.install([ACCOUNT_A]);

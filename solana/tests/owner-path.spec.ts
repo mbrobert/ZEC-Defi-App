@@ -1,6 +1,6 @@
 // Owner path on localnet (cloned ZCASH-market world; Scope replaced by the mock so prices are stamped fresh before
-// every Kamino-touching call): init_account → deposit → borrow refused above the floor → borrow at the top
-// preset (HF 1.625) → withdraw refused below the exit floor → close_position refused when short → repay → withdraw
+// every Kamino-touching call): init_account → deposit → borrow refused above the offer → borrow at Kamino's
+// 40 % cap (HF 1.625) → withdraw refused below the exit floor → close_position refused when short → repay → withdraw
 // all → transfer_out → grant / revoke / revoke_all → a second cycle closed in one instruction.
 // Every address comes from @zyo/shared; every threshold from the generated ladder.
 //
@@ -33,6 +33,9 @@ const USDC_MINT = pk(SOLANA_TOKENS.USDC.mint);
 const ONE_ZEC = 100_000_000n; // 8 dp
 const ONE_USDC = 1_000_000n; // 6 dp
 const U64_MAX = new BN("18446744073709551615");
+/** The cloned ZEC reserve's liquidation threshold and LTV cap (VERIFIED-SOLANA-FACTS.md); the program reads both from the reserve. */
+const LT = 0.65;
+const KAMINO_LTV_CAP = 0.4;
 /** Scope entries both reserves read: ZEC price 430, ZEC TWAP 429, USDC price 13, USDC TWAP 456 (facts file). */
 const SCOPE_ENTRIES = [R.ZEC.scopePriceChain[0], R.ZEC.scopeTwapChain[0], R.USDC.scopePriceChain[0], R.USDC.scopeTwapChain[0]];
 
@@ -186,11 +189,15 @@ describe("owner path (localnet)", () => {
 
   let topBorrowUsdc = 0n;
 
-  it("borrow above the offer (45 % LTV → HF 1.44) is refused — by Kamino's 40 % cap today, by our 1.55 floor if the venue ever loosens", async () => {
+  it("borrow above the offer (55 % LTV → HF 1.18) is refused — by Kamino's 40 % cap today, by our 1.25 floor (52 % LTV on LT 65 %) if the venue ever loosened past it", async () => {
     const price = await zecPriceUsd();
     const collateralUsd = 10 * price;
-    const tooMuch = BigInt(Math.floor(collateralUsd * 0.45 * 1e6));
-    topBorrowUsdc = BigInt(Math.floor(collateralUsd * 0.40 * 1e6)) - 5n * ONE_USDC; // a few dollars under the cap
+    // The floor in LTV terms is LT ÷ ENTRY_HF_FLOOR (0.52); three points above it HF = 0.65 ÷ 0.55 = 1.18 < 1.25,
+    // so BOTH ceilings refuse this borrow. There is no product-wide cap under the venue's since 2026-09-12.
+    const floorLtv = LT / ENTRY_HF_FLOOR;
+    expect(floorLtv, "Kamino's cap sits under the floor on this market").to.be.greaterThan(KAMINO_LTV_CAP);
+    const tooMuch = BigInt(Math.floor(collateralUsd * (floorLtv + 0.03) * 1e6));
+    topBorrowUsdc = BigInt(Math.floor(collateralUsd * KAMINO_LTV_CAP * 1e6)) - 5n * ONE_USDC; // a few dollars under the cap
     await stamp();
     let code = "";
     try {
@@ -198,12 +205,12 @@ describe("owner path (localnet)", () => {
     } catch (e: any) {
       code = e?.error?.errorCode?.code ?? String(e);
     }
-    // LT 65 / LTV 40 → the venue's cap is the tighter of the two (HF at its cap = 1.625 > 1.55). Our floor is
+    // LT 65 / LTV 40 → the venue's cap is the tighter of the two (HF at its cap = 1.625 > 1.25). Our floor is
     // defense in depth here and is exercised by the program's host unit tests (health.rs).
     expect(["BorrowTooLarge", "EntryHfTooLow"], `got ${code}`).to.include(code);
   });
 
-  it("borrow at the top preset (40 % LTV) lands USDC in the Account at HF ≈ 1.625 ≥ the 1.55 floor", async () => {
+  it("borrow at Kamino's 40 % cap (the top of the slider on this market) lands USDC in the Account at HF ≈ 1.625 ≥ the 1.25 floor", async () => {
     await stamp();
     await ownerCall(program.methods.borrow(new BN(topBorrowUsdc.toString())).accounts({ owner: owner.publicKey, account, obligation, accountUsdc, kamino } as any));
     expect((await getAccount(conn, accountUsdc)).amount).to.equal(topBorrowUsdc);
@@ -211,11 +218,12 @@ describe("owner path (localnet)", () => {
     expect(ob.hasDebt).to.equal(true);
     expect(ob.hf).to.be.greaterThanOrEqual(ENTRY_HF_FLOOR);
     expect(ob.hf).to.be.lessThan(1.7);
-    expect(ob.ltv).to.be.lessThanOrEqual(0.4);
+    expect(ob.ltv).to.be.lessThanOrEqual(KAMINO_LTV_CAP);
+    expect(ob.hf).to.be.closeTo(LT / KAMINO_LTV_CAP, 0.01);
     expect(HF_LADDER.every((r) => ob.hf > r.hf), "no rung crossed at entry").to.equal(true);
   });
 
-  it("withdraw that would breach the exit floor is refused — by Kamino's LTV cap today, by our 1.55 floor if the venue ever loosens", async () => {
+  it("withdraw that would breach the exit floor is refused — by Kamino's LTV cap today (7 ZEC left: LTV 57 %), by our 1.25 floor (HF 1.14) if the venue ever loosened", async () => {
     await stamp();
     let code = "";
     try {

@@ -37,6 +37,27 @@ liquidity provision; EIP = Ethereum Improvement Proposal.
   one. Fixed property 1 / 1 at the CI seed, five unseeded runs green, agent **269 / 269**, `verify-abi`
   113 / 113, IDL seam 77 / 77 (`AUDIT-2026-09-12.md`, "Keeper valuation").
 
+## 2026-09-12 (night) — The floor is 1.25 and the product cap is gone (founder, BUILD-PLAN D7 / §2b)
+
+- **Decision** (founder, 2026-09-12: "remove the cap to the Aave limit; floor can be 1.25"): `ENTRY_HF_FLOOR = 1.25`
+  in `packages/shared`, the deploy default of `CollateralRegistry.entryHfFloorWad` and the Solana program's
+  `ENTRY_HF_FLOOR_BPS`; `MAX_OFFERED_LTV_CAP_BPS` deleted from shared, the registry, the Solana program and both
+  prototypes. The offered LTV is now min(LT ÷ 1.25, the venue's own max LTV): 62.40 % on cbBTC, 66.40 % on WETH,
+  Kamino's 40 % on ZEC. The floor's own ladder (`HF_LADDER = ladderFor(1.25)`) is warn 1.23 / repay 1.16 /
+  derisk 1.09 / emergency 1.05 with 0.02 of hysteresis; `HF_HYSTERESIS = 0.05` remains only the scale of
+  `hysteresisFor`. Both marks are offered on both Base assets; the Expert mark's acknowledgment is reachable.
+- **Every consumer re-derived, nothing typed:** shared 85; contracts (the registry loses the cap getter, the ABI
+  bundle regenerated, every 1.55 / 50 % expectation moved); keeper 269 on the new floor ladder (a record's own
+  disarm is now the stricter of the two, and the dispatcher test proves that direction); yield 149 with the
+  model re-run on the same gauge sample — bit-identical apart from the presets' tops and the user-net rows at
+  them, the report now printing exact LTVs (62.4 %); `/v1/forecast` serves a stale registry read as the STRICTER
+  of the last read and the constant (`registry_stale`); web 180 + Playwright 14 / 0 / 6 with the default slider at
+  the Sheltered mark and the Expert mark driving the acknowledgment; prototypes 130 · 116 · 62 · 6; Solana seam 7,
+  program unit tests 8, localnet 26 / 26 twice, with every spec's price drop derived from the rungs at run time.
+- Two fixes the reconciliation surfaced: the prototypes' percent → bps identity now rounds (`66.4 × 100` is not
+  6640 in floating point), and the advanced prototype's post-flow wizard reset derives its default HF for the
+  flow's asset instead of carrying the default asset's LTV.
+
 ## 2026-09-12 (later) — A4.3: the risk slider in both prototypes (BUILD-PLAN D7 §2b)
 
 - Both builds' pinned block gains, byte-equal and diffed against the built package: the six new shared keys

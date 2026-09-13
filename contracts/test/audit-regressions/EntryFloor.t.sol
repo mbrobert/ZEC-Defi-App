@@ -17,7 +17,7 @@ import {Call, Permission, TokenLimit} from "../../src/interfaces/IOilskinAccount
 ///
 ///   A-HIGH-1  the shipped "hold" strategy built `execBatch([permit2, supply, borrow])` and never
 ///             touched the router, so `EntryHfTooLow` never ran and a first-time user could open at
-///             HF 1.07 against an advertised 1.55. The floor is a property of the VENUE CALL now, so
+///             HF 1.07 against an advertised 1.25. The floor is a property of the VENUE CALL now, so
 ///             no reachable sequence through the venue opens debt below it, and the router carries a
 ///             first-class `openBorrowOnly` so no product flow ever needs a hand-built batch.
 ///   Controls: the owner exit guarantee, unchanged and re-proved in every broken state.
@@ -95,7 +95,8 @@ contract EntryFloorRegressionTest is Fixture {
 
         assertEq(aaveVenue.debt(address(acct), address(usdc)), 0, "atomic: nothing borrowed");
         assertEq(cbbtc.balanceOf(alice), 10e8, "atomic: nothing pulled from the wallet");
-        assertEq(registry.maxOfferedLtvBps(address(cbbtc)), 5000);
+        // floor(7800 × 100 / 125) = 6240, under Aave's LTV 7300; no product cap above it.
+        assertEq(registry.maxOfferedLtvBps(address(cbbtc)), 6240);
 
         // The advertised maximum still works, through the very same batch.
         uint256 offered = (PRICE_CBBTC_E8 * registry.maxOfferedLtvBps(address(cbbtc))) / 10_000 / 100;
@@ -125,13 +126,15 @@ contract EntryFloorRegressionTest is Fixture {
         assertEq(predicted.code.length, 0, "atomic: not even the account was created");
     }
 
-    /// E3b: no attacker, no client bug. The wizard quotes the registry's 50 % maximum, cbBTC drops
-    /// 20 % inside the 20-minute permit deadline, and the borrow amount is fixed in USDC. The chain
-    /// re-checks it now.
+    /// E3b: no attacker, no client bug. The wizard quotes the registry's 62.4 % maximum, cbBTC drops
+    /// 10 % inside the 20-minute permit deadline, and the borrow amount is fixed in USDC: 69.3 % of
+    /// the new price — still inside Aave's own 73 % LTV, so Aave would lend — HF 0.78 / 0.693 =
+    /// 1.125 against the 1.25 floor. The chain re-checks it now. (A 20 % drop would put the fixed
+    /// borrow at 78 %, past Aave's LTV, and Aave's refusal would arrive before the floor's.)
     function test_FIX_E3b_priceDriftBetweenQuoteAndInclusionIsCaught() public {
-        uint256 quotedBorrow = (PRICE_CBBTC_E8 * 5000) / 10_000 / 100;
+        uint256 quotedBorrow = (PRICE_CBBTC_E8 * registry.maxOfferedLtvBps(address(cbbtc))) / 10_000 / 100;
         Call[] memory calls = _holdBatch(address(acct), alice, aliceKey, ONE_CBBTC, quotedBorrow, 11);
-        aave.setPrice(address(cbbtc), (PRICE_CBBTC_E8 * 8000) / 10_000);
+        aave.setPrice(address(cbbtc), (PRICE_CBBTC_E8 * 9000) / 10_000);
 
         vm.prank(alice);
         vm.expectPartialRevert(AaveV3Venue.EntryHfTooLow.selector);

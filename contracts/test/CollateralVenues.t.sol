@@ -279,8 +279,8 @@ contract MorphoBlueVenueTest is Fixture {
         assertApproxEqRel(morphoVenue.borrowRateRay(address(cbbtc)), RATE_USDC_RAY, 1e12);
         assertEq(morphoVenue.borrowRateRay(address(cbzec)), 0);
         assertEq(morphoVenue.oraclePrice(address(cbbtc)), _morphoPrice36(PRICE_CBBTC_E8, 8));
-        // 86 % / 1.55 = 55.5 % → capped at the registry's 50 %.
-        assertEq(registry.maxOfferedLtvBps(address(cbbtc)), 5000);
+        // floor(8600 × 100 / 125) = 6880, under Morpho's 8600 (its one threshold is its own max LTV).
+        assertEq(registry.maxOfferedLtvBps(address(cbbtc)), 6880);
     }
 
     function test_riskParamsFollowTheMarketNotAConstant() public {
@@ -345,8 +345,8 @@ contract MorphoBlueVenueTest is Fixture {
 
     function test_borrowBelowTheEntryFloorReverts() public {
         _supply(address(cbbtc), ONE_CBBTC);
-        // 60 % LTV is inside Morpho's 86 % LLTV but HF 1.43 < the 1.55 floor.
-        uint256 amount = _usd6(PRICE_CBBTC_E8, 60);
+        // 70 % LTV is inside Morpho's 86 % LLTV but HF 0.86 / 0.70 = 1.229 < the 1.25 floor.
+        uint256 amount = _usd6(PRICE_CBBTC_E8, 70);
         vm.prank(alice);
         vm.expectPartialRevert(MorphoBlueVenue.EntryHfTooLow.selector);
         acct.execWithCallback(address(morphoVenue), 0, abi.encodeCall(ICollateralVenue.borrow, (address(usdc), amount)));
@@ -718,21 +718,26 @@ contract CollateralRegistryTest is Fixture {
         assertEq(registry.entryHfFloorWad(), ENTRY_HF_FLOOR_WAD);
     }
 
-    function test_maxOfferedLtvIsDerivedAndCapped() public {
-        // cbBTC: floor(7800 / 1.55) = 5032 → capped 5000; WETH: floor(8300 / 1.55) = 5354 → 5000.
-        assertEq(registry.maxOfferedLtvBps(address(cbbtc)), 5000);
-        assertEq(registry.maxOfferedLtvBps(address(weth)), 5000);
+    function test_maxOfferedLtvIsDerivedFromTheFloorAndTheVenue() public {
+        // cbBTC: floor(7800 × 100 / 125) = 6240, under Aave's LTV 7300; WETH: floor(8300 × 100 / 125)
+        // = 6640, under 8000. The floor binds on both; no product cap sits above it (2026-09-12).
+        assertEq(registry.maxOfferedLtvBps(address(cbbtc)), 6240);
+        assertEq(registry.maxOfferedLtvBps(address(weth)), 6640);
         assertEq(registry.maxOfferedLtvBps(address(cbzec)), 0, "disabled offers nothing");
         assertEq(registry.maxOfferedLtvBps(makeAddr("unknown")), 0);
     }
 
     function test_maxOfferedLtvFollowsTheVenueThreshold() public {
-        // The audit's D2 case: LT 0.70 → floor(7000 / 1.55) = 4516 bps.
+        // The audit's D2 case: LT 0.70 → floor(7000 × 100 / 125) = 5600 bps, under the venue's 6500.
         aave.setReserve(address(cbbtc), 6500, 7000, 750, true, true, PRICE_CBBTC_E8, RATE_CBBTC_RAY);
-        assertEq(registry.maxOfferedLtvBps(address(cbbtc)), 4516);
-        assertEq(registry.entryHfForLtv(address(cbbtc), 4516), uint256(7000 * 1e18) / 4516);
-        assertGe(registry.entryHfForLtv(address(cbbtc), 4516), ENTRY_HF_FLOOR_WAD);
-        assertLt(registry.entryHfForLtv(address(cbbtc), 4517), ENTRY_HF_FLOOR_WAD);
+        assertEq(registry.maxOfferedLtvBps(address(cbbtc)), 5600);
+        assertEq(registry.entryHfForLtv(address(cbbtc), 5600), uint256(7000 * 1e18) / 5600);
+        assertGe(registry.entryHfForLtv(address(cbbtc), 5600), ENTRY_HF_FLOOR_WAD);
+        assertLt(registry.entryHfForLtv(address(cbbtc), 5601), ENTRY_HF_FLOOR_WAD);
+        // The venue's own max LTV is the other ceiling: the same LT with LTV 0.50 offers 5000, not
+        // the floor's 5600 (this was masked by the product cap until 2026-09-12).
+        aave.setReserve(address(cbbtc), 5000, 7000, 750, true, true, PRICE_CBBTC_E8, RATE_CBBTC_RAY);
+        assertEq(registry.maxOfferedLtvBps(address(cbbtc)), 5000);
     }
 
     function test_maxOfferedLtvFollowsTheFloor() public {
@@ -743,8 +748,10 @@ contract CollateralRegistryTest is Fixture {
     }
 
     function test_entryHfForLtv() public view {
+        // The offered tops land exactly on the floor: 7800e18 / 6240 and 8300e18 / 6640 are 1.25e18.
+        assertEq(registry.entryHfForLtv(address(cbbtc), 6240), 1.25e18);
+        assertEq(registry.entryHfForLtv(address(weth), 6640), 1.25e18);
         assertEq(registry.entryHfForLtv(address(cbbtc), 5000), 1.56e18);
-        assertEq(registry.entryHfForLtv(address(weth), 5000), 1.66e18);
         assertEq(registry.entryHfForLtv(address(cbbtc), 3000), 2.6e18);
         assertEq(registry.entryHfForLtv(address(cbbtc), 0), type(uint256).max);
     }
@@ -796,7 +803,8 @@ contract CollateralRegistryTest is Fixture {
         aave.setReserve(address(cbzec), 5000, 6000, 1000, true, false, 1020e8, 0);
         vm.prank(registryOwner);
         registry.setEnabled(address(cbzec), true, "");
-        assertEq(registry.maxOfferedLtvBps(address(cbzec)), 3870); // floor(6000 / 1.55)
+        // floor(6000 × 100 / 125) = 4800, under the mock reserve's LTV 5000.
+        assertEq(registry.maxOfferedLtvBps(address(cbzec)), 4800);
     }
 
     function test_disableAndReEnableIsImmediateInBothDirections() public {
@@ -808,7 +816,7 @@ contract CollateralRegistryTest is Fixture {
         vm.prank(registryOwner);
         registry.setEnabled(address(weth), true, "");
         assertEq(registry.assets().length, 3, "the list is unchanged");
-        assertEq(registry.maxOfferedLtvBps(address(weth)), 5000);
+        assertEq(registry.maxOfferedLtvBps(address(weth)), 6640); // floor(8300 × 100 / 125)
     }
 
     /// FIX B-MED-1. Aave retires a collateral by zeroing the LTV and KEEPING the liquidation
@@ -883,15 +891,19 @@ contract CollateralRegistryTest is Fixture {
         registry.entryHfForLtv(address(aero), 5000);
     }
 
-    function testFuzz_maxOfferedLtvNeverExceedsCapOrThreshold(uint256 lt, uint256 floorWad) public {
+    function testFuzz_maxOfferedLtvNeverExceedsTheVenueOrTheFloor(uint256 lt, uint256 floorWad) public {
         lt = bound(lt, 1, 10_000);
         floorWad = bound(floorWad, 1e18 + 1, 10e18);
-        aave.setReserve(address(cbbtc), lt > 500 ? lt - 500 : 0, lt, 750, true, true, PRICE_CBBTC_E8, RATE_CBBTC_RAY);
+        uint256 venueLtv = lt > 500 ? lt - 500 : 0;
+        aave.setReserve(address(cbbtc), venueLtv, lt, 750, true, true, PRICE_CBBTC_E8, RATE_CBBTC_RAY);
         vm.prank(registryOwner);
         registry.setEntryHfFloor(floorWad);
         uint256 offered = registry.maxOfferedLtvBps(address(cbbtc));
-        assertLe(offered, 5000);
+        assertLe(offered, venueLtv, "never above the venue's own max LTV");
         assertLe(offered, lt);
         if (offered != 0) assertGe(registry.entryHfForLtv(address(cbbtc), offered), floorWad);
+        // Nothing caps the offer above those two: it is exactly the smaller of the two ceilings.
+        uint256 fromFloor = (lt * 1e18) / floorWad;
+        assertEq(offered, fromFloor < venueLtv ? fromFloor : venueLtv, "min(LT / floor, venue LTV)");
     }
 }

@@ -155,7 +155,7 @@ describe("owner-history channel — wired into the real keeper run, not just the
   it("a warn rung during a real tick leaves a durable record for that account", async () => {
     const chain = newMockChain();
     chain.emitAccountCreated(OWNER_A, ACCOUNT_A, 1n);
-    cbBtcPosition(chain, ACCOUNT_A, debtForHf(1.45)); // warn rung (< 1.50)
+    cbBtcPosition(chain, ACCOUNT_A, debtForHf(1.2)); // warn rung (< 1.23)
     const oil = new MockOilskin(chain, { router: ROUTER, lpVenue: LP_VENUE });
     oil.install([ACCOUNT_A]);
     oil.grant(KEEPER, ROUTER, GRANT_SELECTORS["StrategyRouter.unwind"]);

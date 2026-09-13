@@ -94,7 +94,7 @@ export default function Home() {
                     <dd className="text-right">{fmtPct(top.maxLtvBps / 100, 0)} LTV</dd>
                     <dt className="text-oil-ink3">Lowest health factor</dt>
                     <dd className="text-right">
-                      {top.minHf.toFixed(2)} <span className="text-oil-ink3">({top.binding === "entry_hf_floor" ? "registry floor" : top.binding === "venue_max_ltv" ? "Aave's max LTV" : "Oilskin's cap"})</span>
+                      {top.minHf.toFixed(2)} <span className="text-oil-ink3">({top.binding === "entry_hf_floor" ? "registry floor" : "Aave's max LTV"})</span>
                     </dd>
                     <dt className="text-oil-ink3">Marks</dt>
                     <dd className="text-right">{HF_MARKS.map((m) => `${m.label} ${m.hf.toFixed(2)}`).join(" · ")}</dd>

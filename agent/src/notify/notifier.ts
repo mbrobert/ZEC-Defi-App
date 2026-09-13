@@ -8,7 +8,7 @@ import { withDeadline } from "../services/deadline.js";
  * `runKeeper(process.env)` with no hooks at all, so `notify?.()` was a
  * permanent no-op and `onEscalate` was undefined. The ENTIRE user-visible
  * behaviour of the protection they were shown before signing — "Warning
- * (HF < 1.50) → keeper notify" — was one JSON line on a server they cannot
+ * (HF under the warn rung) → keeper notify" — was one JSON line on a server they cannot
  * see. That covered every escalation too: an UNKNOWN streak, an ABANDONED
  * dispatch, a refused grant, a store failure.
  *

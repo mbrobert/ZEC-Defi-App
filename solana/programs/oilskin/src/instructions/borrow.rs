@@ -1,5 +1,6 @@
 //! `borrow`: USDC from the Kamino reserve into the Account's USDC ATA, with the entry floor enforced HERE —
-//! after the borrow the refreshed HF must be ≥ ENTRY_HF_FLOOR and the LTV ≤ min(shared cap, reserve LTV).
+//! after the borrow the refreshed HF must be ≥ ENTRY_HF_FLOOR (1.25) and the LTV ≤ the reserve's own LTV — the
+//! only two ceilings since 2026-09-12 (no product-wide cap; BUILD-PLAN D7).
 
 use crate::errors::OilskinError;
 use crate::events::Borrowed;

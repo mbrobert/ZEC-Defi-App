@@ -63,9 +63,9 @@ function parseUserNet(doc: string): UserNetRow[] {
     if (r.length !== 8) continue;
     if (!/^aero-[a-z0-9-]+$/.test(r[0]) || !/^(sheltered|steady|working)$/.test(r[1])) continue;
     if (!/^(cbBTC|WETH)$/.test(r[2])) continue;
-    const ltv = r[3].match(/^(\d+)%/);
+    const ltv = r[3].match(/^([\d.]+)%/);
     if (!ltv) continue;
-    out.push({ pool: r[0], setting: r[1], collateral: r[2], ltvBps: Number(ltv[1]) * 100, lpNet: r[4], borrow: r[5], supply: r[6], userNet: r[7] });
+    out.push({ pool: r[0], setting: r[1], collateral: r[2], ltvBps: Math.round(Number(ltv[1]) * 100), lpNet: r[4], borrow: r[5], supply: r[6], userNet: r[7] });
   }
   return out;
 }
@@ -196,7 +196,7 @@ test("the best priced cell is exactly the one MODEL-NUMBERS-2026-09-12 publishes
   assert.equal(best.breakEvenEmissionsMultiple, 4.56);
   assert.equal(best.userNet.find((u) => u.ltvBps === 3000)?.userNetPct, -4.62);
   assert.equal(best.userNet.find((u) => u.ltvBps === 4000)?.userNetPct, -6.16);
-  assert.equal(best.userNet.find((u) => u.ltvBps === 5000)?.userNetPct, -7.71);
+  assert.equal(best.userNet.find((u) => u.ltvBps === 6240)?.userNetPct, -9.62, "the top at the pinned 1.25 floor: 62.4 %");
   // Two more priced cells, at their 2026-09-12 values.
   assert.equal(find("aero-cbbtc-usdc", "steady", "cbBTC")!.lpNetPct, -29.14);
   assert.equal(find("aero-weth-cbbtc", "steady", "cbBTC")!.lpNetPct, -42.35);

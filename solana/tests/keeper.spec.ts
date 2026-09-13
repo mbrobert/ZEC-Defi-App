@@ -17,7 +17,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { KAMINO_ZCASH_MARKET, SOLANA_PROGRAMS, SOLANA_TOKENS, rungById } from "@zyo/shared";
+import { KAMINO_ZCASH_MARKET, SOLANA_PROGRAMS, SOLANA_TOKENS, rungById, type HfRung } from "@zyo/shared";
 import type { Oilskin } from "../target/types/oilskin";
 import { keepWebSocketWarm } from "./support/wsKeepalive";
 
@@ -40,6 +40,13 @@ const OB = { deposit0Amount: 96 + 32, borrow0AmountSf: 1208 + 88 };
 const SF = 1n << 60n;
 const u128 = (b: Buffer, o: number) => b.readBigUInt64LE(o) + (b.readBigUInt64LE(o + 8) << 64n);
 const keyFile = (p: string) => Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(p, "utf8"))));
+/** The cloned ZEC reserve's liquidation threshold, LTV cap and price sanity band (VERIFIED-SOLANA-FACTS.md). */
+const LT = 0.65;
+const KAMINO_LTV_CAP = 0.4;
+const PRICE_BAND_LOWER_USD = 400;
+const RUNGS = { warn: rungById("warn"), repay: rungById("repay"), derisk: rungById("derisk"), emergency: rungById("emergency") };
+/** Midway between two adjacent rungs' thresholds: inside the milder rung's band, above the more severe one. */
+const between = (mild: HfRung, severe: HfRung) => (mild.hf + severe.hf) / 2;
 
 interface Outcome {
   account: string;
@@ -112,7 +119,14 @@ describe("keeper agent (localnet, the real reader/dispatcher/monitor against the
     const usdcDebt = u128(info.data, OB.borrow0AmountSf) / SF;
     const collateralUsd = (Number(deposited) / 1e8) * priceUsd;
     const debtUsd = Number(usdcDebt) / 1e6;
-    return { deposited, usdcDebt, hf: debtUsd === 0 ? Infinity : (collateralUsd * 0.65) / debtUsd, ltv: collateralUsd === 0 ? 0 : debtUsd / collateralUsd };
+    return { deposited, usdcDebt, hf: debtUsd === 0 ? Infinity : (collateralUsd * LT) / debtUsd, ltv: collateralUsd === 0 ? 0 : debtUsd / collateralUsd };
+  };
+  /** The ZEC price at which the position, as the obligation caches it, sits at `hf`: hf × D ÷ (C × LT). */
+  const priceForHf = async (hf: number) => {
+    const p = await position(1);
+    const price = (hf * (Number(p.usdcDebt) / 1e6)) / ((Number(p.deposited) / 1e8) * LT);
+    expect(price, "inside the reserve's price sanity band, or klend marks the price invalid").to.be.greaterThan(PRICE_BAND_LOWER_USD);
+    return price;
   };
   const balance = async (ata: PublicKey) => (await getAccount(conn, ata, "confirmed")).amount;
   const ownerCall = async (m: any) => confirmed(await m.preInstructions(cu).signers([owner]).rpc());
@@ -120,6 +134,8 @@ describe("keeper agent (localnet, the real reader/dispatcher/monitor against the
   const mine = <T extends { account: string }>(xs: T[]) => xs.filter((x) => x.account === account.toBase58());
 
   let lastLines: string[] = [];
+  let repayPrice = 0;
+  let deriskPrice = 0;
   /** One keeper run of `ticks` ticks, its own store; the Scope mock is stamped fresh first (klend's 180 s rule). */
   const runKeeper = async (o: { ticks: number; observeOnly?: boolean; storePath?: string }) => {
     const { runSolanaKeeper } = await importEsm(agentUrl("solana/keeper.js"));
@@ -165,7 +181,7 @@ describe("keeper agent (localnet, the real reader/dispatcher/monitor against the
     await stamp();
     await ownerCall(program.methods.deposit(new BN((10n * ONE_ZEC).toString())).accounts({ owner: owner.publicKey, account, obligation, userMetadata, rent: SYSVAR_RENT_PUBKEY, systemProgram: SystemProgram.programId, ownerZec, accountZec, kamino, tokenProgram: TOKEN_PROGRAM_ID } as any));
     await stamp();
-    // the top preset: 40 % of $10,000 → HF 1.625; the 3,990 USDC stays idle in the Account
+    // Kamino's 40 % cap: 40 % of $10,000 → HF 1.625, above every rung; the 3,990 USDC stays idle in the Account
     await ownerCall(program.methods.borrow(new BN((3_990n * ONE_USDC).toString())).accounts({ owner: owner.publicKey, account, obligation, accountUsdc, kamino } as any));
     // The grant, timed by the CHAIN clock (a warped localnet runs hours ahead of the host).
     const chainNow = (await conn.getBlockTime(await conn.getSlot("confirmed")))!;
@@ -184,7 +200,8 @@ describe("keeper agent (localnet, the real reader/dispatcher/monitor against the
     expect(reports[0].discovered).to.be.greaterThanOrEqual(1);
     expect(outcome, "our Account was evaluated").to.not.equal(undefined);
     expect(outcome.valuation).to.equal("OK");
-    expect(outcome.hf).to.be.closeTo(1.629, 0.01);
+    expect(outcome.hf).to.be.closeTo(LT / KAMINO_LTV_CAP, 0.01);
+    expect(outcome.hf).to.be.greaterThan(RUNGS.warn.hf);
     expect(outcome.fired).to.equal(null);
     const s = readStore();
     expect(s.idCodec).to.equal("base58");
@@ -194,14 +211,17 @@ describe("keeper agent (localnet, the real reader/dispatcher/monitor against the
     expect(rec.ladder.fired).to.deep.equal([]);
   });
 
-  it("price −20 % (HF 1.30) crosses repay: the keeper plans repay-only from the Account's idle USDC, signs, sends and confirms; HF is lifted to the disarm level, not further; the grant's spend and the store record it", async () => {
+  it("price into the repay band (HF midway between repay and de-risk, ≈ −31 %) crosses repay: the keeper plans repay-only from the Account's idle USDC, signs, sends and confirms; HF is lifted to the disarm level, not further; the grant's spend and the store record it", async () => {
     const keeperUsdc0 = await balance(keeperUsdc);
     const idle0 = await balance(accountUsdc);
     expect(idle0).to.equal(3_990n * ONE_USDC);
-    await setZecPrice(800);
+    // On the floor's ladder: repay fires under 1.16, de-risk under 1.09 → the band's middle is 1.125, ≈ $690 here.
+    const target = between(RUNGS.repay, RUNGS.derisk);
+    repayPrice = await priceForHf(target);
+    await setZecPrice(repayPrice);
     const { outcome } = await runKeeper({ ticks: 1 });
     expect(outcome.valuation).to.equal("OK");
-    expect(outcome.hf).to.be.closeTo(1.3, 0.01);
+    expect(outcome.hf).to.be.closeTo(target, 0.01);
     expect(outcome.fired).to.equal("repay");
     expect(outcome.dispatch?.status, JSON.stringify(outcome.dispatch)).to.equal("CONFIRMED");
     const sig = outcome.dispatch!.signature!;
@@ -212,10 +232,11 @@ describe("keeper agent (localnet, the real reader/dispatcher/monitor against the
     expect(idle1 < idle0, "the Account's own USDC paid").to.equal(true);
     expect(await balance(keeperUsdc)).to.equal(keeperUsdc0);
     const repaid = idle0 - idle1;
-    const p = await position(800);
-    const disarm = rungById("repay").disarmHf;
+    const p = await position(repayPrice);
+    const disarm = RUNGS.repay.disarmHf;
     expect(p.hf, "at or above the disarm level").to.be.greaterThanOrEqual(disarm);
     expect(p.hf, "sized to the level (50 bps margin), not a blanket repay").to.be.lessThan(disarm + 0.03);
+    expect(p.hf, "warn's disarm level is not reached").to.be.lessThan(RUNGS.warn.disarmHf);
     const g = await program.account.grant.fetch(grantPda);
     expect(BigInt(g.repayUsdcSpent.toString())).to.equal(repaid);
     const d = mine(readStore().dispatches);
@@ -230,13 +251,14 @@ describe("keeper agent (localnet, the real reader/dispatcher/monitor against the
     const { outcome } = await runKeeper({ ticks: 1 });
     expect(outcome.valuation).to.equal("OK");
     expect(outcome.fired).to.equal(null);
-    expect(outcome.hf).to.be.greaterThanOrEqual(rungById("repay").disarmHf);
+    expect(outcome.hf).to.be.greaterThanOrEqual(RUNGS.repay.disarmHf);
+    expect(outcome.hf).to.be.lessThan(RUNGS.warn.disarmHf);
     const s = readStore();
     expect(mine(s.accounts)[0].ladder.fired).to.deep.equal(["warn"]);
     expect(mine(s.dispatches).length).to.equal(1);
   });
 
-  it("price −34 % (HF ≈ 1.16) crosses de-risk with the idle USDC gone: the keeper pays USDC in at the Scope price, the program repays it and releases ZEC inside Kamino's 40 % cap, and the keeper collects exactly the ZEC delegated", async () => {
+  it("price into the de-risk band (HF midway between de-risk and emergency, ≈ −38 %) crosses de-risk with the idle USDC gone: the keeper pays USDC in at the Scope price, the program repays it and releases ZEC inside Kamino's 40 % cap, and the keeper collects exactly the ZEC delegated", async () => {
     // the owner takes the idle USDC home first, so the Account has nothing of its own to repay with
     const idle = await balance(accountUsdc);
     await confirmed(
@@ -249,10 +271,14 @@ describe("keeper agent (localnet, the real reader/dispatcher/monitor against the
     expect(await balance(accountUsdc)).to.equal(0n);
     const keeperUsdc0 = await balance(keeperUsdc);
     const keeperZec0 = await balance(keeperZec);
-    const before = await position(660);
-    expect(before.hf).to.be.closeTo(1.16, 0.02);
-    await setZecPrice(660);
+    // On the floor's ladder: de-risk fires under 1.09, emergency under 1.05 → the band's middle is 1.07, ≈ $623 here.
+    const target = between(RUNGS.derisk, RUNGS.emergency);
+    deriskPrice = await priceForHf(target);
+    const before = await position(deriskPrice);
+    expect(before.hf).to.be.closeTo(target, 0.005);
+    await setZecPrice(deriskPrice);
     const { outcome } = await runKeeper({ ticks: 1 });
+    expect(outcome.hf).to.be.closeTo(target, 0.01);
     expect(outcome.fired).to.equal("derisk");
     expect(outcome.dispatch?.status, JSON.stringify(outcome.dispatch)).to.equal("CONFIRMED");
     expect(outcome.dispatch!.note ?? "").to.match(/collected \d+ ZEC base units/);
@@ -260,12 +286,12 @@ describe("keeper agent (localnet, the real reader/dispatcher/monitor against the
     const collected = (await balance(keeperZec)) - keeperZec0;
     expect(paid > 0n, "the keeper paid USDC in").to.equal(true);
     expect(collected > 0n, "the keeper received ZEC").to.equal(true);
-    // fair value at the Scope price (no discount configured): USDC paid ≈ ZEC received × $660
-    const fair = (Number(collected) / 1e8) * 660 * 1e6;
+    // fair value at the Scope price (no discount configured): USDC paid ≈ ZEC received × the price
+    const fair = (Number(collected) / 1e8) * deriskPrice * 1e6;
     expect(Number(paid)).to.be.closeTo(fair, fair * 0.001 + 2);
-    const after = await position(660);
-    expect(after.hf, "at or above de-risk's disarm level").to.be.greaterThanOrEqual(rungById("derisk").disarmHf);
-    expect(after.ltv, "inside Kamino's 40 % cap, which binds before our level").to.be.lessThanOrEqual(0.4 + 1e-4);
+    const after = await position(deriskPrice);
+    expect(after.hf, "at or above de-risk's disarm level").to.be.greaterThanOrEqual(RUNGS.derisk.disarmHf);
+    expect(after.ltv, "inside Kamino's 40 % cap, which binds before our level").to.be.lessThanOrEqual(KAMINO_LTV_CAP + 1e-4);
     expect(Number(before.usdcDebt - after.usdcDebt), "every USDC the keeper paid went to the debt").to.be.closeTo(Number(paid), 10);
     expect(before.deposited - after.deposited, "the collateral released equals the ZEC collected").to.equal(collected);
     const acctZec = await getAccount(conn, accountZec, "confirmed");
@@ -281,12 +307,15 @@ describe("keeper agent (localnet, the real reader/dispatcher/monitor against the
 
   it("observe-only (no keeper key): a fresh store sees the same chain; a further fall is recorded and REFUSED by name; nothing is signed", async () => {
     const keeperUsdc0 = await balance(keeperUsdc);
-    const debt0 = (await position(528)).usdcDebt;
-    await setZecPrice(528); // −20 % from the post-sale level (HF 1.625 → 1.30)
+    // back into the repay band from the post-sale position (HF ≈ 1.63 at the cap): ≈ −31 % again, ≈ $430
+    const target = between(RUNGS.repay, RUNGS.derisk);
+    const fallPrice = await priceForHf(target);
+    const debt0 = (await position(fallPrice)).usdcDebt;
+    await setZecPrice(fallPrice);
     const observeStore = join(workDir, "observe.json");
     const { outcome } = await runKeeper({ ticks: 1, observeOnly: true, storePath: observeStore });
     expect(outcome.valuation).to.equal("OK");
-    expect(outcome.hf).to.be.closeTo(1.3, 0.01);
+    expect(outcome.hf).to.be.closeTo(target, 0.01);
     expect(outcome.fired).to.equal("repay");
     expect(outcome.dispatch?.status).to.equal("REFUSED");
     expect(outcome.dispatch?.reason ?? "").to.match(/observe-only/);
@@ -294,6 +323,6 @@ describe("keeper agent (localnet, the real reader/dispatcher/monitor against the
     expect(d.status).to.equal("REFUSED");
     expect(d.txHash).to.equal(undefined);
     expect(await balance(keeperUsdc)).to.equal(keeperUsdc0);
-    expect((await position(528)).usdcDebt).to.equal(debt0);
+    expect((await position(fallPrice)).usdcDebt).to.equal(debt0);
   });
 });

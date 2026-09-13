@@ -34,8 +34,7 @@
   "engineFeeBps": 1500
  },
  "ltv": {
-  "entryHfFloor": 1.55,
-  "maxOfferedLtvCapBps": 5000,
+  "entryHfFloor": 1.25,
   "fixedBps": {
    "p30": 3000,
    "p40": 4000

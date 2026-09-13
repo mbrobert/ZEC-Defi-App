@@ -281,8 +281,8 @@ const deploymentAnswer =
       enabled: true,
       liquidationThresholdBps: 7800n,
       ENGINE,
-      // The registry's entry floor (A4): 1.55 at 18 decimals.
-      entryHfFloorWad: 1_550_000_000_000_000_000n,
+      // The registry's entry floor (A4): the pinned 1.25 at 18 decimals.
+      entryHfFloorWad: 1_250_000_000_000_000_000n,
       ...over,
     };
     if (!(c.functionName in table)) throw new Error(`unexpected ${c.functionName}`);
@@ -298,7 +298,7 @@ test("readDeployment discovers the swap adapter, and refuses a router without on
   assert.equal(d.lpVenue, LP_VENUE);
   assert.equal(d.aaveVenue, AAVE_VENUE);
   assert.equal(d.engine, ENGINE);
-  assert.equal(d.entryHfFloor, 1.55, "the registry's floor, read — the slider's minimum");
+  assert.equal(d.entryHfFloor, 1.25, "the registry's floor, read — the slider's minimum");
   assert.equal(d.demo, false);
   // Without a readable floor the slider has no minimum: refused, not assumed.
   await assert.rejects(() => readDeployment(chainClient(deploymentAnswer({ entryHfFloorWad: 0n })), "0x3333333333333333333333333333333333333333", ROUTER, KEEPER), /entry floor unreadable/);

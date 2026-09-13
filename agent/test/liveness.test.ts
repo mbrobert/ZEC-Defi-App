@@ -7,6 +7,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createWalletClient, type Hex } from "viem";
 import { base } from "viem/chains";
+import { rungById } from "@zyo/shared";
 import { GRANT_SELECTORS } from "../src/abi/oilskin.js";
 import { runKeeper } from "../src/keeper.js";
 import { memorySink } from "../src/log.js";
@@ -145,7 +146,7 @@ describe("runKeeper in-process — end to end in keeper mode", () => {
     const chain = newMockChain();
     chain.emitAccountCreated(OWNER_A, ACCOUNT_A, 1n);
     chain.emitAccountCreated(OWNER_B, ACCOUNT_B, 1n);
-    cbBtcPosition(chain, ACCOUNT_A, debtForHf(1.3)); // repay rung
+    cbBtcPosition(chain, ACCOUNT_A, debtForHf(1.15)); // repay rung
     cbBtcPosition(chain, ACCOUNT_B, debtForHf(2.0)); // healthy
     const oil = new MockOilskin(chain, { router: ROUTER, lpVenue: LP_VENUE });
     oil.install([ACCOUNT_A, ACCOUNT_B]);
@@ -195,7 +196,7 @@ describe("runKeeper in-process — end to end in keeper mode", () => {
     assert.equal(store.dispatches[0].status, "CONFIRMED");
     assert.equal(store.dispatches[0].key, `${ACCOUNT_A.toLowerCase()}:1:1:repay`);
     const a = store.accounts.find((x: { account: string }) => x.account === ACCOUNT_A.toLowerCase());
-    assert.ok(a.lastHf > 1.4, `HF after repay ${a.lastHf}`);
+    assert.ok(a.lastHf >= rungById("warn").disarmHf, `HF after repay ${a.lastHf}`);
     assert.deepEqual(a.ladder.fired, []); // re-armed: HF ≥ repay.disarm and warn.disarm
     assert.equal(a.episode, null);
     const lines = sink.lines.join("\n");
@@ -206,7 +207,7 @@ describe("runKeeper in-process — end to end in keeper mode", () => {
   it("watchdog: a tick wedged in an await that ignores its signal is abandoned, the daemon keeps ticking with backoff, and the abandoned dispatch is resumed with its key", async () => {
     const chain = newMockChain();
     chain.emitAccountCreated(OWNER_A, ACCOUNT_A, 1n);
-    cbBtcPosition(chain, ACCOUNT_A, debtForHf(1.45)); // warn → notify
+    cbBtcPosition(chain, ACCOUNT_A, debtForHf(1.2)); // warn → notify
     const storePath = join(dir, "wd.json");
     const sink = memorySink();
     const aborted: boolean[] = [];

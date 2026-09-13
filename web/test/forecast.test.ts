@@ -41,8 +41,8 @@ test("demo forecast = evaluateForecast on the 2026-09-12 recording: 81 cells at 
   assert.equal(best.modelGapPts, -0.02, "lpNet − mcLpNet from the unrounded forms: −10.92 and −10.89 round from a 0.024-point gap");
   assert.equal(best.dragPct, -15.25);
   assert.equal(best.breakEvenEmissionsMultiple, 4.56);
-  assert.equal(best.ltvAtEntryBps, 5032);
-  assert.equal(best.drawdownToLiquidationPct, 35.48);
+  assert.equal(best.ltvAtEntryBps, 6240, "LT 78 % ÷ the pinned 1.25 floor");
+  assert.equal(best.drawdownToLiquidationPct, 20);
   assert.equal(best.userNetBorrowBasis, "now");
   assert.equal(best.borrowAprAfterPct, null, "the recording has no deposit size, so no post-borrow rate");
   assert.equal(Math.round(best.poolAvailableUsd!), 24_768_504);
@@ -56,10 +56,10 @@ test("demo forecast = evaluateForecast on the 2026-09-12 recording: 81 cells at 
 test("user net at the chosen LTV is the identity supply + LTV × (lpNet − borrow), reproducing the model's ladder", () => {
   const f = demoForecast();
   const best = findCell(f, { poolId: "aero-cbbtc-usdc", setting: "sheltered", collateral: "cbBTC" })!;
-  // MODEL-NUMBERS-2026-09-12: −4.62 / −6.16 / −7.71 at 30 / 40 / 50 %.
+  // MODEL-NUMBERS-2026-09-12: −4.62 / −6.16 / −9.62 at 30 / 40 / 62.4 % (the top at the pinned 1.25 floor).
   assert.equal(Math.round(userNetAtLtv(best, 3000)! * 100) / 100, -4.62);
   assert.equal(Math.round(userNetAtLtv(best, 4000)! * 100) / 100, -6.16);
-  assert.equal(Math.round(userNetAtLtv(best, 5000)! * 100) / 100, -7.71);
+  assert.equal(Math.round(userNetAtLtv(best, 6240)! * 100) / 100, -9.62);
   assert.equal(userNetAtLtv({ ...best, lpNetPct: null }, 4000), null);
   // An unpriced cell has no user net, and sorts last.
   const cells = cellsFor(f, "cbBTC", 4000);
@@ -81,7 +81,7 @@ test("entryFromCell: the wizard's entry shape — qualifies means beats-the-borr
   assert.equal(e.reason, "net_below_borrow");
   assert.equal(e.lpNetPct, -10.92);
   assert.equal(e.borrowAprPct, 4.5174);
-  assert.deepEqual(e.userNet.map((u) => u.ltvBps), [3000, 4000, 5000]);
+  assert.deepEqual(e.userNet.map((u) => u.ltvBps), [3000, 4000, 6240], "the registry presets: 30 / 40 / top = LT ÷ 1.25");
   assert.equal(Math.round(e.userNet[1]!.userNetPct * 100) / 100, -6.16);
   const unpriced = findCell(f, { poolId: "aero-aero-weth", setting: "sheltered", collateral: "cbBTC" })!;
   assert.equal(unpriced.lpPriced, false);

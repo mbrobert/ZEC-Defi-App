@@ -75,7 +75,7 @@ test("planLoan: cbBTC at LT 7800 (chain read), entry HF 1.95 — the borrow is c
 test("planLoan: at the floor's HF the ladder is HF_LADDER itself; WETH at LT 8300 and HF 1.66 is the 50 % setting", () => {
   const atFloor = planLoan({ collateralAmount: 1, collateralPriceUsd: 100, liquidationThresholdBps: 7800, entryHf: ENTRY_HF_FLOOR, borrowAprPct: 5 });
   assert.deepEqual(atFloor.rungs.map((x) => x.rung.hf), HF_LADDER.map((r) => r.hf));
-  assert.equal(atFloor.hysteresis, 0.05);
+  assert.equal(atFloor.hysteresis, 0.02, "max(0.02, 0.05 × 0.25 ÷ 0.55)");
   const p = planLoan({ collateralAmount: 5, collateralPriceUsd: 2453.45, liquidationThresholdBps: 8300, entryHf: 1.66, borrowAprPct: 4.828 });
   assert.equal(p.ltvBps, 5000);
   close(p.borrowUsdc, (5 * 2453.45 * 0.83) / 1.66);
@@ -180,11 +180,12 @@ test("hfBand follows the shared ladder — the floor's by default, the position'
   assert.equal(hfBand(Number.POSITIVE_INFINITY).label, "No debt");
   assert.equal(hfBand(1.95).rung, null);
   assert.equal(hfBand(1.95).kind, "good");
-  assert.equal(hfBand(1.45).rung?.id, "warn");
-  assert.equal(hfBand(1.45).kind, "warn");
-  assert.equal(hfBand(1.3).rung?.id, "repay");
-  assert.equal(hfBand(1.1).rung?.id, "derisk");
-  assert.equal(hfBand(1.1).kind, "crit");
+  assert.equal(hfBand(1.45).rung, null, "healthy on the floor's ladder (warn at 1.23) — it was a warn on the old 1.50 table");
+  assert.equal(hfBand(1.22).rung?.id, "warn");
+  assert.equal(hfBand(1.22).kind, "warn");
+  assert.equal(hfBand(1.15).rung?.id, "repay");
+  assert.equal(hfBand(1.08).rung?.id, "derisk");
+  assert.equal(hfBand(1.08).kind, "crit");
   assert.equal(hfBand(1.0).rung?.id, "emergency");
   assert.throws(() => hfBand(NaN)); // fail closed, from shared rungFor
 });

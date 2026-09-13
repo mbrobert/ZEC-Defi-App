@@ -55,6 +55,9 @@ since reversed *for small size only*.
 > (wallet-signed, notify-only) is **rejected**: the protection ladder is an
 > action on every chain Oilskin ships on, and the user experience has to be
 > easy. Sections 3's other options stay as the record of what was weighed.
+> **Pinned later the same day:** the entry floor is **1.25** and the 50 % product cap on the
+> offered LTV is removed — the venue's own max LTV is the only other ceiling (the rows above
+> that say 1.55 / min(50 %, …) are the 2026-09-11 policy they superseded).
 
 Three orders. Each is a scenario with its cost stated; the choice is the founder's.
 

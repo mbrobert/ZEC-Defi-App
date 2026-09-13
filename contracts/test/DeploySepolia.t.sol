@@ -213,9 +213,10 @@ contract DeploySepoliaTest is Fixture {
         assertEq(d.registry.config(WBTC_S).decimals, 8);
         assertEq(d.registry.config(WBTC_S).priceFeed, BaseSepoliaAddresses.CHAINLINK_BTC_USD);
         assertEq(d.registry.config(WETH_S).priceFeed, BaseSepoliaAddresses.CHAINLINK_ETH_USD);
-        // LT read live: min(5000, floor(8300 / 1.55)) = 5000 for WBTC, same for WETH at 8500
-        assertEq(d.registry.maxOfferedLtvBps(WBTC_S), 5000);
-        assertEq(d.registry.maxOfferedLtvBps(WETH_S), 5000);
+        // LT read live: WBTC floor(8300 × 100 / 125) = 6640, under its LTV 8150; WETH floor(8500 × 100
+        // / 125) = 6800, under 8350. The floor binds on both; no product cap sits above it.
+        assertEq(d.registry.maxOfferedLtvBps(WBTC_S), 6640);
+        assertEq(d.registry.maxOfferedLtvBps(WETH_S), 6800);
 
         // the cbZEC double is registered disabled with the same note as mainnet
         CollateralRegistry.AssetConfig memory z = d.registry.config(address(s.cbzec));

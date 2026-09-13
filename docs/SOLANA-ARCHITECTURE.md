@@ -8,8 +8,9 @@ it, the departure and its reason are stated.
 
 **Status (2026-09-12, night).** The founder read this document, decided §12, installed the toolchain and
 started the localnet; the gate on handlers is lifted. **Built and proven on localnet (26/26):** every owner
-instruction in §3 and `keeper_protect`, the ladder walked by the Scope mock (repay-only at HF 1.30, the
-sale path at HF 1.17), and the **keeper process** (§5, `agent/src/solana/`): discovery by program-account scan,
+instruction in §3 and `keeper_protect`, the ladder walked by the Scope mock (repay-only inside the repay band at
+HF 1.125, the sale path inside the de-risk band at HF 1.07 — the 1.25 floor's ladder since 2026-09-12), and the
+**keeper process** (§5, `agent/src/solana/`): discovery by program-account scan,
 valuation from one simulated refresh, the repay-only plan from the Account's idle USDC and the funded sale inside
 Kamino's cap, the signed transaction landing, the delegated ZEC collected, observe-only refusing by name
 (`solana/tests/keeper.spec.ts`, 5). **Cannot be built:** `release_obligation` (§3, §12 (3)). **Not yet
@@ -17,8 +18,10 @@ built:** the pool-size gate (§7), the web flow (§8); nothing is deployed and n
 the program run established and the code now embodies: klend marks a reserve stale after every state change, so
 a post-action health view refreshes the reserves again before the obligation; klend **closes an obligation a
 full withdraw empties** (rent back to the Account PDA), so `deposit` re-creates it on the same PDA; and on this
-market Kamino's own 40 % LTV cap binds before Oilskin's 1.55 floor on both `borrow` and `withdraw` (HF at the
-cap is 1.625), which makes the floors defense in depth — proven by host unit tests, not by the venue. One fact
+market Kamino's own 40 % LTV cap binds before Oilskin's 1.25 floor on both `borrow` and `withdraw` (HF at the
+cap is 1.625; the floor would bind at 52 % LTV on ZEC's 65 % LT), which makes the floors defense in depth —
+proven by host unit tests, not by the venue. There is no product-wide LTV cap under the venue's since 2026-09-12
+(BUILD-PLAN D7): the floor and the reserve's own LTV are the only two ceilings. One fact
 the keeper run added: the same cap binds a **sale** too — collateral cannot leave above 40 % LTV, so a sale that
 repays and releases in one instruction lands the position at HF 1.625, above every disarm level; the keeper
 sizes the sale to whichever of the two (our disarm level, Kamino's cap) needs more ZEC, and says which.
@@ -147,7 +150,7 @@ the program checks is the HF Kamino would liquidate against at that slot.
 |---|---|---|---|
 | `init_account` | — | creates the Account PDA and its two ATAs; CPI `initUserMetadata` and `initObligation` (tag 0, id 0) with the Account PDA as `obligationOwner` via `invoke_signed` | idempotent by PDA existence; refuses a wallet that is itself a PDA |
 | `deposit` | `amount_zec: u64` | wallet ATA → Account ATA; CPI `depositReserveLiquidityAndObligationCollateralV2` | Kamino's deposit limit and 24-h withdrawal cap apply; nothing to add |
-| `borrow` | `amount_usdc: u64` | CPI `borrowObligationLiquidityV2` to the Account USDC ATA | **after the borrow: HF ≥ ENTRY_HF_FLOOR (1.55) and LTV ≤ min(MAX_OFFERED_LTV_CAP 50 %, reserve LTV 40 %)** — today that is 40 % and HF 1.625 at the top preset |
+| `borrow` | `amount_usdc: u64` | CPI `borrowObligationLiquidityV2` to the Account USDC ATA | **after the borrow: HF ≥ ENTRY_HF_FLOOR (1.25) and LTV ≤ the reserve's own LTV (40 %)** — no product-wide cap under the venue's since 2026-09-12; today that is 40 % and HF 1.625 at the top of the slider |
 | `repay` | `amount_usdc: u64` or `u64::MAX` | CPI `repayObligationLiquidityV2` from the Account USDC ATA | — |
 | `withdraw` | `collateral_amount: u64` (cToken units) or `u64::MAX` | CPI `withdrawObligationCollateralAndRedeemReserveCollateralV2` to the Account ZEC ATA. `u64::MAX` withdraws **the most Kamino allows** (everything when there is no debt, and then klend closes the emptied obligation) | **after the withdraw: HF ≥ ENTRY_HF_FLOOR unless debt ≤ LOAN_DUST_UNITS** (the twin of the router's exit floor and slice C's one dust threshold) |
 | `transfer_out` | `mint, amount: u64` | Account ATA → wallet ATA | owner-only; this plus `repay`/`withdraw` is the always-exit path — no grant, no keeper, no Oilskin off-chain component needed |
@@ -246,15 +249,20 @@ open under the other codec (`store/keeperStore.ts`, `idCodec` in the file).
 | `monitor.ts` | The Base tick order — resume pending → head → discover/register → rotated evaluate under concurrency → prune — with the same idempotency record (`account:episode:seq:action`, on disk as `PENDING` before the dispatcher is called), UNKNOWN streaks that escalate at the configured count, the confirmed-but-ineffective re-arm bounded per rung, permanent refusals abandoned instead of retried, `SENT` confirmed on the resume path, and an aborted tick that says so | `test/solana-monitor.test.ts` (8) |
 | `config.ts`, `keeper.ts`, `index.ts` | `SOLANA_RPC_URL`, `OILSKIN_SOLANA_PROGRAM_ID` (required), `SOLANA_STORE_PATH` (absolute), `KEEPER_SOLANA_KEYPAIR` (absolute path to a keypair file; **the CLI's default key is refused**; absent → observe-only, which then needs `SOLANA_SIM_PAYER`, a funded pubkey the read-only simulations name), `SOLANA_PRICE_SOURCE` `jupiter` \| `scope-only` (the latter logs a loud localnet-only warning), the freshness/deviation/tolerance knobs, `KEEPER_MAX_SALE_USDC` (0 = never sells), `KEEPER_SALE_DISCOUNT_BPS`, `KEEPER_PLAN_MARGIN_BPS`, the poll/deadline/watchdog/notify timings, `NOTIFY_WEBHOOK_URL`. `runSolanaKeeper(env, opts)` wires it and runs the loop with the Base shutdown pattern; `npm run dev:solana -w @zyo/agent` | `solana/tests/keeper.spec.ts` runs it in-process with `maxTicks` |
 
-**What the localnet run proved (2026-09-12, `keeper.spec.ts`).** At $1,000 the top-preset position values at
-HF 1.629 and nothing fires. At $800 (HF 1.30) repay fires; the plan is repay-only, 294.19 USDC of the Account's
-idle USDC for an expected HF 1.4070 (the disarm level plus the 50 bps margin); the transaction lands, the grant's
-`repayUsdcSpent` equals the USDC that left the Account, the keeper's own USDC did not move, and the next tick
-fires nothing. With the idle USDC transferred out and the price at $660 (HF 1.16), de-risk fires; the keeper
-pays USDC in at fair Scope value, the program repays it and releases ZEC inside Kamino's 40 % cap, every USDC
-paid reduced the debt, the released ZEC equals the ZEC collected into the keeper's account, nothing stays
-delegated, and `sellZecSpent` equals it. Observe-only on a fresh store records the next fall and refuses by
-name with nothing signed. Two departures from this section's original design are now fact: plan sizing is
+**What the localnet run proved (2026-09-12, `keeper.spec.ts`; re-derived the same night for the 1.25 floor's
+ladder — warn 1.23 / repay 1.16 / de-risk 1.09 / emergency 1.05, disarm = rung + 0.02).** At $1,000 the position
+at Kamino's cap values at HF 1.629 and nothing fires. With the price walked into the repay band (HF 1.125, midway
+between repay and de-risk: ≈ $690.6, −31 %) repay fires; the plan is repay-only, ≈ 204.9 USDC of the Account's
+idle USDC for an expected HF 1.1859 (the 1.18 disarm level plus the 50 bps margin); the transaction lands, the
+grant's `repayUsdcSpent` equals the USDC that left the Account, the keeper's own USDC did not move, and the next
+tick fires nothing (warn stays fired under its 1.25 disarm level). With the idle USDC transferred out and the
+price walked into the de-risk band (HF 1.07, midway between de-risk and emergency: ≈ $623, −38 %), de-risk fires;
+the keeper pays USDC in at fair Scope value, the program repays it and releases ZEC inside Kamino's 40 % cap
+(the cap, not the 1.11 disarm level, sizes the sale: ≈ 3.48 ZEC for ≈ 2,165 USDC, the position landing at HF ≈
+1.63), every USDC paid reduced the debt, the released ZEC equals the ZEC collected into the keeper's account,
+nothing stays delegated, and `sellZecSpent` equals it. The specs type none of these: each price is derived at
+run time from the obligation and the ladder's bands, each expected HF from the rung's disarm level.
+Observe-only on a fresh store records the next fall and refuses by name with nothing signed. Two departures from this section's original design are now fact: plan sizing is
 the analytic `need` / `Y` above, not the Base "⅓ / ⅔ of value" fractions, because Kamino's cap decides how
 much collateral can leave; and the sale floor is enforced by the program from Scope, so the keeper passes
 amounts, not a `min_usdc_out`.
@@ -263,8 +271,8 @@ amounts, not a `min_usdc_out`.
 
 | Shared source | Solana consumer | Seam that fails on drift |
 |---|---|---|
-| `health.ts` `ENTRY_HF_FLOOR`, `HF_LADDER`, `HF_HYSTERESIS`; `collateral.ts` `MAX_OFFERED_LTV_CAP_BPS`; `dust.ts` `LOAN_DUST_UNITS` | `solana/programs/oilskin/src/generated/ladder.rs` — u64 basis points, generated by `solana/scripts/gen-ladder.mjs` (committed, like the ABI bundle) | `solana/test/ladder-seam.test.mjs` (node:test, no toolchain; runs in CI) and `gen-ladder.mjs --check` |
-| `collateral.ts` `maxOfferedLtvBps(LT)` | web and yield service compute the offer as `min(maxOfferedLtvStopBps(LT_live), reserveLtv_live)`; the program enforces the same bound in `borrow` | `packages/shared/test/solana.test.ts` pins 6500 → 4193 → 4100 → 4000 |
+| `health.ts` `ENTRY_HF_FLOOR` (1.25), `HF_LADDER` (= `ladderFor(1.25)`), `hysteresisFor(ENTRY_HF_FLOOR)` (0.02; `HF_HYSTERESIS` is only the scale); `dust.ts` `LOAN_DUST_UNITS` | `solana/programs/oilskin/src/generated/ladder.rs` — u64 basis points, generated by `solana/scripts/gen-ladder.mjs` (committed, like the ABI bundle); no LTV cap constant since 2026-09-12 | `solana/test/ladder-seam.test.mjs` (node:test, no toolchain; runs in CI) and `gen-ladder.mjs --check` |
+| `collateral.ts` `maxOfferedLtvBps(LT)` = LT ÷ the floor | web and yield service compute the offer as `min(maxOfferedLtvStopBps(LT_live), reserveLtv_live)`; the program enforces the same two bounds in `borrow` (the floor on HF, the reserve's own LTV on LTV) | `packages/shared/test/solana.test.ts` pins 6500 → 5200 → 4000 |
 | `solana.ts` (new): programs, mints, the market, reserves, vaults, Scope indices, klend seeds, a dated snapshot | keeper, yield service, web, `Anchor.toml` clone list, localnet fixtures | `packages/shared/test/solana.test.ts`; the facts reader compares a fresh read against the snapshot and reports drift |
 | `web/lib/copy.ts` `BANNED_WORDS`, the acronym rule, the risk list | the Solana onboarding and review copy (§8) | `web/test/copy.test.ts` (extended to the Solana surfaces) |
 
@@ -407,9 +415,10 @@ keeper key generated under `fixtures/`. The specs time the grant by the **chain*
 the host's: a warped validator runs hours ahead of the wall clock, and the keeper's freshness rules compare
 chain time with chain time.
 
-Scenarios as planned, mirroring `contracts/test`: init → deposit → borrow at 40 % (HF 1.625) → refuse a borrow at 45 % →
-price fixture −8 % → `keeper_protect(warn)` refused (warn is notify-only, no budget) → −17 % → `repay` lifts to
-1.40 → −27 % → `derisk` → revoke → keeper refused by name → owner `close_position` → `transfer_out`. Property
+Scenarios as run, mirroring `contracts/test`: init → deposit → borrow at 40 % (HF 1.625) → refuse a borrow at 55 % →
+`keeper_protect(warn)` refused (warn is notify-only, no budget) → price into the repay band (HF 1.125, −31 %) →
+`repay` lifts to the 1.18 disarm level → into the de-risk band (HF 1.07) → `derisk` → revoke → keeper refused by
+name → owner `close_position` → `transfer_out`. Property
 tests (Rust, `proptest`): the keeper never exceeds the grant under random sequences; the owner can always exit;
 HF after any owner instruction ≥ floor or debt is dust. CU is metered per instruction and recorded in
 `TESTING.md`; if `keeper_protect` with a sale exceeds the limit, §12 (1)'s two-instruction variant is taken.

@@ -214,7 +214,7 @@ describe("health monitor — ladder, hysteresis, re-arm, episodes", () => {
     assert.deepEqual(rep.outcomes.map((o) => [o.valuation, o.fired]).sort(), [["NO_DEBT", null], ["OK", null]]);
     assert.equal(r.dispatcher.calls.length, 0);
 
-    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.49));
+    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.22));
     rep = await r.tick();
     const a = rep.outcomes.find((o) => o.account === ACCOUNT_A.toLowerCase())!;
     assert.equal(a.fired, "warn");
@@ -230,8 +230,8 @@ describe("health monitor — ladder, hysteresis, re-arm, episodes", () => {
     assert.equal(r.store.getDispatch(rec.key)?.status, "NOTIFIED");
     assert.equal(r.store.getAccount(ACCOUNT_A)?.episode, 1);
 
-    // Sitting at 1.49 / bouncing to 1.54: nothing more fires (hysteresis).
-    for (const hf of [1.49, 1.54, 1.49, 1.54, 1.51]) {
+    // Sitting at 1.22 / bouncing to 1.24 (under the warn disarm 1.25): nothing more fires (hysteresis).
+    for (const hf of [1.22, 1.24, 1.22, 1.24, 1.235]) {
       cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(hf));
       await r.tick();
     }
@@ -242,7 +242,7 @@ describe("health monitor — ladder, hysteresis, re-arm, episodes", () => {
   it("re-arm after a top-up: recovery above disarm ends the episode; the next drop is a NEW episode with a NEW key", async () => {
     const r = await rig();
     r.chain.emitAccountCreated(OWNER_A, ACCOUNT_A, 1n);
-    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.3)); // warn + repay in one step → repay fires
+    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.15)); // warn + repay in one step → repay fires
     await r.tick();
     assert.equal(keyOf(r, 0), `${ACCOUNT_A.toLowerCase()}:1:1:repay`);
     cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.7)); // top-up
@@ -250,7 +250,7 @@ describe("health monitor — ladder, hysteresis, re-arm, episodes", () => {
     assert.equal(r.store.getAccount(ACCOUNT_A)?.episode, null);
     assert.deepEqual(r.store.getAccount(ACCOUNT_A)?.ladder.fired, []);
     assert.equal(rep.outcomes[0].fired, null);
-    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.1)); // fresh drop: derisk
+    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.08)); // fresh drop: derisk
     rep = await r.tick();
     assert.equal(rep.outcomes[0].fired, "derisk");
     assert.equal(keyOf(r, 1), `${ACCOUNT_A.toLowerCase()}:2:2:derisk`);
@@ -261,9 +261,9 @@ describe("health monitor — ladder, hysteresis, re-arm, episodes", () => {
   it("a new rung firing within the same episode gets a NEW key (seq advances, episode stays)", async () => {
     const r = await rig();
     r.chain.emitAccountCreated(OWNER_A, ACCOUNT_A, 1n);
-    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.45));
+    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.2));
     await r.tick(); // warn
-    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.3));
+    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.15));
     await r.tick(); // repay
     cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.0));
     await r.tick(); // emergency (derisk crossed too, subsumed)
@@ -273,13 +273,13 @@ describe("health monitor — ladder, hysteresis, re-arm, episodes", () => {
     );
     assert.deepEqual([...r.store.getAccount(ACCOUNT_A)!.ladder.fired].sort(), ["derisk", "emergency", "repay", "warn"]);
     // Partial recovery re-arms derisk + emergency only; falling again re-fires derisk with yet another key.
-    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.27));
+    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.13));
     await r.tick();
-    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.19));
+    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.08));
     await r.tick();
     // FIX C-10: `repay` CONFIRMED but HF never cleared its trigger, so it is
     // re-armed once and fires again (bounded by maxRungRefires) instead of
-    // latching for a 0.15-wide band while the position rots.
+    // latching for the whole band between repay and derisk while the position rots.
     assert.equal(keyOf(r, 3), `${ACCOUNT_A.toLowerCase()}:1:4:repay`);
     assert.equal(r.store.getAccount(ACCOUNT_A)?.rungRefires?.repay, 2);
     assert.equal(keyOf(r, 4), `${ACCOUNT_A.toLowerCase()}:1:5:derisk`);
@@ -310,29 +310,31 @@ describe("health monitor — the ladder is the account's, derived from its recor
     assert.deepEqual(ladder.map((x) => x.hf), [1.27, 1.19, 1.11, 1.05]);
     assert.deepEqual(ladder.map((x) => x.disarmHf), [1.3, 1.22, 1.14, 1.08]);
 
-    // 1.28 is under the floor's warn (1.50) and repay (1.35) — and fires NOTHING on this account.
+    // 1.28 sits above this account's warn rung (1.27) — and above the floor's (1.23): nothing fires on either ladder.
     cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.28));
-    cbBtcPosition(r.chain, ACCOUNT_B, debtForHf(1.49));
+    cbBtcPosition(r.chain, ACCOUNT_B, debtForHf(1.22));
     let rep = await r.tick();
     const a = () => rep.outcomes.find((o) => o.account === ACCOUNT_A.toLowerCase())!;
     const b = () => rep.outcomes.find((o) => o.account === ACCOUNT_B.toLowerCase())!;
     assert.equal(a().fired, null, "1.28 sits above the 1.27 warn rung of the 1.30 ladder");
-    assert.equal(b().fired, "warn", "the record-less account runs the floor's ladder: 1.49 < 1.50");
+    assert.equal(b().fired, "warn", "the record-less account runs the floor's ladder: 1.22 < 1.23");
     assert.equal(r.store.getAccount(ACCOUNT_A)?.entryHf, 1.3);
     assert.equal(r.store.getAccount(ACCOUNT_B)?.entryHf, null, "null = no record, the floor's ladder, said");
     const warnB = r.dispatcher.calls[0].intent.record;
     assert.equal(warnB.account, ACCOUNT_B.toLowerCase());
-    assert.equal(warnB.disarmHf, HF_LADDER[0].disarmHf, "the floor's warn disarm (1.55) travels on the record");
+    assert.equal(warnB.disarmHf, HF_LADDER[0].disarmHf, "the floor's warn disarm (1.25) travels on the record");
 
+    // 1.26 is under THIS account's warn rung (1.27) but above the floor's (1.23): the account's ladder decides.
     cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.26));
     rep = await r.tick();
     assert.equal(a().fired, "warn");
     const warnA = r.dispatcher.calls[1].intent.record;
     assert.equal(warnA.account, ACCOUNT_A.toLowerCase());
     assert.equal(warnA.rung, "warn");
-    assert.equal(warnA.disarmHf, 1.3, "the 1.30 ladder's warn disarm, not the floor's 1.55");
+    assert.equal(warnA.disarmHf, 1.3, "the 1.30 ladder's warn disarm, not the floor's 1.25");
     assert.ok(Math.abs(warnA.hf - 1.26) < 1e-6, `hf at fire ${warnA.hf}`);
 
+    // 1.18 is under the account's repay rung (1.19); the floor's ladder (repay 1.16) would only have warned.
     cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.18));
     rep = await r.tick();
     assert.equal(a().fired, "repay");
@@ -379,11 +381,13 @@ describe("health monitor — the ladder is the account's, derived from its recor
     assert.ok(r.sink.lines.some((x) => x.includes("entry HF read failed")), "said at warn");
 
     // The router now answers 0 (say, a redeploy without the record): the floor's ladder runs and the store says so.
+    // At 1.26 the floor's ladder fires nothing (its warn is 1.23), so drop to 1.15: under the floor's repay rung (1.16).
     r.routerFault.on = false;
     r.entryHfs.delete(ACCOUNT_A.toLowerCase());
+    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.15));
     rep = await r.tick();
-    assert.equal(rep.outcomes[0].fired, "repay", "at 1.26 the floor's repay rung (1.35) is crossed; warn was already fired");
-    assert.equal(r.dispatcher.calls[1].intent.record.disarmHf, HF_LADDER[1].disarmHf);
+    assert.equal(rep.outcomes[0].fired, "repay", "at 1.15 the floor's repay rung (1.16) is crossed; warn was already fired");
+    assert.equal(r.dispatcher.calls[1].intent.record.disarmHf, HF_LADDER[1].disarmHf, "the floor's repay disarm (1.18), not the 1.30 ladder's 1.22");
     assert.equal(r.store.getAccount(ACCOUNT_A)?.entryHf, null);
     assert.ok(r.sink.lines.some((x) => x.includes("entry HF record gone")));
     await r.store.close();
@@ -393,16 +397,16 @@ describe("health monitor — the ladder is the account's, derived from its recor
     const r = await rig();
     r.chain.emitAccountCreated(OWNER_A, ACCOUNT_A, 1n);
     r.entryHfs.set(ACCOUNT_A.toLowerCase(), 1.08);
-    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.45));
+    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.2));
     const rep = await r.tick();
-    assert.equal(rep.outcomes[0].fired, "warn", "the floor's ladder: 1.45 < 1.50");
+    assert.equal(rep.outcomes[0].fired, "warn", "the floor's ladder: 1.2 < 1.23");
     assert.equal(r.store.getAccount(ACCOUNT_A)?.entryHf, 1.08, "what the router said is recorded as read");
     assert.ok(r.sink.lines.some((x) => x.includes("raise the registry floor")));
     await r.store.close();
 
     const bare = await rig({ noRouter: true });
     bare.chain.emitAccountCreated(OWNER_A, ACCOUNT_A, 1n);
-    cbBtcPosition(bare.chain, ACCOUNT_A, debtForHf(1.45));
+    cbBtcPosition(bare.chain, ACCOUNT_A, debtForHf(1.2));
     const rep2 = await bare.tick();
     assert.equal(rep2.outcomes[0].fired, "warn");
     assert.equal(bare.store.getAccount(ACCOUNT_A)?.entryHf, null);
@@ -416,7 +420,7 @@ describe("health monitor — idempotency across crash-restart", () => {
     const p = freshPath();
     const r1 = await rig({ storePath: p });
     r1.chain.emitAccountCreated(OWNER_A, ACCOUNT_A, 1n);
-    cbBtcPosition(r1.chain, ACCOUNT_A, debtForHf(1.3));
+    cbBtcPosition(r1.chain, ACCOUNT_A, debtForHf(1.15));
     // Simulate the process dying inside dispatch: never returns a result.
     r1.dispatcher.script.push(() => {
       throw Object.assign(new Error("process killed"), { crash: true });
@@ -446,7 +450,7 @@ describe("health monitor — idempotency across crash-restart", () => {
     const p = freshPath();
     const r1 = await rig({ storePath: p });
     r1.chain.emitAccountCreated(OWNER_A, ACCOUNT_A, 1n);
-    cbBtcPosition(r1.chain, ACCOUNT_A, debtForHf(1.3));
+    cbBtcPosition(r1.chain, ACCOUNT_A, debtForHf(1.15));
     const tx = ("0x" + "77".repeat(32)) as `0x${string}`;
     r1.dispatcher.script.push(() => ({ status: "SENT", txHash: tx }));
     await r1.tick();
@@ -464,11 +468,11 @@ describe("health monitor — idempotency across crash-restart", () => {
     const p = freshPath();
     const r1 = await rig({ storePath: p });
     r1.chain.emitAccountCreated(OWNER_A, ACCOUNT_A, 1n);
-    cbBtcPosition(r1.chain, ACCOUNT_A, debtForHf(1.3));
+    cbBtcPosition(r1.chain, ACCOUNT_A, debtForHf(1.15));
     await r1.tick();
     await r1.store.close();
     const r2 = await rig({ storePath: p, chain: r1.chain });
-    cbBtcPosition(r2.chain, ACCOUNT_A, debtForHf(1.1));
+    cbBtcPosition(r2.chain, ACCOUNT_A, debtForHf(1.08));
     await r2.tick();
     const keys = r2.store.listDispatches().map((d) => d.key);
     assert.equal(new Set(keys).size, 2);
@@ -479,7 +483,7 @@ describe("health monitor — idempotency across crash-restart", () => {
   it("FAILED dispatch is retried with the same key while the episode is open, then ABANDONED and escalated", async () => {
     const r = await rig();
     r.chain.emitAccountCreated(OWNER_A, ACCOUNT_A, 1n);
-    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.3));
+    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.15));
     r.dispatcher.default = () => ({ status: "FAILED", error: "rpc down" });
     await r.tick(); // attempt 1 (fresh)
     await r.tick(); // attempt 2 (resume)
@@ -497,7 +501,7 @@ describe("health monitor — idempotency across crash-restart", () => {
   it("a FAILED record whose episode has ended is SUPERSEDED, not replayed", async () => {
     const r = await rig();
     r.chain.emitAccountCreated(OWNER_A, ACCOUNT_A, 1n);
-    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.3));
+    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.15));
     r.dispatcher.script.push(() => ({ status: "FAILED", error: "once" }));
     await r.tick();
     const key = keyOf(r, 0);
@@ -516,7 +520,7 @@ describe("health monitor — idempotency across crash-restart", () => {
   it("a more severe rung supersedes an unfinished milder dispatch for the same account", async () => {
     const r = await rig();
     r.chain.emitAccountCreated(OWNER_A, ACCOUNT_A, 1n);
-    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.3));
+    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.15));
     r.dispatcher.script.push(() => ({ status: "REFUSED", reason: "no grant yet" }));
     await r.tick();
     const k1 = keyOf(r, 0);
@@ -535,8 +539,8 @@ describe("health monitor — isolation, concurrency, fail-closed, escalation", (
     const r = await rig({ deadlineMs: 80 });
     r.chain.emitAccountCreated(OWNER_A, ACCOUNT_A, 1n);
     r.chain.emitAccountCreated(OWNER_B, ACCOUNT_B, 1n);
-    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.3));
-    cbBtcPosition(r.chain, ACCOUNT_B, debtForHf(1.3));
+    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.15));
+    cbBtcPosition(r.chain, ACCOUNT_B, debtForHf(1.15));
     r.chain.faults.set(`getUserAccountData(${ACCOUNT_A.toLowerCase()})`, { kind: "hang" });
     const rep = await r.tick();
     const a = rep.outcomes.find((o) => o.account === ACCOUNT_A.toLowerCase())!;
@@ -592,7 +596,7 @@ describe("health monitor — isolation, concurrency, fail-closed, escalation", (
     const doc = JSON.parse(await readFile(r.storePath, "utf8"));
     doc.counters.episode = 41;
     await writeFile(r.storePath, JSON.stringify(doc));
-    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.3)); // repay rung
+    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.15)); // repay rung
     await r.tick();
     assert.equal(r.dispatcher.calls.length, 0, "nothing is dispatched without a store that can key it");
     // FIX C-6: an untrusted store is now FATAL — the keeper stops so a
@@ -609,7 +613,7 @@ describe("health monitor — isolation, concurrency, fail-closed, escalation", (
     r.chain.emitAccountCreated(OWNER_A, ACCOUNT_A, 1n);
     cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(2.0));
     await r.tick(); // registered, healthy
-    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.3)); // repay rung
+    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.15)); // repay rung
     const realMutate = r.store.mutate.bind(r.store);
     // Fail the SECOND write of the next tick: the first is the tick counter,
     // the second is the pre-dispatch idempotency record.
@@ -653,7 +657,7 @@ describe("health monitor — isolation, concurrency, fail-closed, escalation", (
   it("logs never contain a 32-byte secret-shaped value outside allow-listed hash fields", async () => {
     const r = await rig();
     r.chain.emitAccountCreated(OWNER_A, ACCOUNT_A, 1n);
-    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.3));
+    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.15));
     await r.tick();
     const key = "0x" + "ab".repeat(32);
     r.sink.records.length = 0;
@@ -676,7 +680,7 @@ describe("health monitor — a CONFIRMED repay with a shortfall note", () => {
   it("tells the owner ONCE (one `shortfall` event), re-arms the rung, and records the re-armed retry's SUPERSEDED as bookkeeping — no second notice, no third dispatch", async () => {
     const r = await rig();
     r.chain.emitAccountCreated(OWNER_A, ACCOUNT_A, 1n);
-    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.3)); // warn + repay crossed in one step → repay fires
+    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.15)); // warn + repay crossed in one step → repay fires
     const tx = ("0x" + "22".repeat(32)) as `0x${string}`;
     const note = "USDC ran out on the worse book (0xaave 20000); 0xmorpho (1000 USDC still owed) was owed at dispatch and is left for the retry — an honest shortfall, not a wrong book";
     r.dispatcher.script.push(async () => ({ status: "CONFIRMED", txHash: tx, note }));
@@ -692,11 +696,11 @@ describe("health monitor — a CONFIRMED repay with a shortfall note", () => {
       assert.ok(!(e.reasons ?? []).some((x) => /shortfall/i.test(x)), "the record-level dispatch event does not repeat the note");
     }
 
-    // The mock chain did not move (HF still 1.3, under the repay rung): the rung whose action
+    // The mock chain did not move (HF still 1.15, under the repay rung): the rung whose action
     // CONFIRMED without clearing it is re-armed once and fires again with a NEW key; the retry's
     // world check (scripted here as the dispatcher would answer once the paid book cleared the
     // disarm) SUPERSEDES it.
-    r.dispatcher.script.push(async () => ({ status: "SUPERSEDED", reason: "HF 1.6000 ≥ repay disarm 1.4" }));
+    r.dispatcher.script.push(async () => ({ status: "SUPERSEDED", reason: "HF 1.6000 ≥ repay disarm 1.18" }));
     await r.tick();
     assert.equal(r.dispatcher.calls.length, 2);
     const k2 = keyOf(r, 1);

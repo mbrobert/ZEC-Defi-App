@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-09-12T19:44:42+00:00",
+ "generatedAt": "2026-09-13T02:43:16+00:00",
  "method": "Per pool \u00d7 setting Monte Carlo of the served position (scripts/lp-sim.py): zero-drift GBM at the pool's \u03c3, hourly, one year, re-centred after the preset's rebalance delay with (pool fee + 5 bps slippage) charged on the swapped half. mcLpNet = emissionsNetPct \u00d7 inRangeEmissionsFactor + mcDragPct \u2014 affine in the emissions rate because neither the in-range indicator nor the mint value depends on it, so these two coefficients price the cell at every emissions level.",
  "asOf": "2026-09-12T19:31:31+00:00",
  "paths": 6000,

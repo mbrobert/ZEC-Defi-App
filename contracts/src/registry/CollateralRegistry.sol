@@ -9,10 +9,12 @@ import {ICollateralRegistry} from "../interfaces/ICollateralRegistry.sol";
 /// @title CollateralRegistry — which assets may be collateral, at which venue, and the top LTV we
 ///        OFFER for each — derived on chain, never typed.
 ///
-/// @notice `maxOfferedLtvBps(asset)` = min(liquidationThresholdBps / entryHfFloor, maxLtvBps,
-///         MAX_OFFERED_LTV_CAP_BPS), with BOTH venue risk parameters read at call time: Aave retires
-///         a collateral by setting LTV → 0 while keeping the liquidation threshold, and a registry
-///         that reads only the threshold would keep advertising 50 % while every open reverted.
+/// @notice `maxOfferedLtvBps(asset)` = min(liquidationThresholdBps / entryHfFloor, maxLtvBps): the
+///         registry's entry floor and the venue's own max LTV are the ONLY two ceilings on the offer
+///         (the 50 % product cap was removed 2026-09-12, BUILD-PLAN D7), with BOTH venue risk
+///         parameters read at call time: Aave retires a collateral by setting LTV → 0 while keeping
+///         the liquidation threshold, and a registry that reads only the threshold would keep
+///         advertising the floor's LTV while every open reverted.
 ///         A disabled asset offers 0. The venue itself refuses any new debt that would leave the
 ///         account below `entryHfFloorWad`, so what the registry advertises is exactly what the
 ///         chain enforces on every path, not just through one router function. cbZEC is registered
@@ -46,8 +48,6 @@ contract CollateralRegistry is Ownable2Step, ICollateralRegistry {
         uint40 eta;
     }
 
-    /// @notice Never offer more than 50 % LTV regardless of the venue's threshold.
-    uint256 public constant MAX_OFFERED_LTV_CAP_BPS = 5000;
     uint256 public constant BPS = 10_000;
     uint256 public constant WAD = 1e18;
 
@@ -200,7 +200,8 @@ contract CollateralRegistry is Ownable2Step, ICollateralRegistry {
 
     // ---------------------------------------------------------------- views
 
-    /// @notice The top LTV (bps) the product offers for `asset` — derived, capped, 0 if disabled.
+    /// @notice The top LTV (bps) the product offers for `asset`: min(LT / entryHfFloor, the venue's
+    ///         own max LTV), 0 if disabled. No product cap sits above those two.
     /// @dev Reads BOTH of the venue's risk parameters. An LTV→0 deprecation therefore takes the
     ///      offer to 0 immediately instead of advertising a loan that reverts inside the protocol.
     function maxOfferedLtvBps(address asset) external view returns (uint256) {
@@ -209,8 +210,7 @@ contract CollateralRegistry is Ownable2Step, ICollateralRegistry {
         ICollateralVenue v = ICollateralVenue(c.venue);
         uint256 derived = (v.liquidationThresholdBps(asset) * WAD) / entryHfFloorWad;
         uint256 venueLtv = v.maxLtvBps(asset);
-        if (venueLtv < derived) derived = venueLtv;
-        return derived > MAX_OFFERED_LTV_CAP_BPS ? MAX_OFFERED_LTV_CAP_BPS : derived;
+        return venueLtv < derived ? venueLtv : derived;
     }
 
     /// @notice Entry health factor (WAD) a position opened at `ltvBps` would have: LT / LTV.

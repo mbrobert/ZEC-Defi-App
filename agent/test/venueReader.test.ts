@@ -409,8 +409,8 @@ async function monitorRig(w: ReturnType<typeof world>) {
 }
 
 describe("rungs fire on a Morpho position", () => {
-  it("monitor: HF 1.30 on Morpho fires `repay`, a crash to 1.02 fires `emergency-unwind`; recovery re-arms", async () => {
-    const w = morphoWorld(1.3);
+  it("monitor: HF 1.15 on Morpho fires `repay`, a price crash (HF ≈ 0.68) fires `emergency-unwind`; recovery re-arms", async () => {
+    const w = morphoWorld(1.15);
     w.chain.emitAccountCreated(OWNER_A, ACCOUNT_A, 1n);
     const r = await monitorRig(w);
     let rep = await r.tick();
@@ -421,7 +421,7 @@ describe("rungs fire on a Morpho position", () => {
     assert.ok(r.dispatcher.calls[0].valuation, "the intent carries the Morpho valuation the plan is sized from");
     assert.equal(r.dispatcher.calls[0].valuation?.dominantCollateral.liquidationThresholdBps, 8600n);
 
-    w.oil.setMorphoPrice(CBBTC, 47_000_00000000n); // 47,000 × 0.86 / 52,658 = 0.768 at the venue…
+    w.oil.setMorphoPrice(CBBTC, 47_000_00000000n); // 47,000 × 0.86 / 59,527 = 0.679 at the venue…
     w.chain.reserves.get(CBBTC.toLowerCase())!.chainlink!.answer = 47_000_00000000n; // …and the keeper's feed agrees
     rep = await r.tick();
     assert.equal(rep.outcomes[0].fired, "emergency", "the most severe rung's id");
@@ -436,16 +436,16 @@ describe("rungs fire on a Morpho position", () => {
     await r.store.close();
   });
 
-  it("monitor, venue pessimistic: the feed says 2.6 but the venue says 1.1 → `derisk` fires on the venue's 1.1, the owner is told once, no UNKNOWN escalation", async () => {
-    const w = morphoWorld(1.1, (_, chain) => {
-      chain.reserves.get(CBBTC.toLowerCase())!.chainlink!.answer = 120_000_00000000n; // the feed says the position is fine; the venue says 1.1
+  it("monitor, venue pessimistic: the feed says the position is fine but the venue says 1.08 → `derisk` fires on the venue's 1.08, the owner is told once, no UNKNOWN escalation", async () => {
+    const w = morphoWorld(1.08, (_, chain) => {
+      chain.reserves.get(CBBTC.toLowerCase())!.chainlink!.answer = 120_000_00000000n; // the feed says the position is fine; the venue says 1.08
     });
     w.chain.emitAccountCreated(OWNER_A, ACCOUNT_A, 1n);
     const r = await monitorRig(w);
     const rep1 = await r.tick();
     assert.equal(rep1.outcomes[0].valuation, "OK");
-    assert.ok(Math.abs((rep1.outcomes[0].hf ?? 0) - 1.1) < 0.01, `pessimistic = the venue's own 1.1, got ${rep1.outcomes[0].hf}`);
-    assert.equal(rep1.outcomes[0].fired, "derisk", "1.1 is below the derisk rung and above emergency");
+    assert.ok(Math.abs((rep1.outcomes[0].hf ?? 0) - 1.08) < 0.01, `pessimistic = the venue's own 1.08, got ${rep1.outcomes[0].hf}`);
+    assert.equal(rep1.outcomes[0].fired, "derisk", "1.08 is below the derisk rung (1.09) and above emergency (1.05)");
     assert.equal(r.dispatcher.calls.length, 1);
     assert.equal(r.dispatcher.calls[0].valuation?.oracleDisagreement?.direction, "venue-pessimistic", "the dispatcher is handed the flagged verdict");
     assert.equal(r.events.filter((e) => e.kind === "oracle-disagreement").length, 1, "the owner is told");
@@ -473,7 +473,7 @@ describe("rungs fire on a Morpho position", () => {
 
   it("monitor: Aave debt behind a Morpho pointer (previousVenues) fires `repay` exactly as it did before the switch", async () => {
     const w = world((oil, chain) => {
-      cbBtcPosition(chain, ACCOUNT_A, debtForHf(1.3));
+      cbBtcPosition(chain, ACCOUNT_A, debtForHf(1.15));
       oil.setVenue(CBBTC, MORPHO_VENUE_ADDR);
     });
     w.chain.emitAccountCreated(OWNER_A, ACCOUNT_A, 1n);
@@ -504,36 +504,38 @@ describe("rungs fire on a Morpho position", () => {
       notifier: { failures: 0, channels: ["test"], hasPersonChannel: true, deliver: async () => ({ personReached: true }) },
     });
   }
+  /** The floor's repay disarm: what a resumed `repay` with no valuation is sized to reach. */
+  const REPAY_DISARM = HF_LADDER.find((r) => r.id === "repay")!.disarmHf;
   const record = (action: string, rung: string, hf: number): DispatchRecord => {
     const now = "2026-09-08T01:00:00.000Z";
     return { key: `${ACCOUNT_A.toLowerCase()}:1:1:${action}`, account: ACCOUNT_A.toLowerCase() as Address, episode: 1, seq: 1, action, rung, hf, status: "PENDING", attempts: 0, createdAt: now, updatedAt: now };
   };
 
   it("dispatcher world check: a resumed repay for a Morpho account is NOT 'SUPERSEDED: no debt' — it reaches the grant read", async () => {
-    const w = morphoWorld(1.3);
+    const w = morphoWorld(1.15);
     const d = keeperDispatcher(w);
-    const res = await d.dispatch({ record: record("repay", "repay", 1.3), valuation: null });
+    const res = await d.dispatch({ record: record("repay", "repay", 1.15), valuation: null });
     assert.equal(res.status, "REFUSED");
     assert.match((res as { reason: string }).reason, /no active grant/, "the world check saw the Morpho debt and moved on to the grant");
   });
 
   it("dispatcher end to end: with the signed grant and idle USDC, `repay` on a Morpho position is SENT, the mock repays the Morpho market, and confirm() sees repaid > 0", async () => {
-    const w = morphoWorld(1.3, (oil) => {
+    const w = morphoWorld(1.15, (oil) => {
       oil.grant(KEEPER, ROUTER, GRANT_SELECTORS["StrategyRouter.unwind"]);
       oil.setUsdc(ACCOUNT_A, 20_000_000_000n); // 20,000 USDC idle in the account
     });
     const before = w.oil.morphoPosition(ACCOUNT_A, CBBTC).debt;
     const d = keeperDispatcher(w);
-    const res = await d.dispatch({ record: record("repay", "repay", 1.3), valuation: null });
+    const res = await d.dispatch({ record: record("repay", "repay", 1.15), valuation: null });
     assert.equal(res.status, "SENT", JSON.stringify(res));
     const after = w.oil.morphoPosition(ACCOUNT_A, CBBTC).debt;
     assert.ok(after < before, `Morpho debt ${before} → ${after}`);
-    const c = await d.confirm({ ...record("repay", "repay", 1.3), status: "SENT", txHash: (res as { txHash: Hex }).txHash });
+    const c = await d.confirm({ ...record("repay", "repay", 1.15), status: "SENT", txHash: (res as { txHash: Hex }).txHash });
     assert.equal(c.status, "CONFIRMED");
-    // The repay was sized to the rung's disarm from the Morpho valuation: HF is now ≥ 1.40.
+    // The repay was sized to the rung's disarm from the Morpho valuation: HF is now ≥ the repay disarm (1.18).
     const av = await w.value();
     assert.equal(av.valuation.kind, "OK");
-    if (av.valuation.kind === "OK") assert.ok(av.valuation.hf >= 1.4 - 1e-6, `HF after repay ${av.valuation.hf}`);
+    if (av.valuation.kind === "OK") assert.ok(av.valuation.hf >= REPAY_DISARM - 1e-6, `HF after repay ${av.valuation.hf}`);
   });
 
   it("dispatcher end to end under a venue-optimistic disagreement: `repay` is SENT and sized against the PESSIMISTIC health, so the feed-implied HF ends ≥ the disarm (residual (b))", async () => {
@@ -551,7 +553,7 @@ describe("rungs fire on a Morpho position", () => {
     const av = await w.value();
     assert.equal(av.valuation.kind, "OK");
     if (av.valuation.kind === "OK") {
-      assert.ok(av.valuation.hf >= 1.4 - 1e-6, `pessimistic HF after repay ${av.valuation.hf}`);
+      assert.ok(av.valuation.hf >= REPAY_DISARM - 1e-6, `pessimistic HF after repay ${av.valuation.hf}`);
       assert.equal(av.valuation.oracleDisagreement?.direction, "venue-optimistic", "the prices still disagree; the account is protected anyway");
     }
     assert.equal(valuationForWithdraw(av).kind, "UNKNOWN", "and a withdrawal would still be refused");

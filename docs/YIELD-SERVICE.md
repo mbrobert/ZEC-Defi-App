@@ -213,10 +213,12 @@ disclosure ids; never 503, a malformed query is a 400. Demo ids are accepted
 floor every cell's `entry_hf_below_floor` is judged against — and the default
 `entryHf` — is the registry's when `COLLATERAL_REGISTRY_ADDRESS` is set and
 `entryHfFloorWad()` was read fresh (`src/sources/registry.ts`, sampled with the
-rates), else the shared constant; `entryHfFloorSource` ("registry" | "shared")
+rates), else the shared constant; `entryHfFloorSource` ("registry" | "registry_stale" | "shared")
 and `entryHfFloorReadAt` say which and when. A read that fails keeps the last
-good one; past `YIELD_STALE_AFTER_MS` the shared constant is served and said —
-fail closed on the higher floor, never on a floor the chain may have raised.
+good one; past `YIELD_STALE_AFTER_MS` the STRICTER of that last read and the
+shared constant is served as "registry_stale" — a floor the chain may have
+raised since is never lowered by going stale. The shared constant is the pinned
+1.25 (2026-09-12); there is no product cap on the offered LTV any more.
 
 ## Security & key handling
 

@@ -80,7 +80,7 @@ enabled (`AssetDisabled(asset, note)` — cbZEC — or `AssetNotOffered` at the
 venue), a disabled venue (`VenueDisabled`), a pool without USDC, a pool whose
 two tokens are the same (`DegeneratePool`), a width outside the bounds, a band
 wider than `MAX_BAND_BPS` (`BandTooWide`), a price outside the band, a
-post-borrow HF below the 1.55 floor, an expired deadline, a wrong-spender or
+post-borrow HF below the registry floor (1.25), an expired deadline, a wrong-spender or
 reused Permit2 nonce.
 
 ## 2 · Deposit — borrow and hold (no LP)

@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fc from "fast-check";
-import { HF_HYSTERESIS, HF_LADDER, rungFor as sharedRungFor } from "@zyo/shared";
+import { ENTRY_HF_FLOOR, HF_LADDER, hysteresisFor, rungFor as sharedRungFor } from "@zyo/shared";
 import { INITIAL_LADDER_STATE, LadderShapeError, rungFor, stepLadder, validateLadder, type LadderRung, type LadderState } from "../src/engine/ladder.js";
 
 const L = HF_LADDER;
@@ -12,7 +12,8 @@ describe("ladder — shape", () => {
     validateLadder(L);
     assert.equal(L.length, 4);
     for (const r of L) assert.ok(r.disarmHf > r.hf, `${r.id} has hysteresis`);
-    assert.ok(Math.abs(by("warn").disarmHf - by("warn").hf - HF_HYSTERESIS) < 1e-9);
+    // The floor's ladder carries the hysteresis derived for the floor (the 0.02 minimum at 1.25), not the 0.05 scale.
+    assert.ok(Math.abs(by("warn").disarmHf - by("warn").hf - hysteresisFor(ENTRY_HF_FLOOR)) < 1e-9);
   });
 
   it("rejects a ladder with zero hysteresis (the audited bug), duplicates, or non-monotone rungs", () => {
@@ -41,10 +42,10 @@ describe("ladder — stepping", () => {
   });
 
   it("crossing warn fires warn and starts an episode; sitting there fires nothing more", () => {
-    const s1 = stepLadder(L, INITIAL_LADDER_STATE, 1.49);
+    const s1 = stepLadder(L, INITIAL_LADDER_STATE, 1.22);
     assert.equal(s1.fire?.id, "warn");
     assert.equal(s1.episodeStarted, true);
-    const s2 = stepLadder(L, s1.next, 1.48);
+    const s2 = stepLadder(L, s1.next, 1.21);
     assert.equal(s2.fire, null);
     assert.equal(s2.episodeStarted, false);
   });
@@ -59,43 +60,43 @@ describe("ladder — stepping", () => {
   });
 
   it("hysteresis: rung re-arms only at hf + hysteresis, then fires again on the next crossing", () => {
-    let st: LadderState = stepLadder(L, INITIAL_LADDER_STATE, 1.49).next; // warn fired
-    // Bouncing between 1.49 and 1.54 must not re-fire (the 13-cycles-in-6000-ticks bug).
+    let st: LadderState = stepLadder(L, INITIAL_LADDER_STATE, 1.22).next; // warn fired
+    // Bouncing between 1.22 and 1.24 (under the warn disarm 1.25) must not re-fire (the 13-cycles-in-6000-ticks bug).
     let fires = 0;
     for (let i = 0; i < 6000; i++) {
-      const step = stepLadder(L, st, i % 2 ? 1.54 : 1.49);
+      const step = stepLadder(L, st, i % 2 ? 1.24 : 1.22);
       if (step.fire) fires++;
       st = step.next;
     }
     assert.equal(fires, 0);
-    // At 1.55 it re-arms…
-    const rearm = stepLadder(L, st, 1.55);
+    // At 1.25 it re-arms…
+    const rearm = stepLadder(L, st, 1.25);
     assert.deepEqual(rearm.rearmed.map((r) => r.id), ["warn"]);
     assert.equal(rearm.episodeEnded, true);
     // …and fires again when crossed again (new episode).
-    const again = stepLadder(L, rearm.next, 1.49);
+    const again = stepLadder(L, rearm.next, 1.22);
     assert.equal(again.fire?.id, "warn");
     assert.equal(again.episodeStarted, true);
   });
 
   it("re-arm after a top-up: deep episode, HF restored above all disarms, then a fresh drop protects again (no one-way latch)", () => {
     const deep = stepLadder(L, INITIAL_LADDER_STATE, 1.0); // everything fired
-    const topUp = stepLadder(L, deep.next, 1.6); // above warn.disarmHf 1.55
+    const topUp = stepLadder(L, deep.next, 1.6); // above warn.disarmHf 1.25
     assert.equal(topUp.episodeEnded, true);
     assert.deepEqual([...topUp.next.fired], []);
-    const drop = stepLadder(L, topUp.next, 1.1);
+    const drop = stepLadder(L, topUp.next, 1.08);
     assert.equal(drop.fire?.id, "derisk");
     assert.equal(drop.episodeStarted, true);
   });
 
   it("partial recovery re-arms only the rungs whose disarm was reached", () => {
     const deep = stepLadder(L, INITIAL_LADDER_STATE, 1.0);
-    const partial = stepLadder(L, deep.next, 1.27); // ≥ derisk.disarm 1.25 and emergency.disarm 1.10; < repay.disarm 1.40
+    const partial = stepLadder(L, deep.next, 1.13); // ≥ derisk.disarm 1.11 and emergency.disarm 1.07; < repay.disarm 1.18
     assert.deepEqual(partial.rearmed.map((r) => r.id).sort(), ["derisk", "emergency"]);
     assert.deepEqual([...partial.next.fired].sort(), ["repay", "warn"]);
     assert.equal(partial.episodeEnded, false);
     // Falling back below derisk now fires derisk again (new dispatch, same episode).
-    assert.equal(stepLadder(L, partial.next, 1.19).fire?.id, "derisk");
+    assert.equal(stepLadder(L, partial.next, 1.08).fire?.id, "derisk");
   });
 
   it("+Infinity (no debt) re-arms everything", () => {

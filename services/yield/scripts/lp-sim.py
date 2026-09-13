@@ -145,9 +145,9 @@ def f_width(w):  # value per unit liquidity per sqrt(P) for a centered ±w range
     return 2 - math.sqrt(1 - w) - 1 / math.sqrt(1 + w)
 
 
-def max_offered_ltv_bps(lt_bps):  # mirrors @zyo/shared maxOfferedLtvBps (integer math)
+def max_offered_ltv_bps(lt_bps):  # mirrors @zyo/shared maxOfferedLtvBps (integer math): floor(LT / floor), no product cap (removed 2026-09-12)
     floor_h = round(INP["ltv"]["entryHfFloor"] * 100)
-    return min(INP["ltv"]["maxOfferedLtvCapBps"], (lt_bps * 100) // floor_h)
+    return (lt_bps * 100) // floor_h
 
 
 def ltv_presets(lt_bps):
@@ -507,8 +507,8 @@ if args.md:
     L.append(f"- **Gate evaluated as of: {AS_OF_ISO}** — `epochActive` is derived from `periodFinish > as-of`, identically to `src/gate.ts`; the sample's recorded boolean is never trusted.")
     L.append(f"- **USDC variable borrow APR: {BORROW}%** — {args.borrow_source}")
     for c in COLLATERAL:
-        pres = ", ".join(f"{i}={b/100:.0f}%{'' if o else ' (not offerable)'}" for i, b, o in ltv_presets(LT[c]))
-        L.append(f"- **{c}**: Aave supply APR {SUPPLY[c]}%, liquidation threshold {LT[c]/100:.2f}% → LTV presets {pres} (top = min(50%, floor(LT/{INP['ltv']['entryHfFloor']})))")
+        pres = ", ".join(f"{i}={b/100:g}%{'' if o else ' (not offerable)'}" for i, b, o in ltv_presets(LT[c]))
+        L.append(f"- **{c}**: Aave supply APR {SUPPLY[c]}%, liquidation threshold {LT[c]/100:.2f}% → LTV presets {pres} (top = floor(LT/{INP['ltv']['entryHfFloor']}), no product cap)")
     L.append(f"- Gauge words: `{args.sample}` sampled {SAMPLE['sampledAt']} (block {SAMPLE.get('block')}), AERO ${SAMPLE['aeroUsd']:.4f}")
     L.append(f"- Volatility: `{args.vol}` as of {VOLF['asOf']}: " + ", ".join(f"{k} σ={v}" for k, v in VOL.items()))
     L.append(f"- Fees: engine {INP['fees']['engineFeeBps']/100:.0f}% then Oilskin {INP['fees']['performanceBps']/100:.0f}% on emissions only → keep {keep_engine:.4f} (engine pools), {keep_direct:.2f} (DIRECT)")
@@ -562,7 +562,7 @@ if args.md:
                 continue
             for col, presets in c["userNet"].items():
                 for i, u in presets.items():
-                    L.append(f"| {pid} | {sid} | {col} | {u['ltvBps']/100:.0f}% ({i}){'' if u['offerable'] else ' not offerable'} | {c['lpNetPct']:+.2f}% | {BORROW}% | {SUPPLY[col]}% | **{u['userNetPct']:+.2f}%** |")
+                    L.append(f"| {pid} | {sid} | {col} | {u['ltvBps']/100:g}% ({i}){'' if u['offerable'] else ' not offerable'} | {c['lpNetPct']:+.2f}% | {BORROW}% | {SUPPLY[col]}% | **{u['userNetPct']:+.2f}%** |")
     L.append("")
     L.append("## What would flip the gate")
     L.append("")

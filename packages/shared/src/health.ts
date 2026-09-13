@@ -11,16 +11,17 @@
  * and the shared default wherever a surface has no registry read. The venue refuses a borrow
  * that would open under it. Since 2026-09-12 (BUILD-PLAN D7, step A4) this is the SLIDER'S
  * MINIMUM, not the product's one setting: the user chooses any entry HF at or above it and the
- * ladder is derived from that choice (`ladderFor`). The number itself is the founder's — 1.25 is
- * the proposal in BUILD-PLAN §2b — and it stays 1.55 here until he pins it; every consumer
- * takes the floor as a parameter so the pin is one change.
+ * ladder is derived from that choice (`ladderFor`). The number is the founder's: **1.25**, pinned
+ * 2026-09-12 (BUILD-PLAN §2b; "floor can be 1.25"). It is the deploy default of
+ * `CollateralRegistry.entryHfFloorWad` and the Solana program's `ENTRY_HF_FLOOR_BPS`; every consumer
+ * that can read the registry's live value does, and takes the floor as a parameter otherwise.
  */
-export const ENTRY_HF_FLOOR = 1.55;
+export const ENTRY_HF_FLOOR = 1.25;
 
 /**
- * Hysteresis at the floor's ladder: a rung disarms (re-arms for next time) once HF climbs back
- * above rung + this. For any other entry HF use `hysteresisFor(entryHf)`; this constant is the
- * value at ENTRY_HF_FLOOR = 1.55 and is what the Solana ladder seam pins today.
+ * The hysteresis SCALE: 0.05 at a 1.55 entry, from which `hysteresisFor(entryHf)` scales with the
+ * buffer (max(0.02, 0.05 × (e − 1) ÷ 0.55)). The ladder's actual hysteresis at any entry — the
+ * floor's included — is `hysteresisFor`; at the 1.25 floor it is the 0.02 minimum.
  */
 export const HF_HYSTERESIS = 0.05;
 
@@ -64,7 +65,7 @@ export interface HfRung {
   id: HfRungId;
   /** Trigger when HF < hf. */
   hf: number;
-  /** Consider the rung cleared when HF >= disarmHf (= hf + HF_HYSTERESIS). */
+  /** Consider the rung cleared when HF >= disarmHf (= hf + hysteresisFor(entryHf)). */
   disarmHf: number;
   /** 1 = mildest … 4 = most severe. */
   severity: 1 | 2 | 3 | 4;
@@ -75,10 +76,6 @@ export interface HfRung {
 
 function round2(x: number): number {
   return Math.round(x * 100) / 100;
-}
-
-function rung(id: HfRungId, hf: number, severity: HfRung["severity"], action: HfRung["action"], label: string): HfRung {
-  return { id, hf, disarmHf: round2(hf + HF_HYSTERESIS), severity, action, label };
 }
 
 const RUNG_SHAPE: readonly { id: HfRungId; severity: HfRung["severity"]; action: HfRung["action"]; label: string }[] = Object.freeze([
@@ -120,9 +117,10 @@ export function ladderFor(entryHf: number): readonly HfRung[] {
 }
 
 /**
- * The floor's ladder — what every position ran on before A4 and what a position whose entry HF is
- * not recorded still runs on. `rungFor` (without a ladder) returns the MOST severe rung of THIS
- * ladder whose threshold the HF is below.
+ * The floor's ladder — `ladderFor(1.25)` = warn 1.23 / repay 1.16 / derisk 1.09 / emergency 1.05,
+ * hysteresis 0.02 — what a position whose entry HF is not recorded runs on, and what the Solana
+ * program's generated `ladder.rs` pins. `rungFor` (without a ladder) returns the MOST severe rung
+ * of THIS ladder whose threshold the HF is below.
  */
 export const HF_LADDER: readonly HfRung[] = ladderFor(ENTRY_HF_FLOOR);
 

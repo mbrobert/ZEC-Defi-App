@@ -235,9 +235,13 @@ contract Handler is Test {
 
     function _open(address venue, uint256 amount, uint256 ltvBps) internal {
         amount = bound(amount, 0.01e8, 2e8);
-        // Both venues enforce the registry's 1.55 entry floor: Aave LT 7800 → LTV ≤ 5032 bps,
-        // Morpho LLTV 8600 → ≤ 5548; 5000 clears both.
-        ltvBps = bound(ltvBps, 1000, 5000);
+        // Both venues enforce the registry's 1.25 entry floor and nothing caps the offer above it
+        // (2026-09-12): Aave LT 7800 → floor(7800 × 100 / 125) = 6240 bps (under its LTV 7300);
+        // Morpho LLTV 8600 → 6880. The bound is the smaller of the two tops, so every draw is inside
+        // what the registry offers on whichever venue it names. At exactly 6240 the mock's integer
+        // LT weighting can land a hair under 1.25 and the venue refuses; `_exec` tolerates that (the
+        // supply stands, the borrow does not) — the boundary the floor exists for.
+        ltvBps = bound(ltvBps, 1000, 6240);
         cbbtc.mint(address(acct), amount);
         _exec(venue, abi.encodeCall(ICollateralVenue.supply, (address(cbbtc), amount)));
         // The Morpho oracle in the fixture is seeded from the same price, so one figure sizes both.

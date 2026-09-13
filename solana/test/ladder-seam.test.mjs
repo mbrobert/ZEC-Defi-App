@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { ENTRY_HF_FLOOR, HF_HYSTERESIS, HF_LADDER, MAX_OFFERED_LTV_CAP_BPS, LOAN_DUST_UNITS } from "@zyo/shared";
+import { ENTRY_HF_FLOOR, HF_LADDER, LOAN_DUST_UNITS, hysteresisFor } from "@zyo/shared";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const rs = readFileSync(join(here, "..", "programs", "oilskin", "src", "generated", "ladder.rs"), "utf8");
@@ -18,8 +18,9 @@ const constU64 = (name) => {
 
 test("scalar constants match shared, in basis points of 1.0", () => {
   assert.equal(constU64("ENTRY_HF_FLOOR_BPS"), Math.round(ENTRY_HF_FLOOR * 10_000));
-  assert.equal(constU64("HF_HYSTERESIS_BPS"), Math.round(HF_HYSTERESIS * 10_000));
-  assert.equal(constU64("MAX_OFFERED_LTV_CAP_BPS"), MAX_OFFERED_LTV_CAP_BPS);
+  // the floor ladder's hysteresis (hysteresisFor(1.25) = 0.02), not HF_HYSTERESIS, which is only the scale
+  assert.equal(constU64("HF_HYSTERESIS_BPS"), Math.round(hysteresisFor(ENTRY_HF_FLOOR) * 10_000));
+  assert.ok(!/MAX_OFFERED_LTV_CAP_BPS/.test(rs), "no product-wide LTV cap: the venue's own LTV and the floor are the only ceilings (2026-09-12)");
   assert.equal(constU64("LOAN_DUST_UNITS"), Number(LOAN_DUST_UNITS));
 });
 
@@ -50,8 +51,10 @@ test("the generator's --check agrees (the committed file is exactly what it woul
 
 test("no rung is disarmable below its own threshold, and rungs strictly descend (the shape the keeper relies on)", () => {
   let prev = Infinity;
+  const h = hysteresisFor(ENTRY_HF_FLOOR);
   for (const r of HF_LADDER) {
     assert.ok(r.disarmHf > r.hf);
+    assert.equal(Math.round((r.disarmHf - r.hf) * 100) / 100, h, `${r.id}: disarm = rung + the floor ladder's hysteresis`);
     assert.ok(r.hf < prev);
     prev = r.hf;
   }

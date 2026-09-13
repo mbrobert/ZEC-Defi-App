@@ -124,7 +124,7 @@ test("demo-gate.json is pinned to MODEL-NUMBERS.md (every served lpNet, drag, em
   assert.ok(checked >= 20, `${checked} cells pinned`);
 
   // User-net table: | pool | setting | collateral | LTV | lpNet | borrow | supply | **userNet** |
-  const un = [...doc.matchAll(/^\| (aero-[a-z0-9-]+) \| (sheltered|steady|working) \| (cbBTC|WETH) \| (\d+)% \((p30|p40|top)\) \| [-\d.]+% \| [\d.]+% \| [\d.]+% \| \*\*([-\d.]+)%\*\* \|/gm)];
+  const un = [...doc.matchAll(/^\| (aero-[a-z0-9-]+) \| (sheltered|steady|working) \| (cbBTC|WETH) \| ([\d.]+)% \((p30|p40|top)\) \| [-\d.]+% \| [\d.]+% \| [\d.]+% \| \*\*([-\d.]+)%\*\* \|/gm)];
   // 48 = 8 priced cells × 2 collaterals × 3 LTV presets. It was 54: the sim
   // used to publish a user-net ladder for cells the gate refuses BEFORE it
   // computes one (audit wave 1 lens D MED-7), and demo mode is now generated
@@ -135,7 +135,7 @@ test("demo-gate.json is pinned to MODEL-NUMBERS.md (every served lpNet, drag, em
   assert.equal(un.length, pricedCells * 6, `parsed ${un.length} user-net rows for ${pricedCells} priced cells`);
   for (const m of un) {
     const v = DEMO_GATE_RAW.verdicts.find((x) => x.poolId === m[1] && x.setting === m[2] && x.collateral === m[3])!;
-    const cell = v.userNet.find((u) => u.ltvBps === Number(m[4]) * 100)!;
+    const cell = v.userNet.find((u) => u.ltvBps === Math.round(Number(m[4]) * 100))!;
     assert.equal(cell.userNetPct, Number(m[6]), `${m[1]}/${m[2]}/${m[3]}/${m[4]}% userNet`);
   }
 });

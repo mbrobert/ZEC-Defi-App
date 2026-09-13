@@ -4,7 +4,7 @@
 //! expressed in basis points of 1.0 so it compares directly with the generated ladder constants. No debt (or
 //! dust) is `u64::MAX`, the "healthy" sentinel, never a division by zero.
 
-use crate::generated::ladder::{ENTRY_HF_FLOOR_BPS, LOAN_DUST_UNITS, MAX_OFFERED_LTV_CAP_BPS};
+use crate::generated::ladder::{ENTRY_HF_FLOOR_BPS, LOAN_DUST_UNITS};
 use crate::kamino::ObligationView;
 use crate::errors::OilskinError;
 use anchor_lang::prelude::*;
@@ -48,11 +48,12 @@ pub fn ltv_bps(view: &ObligationView) -> Result<u64> {
     Ok(u64::try_from(num / view.deposited_value_sf).unwrap_or(u64::MAX))
 }
 
-/// The LTV Oilskin offers against this reserve: min(shared cap, the venue's own LTV), in bps.
-/// Mirrors `packages/shared` `maxOfferedLtvStopBps` ∧ the reserve's `loanToValuePct` (§6).
+/// The LTV ceiling the venue itself sets on this reserve, in bps. Since 2026-09-12 (BUILD-PLAN D7) there is
+/// no product-wide cap under it: the only ceilings on a borrow are the entry floor (`require_entry_floor`,
+/// LT ÷ 1.25 in LTV terms) and this, the reserve's own `loanToValuePct` — the same two bounds
+/// `packages/shared` `offeredLtvBounds` applies (§6). On the ZCASH market that is Kamino's 40 %.
 pub fn offered_ltv_cap_bps(reserve_ltv_pct: u8) -> u64 {
-    let venue = (reserve_ltv_pct as u64) * 100;
-    MAX_OFFERED_LTV_CAP_BPS.min(venue)
+    (reserve_ltv_pct as u64) * 100
 }
 
 /// The entry floor: HF after an owner action that adds debt or removes collateral must be at or above it,
@@ -103,11 +104,22 @@ mod tests {
     }
 
     #[test]
-    fn the_floor_binds_when_the_venue_is_looser_than_1_55() {
-        // Same collateral, 45 % LTV: HF = 6,500 / 4,500 = 1.444 < 1.55 → refused by OUR floor even if the venue allowed it.
-        let v = view(10_000, 4_500, 65, 4_500_000_000);
-        assert_eq!(hf_bps(&v).unwrap(), 14_444);
+    fn the_floor_binds_when_the_venue_is_looser_than_the_floor_allows() {
+        // Same collateral, 55 % LTV: HF = 6,500 / 5,500 = 1.1818 < 1.25 → refused by OUR floor even if the venue allowed it.
+        // (LT 65 % ÷ the 1.25 floor = 52 % LTV is where the floor starts to bind.)
+        let v = view(10_000, 5_500, 65, 5_500_000_000);
+        assert_eq!(hf_bps(&v).unwrap(), 11_818);
         assert!(require_entry_floor(&v, OilskinError::EntryHfTooLow).is_err());
+    }
+
+    #[test]
+    fn no_product_cap_sits_under_the_floor() {
+        // 50 % LTV: HF = 6,500 / 5,000 = 1.30 ≥ 1.25 → the floor clears it. The 50 % product cap that once refused
+        // this regardless of HF was removed 2026-09-12; a venue that allowed 50 % would now be offered 50 %.
+        let v = view(10_000, 5_000, 65, 5_000_000_000);
+        assert_eq!(hf_bps(&v).unwrap(), 13_000);
+        assert_eq!(require_entry_floor(&v, OilskinError::EntryHfTooLow).unwrap(), 13_000);
+        assert!(ltv_bps(&v).unwrap() <= offered_ltv_cap_bps(50));
     }
 
     #[test]
@@ -122,19 +134,21 @@ mod tests {
     }
 
     #[test]
-    fn offered_cap_is_the_smaller_of_shared_50_and_the_venue() {
+    fn the_offered_ltv_is_the_venues_own() {
         assert_eq!(offered_ltv_cap_bps(40), 4_000);
-        assert_eq!(offered_ltv_cap_bps(60), MAX_OFFERED_LTV_CAP_BPS);
+        assert_eq!(offered_ltv_cap_bps(60), 6_000);
     }
 
     #[test]
     fn ladder_rungs_in_bps_match_the_drops_the_facts_file_records() {
-        // At 40 % LTV against LT 65 %: warn (HF 1.50) after a 7.7 % drop, emergency (1.05) after 35.4 %.
+        // At 40 % LTV against LT 65 % (entry HF 1.625): warn (HF 1.23) fires after a 24.3 % fall
+        // (1 − 1.23 ÷ 1.625), emergency (1.05) after 35.4 % — the generated rungs, not typed here.
+        use crate::generated::ladder::{RUNG_EMERGENCY, RUNG_WARN};
         let hf_after_drop = |drop_pct: u128| {
             let coll = 10_000 * (100 - drop_pct) / 100;
             hf_bps(&view(coll, 4_000, 65, 4_000_000_000)).unwrap()
         };
-        assert!(hf_after_drop(7) > 15_000 && hf_after_drop(8) < 15_000);
-        assert!(hf_after_drop(35) > 10_500 && hf_after_drop(36) < 10_500);
+        assert!(hf_after_drop(24) > RUNG_WARN.hf_bps && hf_after_drop(25) < RUNG_WARN.hf_bps);
+        assert!(hf_after_drop(35) > RUNG_EMERGENCY.hf_bps && hf_after_drop(36) < RUNG_EMERGENCY.hf_bps);
     }
 }

@@ -11,7 +11,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { CURATED_POOLS, ENTRY_HF_FLOOR, FEES, LTV_PRESET_FIXED_BPS, MAX_OFFERED_LTV_CAP_BPS, RANGE_PRESETS, poolById } from "@zyo/shared";
+import { CURATED_POOLS, ENTRY_HF_FLOOR, FEES, LTV_PRESET_FIXED_BPS, RANGE_PRESETS, poolById } from "@zyo/shared";
 import { evaluateGate } from "../src/gate.js";
 import { ENGINE_FEE_BPS, SETTINGS } from "../src/model.js";
 import { GaugeSource, onchainToken1, SEL } from "../src/sources/gauges.js";
@@ -89,7 +89,7 @@ test("samples/model-inputs.json matches @zyo/shared and the model today (drift f
     SETTINGS.map((s) => ({ id: s.id, preset: s.preset, rangeWidthBps: { ...RANGE_PRESETS.find((p) => p.preset === s.preset)!.rangeWidthBps }, rebalanceDelayHours: s.rebalanceDelayHours }))
   );
   assert.deepEqual(INPUTS.fees, { performanceBps: FEES.performanceBps, engineFeeBps: ENGINE_FEE_BPS });
-  assert.deepEqual(INPUTS.ltv, { entryHfFloor: ENTRY_HF_FLOOR, maxOfferedLtvCapBps: MAX_OFFERED_LTV_CAP_BPS, fixedBps: { ...LTV_PRESET_FIXED_BPS } });
+  assert.deepEqual(INPUTS.ltv, { entryHfFloor: ENTRY_HF_FLOOR, fixedBps: { ...LTV_PRESET_FIXED_BPS } }, "no product cap since 2026-09-12; the floor is 1.25");
   for (const p of CURATED_POOLS.filter((x) => x.dex === "AERODROME")) {
     assert.equal(INPUTS.pools[p.id]!.protocol, p.protocol, p.id);
     assert.equal(INPUTS.pools[p.id]!.pairClass, p.pairClass, p.id);

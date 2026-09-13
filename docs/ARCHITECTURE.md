@@ -291,16 +291,16 @@ bounded `[1 hour, 30 days]`, and the deploy script defaults it to 2 days
 - `setEnabled` stays **immediate in both directions**: disabling is the ops
   safety valve and must not wait; enabling redirects nothing.
 - `maxOfferedLtvBps(asset) = min(LT × 1e18 / entryHfFloorWad,
-  venue.maxLtvBps(asset), MAX_OFFERED_LTV_CAP_BPS = 5000)`, 0 if disabled —
-  both venue risk parameters read at call time. Aave deprecates a collateral by
+  venue.maxLtvBps(asset))`, 0 if disabled — both venue risk parameters read at
+  call time; the 50 % product cap that used to clip this was removed 2026-09-12. Aave deprecates a collateral by
   setting LTV → 0 while keeping the threshold; reading only the threshold used
   to leave the product advertising 50 % while every open reverted inside Aave.
 - `entryHfForLtv(asset, ltvBps)` **reverts** `AssetNotEnabled` for a disabled
   asset and `VenueDoesNotKnowAsset` when the venue's LT is 0, rather than
   answering `0` — a health factor of zero is a misleading number, not a
   refusal. A client reading both offer views now gets one coherent story.
-- `entryHfFloorWad` (set from `packages/shared` `ENTRY_HF_FLOOR = 1.55`) is
-  bounded to (1, 10] and is **not** timelocked.
+- `entryHfFloorWad` (set from `packages/shared` `ENTRY_HF_FLOOR = 1.25`, pinned
+  2026-09-12) is bounded to (1, 10] and is **not** timelocked.
 
 At the 2026-09-05 read (LT 78.00 % cbBTC, 83.00 % WETH; LTV 73.00 % / 80.00 %)
 both derive to the 5000 cap; cbZEC is registered with `enabled = false` and the
@@ -442,9 +442,10 @@ own proofs of concept, re-run with the expectations flipped.
 4. **Ladder** (`engine/ladder.ts`) over the ACCOUNT's ladder (A4, 2026-09-12,
    BUILD-PLAN D7): `resolveLadder` reads `StrategyRouter.entryHfWad(account)`
    each tick (`services/entryHf.ts`) and runs shared `ladderFor(entryHf)` —
-   at the 1.55 floor that is warn < 1.50, repay < 1.35, derisk < 1.20,
-   emergency < 1.05, each disarming at rung + 0.05; at 1.30 it is 1.27 / 1.19
-   / 1.11 / 1.05 with 0.03. No record, or no router, means the floor's ladder
+   at the 1.25 floor that is warn < 1.23, repay < 1.16, derisk < 1.09,
+   emergency < 1.05, each disarming at rung + 0.02; at 1.30 it is 1.27 / 1.19
+   / 1.11 / 1.05 with 0.03; at the Sheltered mark 1.55 it is the old 1.50 /
+   1.35 / 1.20 / 1.05 table with 0.05. No record, or no router, means the floor's ladder
    (`HF_LADDER`) and `entryHf: null` on the account record; a read that fails
    keeps the last value; the rung's disarm is written on the dispatch record
    (`disarmHf`) so the dispatcher sizes and judges against the ladder that
@@ -513,10 +514,11 @@ here with the facts each was checked against, per the "never invent a number"
 1.55" — that is `ENTRY_HF_FLOOR` (`packages/shared/src/health.ts:14`), the
 minimum HF a **freshly opened** position must have. It is a different
 constant from the ladder. The `warn` rung that actually fires notifications is
-**1.50** (`HF_LADDER[0].hf`); `repay` 1.35, `derisk` 1.20,
-`emergency` 1.05 — unchanged from what `TESTING.md` and `ARCHITECTURE.md`
-already documented. v1 uses 1.50, not 1.55, because that is what is in code.
-(Since A4, 2026-09-12, those are the rungs of a position opened AT the floor;
+**1.50** (`ladderFor(1.55)[0].hf`); `repay` 1.35, `derisk` 1.20,
+`emergency` 1.05 — what `TESTING.md` and `ARCHITECTURE.md` documented then.
+v1 used 1.50, not 1.55, because that was what was in code. (Since A4,
+2026-09-12, those are the rungs of a position opened at 1.55, the Sheltered
+mark; the floor itself is 1.25 and its ladder 1.23 / 1.16 / 1.09 / 1.05;
 a position's own rungs derive from its recorded entry HF, `ladderFor`, §4 of
 the keeper pipeline above.)
 

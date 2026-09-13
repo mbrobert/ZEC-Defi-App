@@ -27,6 +27,9 @@ import { MockOilskin } from "./mockOilskin.js";
  *     HF 1.02 emergency  -> REFUSED → ABANDONED after 5 attempts
  *     transactions broadcast : 0        LP ids still open : [11,12,13]
  *
+ * (The PoC ran on the 1.55-floor ladder of the time; the walk below sits each stage under the rungs of the
+ * 1.25 floor's ladder — warn 1.23 / repay 1.16 / derisk 1.09 / emergency 1.05 — the keeper runs since D7.)
+ *
  * because `planAction` opened with a ROOT `SnuggleLpVenue.closeMany` call that
  * the signed grant does not cover. The keeper's flagship user was never
  * protected once.
@@ -84,9 +87,9 @@ async function walk(opts: { grant: boolean }) {
 
   const rungs: [string, number][] = [
     ["healthy", 1.6],
-    ["warn", 1.45],
-    ["repay", 1.3],
-    ["derisk", 1.15],
+    ["warn", 1.2],
+    ["repay", 1.15],
+    ["derisk", 1.08],
     ["emergency", 1.02],
   ];
   const log: { stage: string; ticks: string[] }[] = [];

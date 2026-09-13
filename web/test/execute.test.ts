@@ -172,7 +172,7 @@ test("runOpen: not enough ETH for the fee is blocked with a plain sentence, wall
 });
 
 test("runOpen: a transaction the network says would revert is blocked before the wallet, with the reason", async () => {
-  const { ctx, writes } = fakeCtx({ estimateThrows: "execution reverted: EntryHfTooLow(1500000000000000000, 1550000000000000000)" });
+  const { ctx, writes } = fakeCtx({ estimateThrows: "execution reverted: EntryHfTooLow(1200000000000000000, 1250000000000000000)" });
   const { events, emit } = collect();
   await runOpen(ctx, openInput, buildOpenPlan(openInput), emit);
   assert.equal(writes.length, 0);

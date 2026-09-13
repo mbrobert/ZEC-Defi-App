@@ -4,7 +4,7 @@ import fc from "fast-check";
 import { createWalletClient, decodeFunctionData, encodeEventTopics, getAddress, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { base } from "viem/chains";
-import { HF_LADDER } from "@zyo/shared";
+import { HF_LADDER, ladderFor, rungById } from "@zyo/shared";
 import { GRANT_SELECTORS, strategyRouterAbi } from "../src/abi/oilskin.js";
 import { KeeperDispatcher, summarizeUnwinds, judgeUntouched, dustKeptNote } from "../src/dispatch/keeperDispatcher.js";
 import { CLOSE_FRACTION, bandFor, closeCount, isqrt, planAction, selectIds, type PoolInfo } from "../src/dispatch/policy.js";
@@ -52,7 +52,7 @@ function record(action: string, rung: string, hf: number, over: Partial<Dispatch
   return { key: `${ACCOUNT_A.toLowerCase()}:1:1:${action}`, account: ACCOUNT_A.toLowerCase() as Address, episode: 1, seq: 1, action, rung, hf, status: "PENDING", attempts: 0, createdAt: now, updatedAt: now, ...over };
 }
 
-async function rig(hf = 1.3, opts: { venues?: boolean; direct?: boolean } = {}) {
+async function rig(hf = 1.15, opts: { venues?: boolean; direct?: boolean } = {}) {
   const chain = newMockChain();
   cbBtcPosition(chain, ACCOUNT_A, debtForHf(hf));
   const oil = new MockOilskin(chain, { router: ROUTER, lpVenue: LP_VENUE, ...(opts.direct ? { lpVenueDirect: LP_VENUE_DIRECT_ADDR } : {}) });
@@ -301,9 +301,9 @@ describe("policy — pure planning", () => {
 
 describe("KeeperDispatcher — acts only inside a readable grant", () => {
   it("REFUSES without sending when the grant is not active on-chain", async () => {
-    const r = await rig(1.3);
+    const r = await rig(1.15);
     r.oil.setPositions(ACCOUNT_A, [{ id: 1n, poolId: POOL_A }]);
-    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: await r.valuation() });
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.15), valuation: await r.valuation() });
     assert.equal(res.status, "REFUSED");
     assert.match((res as { reason: string }).reason, /no active grant/);
     assert.equal(r.oil.txFrom.length, 0);
@@ -311,10 +311,10 @@ describe("KeeperDispatcher — acts only inside a readable grant", () => {
   });
 
   it("FIX C-1: a grant without allowCallback is REFUSED as a MIS-ISSUED GRANT, permanently, without sending", async () => {
-    const r = await rig(1.3);
+    const r = await rig(1.15);
     r.oil.setPositions(ACCOUNT_A, [{ id: 1n, poolId: POOL_A }]);
     r.grantAll({ allowCallback: false });
-    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: await r.valuation() });
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.15), valuation: await r.valuation() });
     assert.equal(res.status, "REFUSED");
     assert.equal((res as { permanent?: boolean }).permanent, true);
     assert.match((res as { reason: string }).reason, /allowCallback=false/);
@@ -322,13 +322,13 @@ describe("KeeperDispatcher — acts only inside a readable grant", () => {
   });
 
   it("FIX C-3: an expiring grant is surfaced to the caller and notified — never read and discarded", async () => {
-    const r = await rig(1.3);
+    const r = await rig(1.15);
     r.oil.setPositions(ACCOUNT_A, [{ id: 1n, poolId: POOL_A }]);
     const soon = Number(r.chain.nowS) + 3 * 86_400; // 3 days left, warn window is 7
     r.grantAll({ expiry: soon });
     const seen: { expiry: number; active: boolean; allowCallback: boolean }[] = [];
     const res = await r.dispatcher.dispatch({
-      record: record("repay", "repay", 1.3),
+      record: record("repay", "repay", 1.15),
       valuation: await r.valuation(),
       onGrantRead: (g) => seen.push(g),
     });
@@ -341,7 +341,7 @@ describe("KeeperDispatcher — acts only inside a readable grant", () => {
   });
 
   it("a grant revoked between the read and the send surfaces as NotGranted from simulation → REFUSED, nothing sent", async () => {
-    const r = await rig(1.3);
+    const r = await rig(1.15);
     r.oil.setPositions(ACCOUNT_A, [{ id: 1n, poolId: POOL_A }]);
     r.grantAll();
     // Make the grantOf view lie (says active) but the account itself refuse (simulate reverts).
@@ -355,19 +355,19 @@ describe("KeeperDispatcher — acts only inside a readable grant", () => {
       // (the value probe and the execAsKeeper simulation) sees the truth.
       return reads <= 1 ? v : undefined;
     };
-    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: await r.valuation() });
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.15), valuation: await r.valuation() });
     assert.equal(res.status, "REFUSED");
     assert.match((res as { reason: string }).reason, /NotGranted/);
     assert.equal(r.oil.txFrom.length, 0);
   });
 
   it("FIX C-1: with the ONE signed grant it simulates, signs and sends execAsKeeper([unwind]) — the mock closes and repays", async () => {
-    const r = await rig(1.3);
+    const r = await rig(1.15);
     r.oil.setPositions(ACCOUNT_A, [{ id: 1n, poolId: POOL_A }, { id: 2n, poolId: POOL_A }, { id: 3n, poolId: POOL_A }]);
     r.oil.defaultCloseYield = { usdc: 8_000_000_000n, other: 0n }; // 8,000 USDC per id
     r.grantAll();
     const before = (await r.valuation()).hf;
-    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: await r.valuation() });
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.15), valuation: await r.valuation() });
     assert.equal(res.status, "SENT");
     const tx = (res as { txHash: Hex }).txHash;
     assert.deepEqual(r.oil.txFrom, [KEEPER]);
@@ -378,58 +378,58 @@ describe("KeeperDispatcher — acts only inside a readable grant", () => {
     const after = (await r.valuation()).hf;
     assert.ok(after > before, `${after} > ${before}`);
     // confirm() reads the receipt.
-    const c = await r.dispatcher.confirm(record("repay", "repay", 1.3, { status: "SENT", txHash: tx }));
+    const c = await r.dispatcher.confirm(record("repay", "repay", 1.15, { status: "SENT", txHash: tx }));
     assert.deepEqual(c, { status: "CONFIRMED", txHash: tx });
     // Dry runs (value probes + the plan simulation) mutated nothing.
     assert.ok(r.oil.executed.filter((e) => !e.mutate).length >= 1);
   });
 
   it("M-HIGH-1: a SUCCESSFUL receipt whose LeveragedLpUnwound.repaid == 0 on a repay rung is FAILED, never CONFIRMED", async () => {
-    const r = await rig(1.3);
+    const r = await rig(1.15);
     r.oil.setPositions(ACCOUNT_A, [{ id: 1n, poolId: POOL_A }]);
     r.grantAll();
     // The stranded-venue shape: the router closes the LP, finds no debt on the venue it resolved,
     // repays nothing and the transaction succeeds. The old confirm() called that CONFIRMED.
     r.oil.strandRepay = true;
-    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: await r.valuation() });
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.15), valuation: await r.valuation() });
     assert.equal(res.status, "SENT");
     const tx = (res as { txHash: Hex }).txHash;
-    const c = await r.dispatcher.confirm(record("repay", "repay", 1.3, { status: "SENT", txHash: tx }));
+    const c = await r.dispatcher.confirm(record("repay", "repay", 1.15, { status: "SENT", txHash: tx }));
     assert.equal(c.status, "FAILED", `a repay that repaid nothing must not be CONFIRMED: ${JSON.stringify(c)}`);
     assert.match((c as { error: string }).error, /repaid nothing|repaid 0/i);
     // …and the same receipt with a real repay is confirmed, so the check is the event, not the mode.
     r.oil.strandRepay = false;
     r.oil.setPositions(ACCOUNT_A, [{ id: 2n, poolId: POOL_A }]);
-    const ok = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3, { key: `${ACCOUNT_A.toLowerCase()}:1:2:repay` }), valuation: await r.valuation() });
+    const ok = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.15, { key: `${ACCOUNT_A.toLowerCase()}:1:2:repay` }), valuation: await r.valuation() });
     assert.equal(ok.status, "SENT");
-    const c2 = await r.dispatcher.confirm(record("repay", "repay", 1.3, { status: "SENT", txHash: (ok as { txHash: Hex }).txHash }));
+    const c2 = await r.dispatcher.confirm(record("repay", "repay", 1.15, { status: "SENT", txHash: (ok as { txHash: Hex }).txHash }));
     assert.equal(c2.status, "CONFIRMED");
   });
 
   it("M-HIGH-1: a successful receipt with NO LeveragedLpUnwound for the account is FAILED (fail closed)", async () => {
-    const r = await rig(1.3);
+    const r = await rig(1.15);
     r.oil.setPositions(ACCOUNT_A, [{ id: 1n, poolId: POOL_A }]);
     r.grantAll();
-    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: await r.valuation() });
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.15), valuation: await r.valuation() });
     const tx = (res as { txHash: Hex }).txHash;
     // Strip the logs from the receipt: an RPC that returns a bare receipt cannot prove anything moved.
     const rc = r.chain.receipts.get(tx.toLowerCase())!;
     r.chain.receipts.set(tx.toLowerCase(), { ...rc, logs: [] });
-    const c = await r.dispatcher.confirm(record("repay", "repay", 1.3, { status: "SENT", txHash: tx }));
+    const c = await r.dispatcher.confirm(record("repay", "repay", 1.15, { status: "SENT", txHash: tx }));
     assert.equal(c.status, "FAILED");
     assert.match((c as { error: string }).error, /LeveragedLpUnwound/);
   });
 
   it("N-MED-1: a warning that only the keeper's own log/store accepted is LOGGED_ONLY, never NOTIFIED", async () => {
-    const r = await rig(1.45);
+    const r = await rig(1.2);
     // A notifier whose only channels reach nobody (log + owner-history): every event "delivers".
     const logOnly = { failures: 0, channels: ["log", "owner-history"], hasPersonChannel: false, deliver: async () => ({ personReached: false }) };
     const d = new KeeperDispatcher({ ...(r.dispatcher as unknown as { d: ConstructorParameters<typeof KeeperDispatcher>[0] }).d, notifier: logOnly });
-    const res = await d.dispatch({ record: record("notify", "warn", 1.45), valuation: null });
+    const res = await d.dispatch({ record: record("notify", "warn", 1.2), valuation: null });
     assert.equal(res.status, "LOGGED_ONLY");
     assert.match((res as { reason: string }).reason, /NOTIFY_WEBHOOK_URL/);
     // The same rung through a person-facing channel is NOTIFIED.
-    const ok = await r.dispatcher.dispatch({ record: record("notify", "warn", 1.45), valuation: null });
+    const ok = await r.dispatcher.dispatch({ record: record("notify", "warn", 1.2), valuation: null });
     assert.deepEqual(ok, { status: "NOTIFIED" });
   });
 
@@ -449,12 +449,12 @@ describe("KeeperDispatcher — acts only inside a readable grant", () => {
   });
 
   it("FIX C-1: the non-USDC LP leg is swapped under a REAL quote — and a swap worse than the floor fails, never settles", async () => {
-    const r = await rig(1.3);
+    const r = await rig(1.15);
     r.oil.setPositions(ACCOUNT_A, [{ id: 1n, poolId: POOL_A }]);
     // The pool pays both legs: 1,000 USDC and 1 unit (8 decimals) of the other token.
     r.oil.setCloseYield(1n, 1_000_000_000n, 100_000_000n);
     r.grantAll();
-    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: await r.valuation() });
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.15), valuation: await r.valuation() });
     assert.equal(res.status, "SENT");
     // The quote the router carried was built from the pool's live price, not a
     // guessed absolute floor: the swap settled and the account was credited.
@@ -463,29 +463,29 @@ describe("KeeperDispatcher — acts only inside a readable grant", () => {
 
     // Execution 5 % below the quoted rate, against a 100 bps tolerance: the
     // adapter's floor bites and nothing settles. `swapMinOut: 1` could not.
-    const bad = await rig(1.3);
+    const bad = await rig(1.15);
     bad.oil.setPositions(ACCOUNT_A, [{ id: 1n, poolId: POOL_A }]);
     bad.oil.setCloseYield(1n, 1_000_000_000n, 100_000_000n);
     bad.oil.swapExecutionBps = 9_500n;
     bad.grantAll();
-    const failed = await bad.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: await bad.valuation() });
+    const failed = await bad.dispatcher.dispatch({ record: record("repay", "repay", 1.15), valuation: await bad.valuation() });
     assert.equal(failed.status, "FAILED");
     assert.match((failed as { error: string }).error, /InsufficientOutput/);
     assert.equal(bad.oil.txFrom.length, 0, "nothing may be broadcast when the simulation hits the floor");
   });
 
   it("FIX C-7: the notify rung is NOTIFIED only when a channel accepted it; a failed delivery is FAILED", async () => {
-    const r = await rig(1.45);
-    const res = await r.dispatcher.dispatch({ record: record("notify", "warn", 1.45), valuation: await r.valuation() });
+    const r = await rig(1.2);
+    const res = await r.dispatcher.dispatch({ record: record("notify", "warn", 1.2), valuation: await r.valuation() });
     assert.deepEqual(res, { status: "NOTIFIED" });
     assert.equal(r.notified.length, 1);
     assert.equal(r.chain.calls.filter((c) => c.method === "eth_sendRawTransaction").length, 0);
 
-    const broken = await rig(1.45);
+    const broken = await rig(1.2);
     broken.notifier.deliver = async () => {
       throw new Error("pager down");
     };
-    const failed = await broken.dispatcher.dispatch({ record: record("notify", "warn", 1.45), valuation: await broken.valuation() });
+    const failed = await broken.dispatcher.dispatch({ record: record("notify", "warn", 1.2), valuation: await broken.valuation() });
     assert.equal(failed.status, "FAILED");
     assert.match((failed as { error: string }).error, /not delivered/);
   });
@@ -500,12 +500,12 @@ describe("RISKS §8 residual (a) — a receipt that leaves a venue the account s
   };
   const sent = (res: { status: string }) => (res as unknown as { txHash: Hex }).txHash;
   /**
-   * Two books for one asset: Aave (now the PREVIOUS venue) owes ~47,760 USDC at HF 1.3 — the debt
+   * Two books for one asset: Aave (now the PREVIOUS venue) owes ~53,990 USDC at HF 1.15 — the debt
    * that fires the rung — and the registry's CURRENT pointer, Morpho, owes 1,000 against 1 cbBTC
    * at HF ≈ 68. `idleUsdc` sits in the account for the repay-only rung.
    */
   async function twoBooks(idleUsdc: bigint) {
-    const r = await rig(1.3, { venues: true });
+    const r = await rig(1.15, { venues: true });
     r.oil.setVenue(CBBTC, MORPHO_VENUE_ADDR); // Aave is remembered in previousVenues
     r.oil.setMorphoPosition(ACCOUNT_A, CBBTC, { collateral: ONE_BTC, debt: SMALL });
     r.oil.setUsdc(ACCOUNT_A, idleUsdc);
@@ -524,20 +524,20 @@ describe("RISKS §8 residual (a) — a receipt that leaves a venue the account s
   }
 
   it("slice C: a rounding unit that appears on another book between dispatch and confirm is not an untouched debt → CONFIRMED", async () => {
-    const r = await rig(1.3, { venues: true });
+    const r = await rig(1.15, { venues: true });
     r.oil.setVenue(CBBTC, MORPHO_VENUE_ADDR);
     r.oil.setUsdc(ACCOUNT_A, 60_000_000_000n);
     r.grantAll();
     const snap = snapshotting();
-    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: null, persistBeforeSend: snap.persistBeforeSend });
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.15), valuation: null, persistBeforeSend: snap.persistBeforeSend });
     assert.equal(res.status, "SENT", JSON.stringify(res));
     // Morpho owed nothing at dispatch; by confirm time its book reads one unit (Morpho's toAssetsUp).
     r.oil.setMorphoPosition(ACCOUNT_A, CBBTC, { collateral: ONE_BTC, debt: 1n });
-    const c = await r.dispatcher.confirm(record("repay", "repay", 1.3, { status: "SENT", txHash: sent(res), venueBooks: snap.books() }));
+    const c = await r.dispatcher.confirm(record("repay", "repay", 1.15, { status: "SENT", txHash: sent(res), venueBooks: snap.books() }));
     assert.equal(c.status, "CONFIRMED", `one unit is rounding, not a book left untouched: ${JSON.stringify(c)}`);
     // 101 units IS a book that owed nothing when sized → not this receipt's to confirm
     r.oil.setMorphoPosition(ACCOUNT_A, CBBTC, { collateral: ONE_BTC, debt: 101n });
-    const c2 = await r.dispatcher.confirm(record("repay", "repay", 1.3, { status: "SENT", txHash: sent(res), venueBooks: snap.books() }));
+    const c2 = await r.dispatcher.confirm(record("repay", "repay", 1.15, { status: "SENT", txHash: sent(res), venueBooks: snap.books() }));
     assert.equal(c2.status, "FAILED");
     assert.match((c2 as { error: string }).error, /owed nothing when this dispatch was sized/);
   });
@@ -546,11 +546,11 @@ describe("RISKS §8 residual (a) — a receipt that leaves a venue the account s
     const r = await twoBooks(20_000_000_000n);
     r.oil.repayFirstHoldingVenueOnly = true;
     const before = aaveDebt(r);
-    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: null });
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.15), valuation: null });
     assert.equal(res.status, "SENT", JSON.stringify(res));
     assert.equal(r.oil.morphoPosition(ACCOUNT_A, CBBTC).debt, 0n, "the mock repaid the healthy book");
     assert.equal(aaveDebt(r), before, "and left the Aave debt where it was");
-    const c = await r.dispatcher.confirm(record("repay", "repay", 1.3, { status: "SENT", txHash: sent(res) }));
+    const c = await r.dispatcher.confirm(record("repay", "repay", 1.15, { status: "SENT", txHash: sent(res) }));
     assert.equal(c.status, "FAILED", `repaid > 0 on the wrong book must not be CONFIRMED: ${JSON.stringify(c)}`);
     const err = (c as { error: string }).error;
     assert.match(err, /untouched/i);
@@ -562,12 +562,12 @@ describe("RISKS §8 residual (a) — a receipt that leaves a venue the account s
     const r = await twoBooks(20_000_000_000n);
     r.oil.repayFirstHoldingVenueOnly = true;
     const snap = snapshotting();
-    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: null, persistBeforeSend: snap.persistBeforeSend });
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.15), valuation: null, persistBeforeSend: snap.persistBeforeSend });
     assert.equal(res.status, "SENT", JSON.stringify(res));
     const books = snap.books()!;
     assert.equal(books.length, 2, "both books were snapshotted before the send");
     assert.equal(books.find((b) => b.venue.toLowerCase() === MORPHO_VENUE_ADDR.toLowerCase())!.debtUsdc, SMALL.toString());
-    const c = await r.dispatcher.confirm(record("repay", "repay", 1.3, { status: "SENT", txHash: sent(res), venueBooks: books }));
+    const c = await r.dispatcher.confirm(record("repay", "repay", 1.15, { status: "SENT", txHash: sent(res), venueBooks: books }));
     assert.equal(c.status, "FAILED", JSON.stringify(c));
     const err = (c as { error: string }).error;
     assert.match(err, /another book/i);
@@ -579,18 +579,18 @@ describe("RISKS §8 residual (a) — a receipt that leaves a venue the account s
     const r = await twoBooks(SMALL); // exactly the healthy book's debt: after the wrong repay nothing is left
     r.oil.repayFirstHoldingVenueOnly = true;
     const snap = snapshotting();
-    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: null, persistBeforeSend: snap.persistBeforeSend });
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.15), valuation: null, persistBeforeSend: snap.persistBeforeSend });
     assert.equal(res.status, "SENT", JSON.stringify(res));
     assert.equal(r.oil.usdcBalances.get(ACCOUNT_A.toLowerCase()), 0n, "USDC ran out — but on the wrong book");
-    const c = await r.dispatcher.confirm(record("repay", "repay", 1.3, { status: "SENT", txHash: sent(res), venueBooks: snap.books() }));
+    const c = await r.dispatcher.confirm(record("repay", "repay", 1.15, { status: "SENT", txHash: sent(res), venueBooks: snap.books() }));
     assert.equal(c.status, "FAILED", JSON.stringify(c));
-    assert.match((c as { error: string }).error, /the book in more trouble/i, "the snapshot's health factors say Morpho (≈68) was paid before Aave (1.3)");
+    assert.match((c as { error: string }).error, /the book in more trouble/i, "the snapshot's health factors say Morpho (≈68) was paid before Aave (1.15)");
   });
 
   it("the router since 2026-09-09: worst book first, then the rest with what is left — both books repaid → CONFIRMED", async () => {
-    const r = await twoBooks(60_000_000_000n); // enough for ~47,760 on Aave and 1,000 on Morpho
+    const r = await twoBooks(60_000_000_000n); // enough for ~53,990 on Aave and 1,000 on Morpho
     const before = aaveDebt(r);
-    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: null });
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.15), valuation: null });
     assert.equal(res.status, "SENT", JSON.stringify(res));
     assert.equal(aaveDebt(r), 0n, `the worst book was cleared first (was ${before})`);
     assert.equal(r.oil.morphoPosition(ACCOUNT_A, CBBTC).debt, 0n, "the healthy book was reached with what was left");
@@ -600,51 +600,51 @@ describe("RISKS §8 residual (a) — a receipt that leaves a venue the account s
     assert.equal(moved.byVenue.get(AAVE_VENUE_ADDR.toLowerCase()), before);
     assert.equal(moved.byVenue.get(MORPHO_VENUE_ADDR.toLowerCase()), SMALL);
     assert.equal(moved.repaid, before + SMALL, "the LeveragedLpUnwound total is their sum");
-    const c = await r.dispatcher.confirm(record("repay", "repay", 1.3, { status: "SENT", txHash: sent(res) }));
+    const c = await r.dispatcher.confirm(record("repay", "repay", 1.15, { status: "SENT", txHash: sent(res) }));
     assert.equal(c.status, "CONFIRMED", JSON.stringify(c));
   });
 
   it("slice 5, honest shortfall: USDC runs out on the worst book, the healthy book is untouched → CONFIRMED with a shortfall note (the snapshot proves the worse book was paid), and the retry's world check SUPERSEDES", async () => {
     const r = await twoBooks(20_000_000_000n); // less than the Aave debt
     const snap = snapshotting();
-    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: null, persistBeforeSend: snap.persistBeforeSend });
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.15), valuation: null, persistBeforeSend: snap.persistBeforeSend });
     assert.equal(res.status, "SENT", JSON.stringify(res));
     assert.equal(r.oil.usdcBalances.get(ACCOUNT_A.toLowerCase()), 0n, "everything went to the worst book");
     assert.equal(r.oil.morphoPosition(ACCOUNT_A, CBBTC).debt, SMALL, "the healthy book was not reached");
-    const c = await r.dispatcher.confirm(record("repay", "repay", 1.3, { status: "SENT", txHash: sent(res), venueBooks: snap.books() }));
+    const c = await r.dispatcher.confirm(record("repay", "repay", 1.15, { status: "SENT", txHash: sent(res), venueBooks: snap.books() }));
     assert.equal(c.status, "CONFIRMED", JSON.stringify(c));
     const note = (c as { note?: string }).note ?? "";
     assert.match(note, /ran out on the worse book/i);
     assert.match(note, /honest shortfall/i);
     assert.ok(note.toLowerCase().includes(MORPHO_VENUE_ADDR.toLowerCase()), `names the book left for the retry: ${note}`);
-    // Aave is now at ~2.24, above the rung's disarm, and the Morpho book is healthy: the retry sends nothing.
-    const again = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3, { attempts: 1 }), valuation: null });
+    // Aave is now at ~1.83, above the rung's disarm (1.18), and the Morpho book is healthy: the retry sends nothing.
+    const again = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.15, { attempts: 1 }), valuation: null });
     assert.equal(again.status, "SUPERSEDED", JSON.stringify(again));
   });
 
   it("the same shortfall WITHOUT a snapshot (a record from before slice 5, or a dispatch without a venue reader) stays FAILED — unprovable, so not confirmed", async () => {
     const r = await twoBooks(20_000_000_000n);
-    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: null });
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.15), valuation: null });
     assert.equal(res.status, "SENT", JSON.stringify(res));
-    const c = await r.dispatcher.confirm(record("repay", "repay", 1.3, { status: "SENT", txHash: sent(res) }));
+    const c = await r.dispatcher.confirm(record("repay", "repay", 1.15, { status: "SENT", txHash: sent(res) }));
     assert.equal(c.status, "FAILED", JSON.stringify(c));
     assert.match((c as { error: string }).error, /ran out/i);
     assert.match((c as { error: string }).error, /no per-venue snapshot/i);
   });
 
   it("slice 5: debt on a venue that owed nothing when the dispatch was sized → FAILED, not this receipt's to confirm", async () => {
-    const r = await rig(1.3, { venues: true });
+    const r = await rig(1.15, { venues: true });
     r.oil.setUsdc(ACCOUNT_A, 20_000_000_000n);
     r.grantAll();
     const snap = snapshotting();
-    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: null, persistBeforeSend: snap.persistBeforeSend });
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.15), valuation: null, persistBeforeSend: snap.persistBeforeSend });
     assert.equal(res.status, "SENT", JSON.stringify(res));
     const books = snap.books()!;
     assert.deepEqual(books.map((b) => b.venue.toLowerCase()), [AAVE_VENUE_ADDR.toLowerCase()], "only the Aave book existed at dispatch");
     // Between the send and the receipt the registry moved cbBTC to Morpho and a Morpho debt appeared.
     r.oil.setVenue(CBBTC, MORPHO_VENUE_ADDR);
     r.oil.setMorphoPosition(ACCOUNT_A, CBBTC, { collateral: ONE_BTC, debt: SMALL });
-    const c = await r.dispatcher.confirm(record("repay", "repay", 1.3, { status: "SENT", txHash: sent(res), venueBooks: books }));
+    const c = await r.dispatcher.confirm(record("repay", "repay", 1.15, { status: "SENT", txHash: sent(res), venueBooks: books }));
     assert.equal(c.status, "FAILED", JSON.stringify(c));
     assert.match((c as { error: string }).error, /owed nothing when this dispatch was sized/i);
   });
@@ -667,40 +667,40 @@ describe("RISKS §8 residual (a) — a receipt that leaves a venue the account s
   });
 
   it("today's production shape — Aave only, the venue reader on: one VenueRepaid on the Aave venue → CONFIRMED, as without the reader", async () => {
-    const r = await rig(1.3, { venues: true });
+    const r = await rig(1.15, { venues: true });
     r.oil.setUsdc(ACCOUNT_A, 20_000_000_000n); // a partial repay: Aave still owes afterwards, and that is fine — it was reached
     r.grantAll();
-    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: null });
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.15), valuation: null });
     assert.equal(res.status, "SENT", JSON.stringify(res));
     assert.ok(aaveDebt(r) > 0n, "still owes: a partial repay");
     const rc = r.chain.receipts.get(sent(res).toLowerCase())!;
     assert.deepEqual([...summarizeUnwinds(rc.logs as never, ACCOUNT_A).byVenue.keys()], [AAVE_VENUE_ADDR.toLowerCase()]);
-    const c = await r.dispatcher.confirm(record("repay", "repay", 1.3, { status: "SENT", txHash: sent(res) }));
+    const c = await r.dispatcher.confirm(record("repay", "repay", 1.15, { status: "SENT", txHash: sent(res) }));
     assert.equal(c.status, "CONFIRMED", JSON.stringify(c));
   });
 
   it("a receipt whose total is > 0 but that names no venue, with the account still owing → FAILED (a router that does not say where is not trusted)", async () => {
-    const r = await rig(1.3, { venues: true });
+    const r = await rig(1.15, { venues: true });
     r.oil.setUsdc(ACCOUNT_A, 20_000_000_000n);
     r.grantAll();
-    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: null });
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.15), valuation: null });
     const tx = sent(res);
     const rc = r.chain.receipts.get(tx.toLowerCase())!;
     const unwound = encodeEventTopics({ abi: strategyRouterAbi, eventName: "LeveragedLpUnwound" })[0];
     r.chain.receipts.set(tx.toLowerCase(), { ...rc, logs: rc.logs!.filter((l) => l.topics[0] === unwound) });
-    const c = await r.dispatcher.confirm(record("repay", "repay", 1.3, { status: "SENT", txHash: tx }));
+    const c = await r.dispatcher.confirm(record("repay", "repay", 1.15, { status: "SENT", txHash: tx }));
     assert.equal(c.status, "FAILED", JSON.stringify(c));
     assert.match((c as { error: string }).error, /untouched/i);
   });
 
   it("the venues cannot be re-read at confirm time → FAILED, never CONFIRMED (nothing is confirmed that cannot be checked)", async () => {
-    const r = await rig(1.3, { venues: true });
+    const r = await rig(1.15, { venues: true });
     r.oil.setUsdc(ACCOUNT_A, 20_000_000_000n);
     r.grantAll();
-    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: null });
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.15), valuation: null });
     assert.equal(res.status, "SENT", JSON.stringify(res));
     r.oil.failVenueCall(AAVE_VENUE_ADDR, "debt");
-    const c = await r.dispatcher.confirm(record("repay", "repay", 1.3, { status: "SENT", txHash: sent(res) }));
+    const c = await r.dispatcher.confirm(record("repay", "repay", 1.15, { status: "SENT", txHash: sent(res) }));
     assert.equal(c.status, "FAILED", JSON.stringify(c));
     assert.match((c as { error: string }).error, /could not be re-read/i);
   });
@@ -711,59 +711,65 @@ describe("KeeperDispatcher — world check before acting (resume safety)", () =>
     const r = await rig(1.6);
     r.oil.setPositions(ACCOUNT_A, [{ id: 1n, poolId: POOL_A }]);
     r.grantAll();
-    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: null });
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.15), valuation: null });
     assert.equal(res.status, "SUPERSEDED");
     assert.equal(r.oil.txFrom.length, 0);
   });
 
   it("A4: a record carrying its own disarm threshold is judged against it, not the floor's ladder; a record without one still is", async () => {
-    // HF 1.38: under the floor's repay disarm (1.40) — but above a 1.30-entry account's repay disarm (1.22).
-    const r = await rig(1.38);
+    // HF 1.20: above the floor's repay disarm (1.18) — but under a 1.30-entry account's repay disarm (1.22).
+    // Since the floor moved to 1.25 (D7) the floor's ladder is the loosest any account runs, so here the
+    // record's own disarm is the stricter one: the floor's ladder would stand down, the account's must act.
+    const floorDisarm = rungById("repay").disarmHf;
+    const ownDisarm = rungById("repay", ladderFor(1.3)).disarmHf;
+    assert.ok(floorDisarm < 1.2 && 1.2 < ownDisarm, `${floorDisarm} < 1.2 < ${ownDisarm}`);
+    const r = await rig(1.2);
     r.oil.setPositions(ACCOUNT_A, [{ id: 1n, poolId: POOL_A }]);
     r.grantAll();
-    const own = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.18, { disarmHf: 1.22 }), valuation: null });
-    assert.equal(own.status, "SUPERSEDED", JSON.stringify(own));
-    assert.match((own as { reason: string }).reason, /1\.3800 ≥ repay disarm 1\.22/);
-    assert.equal(r.oil.txFrom.length, 0, "nothing sent");
-    const unknown = await r.dispatcher.dispatch({ record: record("repay", "nope", 1.3), valuation: null });
+    const unknown = await r.dispatcher.dispatch({ record: record("repay", "nope", 1.15), valuation: null });
     assert.equal(unknown.status, "REFUSED");
     assert.match((unknown as { reason: string }).reason, /unknown rung nope/);
-    // A pre-A4 record (no disarmHf) is judged against HF_LADDER's repay disarm 1.40: 1.38 is still low, so it acts.
-    const floor = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: null });
-    assert.equal(floor.status, "SENT", JSON.stringify(floor));
+    // A pre-A4 record (no disarmHf) is judged against HF_LADDER's repay disarm 1.18: 1.20 has cleared it, nothing is sent.
+    const floor = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.15), valuation: null });
+    assert.equal(floor.status, "SUPERSEDED", JSON.stringify(floor));
+    assert.match((floor as { reason: string }).reason, new RegExp(`1\\.2000 ≥ repay disarm ${floorDisarm}`));
+    assert.equal(r.oil.txFrom.length, 0, "nothing sent");
+    // The same world, a record carrying the 1.30 ladder's repay disarm (1.22): 1.20 is still under it, so it acts.
+    const own = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.18, { disarmHf: ownDisarm }), valuation: null });
+    assert.equal(own.status, "SENT", JSON.stringify(own));
     assert.equal(r.oil.txFrom.length, 1);
   });
 
   it("resume: no debt any more ⇒ SUPERSEDED; unvaluable ⇒ REFUSED (fail closed); still low ⇒ acts", async () => {
-    const r = await rig(1.3);
+    const r = await rig(1.15);
     r.oil.setPositions(ACCOUNT_A, [{ id: 1n, poolId: POOL_A }]);
     r.grantAll();
     r.chain.setPosition(ACCOUNT_A, { collateral: [{ asset: CBBTC, amount: 100_000_000n }], debt: [] });
-    assert.equal((await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: null })).status, "SUPERSEDED");
-    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.3));
+    assert.equal((await r.dispatcher.dispatch({ record: record("repay", "repay", 1.15), valuation: null })).status, "SUPERSEDED");
+    cbBtcPosition(r.chain, ACCOUNT_A, debtForHf(1.15));
     r.chain.reserves.get(USDC.toLowerCase())!.aavePrice = 0n;
-    const refused = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: null });
+    const refused = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.15), valuation: null });
     assert.equal(refused.status, "REFUSED");
     assert.match((refused as { reason: string }).reason, /unvaluable/);
     r.chain.reserves.get(USDC.toLowerCase())!.aavePrice = 100_000_000n;
-    assert.equal((await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: null })).status, "SENT");
+    assert.equal((await r.dispatcher.dispatch({ record: record("repay", "repay", 1.15), valuation: null })).status, "SENT");
     assert.equal(r.oil.txFrom.length, 1);
   });
 
   it("nothing to do (no LP ids, no idle USDC) is REFUSED with a reason the operator can act on", async () => {
-    const r = await rig(1.3);
+    const r = await rig(1.15);
     r.grantAll();
-    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: await r.valuation() });
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.15), valuation: await r.valuation() });
     assert.equal(res.status, "REFUSED");
     assert.match((res as { reason: string }).reason, /only the owner/);
   });
 
   it("idle USDC with no LP ids → unwind-only repay from idle balance", async () => {
-    const r = await rig(1.3);
+    const r = await rig(1.15);
     r.grantAll();
     r.oil.setUsdc(ACCOUNT_A, 5_000_000_000n); // 5,000 USDC idle
     const before = (await r.valuation()).hf;
-    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: await r.valuation() });
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.15), valuation: await r.valuation() });
     assert.equal(res.status, "SENT");
     const exec = r.oil.executed.find((e) => e.mutate)!;
     assert.deepEqual(exec.calls.map((c) => c.selector), [GRANT_SELECTORS["StrategyRouter.unwind"]]);
@@ -772,21 +778,21 @@ describe("KeeperDispatcher — world check before acting (resume safety)", () =>
   });
 
   it("an unreadable pool price is REFUSED before any grant read or send", async () => {
-    const r = await rig(1.3);
+    const r = await rig(1.15);
     r.grantAll();
     r.oil.setPositions(ACCOUNT_A, [{ id: 1n, poolId: ("0x" + "cc".repeat(32)) as Hex }]); // no price registered
-    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: await r.valuation() });
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.15), valuation: await r.valuation() });
     assert.equal(res.status, "REFUSED");
     assert.match((res as { reason: string }).reason, /cannot read LP state/);
     assert.equal(r.oil.txFrom.length, 0);
   });
 
   it("slice A: a positionsOf the venue refuses is REFUSED with the fault named — never planned as 'no positions'", async () => {
-    const r = await rig(1.3);
+    const r = await rig(1.15);
     r.grantAll();
     r.oil.setUsdc(ACCOUNT_A, 5_000_000_000n); // idle USDC a "no positions" plan WOULD spend (the test above)
     r.oil.setPositionsFault(ACCOUNT_A, { code: 1, index: 3n }); // EnumerationFault.ProbeOutOfGas at index 3
-    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: await r.valuation() });
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.15), valuation: await r.valuation() });
     assert.equal(res.status, "REFUSED");
     const reason = (res as { reason: string }).reason;
     assert.match(reason, /cannot read LP state/);
@@ -795,11 +801,11 @@ describe("KeeperDispatcher — world check before acting (resume safety)", () =>
     assert.equal(r.oil.txFrom.length, 0, "nothing sent");
     // With the venue answering again the same account is acted on.
     r.oil.setPositionsFault(ACCOUNT_A, null);
-    assert.equal((await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: await r.valuation() })).status, "SENT");
+    assert.equal((await r.dispatcher.dispatch({ record: record("repay", "repay", 1.15), valuation: await r.valuation() })).status, "SENT");
   });
 
   it("a price move outside the band between plan and simulation is FAILED (transient), not sent", async () => {
-    const r = await rig(1.3);
+    const r = await rig(1.15);
     r.grantAll();
     r.oil.setPositions(ACCOUNT_A, [{ id: 1n, poolId: POOL_A }]);
     // Plan reads SQRT_P; then the pool moves 5% before simulation.
@@ -812,7 +818,7 @@ describe("KeeperDispatcher — world check before acting (resume safety)", () =>
       reads++;
       return reads >= 2 && v !== undefined ? (v * 105n) / 100n : v; // 2nd read = inside the mock's closeMany
     };
-    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: await r.valuation() });
+    const res = await r.dispatcher.dispatch({ record: record("repay", "repay", 1.15), valuation: await r.valuation() });
     assert.equal(res.status, "FAILED");
     assert.match((res as { error: string }).error, /PriceOutOfBand/);
     assert.equal(r.oil.txFrom.length, 0);
@@ -821,10 +827,10 @@ describe("KeeperDispatcher — world check before acting (resume safety)", () =>
   });
 
   it("never logs the keeper key", async () => {
-    const r = await rig(1.3);
+    const r = await rig(1.15);
     r.oil.setPositions(ACCOUNT_A, [{ id: 1n, poolId: POOL_A }]);
     r.grantAll();
-    await r.dispatcher.dispatch({ record: record("repay", "repay", 1.3), valuation: await r.valuation() });
+    await r.dispatcher.dispatch({ record: record("repay", "repay", 1.15), valuation: await r.valuation() });
     const all = r.sink.lines.join("\n");
     assert.ok(!all.includes(KEY.slice(2)), "private key in logs");
     assert.ok(all.includes('"txHash":"0x'), "tx hash is logged under its allow-listed field");
