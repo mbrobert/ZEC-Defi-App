@@ -3,6 +3,16 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-13 — Slice L: the fork job and the nightly's first cron run, as found (nothing to verify yet)
+
+- The `BASE_RPC_URL` repository secret still does not exist (checked 02:42 and 04:47 UTC): the `fork` job stays
+  NOT VERIFIED on every push; no RPC URL was looked for anywhere else. The nightly's 03:17 UTC cron had not fired
+  by 04:47 UTC. From 04:34 UTC every Actions job in the repository fails to START — zero steps, the annotation
+  "recent account payments have failed or your spending limit needs to be increased" — so the runs on `ecfb86f`
+  and `fa578e2` are red without having run anything; the last complete CI results are `7a91157` (all green but
+  `fork`) and `2913589` (green but `fork` and the peers' IDL-drift `web` red, fixed in `ecfb86f`). Both the secret
+  and the spending limit are the founder's; `docs/TESTING.md` "CI" records the state.
+
 ## 2026-09-13 — Slice N: the stale references and the vocabulary sweep (BUILD-PLAN §6); every suite re-measured
 
 - `/tmp/fix2` is gone from the tree's live text: the skipped web test pinned to the 2026-09-06 hand-off
