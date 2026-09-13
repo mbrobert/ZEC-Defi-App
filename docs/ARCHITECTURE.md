@@ -524,7 +524,7 @@ own proofs of concept, re-run with the expectations flipped.
    no per-user routing**: see "Owner notifications (v1)" below for why, and
    what v1 does instead.
 
-## Owner notifications (v1) — Base-first, 2026-09-07
+## Owner notifications (v1) — Base module, 2026-09-07
 
 The ask: when a health rung fires, tell the account **owner**, not just the
 founder's ops webhook. Three designs were compared for v1 and are recorded

@@ -11,6 +11,25 @@
 > against the tree by Claude Code on 2026-09-12 (20:30 UTC, HEAD `7418bbf`) and now
 > records each step's true state.
 
+> **Reconciliation, 2026-09-13 (HEAD `300550c`).** §4's rows were already being
+> kept current inline by each slice's own commit (A5.1 `afd057b`, A5.2 `b369e81`,
+> B3.1 `1bdbe63` are all reflected below) — this pass re-verified every row
+> against `git log`, not just re-read them. Nothing in §4 was found stale.
+> `docs/ROADMAP.md` now exists alongside this file: it is *when* and *what gets
+> cut*, this file stays *what* and *in what order*; read both. The §6 grep sweep
+> was re-run fresh (Slice N, `fa578e2`, ran it once; four commits have landed
+> since) — still zero live hits: every "Base-first" / "1.55 as the floor" /
+> "tier as a mode" / "registry flip away" / "within_model_uncertainty as a
+> refusal" / "Advanced-only for cross-chain" match left is in a doc marked
+> History, in this file's own grep-target line, in a dated report, or is the
+> *unrelated* sense of the word (RPC tiers, fee tiers, `/v1/gate`'s own
+> machinery, which `docs/TESTING.md` already records as kept on purpose). One
+> live doc used "Base-first" as a section label with no such disclaimer
+> (`ARCHITECTURE.md` "Owner notifications (v1)") — reworded to "Base module" in
+> this pass. **A8 is now formally re-opened**: A3, A4 and A5 (A5.1 + A5.2) all
+> exist, so the internal audit wave promised for them is owed before A9's RFP
+> package is cut — `docs/ROADMAP.md` §H3 schedules it for the freeze, not now.
+
 This is the plan of record. Every earlier "option" document
 (`DIRECTION-2026-09-11.md`, `CROSSCHAIN-LOOP-2026-09-12.md`) is now history that
 explains *why*; this file says *what* gets built, in what order, by whom. Read this
