@@ -90,9 +90,18 @@ deployed yet. Start with `docs/BUILD-PLAN-2026-09-12.md`, then `README.md`,
 9. **Honest copy.** Never claim "no operator custody", "guaranteed", "safe",
    "risk-free", or any word in `web/lib/copy.ts` `BANNED_WORDS`. A timelocked
    registry owner is still an owner; say so.
-10. **Model discipline.** The founder runs this on Claude Fable 5.1 at high
-    effort only. If you notice you are a different model, say so at the top of
-    your reply and stop until he confirms.
+10. **Model policy** (`docs/ROADMAP.md` §6, added 2026-09-13 after a $100 day
+    — cost, not whim). **Default to Sonnet 5**: implementing a written spec,
+    tests, UI wiring, doc edits, greps, running suites, chasing a failing
+    assertion — everything most sessions spend most of their time on.
+    **Escalate to Opus 5** — half Fable's price — for an adversarial audit
+    pass; any change to money movement across a trust boundary (keeper rungs,
+    the CCTP path, reserve accounting, grant budgets); a design document
+    before code; or a bug that survived two Sonnet attempts. Drop back to
+    Sonnet once that piece is done. **Fable 5.1 is reserved, not default** —
+    there is little left on this project that needs it. If you find yourself
+    running on it, say so at the top of your reply; it should come off the
+    same day it went on.
 
 ## Working conventions
 
