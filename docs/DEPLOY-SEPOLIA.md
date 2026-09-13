@@ -81,6 +81,10 @@ days before this file was written. If the value below is not −24509, pass the 
 `CBZEC_USDC_TICK` on both the dry run and the broadcast so the mock pool and the mock swap router
 are priced from the same live number.
 
+> **It has moved. Read live 2026-09-13: `tick = -24046`** (463 ticks above the −24509 recorded here,
+> ≈ 4.7 % in price). So this is not a formality — read it yourself at the moment you deploy and pass
+> what you get, because it will have moved again.
+
 ```bash
 cast call 0x0Fc47C17AF86078d809358db1b4db2DeBC988566 'slot0()(uint160,int24,uint16,uint16,uint16,bool)' --rpc-url https://mainnet.base.org
 ```
