@@ -3,6 +3,27 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-13 — TESTING.md carries the command and the number, and nothing else (ROADMAP rule 7)
+
+Rule 7 has been on the roadmap since it was written: *"`docs/TESTING.md` rows have become multi-page
+changelogs inside table cells; that file is now expensive to read and is read often. History moves to
+`docs/CHANGELOG.md`; each TESTING row keeps the command and the current count only."* It had not been done,
+and the cost showed twice in one day — the summary claimed a superseded **407** for the contracts suite and
+**442** for the ABI seam while the tree said 433 and 444, because the numbers were buried at the end of
+7,600-character table cells nobody re-reads.
+
+- **The summary table is now three columns of one line each**: area, the command as you would type it, and
+  today's number. Longest line in the file: 7,600 characters → 2,314.
+- The running notes worth keeping were pulled out of the cells and stated once, in prose: Playwright uses its
+  own Chromium and a non-existent `CHROMIUM_PATH` is ignored; a stray server on :3111 will be tested instead
+  of yours; a second Solana validator needs its own ledger, ports and `FIXTURES=` directory.
+- **The commands are now the ones that actually work.** The prototypes row no longer carries the container's
+  `CHROMIUM_PATH`, and the Solana localnet row carries `--skip-build`.
+- **The dated slice log at the end is kept, not extended** — a banner says the changelog is canonical, that
+  nothing new goes below the line, and that those sections describe the tree as it was on their date. They
+  stay because several carry detail that never reached the changelog (slice J's Sepolia rehearsal package
+  most of all) and because the audit ledgers cite them.
+
 ## 2026-09-13 — A8 closed: the forecast audited, and a stale Kamino sample no longer priced
 
 **FORECAST-1 (Low, `AUDIT-2026-09-13.md` Part 4).** The forecast's two branches disagreed about a stale
