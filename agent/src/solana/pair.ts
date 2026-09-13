@@ -55,8 +55,13 @@ export function pairStatus(baseAccount: Address | null, recipientOnBase: `0x${st
 
 /**
  * Which way a fired rung goes for an account with this pair view (§14.6–14.7): rung 2 is always the Solana
- * repay from the reserve; rungs 3–4 go over the bridge when the pair is linked, a Base burner exists and no
- * burn is already in flight (younger than the stall window); otherwise the single-chain path (the sale).
+ * repay from the reserve; rungs 3–4 go over the bridge when the Solana side cannot fix the position from the
+ * USDC it already holds, the pair is linked, a Base burner exists and no burn is already in flight (younger
+ * than the stall window); otherwise the single-chain path (the reserve, then the keeper-funded sale).
+ *
+ * `idleCoversNeed` is what makes the five-step sequence terminate: a delivery puts USDC in the Account and
+ * moves no health factor, so the rung fires again — and on that firing the idle USDC now covers the need and
+ * the route is Solana, which is the repay. Without it the keeper would bridge a second time.
  */
 export function bridgeDecision(input: {
   action: string;
@@ -64,8 +69,11 @@ export function bridgeDecision(input: {
   burnerAvailable: boolean;
   inFlightAgeS: number | null;
   stallS: number;
+  /** The Account's idle USDC already reaches the rung's disarm level: nothing has to cross a chain. */
+  idleCoversNeed: boolean;
 }): { route: "bridge" | "solana" | "wait"; reason: string } {
   if (input.action !== "derisk" && input.action !== "emergency-unwind") return { route: "solana", reason: `${input.action} is answered on Solana (the reserve)` };
+  if (input.idleCoversNeed) return { route: "solana", reason: "the Account's own USDC reaches the disarm level — nothing needs to cross a chain" };
   if (input.status !== "linked") return { route: "solana", reason: `pair is ${input.status}: no Base leg to close` };
   if (!input.burnerAvailable) return { route: "solana", reason: "no Base burner configured (Stream C): the single-chain path" };
   if (input.inFlightAgeS !== null && input.inFlightAgeS < input.stallS) {

@@ -65,6 +65,12 @@ export interface BridgeInfo {
   messageHex?: string;
   /** The recipient the router burned to (bytes32, hex) — the Solana USDC token account. */
   recipient?: string;
+  /** Circle's signatures over that message, hex; absent until the service has attested it. */
+  attestationHex?: string;
+  /** The Solana signature that delivered it, once it landed. */
+  deliveryTx?: string;
+  /** What actually arrived: the burn less the fee Circle executed. */
+  deliveredAmountUsdc?: string;
 }
 
 /**

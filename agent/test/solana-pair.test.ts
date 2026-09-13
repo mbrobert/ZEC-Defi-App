@@ -47,7 +47,7 @@ test("pairStatus: linked only when both sides name each other; every other shape
 });
 
 test("bridgeDecision: rung 2 stays on Solana; rungs 3–4 bridge for a linked pair with a burner; in flight → wait inside the stall window, single-chain past it; anything else single-chain", () => {
-  const base = { status: "linked" as const, burnerAvailable: true, inFlightAgeS: null, stallS: 1800 };
+  const base = { status: "linked" as const, burnerAvailable: true, inFlightAgeS: null, stallS: 1800, idleCoversNeed: false };
   assert.equal(bridgeDecision({ ...base, action: "repay" }).route, "solana");
   assert.equal(bridgeDecision({ ...base, action: "notify" }).route, "solana");
   assert.equal(bridgeDecision({ ...base, action: "derisk" }).route, "bridge");
@@ -59,4 +59,19 @@ test("bridgeDecision: rung 2 stays on Solana; rungs 3–4 bridge for a linked pa
   assert.equal(bridgeDecision({ ...base, action: "emergency-unwind", inFlightAgeS: 1799 }).route, "wait");
   assert.equal(bridgeDecision({ ...base, action: "emergency-unwind", inFlightAgeS: 1800 }).route, "solana", "past the stall window the sale path takes over");
   for (const d of [bridgeDecision({ ...base, action: "derisk" }), bridgeDecision({ ...base, action: "derisk", inFlightAgeS: 5 })]) assert.ok(d.reason.length > 20);
+});
+
+test("the idle USDC decides first: once a delivery has landed, the same rung is answered on Solana — which is what ends the five-step sequence instead of burning a second time", () => {
+  const linked = { status: "linked" as const, burnerAvailable: true, inFlightAgeS: null, stallS: 1800 };
+  // Before the delivery: nothing on Solana can pay, so the Base leg is closed.
+  assert.equal(bridgeDecision({ ...linked, action: "derisk", idleCoversNeed: false }).route, "bridge");
+  assert.equal(bridgeDecision({ ...linked, action: "emergency-unwind", idleCoversNeed: false }).route, "bridge");
+  // After it: the Account holds what arrived, so the rung is a repay and nothing crosses a chain again.
+  for (const action of ["derisk", "emergency-unwind"]) {
+    const d = bridgeDecision({ ...linked, action, idleCoversNeed: true });
+    assert.equal(d.route, "solana", action);
+    assert.match(d.reason, /reaches the disarm level/);
+  }
+  // It outranks even a burn in flight: there is no reason to wait for USDC that is already here.
+  assert.equal(bridgeDecision({ ...linked, action: "derisk", idleCoversNeed: true, inFlightAgeS: 30 }).route, "solana");
 });

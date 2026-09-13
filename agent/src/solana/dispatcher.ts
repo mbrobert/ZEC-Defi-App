@@ -15,6 +15,7 @@
  * Without a keeper key the observe-only dispatcher delivers `notify` rungs and REFUSES every action by name.
  */
 import { ComputeBudgetProgram, Connection, Keypair, PublicKey, Transaction, sendAndConfirmRawTransaction, type Commitment } from "@solana/web3.js";
+import { CCTP_DOMAINS } from "@zyo/shared";
 import type { DispatchRecord } from "../store/keeperStore.js";
 import type { Logger } from "../log.js";
 import { eventNow, type Notifier } from "../notify/notifier.js";
@@ -22,6 +23,8 @@ import { AbortedError, withDeadline } from "../services/deadline.js";
 import type { BridgeInfo, BurnResult } from "../dispatch/types.js";
 import type { Address } from "../types/evm.js";
 import { PK, accountPda, anchorErrorName, ata, grantPda, grantRemaining, ixKeeperProtect, ixSplTransfer, obligationPda } from "./layouts.js";
+import type { CircleAttestationClient } from "./attestation.js";
+import { decodeFeeRecipient, feeRecipientTokenAccount, ixReceiveMessage, tokenMessengerPda, usedNoncePda } from "./delivery.js";
 import { bridgeDecision, unreadPair, type PairReader, type PairView } from "./pair.js";
 import { planProtect, usdcNeededFor, type ProtectPlan, type RungTarget } from "./policy.js";
 import type { SolanaReader } from "./reader.js";
@@ -100,6 +103,8 @@ export interface KeeperSolanaDispatcherDeps {
   pair?: PairReader | null;
   /** The Base burner for linked pairs at rungs 3–4; null = the single-chain path. */
   baseBurner?: BaseBurner | null;
+  /** Circle's attestation service; null = a burn can be sent and confirmed but never delivered (it waits). */
+  attestation?: CircleAttestationClient | null;
   /** How long a Base burn may be in flight before the single-chain path takes over (s). */
   bridgeStallS?: number;
   commitment?: Commitment;
@@ -147,14 +152,23 @@ export class KeeperSolanaDispatcher implements SolanaDispatcher {
     //    bridge for a linked pair with a burner and no burn already in flight; otherwise the single-chain path.
     const pair = this.d.pair ? await this.d.pair.read(account, view, signal) : unreadPair(account, view);
     intent.onPairRead?.(pair);
-    const decision = bridgeDecision({ action: record.action, status: pair.status, burnerAvailable: !!this.d.baseBurner, inFlightAgeS: intent.inFlightAgeS ?? null, stallS: this.d.bridgeStallS ?? 1800 });
+    const target = rung.disarmHf * (1 + this.d.planMarginBps / 10_000);
+    const needed = usdcNeededFor(valuation, target);
+    const decision = bridgeDecision({
+      action: record.action,
+      status: pair.status,
+      burnerAvailable: !!this.d.baseBurner,
+      inFlightAgeS: intent.inFlightAgeS ?? null,
+      stallS: this.d.bridgeStallS ?? 1800,
+      // What makes the five-step sequence end: once a delivery has landed, the Account's own USDC covers the
+      // need and this rung is answered by the Solana repay instead of a second burn (§14.6, step 5).
+      idleCoversNeed: valuation.idleUsdc >= needed,
+    });
     log.info("route", { route: decision.route, reason: decision.reason, pair: pair.status, baseAccount: pair.baseAccount });
     if (decision.route === "wait") return { status: "REFUSED", reason: decision.reason };
     if (decision.route === "bridge" && pair.baseAccount) {
-      const target = rung.disarmHf * (1 + this.d.planMarginBps / 10_000);
-      const usdcNeeded = usdcNeededFor(valuation, target);
-      if (usdcNeeded === 0n) return { status: "SUPERSEDED", reason: "nothing is needed to reach the disarm level" };
-      const r = await this.d.baseBurner!.dispatch({ record, baseAccount: pair.baseAccount, expectedRecipient: pair.expectedRecipient, usdcNeeded, action: record.action === "emergency-unwind" ? "burn-emergency" : "burn-derisk" }, signal);
+      if (needed === 0n) return { status: "SUPERSEDED", reason: "nothing is needed to reach the disarm level" };
+      const r = await this.d.baseBurner!.dispatch({ record, baseAccount: pair.baseAccount, expectedRecipient: pair.expectedRecipient, usdcNeeded: needed, action: record.action === "emergency-unwind" ? "burn-emergency" : "burn-derisk" }, signal);
       return this.mapBurn(r);
     }
 
@@ -240,12 +254,135 @@ export class KeeperSolanaDispatcher implements SolanaDispatcher {
     }
   }
 
+  /**
+   * Drive a cross-chain rung one stage per call (`SOLANA-ARCHITECTURE.md` §14.6): the monitor re-enters a SENT
+   * record every tick, so each stage is resumable and a crash between any two of them loses nothing.
+   *
+   *   burn-sent      → the Base receipt, which yields the nonce and the message bytes
+   *   burn-confirmed → Circle's attestation (pending and not-found are waits, never failures)
+   *   attested       → the delivery on Solana; a nonce Circle already recorded means someone else delivered it
+   *   delivered      → done as a bridge; the rung then fires again and the Solana repay answers it
+   */
+  private async advanceBridge(record: SolanaDispatchRecord, signal?: AbortSignal): Promise<SolanaDispatchResult> {
+    const b = record.bridge!;
+    const log = this.d.log.child({ key: record.key, account: record.account, stage: b.stage });
+
+    if (b.stage === "burn-sent") {
+      if (!this.d.baseBurner) return { status: "FAILED", error: "a Base burn record with no Base burner to confirm it" };
+      const r = await this.d.baseBurner.confirm(record, signal);
+      if (r.status !== "CONFIRMED" || !r.bridge) return this.mapBurn(r);
+      // The burn landed; the message still has to be attested and delivered, so the record stays open.
+      log.info("burn confirmed on Base — waiting on Circle", { nonce: r.bridge.nonce, amount: r.bridge.amountUsdc });
+      return { status: "SENT", signature: b.burnTxHash, bridge: { ...r.bridge, stage: "burn-confirmed" } };
+    }
+
+    if (b.stage === "burn-confirmed") {
+      if (!this.d.attestation) return { status: "SENT", signature: b.burnTxHash, bridge: b };
+      if (!b.nonce || !b.recipient) return { status: "FAILED", error: "a confirmed burn with no nonce or recipient on the record — cannot ask Circle for it" };
+      const expect = { nonce: b.nonce as `0x${string}`, mintRecipient: b.recipient as `0x${string}`, amount: BigInt(b.amountUsdc), destinationDomain: CCTP_DOMAINS.solana };
+      const att = await this.d.attestation.byNonce(CCTP_DOMAINS.base, b.nonce, expect, signal);
+      if (att.kind === "mismatch") return { status: "FAILED", error: `Circle's message is not the burn we made: ${att.why}` };
+      if (att.kind !== "complete") {
+        const why = att.kind === "pending" ? `Circle has not attested it yet (${att.status}${att.delayReason ? `: ${att.delayReason}` : ""})` : att.kind === "not-found" ? "Circle has not indexed the burn yet" : att.why;
+        log.info("waiting on the attestation", { why });
+        return { status: "SENT", signature: b.burnTxHash, bridge: b };
+      }
+      log.info("attested — delivering", { deliveredAmount: att.deliveredAmount.toString(), feeExecuted: att.feeExecuted.toString() });
+      const attested = { ...b, stage: "attested" as const, messageHex: att.messageHex, attestationHex: att.attestationHex, deliveredAmountUsdc: att.deliveredAmount.toString() };
+      return this.deliver(record, attested, signal);
+    }
+
+    if (b.stage === "attested") return this.deliver(record, b, signal);
+
+    return { status: "CONFIRMED", signature: b.deliveryTx ?? b.burnTxHash, note: `delivered ${b.deliveredAmountUsdc ?? b.amountUsdc} USDC on Solana; the repay is the next rung firing`, bridge: b };
+  }
+
+  /**
+   * Step 4: hand Circle's attested bytes to the transmitter. The USDC lands where the BURN said, so this
+   * transaction has no destination of its own; the keeper pays the used-nonce rent and the fee and is
+   * otherwise a relayer. A nonce that is already recorded means the message was delivered by someone else —
+   * which is a success, not a race lost.
+   */
+  private async deliver(record: SolanaDispatchRecord, b: NonNullable<SolanaDispatchRecord["bridge"]>, signal?: AbortSignal): Promise<SolanaDispatchResult> {
+    const log = this.d.log.child({ key: record.key, account: record.account });
+    if (!b.messageHex || !b.attestationHex) return { status: "FAILED", error: "an attested stage with no message or attestation on the record" };
+    const message = Uint8Array.from(Buffer.from(b.messageHex.replace(/^0x/, ""), "hex"));
+    const attestation = Uint8Array.from(Buffer.from(b.attestationHex.replace(/^0x/, ""), "hex"));
+    const account = new PublicKey(record.account);
+    const recipient = ata(account, PK.usdcMint);
+    if (b.recipient && b.recipient.toLowerCase() !== `0x${Buffer.from(recipient.toBytes()).toString("hex")}`) {
+      return { status: "REFUSED", permanent: true, reason: `the burn paid ${b.recipient}, which is not this Account's USDC token account` };
+    }
+
+    // Already delivered? The used-nonce account exists only because a delivery created it.
+    let nonceKey: PublicKey;
+    try {
+      nonceKey = usedNoncePda(Uint8Array.from(Buffer.from((b.nonce ?? "").replace(/^0x/, ""), "hex")));
+    } catch (e) {
+      return { status: "FAILED", error: `the record's nonce is not 32 bytes: ${errMsg(e)}` };
+    }
+    const already = await withDeadline("getAccountInfo(used_nonce)", this.d.confirmTimeoutMs, signal, () => this.d.connection.getAccountInfo(nonceKey, "confirmed"));
+    if (already) {
+      log.info("the message was already delivered (its nonce is recorded) — nothing to send", { nonce: b.nonce });
+      return { status: "CONFIRMED", signature: b.burnTxHash, note: `already delivered: Circle's nonce ${b.nonce} is recorded on chain`, bridge: { ...b, stage: "delivered" } };
+    }
+
+    const feeAta = await this.feeRecipientAta(signal);
+    let ix;
+    try {
+      ix = ixReceiveMessage({ payer: this.d.keeper.publicKey, caller: this.d.keeper.publicKey, recipientTokenAccount: recipient, feeRecipientTokenAccount: feeAta }, message, attestation);
+    } catch (e) {
+      return { status: "FAILED", error: `the attested message cannot be delivered to this account: ${errMsg(e)}` };
+    }
+    const tx = new Transaction().add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 })).add(ix);
+    const { blockhash, lastValidBlockHeight } = await withDeadline("getLatestBlockhash", this.d.confirmTimeoutMs, signal, () => this.d.connection.getLatestBlockhash(this.d.commitment ?? "confirmed"));
+    tx.recentBlockhash = blockhash;
+    tx.feePayer = this.d.keeper.publicKey;
+    tx.sign(this.d.keeper);
+    const signature = tx.signatures[0]?.signature ? bs58(tx.signatures[0].signature) : null;
+    if (!signature) return { status: "FAILED", error: "could not sign the delivery" };
+
+    const sim = await withDeadline("simulateTransaction(delivery)", this.d.confirmTimeoutMs, signal, () => this.d.connection.simulateTransaction(tx));
+    if (sim.value.err) {
+      const logs = (sim.value.logs ?? []).filter((l) => /Error|failed|insufficient/i.test(l)).slice(-3).join(" | ");
+      // A nonce recorded between the read above and now is the same benign race.
+      if (/already in use|NonceAlreadyUsed/i.test(logs)) {
+        return { status: "CONFIRMED", signature: b.burnTxHash, note: "delivered by another sender while this one was building", bridge: { ...b, stage: "delivered" } };
+      }
+      return { status: "FAILED", error: `the delivery would fail: ${JSON.stringify(sim.value.err)} ${logs}` };
+    }
+
+    try {
+      await withDeadline("sendAndConfirm(delivery)", this.d.confirmTimeoutMs, signal, () =>
+        sendAndConfirmRawTransaction(this.d.connection, tx.serialize(), { signature, blockhash, lastValidBlockHeight }, { commitment: this.d.commitment ?? "confirmed", skipPreflight: true })
+      );
+    } catch (e) {
+      if (e instanceof AbortedError) throw e;
+      log.warn("delivery sent, confirmation not seen inside the deadline", { signature, error: errMsg(e) });
+      return { status: "SENT", signature: b.burnTxHash, bridge: { ...b, deliveryTx: signature } };
+    }
+    log.info("delivered on Solana", { signature, amount: b.deliveredAmountUsdc ?? b.amountUsdc });
+    return {
+      status: "CONFIRMED",
+      signature,
+      note: `delivered ${b.deliveredAmountUsdc ?? b.amountUsdc} USDC to the Account (${signature}); the repay is the next rung firing`,
+      bridge: { ...b, stage: "delivered", deliveryTx: signature },
+    };
+  }
+
+  /** Circle's fee recipient token account, read from `token_messenger` on chain once and cached. */
+  private feeAta: PublicKey | null = null;
+  private async feeRecipientAta(signal?: AbortSignal): Promise<PublicKey> {
+    if (this.feeAta) return this.feeAta;
+    const info = await withDeadline("getAccountInfo(token_messenger)", this.d.confirmTimeoutMs, signal, () => this.d.connection.getAccountInfo(tokenMessengerPda(), "confirmed"));
+    if (!info) throw new Error("CCTP token_messenger account not found on this cluster");
+    this.feeAta = feeRecipientTokenAccount(decodeFeeRecipient(info.data), PK.usdcMint);
+    return this.feeAta;
+  }
+
   async confirm(record: SolanaDispatchRecord, signal?: AbortSignal): Promise<SolanaDispatchResult> {
     if (!record.txHash && !record.bridge) return { status: "FAILED", error: "no signature on the record" };
-    if (record.bridge) {
-      if (!this.d.baseBurner) return { status: "FAILED", error: "a Base burn record with no Base burner to confirm it" };
-      return this.mapBurn(await this.d.baseBurner.confirm(record, signal));
-    }
+    if (record.bridge) return this.advanceBridge(record, signal);
     const signature = record.txHash!;
     const st = await withDeadline("getSignatureStatuses", this.d.confirmTimeoutMs, signal, () => this.d.connection.getSignatureStatuses([signature], { searchTransactionHistory: true }));
     const v = st.value[0];

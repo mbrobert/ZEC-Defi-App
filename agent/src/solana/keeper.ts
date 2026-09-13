@@ -17,6 +17,7 @@ import { ProgressWatchdog } from "../watchdog.js";
 import { describeSolanaConfig, loadSolanaConfig, type SolanaKeeperConfig } from "./config.js";
 import { createPublicClient, http } from "viem";
 import { KeeperSolanaDispatcher, SolanaObserveOnlyDispatcher, type BaseBurner, type SolanaDispatcher } from "./dispatcher.js";
+import { CircleAttestationClient } from "./attestation.js";
 import { BasePairReader, type PairReader } from "./pair.js";
 import { SolanaMonitor, type SolanaTickReport } from "./monitor.js";
 import { OILSKIN_ERRORS } from "./layouts.js";
@@ -42,6 +43,8 @@ export interface SolanaRunOptions {
    * signing key beside the Solana one, and that two-key process is Stream C's. Absent = single-chain rungs.
    */
   baseBurner?: BaseBurner | null;
+  /** Test hook: Circle's attestation service (the production one is built from CCTP_ATTESTATION_URL). */
+  attestation?: CircleAttestationClient | null;
 }
 
 export const SOLANA_KEEPER_DEFAULTS = {
@@ -126,6 +129,8 @@ export async function runSolanaKeeper(env: NodeJS.ProcessEnv, opts: SolanaRunOpt
   }
   const baseBurner = opts.baseBurner ?? null;
   if (!baseBurner) log.info("no Base burner: rungs 3–4 of a linked pair take the single-chain path (Stream C wires the two-key process)");
+  // Circle's attestation service. Read-only and unauthenticated; it is asked only about burns this keeper made.
+  const attestation = opts.attestation ?? new CircleAttestationClient({ baseUrl: config.attestationBaseUrl, deadlineMs: config.rpcDeadlineMs, log });
 
   let keeperPubkey: PublicKey | null = null;
   let dispatcher: SolanaDispatcher;
@@ -152,6 +157,7 @@ export async function runSolanaKeeper(env: NodeJS.ProcessEnv, opts: SolanaRunOpt
       notifier,
       pair,
       baseBurner,
+      attestation,
       bridgeStallS: config.bridgeStallS,
     });
   } else {

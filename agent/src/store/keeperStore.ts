@@ -248,6 +248,9 @@ export interface DispatchRecord<Id extends string = Address, Tx extends string =
     nonce?: string;
     messageHex?: string;
     recipient?: string;
+    attestationHex?: string;
+    deliveryTx?: string;
+    deliveredAmountUsdc?: string;
   };
 }
 

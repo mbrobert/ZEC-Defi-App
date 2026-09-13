@@ -9,7 +9,7 @@
  */
 import { isAbsolute } from "node:path";
 import { PublicKey } from "@solana/web3.js";
-import { SOLANA_CLUSTER } from "@zyo/shared";
+import { CCTP_IRIS, SOLANA_CLUSTER } from "@zyo/shared";
 import { ConfigError, readRaw } from "../config.js";
 
 export interface SolanaKeeperConfig {
@@ -51,6 +51,8 @@ export interface SolanaKeeperConfig {
   baseRouterAddress?: `0x${string}`;
   /** How long a Base burn may be in flight before the single-chain path takes a rung over (s). */
   bridgeStallS: number;
+  /** Circle's attestation service: mainnet by default, the sandbox on devnet ↔ Sepolia. */
+  attestationBaseUrl: string;
 }
 
 export const SOLANA_CONFIG_DEFAULTS = {
@@ -72,6 +74,7 @@ export const SOLANA_CONFIG_DEFAULTS = {
   maxDispatchAttempts: 5,
   logLevel: "info" as const,
   bridgeStallS: 1800,
+  attestationBaseUrl: CCTP_IRIS.mainnet,
 } as const;
 
 function num(env: NodeJS.ProcessEnv, name: string, dflt: number, opts: { min?: number; max?: number; integer?: boolean } = {}): number {
@@ -146,6 +149,14 @@ export function loadSolanaConfig(env: NodeJS.ProcessEnv = process.env): SolanaKe
 
   const notifyWebhookUrl = readRaw(env, "NOTIFY_WEBHOOK_URL");
 
+  const attestationUrl = readRaw(env, "CCTP_ATTESTATION_URL") ?? SOLANA_CONFIG_DEFAULTS.attestationBaseUrl;
+  try {
+    const u = new URL(attestationUrl);
+    if (u.protocol !== "https:" && u.protocol !== "http:") throw new Error("not http(s)");
+  } catch {
+    throw new ConfigError("CCTP_ATTESTATION_URL", "must be an http(s) URL (Circle's attestation service)");
+  }
+
   const baseRpcUrl = readRaw(env, "BASE_RPC_URL");
   const baseRouterRaw = readRaw(env, "BASE_ROUTER_ADDRESS");
   if ((baseRpcUrl === undefined) !== (baseRouterRaw === undefined)) throw new ConfigError("BASE_ROUTER_ADDRESS", "and BASE_RPC_URL come together (the Base side of a cross-chain pair) or not at all");
@@ -187,6 +198,7 @@ export function loadSolanaConfig(env: NodeJS.ProcessEnv = process.env): SolanaKe
     baseRpcUrl,
     baseRouterAddress: baseRouterRaw as `0x${string}` | undefined,
     bridgeStallS: num(env, "BRIDGE_STALL_S", SOLANA_CONFIG_DEFAULTS.bridgeStallS, { min: 60, integer: true }),
+    attestationBaseUrl: attestationUrl,
   };
 }
 
@@ -205,5 +217,6 @@ export function describeSolanaConfig(c: SolanaKeeperConfig): Record<string, unkn
     healthPollMs: c.healthPollMs,
     store: c.storePath,
     basePair: c.baseRpcUrl ? { router: c.baseRouterAddress, bridgeStallS: c.bridgeStallS } : "not read (no BASE_RPC_URL)",
+    attestation: c.attestationBaseUrl,
   };
 }
