@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Monte Carlo of a Snuggle-style concentrated LP with re-centering rebalances,
 staked in an Aerodrome gauge (yield = AERO emissions only; trading fees go to
-veAERO voters), re-run for the Base-first product against the LIVE Aave USDC
+veAERO voters), re-run for the Base module against the LIVE Aave USDC
 borrow rate and per-collateral Aave supply APRs.
 
 Produces, per pool × setting × collateral × LTV: emissions, drag, lpNet,
