@@ -306,8 +306,13 @@ the boxes is `docs/SEPOLIA-REHEARSAL.md`; what the rehearsal proves and cannot p
    then `set -a; . ./keeper.sepolia.env; set +a; npm run agent`. The first log lines are
    `NOT BASE MAINNET` (with what the run proves) and the per-feed bounds it derived from the
    aggregators — `node scripts/sepolia-feed-policy.mjs` prints the same numbers from the same code
-   without starting the keeper (2026-09-12: BTC/USD and ETH/USD **2,460 s**, USDC/USD
-   **172,848 s**; `SEPOLIA-REHEARSAL.md` has the gaps behind them).
+   without starting the keeper. **Re-read 2026-09-13 at block 46,782,519, under the window-based
+   probe that replaced the six-round one (finding FEED-MED-1):** cbBTC/USD and WETH/USD both
+   **2,464 s** (a 1,232 s heartbeat seen inside a 24-hour window, 101 and 113 rounds read),
+   USDC/USD **172,824 s** (86,412 s, two rounds). Every row reads `probe`, none `probe-short`, so
+   the keeper's bounds are measured rather than fallen back to — which is the thing to check in its
+   startup log. The 2026-09-12 figures (2,460 s and 172,848 s) came from the old six-round probe and
+   are superseded; `SEPOLIA-REHEARSAL.md` has the gaps behind them.
 5. **Web.** `cp deploy/sepolia/web.env.example web/.env.local`, fill the same four addresses under
    their `NEXT_PUBLIC_` names (`NEXT_PUBLIC_CBZEC_ADDRESS` / `NEXT_PUBLIC_AERO_ADDRESS` are the
    keeper's `CBZEC_ADDRESS` / `AERO_ADDRESS` twins — same two doubles, same reason: Base Sepolia
