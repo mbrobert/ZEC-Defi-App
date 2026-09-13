@@ -550,12 +550,18 @@ id codec (`store/keeperStore.ts`; the Base store's behaviour and its 242 tests u
 `verify-solana-idl` 77/77 + 263; Solana seam 7; localnet 26 passing in 24 s (three runs; see below). Two rules
 the run enforced on the spec itself: the keeper reads at `confirmed`, so every set-up write is awaited to
 `confirmed`; and a warped validator's chain clock runs hours ahead of the host's, so the grant's expiry is
-taken from `getBlockTime`, never `Date.now()`. **Observed once, not explained:** on the first of three runs
-the `owner-path.spec.ts` transactions all landed (the later refusal tests that depend on them passed) but
-every confirmation timed out at 30 s (`TransactionExpiredTimeoutError`, Anchor's legacy websocket
-confirmation); the validator was healthy and advancing, a websocket probe afterwards subscribed and confirmed
-in 300 ms, and the two following runs passed 26/26 in 24 s. If it recurs, restart the validator and rerun
-before reading it as a code fault.
+taken from `getBlockTime`, never `Date.now()`. **Observed, explained and fixed in the harness:** in two of the first four runs every
+`owner-path.spec.ts` confirmation timed out at 30 s (`TransactionExpiredTimeoutError`, Anchor's `.rpc()`
+confirms over the websocket) although the transactions had landed (the later refusal tests that depend on them
+passed), and the mocha process then never exited — it held one open websocket. Cause, from
+`@solana/web3.js` 1.99.0 `_updateSubscriptions`: the library flags the socket disconnected the instant its
+subscription count hits zero and closes it 500 ms later; a `signatureSubscribe` that arrives while that close is
+in flight reconnects into a closing socket, and every later confirmation on that connection waits its full
+timeout. Fix: `tests/support/wsKeepalive.ts` holds one standing slot subscription per transacting spec
+(`before` / `after`), so the count never reaches zero, and the runner passes `--exit` so a stuck socket can
+never hold the process. Three consecutive runs after the fix: 26/26 in 24–25 s, each exiting on its own.
+The runner's glob is quoted (`'tests/*.spec.ts'`) because an unquoted `tests/**/*.ts` is expanded by the
+shell once a subdirectory exists and then matches only the helper.
 
 ## 2026-09-12 — A4.1: the ladder is the position's own (keeper, contracts, shared)
 

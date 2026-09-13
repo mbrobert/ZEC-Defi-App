@@ -19,6 +19,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { KAMINO_ZCASH_MARKET, SOLANA_PROGRAMS, SOLANA_TOKENS, rungById } from "@zyo/shared";
 import type { Oilskin } from "../target/types/oilskin";
+import { keepWebSocketWarm } from "./support/wsKeepalive";
 
 // ts-node compiles this spec to CommonJS and rewrites `import()` into `require()`, which cannot load the ESM agent.
 const importEsm = new Function("u", "return import(u)") as (u: string) => Promise<any>;
@@ -59,6 +60,8 @@ describe("keeper agent (localnet, the real reader/dispatcher/monitor against the
   const program = anchor.workspace.Oilskin as Program<Oilskin>;
   const mockScope = new Program(require("../target/idl/mock_scope.json"), provider);
   const conn = provider.connection;
+  let releaseWs: () => Promise<void> = async () => {};
+  after(async () => releaseWs());
 
   const owner = Keypair.generate();
   const keeper = Keypair.generate();
@@ -144,6 +147,7 @@ describe("keeper agent (localnet, the real reader/dispatcher/monitor against the
   });
 
   before(async () => {
+    releaseWs = keepWebSocketWarm(conn);
     for (const [k, sol] of [[owner, 20], [keeper, 20]] as const) {
       await confirmed(await conn.requestAirdrop(k.publicKey, sol * LAMPORTS_PER_SOL));
     }

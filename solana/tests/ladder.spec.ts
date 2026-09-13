@@ -18,6 +18,7 @@ import { expect } from "chai";
 import { readFileSync } from "node:fs";
 import { KAMINO_ZCASH_MARKET, SOLANA_PROGRAMS, SOLANA_TOKENS, HF_LADDER, rungById } from "@zyo/shared";
 import type { Oilskin } from "../target/types/oilskin";
+import { keepWebSocketWarm } from "./support/wsKeepalive";
 
 const pk = (s: string) => new PublicKey(s);
 const KLEND = pk(SOLANA_PROGRAMS.klend);
@@ -42,6 +43,8 @@ describe("ladder (localnet, Scope mock walks the ZEC price)", () => {
   const program = anchor.workspace.Oilskin as Program<Oilskin>;
   const mockScope = new Program(require("../target/idl/mock_scope.json"), provider);
   const conn = provider.connection;
+  let releaseWs: () => Promise<void> = async () => {};
+  after(async () => releaseWs());
 
   const owner = Keypair.generate();
   const keeper = Keypair.generate();
@@ -114,6 +117,7 @@ describe("ladder (localnet, Scope mock walks the ZEC price)", () => {
   let borrowed = 0n;
 
   before(async () => {
+    releaseWs = keepWebSocketWarm(conn);
     for (const [k, sol] of [[owner, 20], [keeper, 20]] as const) {
       const sig = await conn.requestAirdrop(k.publicKey, sol * LAMPORTS_PER_SOL);
       await conn.confirmTransaction(sig, "confirmed");

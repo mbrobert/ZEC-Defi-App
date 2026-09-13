@@ -163,7 +163,10 @@ liquidity provision; EIP = Ethereum Improvement Proposal.
   under the other. Proven: `verify-solana-idl` **77/77** against the committed IDL, +21 agent tests (**263**),
   and `solana/tests/keeper.spec.ts` on localnet (+5, **26/26**): repay-only at HF 1.30 (294.19 USDC → HF
   1.407), the funded sale at HF 1.16 landing inside the cap with the released ZEC collected to the unit,
-  observe-only refusing by name. Not deployed; no keeper runs anywhere.
+  observe-only refusing by name. Harness: the specs hold a standing websocket subscription so
+  `@solana/web3.js`'s 500 ms idle-close cannot race a confirmation (two of four runs had every owner-path
+  confirmation time out and the process hang; three clean runs since), and the runner exits when mocha ends.
+  Not deployed; no keeper runs anywhere.
 
 ## 2026-09-12 — Halmos runs: the account's four grant properties hold (4 / 4); the harness had failed on Foundry's dynamic test linking, not on a property
 
