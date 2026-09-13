@@ -68,7 +68,14 @@ test("Chainlink feeds, Pyth, Aerodrome, Morpho, Compound, Permit2, CoW", () => {
   assert.equal(CHAINLINK_FEEDS.ETH_USD.address, "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70");
   assert.equal(CHAINLINK_FEEDS.USDC_USD.address, "0x7e860098F58bBFC8648a4311b374B1D669a2bc6B");
   assert.equal(CHAINLINK_FEEDS.cbBTC_USD.address, "0x07DA0E54543a844a80ABE69c8A12F22B3aA59f9D");
-  assert.equal(CHAINLINK_ZEC_USD, null);
+  // Was null until 2026-09-13, when the feed went live and was read on chain (Addendum 16).
+  assert.equal(CHAINLINK_ZEC_USD, "0x69e5BC4988a9AF30Ec827C5609c0D41028446ec0");
+  assert.equal(CHAINLINK_FEEDS.ZEC_USD.address, CHAINLINK_ZEC_USD);
+  // The hazard worth a test of its own: this feed is 18 decimals, every other one is 8.
+  assert.equal(CHAINLINK_FEEDS.ZEC_USD.decimals, 18);
+  for (const [k, f] of Object.entries(CHAINLINK_FEEDS)) {
+    if (k !== "ZEC_USD") assert.equal(f.decimals, 8, `${k} is expected to be an 8-decimal feed`);
+  }
   assert.equal(PYTH.contract, "0x8250f4aF4B972684F7b336503E2D6dFeDeB1487a");
   assert.equal(PYTH.priceIds.ZEC_USD, "0xbe9b59d178f0d6a97ab4c343bff2aa69caa1eaae3e9048a65788c529b125bb24");
   assert.match(PYTH.priceIds.ZEC_USD, /^0x[0-9a-f]{64}$/);
@@ -95,7 +102,8 @@ test("Chainlink feeds, Pyth, Aerodrome, Morpho, Compound, Permit2, CoW", () => {
 
 test("every address constant is EIP-55 checksummed and unique", () => {
   const all = allVerifiedAddresses();
-  assert.equal(Object.keys(all).length, 24);
+  // 24 until 2026-09-13; the Chainlink ZEC/USD feed on Base is the 25th (Addendum 16).
+  assert.equal(Object.keys(all).length, 25);
   const seen = new Set<string>();
   for (const [key, addr] of Object.entries(all)) {
     assert.equal(isChecksumAddress(addr), true, `${key} = ${addr} is not checksummed`);

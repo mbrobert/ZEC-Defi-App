@@ -683,8 +683,9 @@ published break-even are refused by the guard (`RISKS.md` §14).
 
 ## Shared (`packages/shared/`, 1,515 lines, zero deps)
 
-`base.ts` (every address, checksummed, asserted unique; `CHAINLINK_ZEC_USD =
-null`; `MORPHO_BLUE.marketIds` = the two chain-verified Base market ids (2026-09-07);
+`base.ts` (every address, checksummed, asserted unique; `CHAINLINK_ZEC_USD` = the Base ZEC/USD proxy
+since 2026-09-13, **18 decimals** where every other feed is 8, so `ChainlinkFeed.decimals` is a
+`number` and never the literal `8`; `MORPHO_BLUE.marketIds` = the two chain-verified Base market ids (2026-09-07);
 `COW_PROTOCOL.vaultRelayer = null` on purpose — unverified), `health.ts` (`ENTRY_HF_FLOOR`, `ladderFor(entryHf)`
 and its floor instance `HF_LADDER`, `hfFromWad` for the router's record, `rungFor` throws on NaN — fail closed), `collateral.ts` (`COLLATERAL_ASSETS`, cbZEC
 `enabled: false` + reason; `maxOfferedLtvBps` and `offeredLtvBounds` — the slider's stop with the cap that

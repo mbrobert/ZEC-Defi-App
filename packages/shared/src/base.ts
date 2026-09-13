@@ -126,8 +126,12 @@ export const AAVE_V3_RESERVES: readonly TokenSymbol[] = ["cbBTC", "WETH", "USDC"
 export interface ChainlinkFeed {
   description: string;
   address: Address;
-  /** Aggregator answer decimals (USD feeds on Base are 8). */
-  decimals: 8;
+  /**
+   * Aggregator answer decimals. NOT a constant: it was typed as the literal `8` until 2026-09-13,
+   * when the ZEC/USD feed arrived on Base reporting **18** (Addendum 16). Every consumer reads this
+   * and normalises; an assumed 8 against an 18-decimal feed is wrong by 10^10.
+   */
+  decimals: number;
 }
 
 export const CHAINLINK_FEEDS = {
@@ -135,10 +139,24 @@ export const CHAINLINK_FEEDS = {
   ETH_USD: { description: "ETH / USD", address: "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70", decimals: 8 },
   USDC_USD: { description: "USDC / USD", address: "0x7e860098F58bBFC8648a4311b374B1D669a2bc6B", decimals: 8 },
   cbBTC_USD: { description: "cbBTC / USD", address: "0x07DA0E54543a844a80ABE69c8A12F22B3aA59f9D", decimals: 8 },
+  /**
+   * Read live 2026-09-13 at block 51,260,504 (VERIFIED-BASE-FACTS Addendum 16). **18 decimals, not
+   * 8** — the only feed here that is not 8, and an assumed 8 against it is wrong by 10^10. Behind it
+   * is a `DualAggregator 1.0.0` whose min/max answer are effectively unbounded, so it is no circuit
+   * breaker of its own. It prices ZEC; the product holds cbZEC, so anything valuing cbZEC with it
+   * must also cross-check the Aerodrome cbZEC/USDC pool (`ChainlinkOracleAdapter`).
+   */
+  ZEC_USD: { description: "ZEC / USD", address: "0x69e5BC4988a9AF30Ec827C5609c0D41028446ec0", decimals: 18 },
 } as const satisfies Record<string, ChainlinkFeed>;
 
-/** There is NO Chainlink ZEC/USD feed on Base. cbZEC pricing is Pyth (v1.1). */
-export const CHAINLINK_ZEC_USD: null = null;
+/**
+ * The Chainlink ZEC/USD proxy on Base. `null` until 2026-09-13, when the feed went live and was read
+ * on chain (Addendum 16); the founder's decision the same day made it the sole cbZEC price source,
+ * replacing Pyth, "until a cbZEC/USD source is available". This is still a ZEC feed: cbZEC keeps its
+ * peg cross-check, and cbZEC remains registered-disabled as collateral (D3 is unchanged — a price
+ * source is not a lending market).
+ */
+export const CHAINLINK_ZEC_USD: Address = "0x69e5BC4988a9AF30Ec827C5609c0D41028446ec0";
 
 // ---------------------------------------------------------------------------
 // Pyth (pull-based: on-chain price is only as fresh as the last posted update)

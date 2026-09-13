@@ -26,6 +26,8 @@ import {SlipstreamLpVenue} from "../../src/venues/SlipstreamLpVenue.sol";
 import {SlipstreamPoolSwapAdapter} from "../../src/swap/SlipstreamPoolSwapAdapter.sol";
 import {Call} from "../../src/interfaces/IOilskinAccount.sol";
 import {IMessageTransmitterV2, ITokenMessengerV2} from "../../src/interfaces/ICctpV2.sol";
+import {IChainlinkAggregator} from "../../src/interfaces/IChainlinkAggregator.sol";
+import {ChainlinkOracleAdapter} from "../../src/oracle/ChainlinkOracleAdapter.sol";
 
 /// @title BaseFork — the tests that can only be true against the chain (Part 6 lesson 2: "verify
 ///        the external contract against the chain, not against your own mock").
@@ -787,5 +789,48 @@ contract BaseForkTest is Test {
         assertEq(IERC20(BaseAddresses.USDC).balanceOf(address(acct)), 0, "the USDC left the account");
         assertEq(IERC20(BaseAddresses.USDC).totalSupply(), supply - amount, "burned, not moved: the supply fell by the amount");
         assertEq(IERC20(BaseAddresses.USDC).allowance(address(acct), address(m)), 0, "approval reset");
+    }
+
+    // ------------------------------------------------- Chainlink ZEC/USD (Addendum 16)
+
+    /// The feed the founder adopted on 2026-09-13 as the sole cbZEC price source, read at the pinned
+    /// block. What only a fork can prove is the feed's REAL shape: that it reports **18** decimals on
+    /// chain, when every other Chainlink feed this repo reads reports 8 and an assumed 8 here is wrong
+    /// by 10^10; that its latest round is positive, complete and not future-dated; and what the
+    /// adapter's E8 normalisation actually turns the live answer into.
+    ///
+    /// `ChainlinkOracleAdapter` itself is NOT constructed here, and cannot be: its constructor reads
+    /// `decimals()` on the base token, and cbZEC is the B20 native contract whose code is `0xef` —
+    /// no fork EVM can execute it (`VERIFIED-BASE-FACTS.md` Addendum 10; the same reason the B20
+    /// shape is checked by `scripts/check-cbzec-b20.sh` with `cast` instead of in this suite). The
+    /// adapter's own arithmetic and every fail-closed path are covered by
+    /// `test/ChainlinkOracleAdapter.t.sol` against a feed double; this test pins the inputs it will
+    /// be given in production.
+    function test_fork_chainlinkZecUsdFeedIsLiveAndEighteenDecimals() public onlyForked {
+        IChainlinkAggregator feed = IChainlinkAggregator(BaseAddresses.CHAINLINK_ZEC_USD);
+        assertEq(feed.description(), "ZEC / USD", "the pinned proxy is the ZEC/USD feed");
+        assertEq(feed.decimals(), 18, "18 decimals, NOT the 8 every other Base feed here reports");
+        (uint80 roundId, int256 answer,, uint256 updatedAt, uint80 answeredInRound) = feed.latestRoundData();
+        assertGt(answer, 0, "a positive answer");
+        assertGe(answeredInRound, roundId, "a completed round");
+        assertLe(updatedAt, block.timestamp, "not stamped in the future");
+        assertGt(updatedAt, 0, "a real round, not an empty slot");
+
+        // The adapter's normalisation, reproduced: an 18-decimal answer divided down to 8 decimals,
+        // then Morpho's 1e36 scaling for an 8-decimal base and a 6-decimal quote.
+        uint256 feedE8 = uint256(answer) / 1e10;
+        assertGt(feedE8, 0, "the answer survives E8 normalisation");
+        assertEq(feedE8 * 1e26, Math.mulDiv(feedE8, 1e36 * 1e6, 1e8 * 1e8), "Morpho scaling agrees");
+
+        // The peg breaker's other input: the live cbZEC/USDC pool, which a fork CAN read.
+        uint32[] memory ago = new uint32[](2);
+        ago[0] = 1800;
+        ago[1] = 0;
+        (int56[] memory cum,) = IAerodromeCLPool(BaseAddresses.AERODROME_CBZEC_USDC_POOL).observe(ago);
+        assertTrue(cum[1] != cum[0], "the pool has a usable observation window for the TWAP");
+
+        console2.log("ZEC/USD answer (18dp)", uint256(answer));
+        console2.log("ZEC/USD normalised (E8)", feedE8);
+        console2.log("ZEC/USD age at the pinned block (s)", block.timestamp - updatedAt);
     }
 }

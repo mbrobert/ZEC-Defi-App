@@ -47,6 +47,9 @@ library BaseAddresses {
     address internal constant CHAINLINK_CBBTC_USD = 0x07DA0E54543a844a80ABE69c8A12F22B3aA59f9D;
     address internal constant CHAINLINK_ETH_USD = 0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70;
     address internal constant CHAINLINK_USDC_USD = 0x7e860098F58bBFC8648a4311b374B1D669a2bc6B;
+    /// Live since 2026-09-13 (`VERIFIED-BASE-FACTS.md` Addendum 16). **18 decimals**, unlike every
+    /// constant above it, and it prices ZEC rather than cbZEC — see `ChainlinkOracleAdapter`.
+    address internal constant CHAINLINK_ZEC_USD = 0x69e5BC4988a9AF30Ec827C5609c0D41028446ec0;
 
     address internal constant PYTH = 0x8250f4aF4B972684F7b336503E2D6dFeDeB1487a;
     bytes32 internal constant PYTH_ZEC_USD = 0xbe9b59d178f0d6a97ab4c343bff2aa69caa1eaae3e9048a65788c529b125bb24;

@@ -1008,9 +1008,16 @@ two independent token trackers). That is the evidence it is genuinely Chainlink'
 $1,077.35 → $1,102.97, about a 2.4 % range, so the short gaps are deviation-driven and the long ones are
 the quiet-market floor. **Largest gap observed: 3,090 s (51.5 min).** The heartbeat and deviation
 threshold are NOT published by any getter on this contract and have NOT been read from a primary
-source — do not type one. The keeper's own rule (`buildFeedPolicies`, slice J: `max(ceil(max gap × 2),
-300 s)`) gives **6,180 s** from the measurement above, and that is the only defensible bound until
-Chainlink publishes the feed's parameters.
+source — do not type one.
+
+**Correction, same day.** A first pass here proposed 6,180 s as a max-age bound, from the keeper's
+`buildFeedPolicies` rule (`max(ceil(max gap × 2), 300 s)`) over that eight-round sample. The fork test
+added in the same commit disproves it: at the pinned fork block 51,222,568 (2026-09-12T17:34:43Z) the
+feed's latest round was round 967 at `updatedAt` 1,789,226,255, answer $1,142.3308 — **8,228 s old**,
+longer than the largest gap the sample contained. The sample was drawn from an active window and does
+not bound the quiet-market cadence. No max-age is pinned anywhere in the tree as a result: it is a
+deploy-time parameter of `ChainlinkOracleAdapter`, and choosing it needs either Chainlink's published
+heartbeat or a measurement over a much longer window.
 
 **Three things that must be true of any integration.**
 

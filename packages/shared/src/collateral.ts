@@ -14,7 +14,7 @@ export type CollateralSymbol = "cbBTC" | "WETH" | "cbZEC";
 export type CollateralVenueId = "aave-v3" | "morpho-blue";
 
 export type PriceFeedRef =
-  | { kind: "chainlink"; address: Address; description: string; decimals: 8 }
+  | { kind: "chainlink"; address: Address; description: string; decimals: number }
   | { kind: "pyth"; contract: Address; priceId: `0x${string}`; description: string };
 
 export interface CollateralAsset {

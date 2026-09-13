@@ -777,8 +777,10 @@ const OIL_SHARED = Object.freeze({
     ETH_USD:   { description: "ETH / USD",   address: "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70", decimals: 8 },
     USDC_USD:  { description: "USDC / USD",  address: "0x7e860098F58bBFC8648a4311b374B1D669a2bc6B", decimals: 8 },
     cbBTC_USD: { description: "cbBTC / USD", address: "0x07DA0E54543a844a80ABE69c8A12F22B3aA59f9D", decimals: 8 },
+    /* Live since 2026-09-13 (VERIFIED-BASE-FACTS Addendum 16). 18 decimals, not 8 — the only one here. */
+    ZEC_USD:   { description: "ZEC / USD",   address: "0x69e5BC4988a9AF30Ec827C5609c0D41028446ec0", decimals: 18 },
   },
-  CHAINLINK_ZEC_USD: null,
+  CHAINLINK_ZEC_USD: "0x69e5BC4988a9AF30Ec827C5609c0D41028446ec0",
   PYTH: { contract: "0x8250f4aF4B972684F7b336503E2D6dFeDeB1487a", priceIds: { ZEC_USD: "0xbe9b59d178f0d6a97ab4c343bff2aa69caa1eaae3e9048a65788c529b125bb24" }, hermesUrl: "https://hermes.pyth.network" },
   AERODROME: { voter: "0x16613524e02ad97eDfeF371bC883F2F5d6C480A5", pools: { cbZEC_USDC: { address: "0x0Fc47C17AF86078d809358db1b4db2DeBC988566", token0: "USDC", token1: "cbZEC", feePips: 2000, tickSpacing: 200, gauge: "0x8779E34E5d38358B0cB957c553B40cC1208C81FB" } } },
   MORPHO_BLUE: { address: "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb", marketIds: { cbBTC_USDC: "0x9103c3b4e834476c9a62ea009ba2c884ee42e94e6e314a26f04d312434191836", WETH_USDC: "0x8793cf302b8ffd655ab97bd1c695dbd967807e8367a65cb2f4edaf1380ba1bda" }, lltvWad: 860000000000000000n },

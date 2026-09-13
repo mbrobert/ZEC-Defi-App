@@ -107,14 +107,23 @@ that changes after the read. Tests: `web/test/b20.test.ts`,
 a Coinbase incident cbZEC trades below ZEC and a ZEC/USD oracle overvalues
 the collateral. Total supply was 603.25 cbZEC on 2026-09-05; the Aerodrome
 cbZEC/USDC pool priced it at ≈1,020 USDC against Pyth's stale $1,035.20.
+**Updated 2026-09-13:** a Chainlink `ZEC / USD` feed is now live on Base
+(Addendum 16) and is the sole cbZEC price source by the founder's decision;
+it prices ZEC, so this risk is unchanged in kind. Pyth is no longer read: its
+on-chain ZEC price was 8.88 days stale at that decision, quoting $1,035.20
+while Chainlink quoted $1,097.34.
 
 **Mitigates (v1).** cbZEC is not collateral anywhere in v1
 (`CollateralRegistry` `enabled = false`; `StrategyRouter` reverts
 `AssetDisabled` and `AaveV3Venue.supply` reverts `AssetNotOffered`, so the flag
 now holds on every path rather than depending on Aave having no market).
-**Plan (v1.1):** `PythOracleAdapter.price()` reverts `PegBreak` when the pool
-TWAP and Pyth ZEC/USD diverge beyond `maxDeviationBps` — built, tested
-(15 tests), **not deployed and not used**.
+**Plan (v1.1):** `ChainlinkOracleAdapter.price()` reverts `PegBreak` when the
+pool TWAP and Chainlink ZEC/USD diverge beyond `maxDeviationBps` — built,
+tested (19 unit tests + 1 fork test against the live feed), **not deployed and
+not used**. The breaker matters more under Chainlink, not less: the feed's
+aggregator reports `minAnswer` 1 and an effectively unbounded `maxAnswer`, so
+it is no circuit breaker of its own. `PythOracleAdapter` is superseded and
+stays in the tree unused; `maxAge` is unpinned (Addendum 16's correction).
 
 **Does not.** Spot buyers of cbZEC and cbZEC LP holders carry the peg risk in
 full; nothing in the product hedges it.

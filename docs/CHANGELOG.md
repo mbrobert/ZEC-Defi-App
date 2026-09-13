@@ -3,6 +3,34 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-13 — cbZEC is priced from Chainlink ZEC/USD, exclusively: `ChainlinkOracleAdapter`, and the 18-decimal hazard pinned by a test
+
+- Founder's decision, 2026-09-13: "use chainlink zec/usd for now exclusively until a cbZEC/USD source is
+  available." Pyth is not read by the new adapter at all — its on-chain ZEC price was **8.88 days stale**
+  at that moment, quoting $1,035.20 against Chainlink's $1,097.34.
+- **`contracts/src/oracle/ChainlinkOracleAdapter.sol`** (180 lines, immutable, no admin), with
+  `IChainlinkAggregator`. Chainlink is the only price source; it fails closed on a non-positive answer, an
+  incomplete round (`answeredInRound < roundId`), a zero or future `updatedAt`, and an answer older than
+  `maxAge`. There is no `refresh()` and no fee path: a push feed needs nothing posted before a read, which
+  removes the Pyth adapter's whole update-and-refund surface. **The peg breaker survives the switch** and
+  matters more, not less: the feed prices ZEC while the market holds cbZEC, and the aggregator's own
+  `minAnswer` is 1 with an effectively unbounded `maxAnswer`, so the Aerodrome cbZEC/USDC TWAP is the only
+  thing bounding it.
+- **The 18-decimal hazard is a test, not a comment.** `FEED_DECIMALS` is read from the feed in the
+  constructor and bounded to [1, 18]; an 18-decimal and an 8-decimal feed carrying the same dollar price
+  must produce the identical oracle price, which is the guard against the 10^10 error that is the Moonwell
+  cbETH failure class. `ChainlinkFeed.decimals` in shared is now `number`, not the literal `8` it had been.
+- `CHAINLINK_ZEC_USD` moved from `null` to the verified proxy in `packages/shared`, in both prototype
+  pages (byte-equal), and as `BaseAddresses.CHAINLINK_ZEC_USD`. **cbZEC stays registered-disabled: D3 is
+  untouched, a price source is not a lending market.**
+- **Addendum 16 corrected in the same commit.** Its first pass proposed a 6,180 s max-age from an
+  eight-round sample; the new fork test disproves it — at the pinned block the feed's latest round was
+  **8,228 s** old. No max-age is pinned anywhere; it is a deploy-time parameter needing Chainlink's
+  published heartbeat or a much longer measurement.
+- Measured: forge **426 passed / 0 failed / 13 skipped** (38 suites), fork **13 / 13** at block 51,222,568
+  against the live feed, root ABI seam **442**, shared **98**, agent **311**, yield **178**, web **199** +
+  typecheck clean, Solana **14**, prototypes **130 · 116 · 62 · 6**.
+
 ## 2026-09-13 — A Chainlink ZEC/USD feed exists on Base: read live, recorded, and every "no such feed" claim superseded
 
 - The founder supplied the proxy on 2026-09-13; read read-only at block 51,260,504 (14:39:15 UTC) and
