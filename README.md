@@ -10,7 +10,8 @@ adapters are built per chain:
 - **Solana module (built 2026-09-12, proven on localnet, not deployed):** bridged
   ZEC on Kamino's ZCASH market, USDC borrowed, the same ladder run by an Anchor
   program + program-derived account the wallet owns, protected by the keeper's
-  Solana path (`agent/src/solana/`) — `docs/VERIFIED-SOLANA-FACTS.md` (read live),
+  Solana path (`agent/src/solana/`), with the web flow (`/solana`, `/solana/new`) and the yield service's
+  Kamino view (`/v1/solana/borrow`) — `docs/VERIFIED-SOLANA-FACTS.md` (read live),
   `docs/SOLANA-ARCHITECTURE.md` (the design, the founder's decisions, what the
   localnet runs proved), `solana/` (the program, the localnet harness, 26 specs).
 

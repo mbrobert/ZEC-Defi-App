@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "@rainbow-me/rainbowkit/styles.css";
+import "@solana/wallet-adapter-react-ui/styles.css";
 import "./globals.css";
 import Providers from "@/components/Providers";
 import Nav from "@/components/Nav";

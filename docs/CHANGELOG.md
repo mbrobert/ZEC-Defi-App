@@ -3,6 +3,23 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-13 — Solana B5, part 2: the web flow — wallet, five-screen wizard, position page with the exit hatch
+
+- **`/solana/new`**: Kamino's own words about bridged ZEC first (a dated quotation held equal to the facts file
+  by test) and Oilskin's additions — the bridge is upgradeable and the only minter, Circle can freeze USDC,
+  Kamino's owner can change every parameter, the way out is through the program and its upgrade authority; the
+  amount beside the pool as it is (`/v1/solana/borrow`: what it can lend today, the rate now, the deposit room,
+  with the slot); the Base slider on Kamino's numbers with **Kamino's 40 % cap (HF 1.625) named as the lowest
+  offered**, the rate **after this borrow**, `ladderFor(entryHf)` in words; review with every number's slot and
+  the disclosures; sign — `init_account`, `deposit`, `borrow`, `grant` as separate transactions, each refusal
+  decoded to the program's error and said plainly. **`/solana`**: the wallet's account, collateral and debt, the
+  HF recomputed from Scope beside Kamino's cached one, the keeper's grant and budgets, and one button that repays
+  everything and brings the ZEC home (top-up, `close_position`, `transfer_out`), plus revoke. Instructions are
+  hand-encoded from the committed IDL (`web/lib/solana/idl.generated.ts`, `scripts/sync-solana-idl.mjs`) and
+  pinned by a seam test; a demo snapshot of the market (the yield evaluator on the 2026-09-12 capture) runs the
+  surfaces when no cluster is named. +18 web unit tests (198), +2 Playwright scenarios. Not yet: a wallet-driven
+  run against localnet; the cross-chain forecast.
+
 ## 2026-09-13 — Slice M, the tool: the demo snapshot refresh as one read-only command
 
 - `scripts/refresh-demo-snapshot.mjs --rpc <url> --block <n|latest>`: the yield sample pinned to the block

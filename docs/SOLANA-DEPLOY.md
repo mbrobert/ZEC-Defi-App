@@ -87,6 +87,16 @@ Record in `DEPLOYMENTS.md` (Solana table): program id, ProgramData, deploy slot,
 vault, the multisig config, the threshold, the number of members. Then the copy may say "upgrade authority: a
 Squads multisig (threshold m of n)" — and must still say that this multisig can upgrade the program.
 
+## 4b. After the hand-over: point the services at the deployment
+
+- Yield service: `SOLANA_RPC_URL=<rpc>` (it samples Kamino's market and serves `/v1/solana/borrow`).
+- Keeper: `OILSKIN_SOLANA_PROGRAM_ID=<program id>`, `SOLANA_RPC_URL`, observe-only until a keeper key exists
+  (`solana/SETUP.md`); the keeper's public key goes to the web as `NEXT_PUBLIC_OILSKIN_SOLANA_KEEPER`.
+- Web: `NEXT_PUBLIC_SOLANA_CLUSTER=mainnet-beta`, `NEXT_PUBLIC_OILSKIN_SOLANA_PROGRAM=<program id>`,
+  `NEXT_PUBLIC_SOLANA_RPC_URL=<rpc>`; the web's encoders are pinned to `solana/idl/oilskin.json` — after any IDL
+  change run `node solana/scripts/sync-idl.mjs` then `node web/scripts/sync-solana-idl.mjs`, and both seams
+  (`npm test -w @zyo/agent`, `npm test -w @zyo/web`) must be green before the deploy.
+
 ## 5. Upgrading later, through the multisig
 
 1. Build the new version; `node scripts/sync-idl.mjs --check` against the reviewed commit.

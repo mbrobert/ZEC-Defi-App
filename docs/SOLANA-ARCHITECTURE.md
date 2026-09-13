@@ -336,28 +336,52 @@ recomputed, the identity with the cap named, klend's limits and caps, every safe
 `solana-route.test.ts` (4: the route, 400s, serve-time staleness and the kept last good sample, not
 configured). The web flow (§8) consumes this route.
 
-## 8 · The deposit flow and what it must say (web, Simple mode; Advanced adds the choices)
+## 8 · The deposit flow (web) — built 2026-09-13, on the demo snapshot and ready for a named cluster
 
-One decision per screen, the risk stated before the button:
+`web/app/solana/new` (five screens, one decision each) and `web/app/solana` (the position and the exit hatch),
+beside the Base flow; a "ZEC on Solana" tab. A Solana wallet session (Wallet Standard wallets announce themselves;
+no per-wallet adapter list) sits inside the existing providers. Every address comes from `@zyo/shared`; every
+instruction is hand-encoded from the committed IDL (`web/lib/solana/idl.generated.ts`, synced by
+`web/scripts/sync-solana-idl.mjs`, pinned by `web/test/solana-idl.test.ts` — the ABI seam's twin). The build
+names its cluster and program (`NEXT_PUBLIC_SOLANA_CLUSTER`, `NEXT_PUBLIC_OILSKIN_SOLANA_PROGRAM`,
+`NEXT_PUBLIC_OILSKIN_SOLANA_KEEPER`, `NEXT_PUBLIC_SOLANA_RPC_URL`); unnamed, the surfaces run on a labelled
+snapshot of Kamino's market (`web/lib/solana/demo-borrow.json`, the yield evaluator on the 2026-09-12 capture)
+and can sign nothing.
 
-1. **"Your ZEC on Solana is a bridged token."** Kamino's wording verbatim (the floor, `VERIFIED-SOLANA-FACTS.md`),
-   then Oilskin's three additions in plain words: the bridge program can be upgraded by its operators and is
-   the only thing that mints this ZEC; Circle can freeze USDC; Kamino's market owner can change every parameter
-   (LTV, threshold, caps, rate curve) at any time. Link to `RISKS.md` §22 and `PRIVACY.md` §6.
-2. **Amount**, with the pool-size gate's verdict live ("this pool can fund up to $X today below the rate we
-   publish").
-3. **Health factor** — the same slider as Base (BUILD-PLAN-2026-09-12 D7 / §2b, `SettingStep` on the site):
-   the entry HF from the registry floor up to "borrow nothing", the borrow following from collateral × LT ÷ HF
-   and a typed borrow driving the HF back; here Kamino's own 40 % LTV cap binds first (on ZEC's 65 % LT that
-   is HF ≥ 1.625, above the Sheltered mark), and the screen names it. Entry HF and the drop-to-liquidation
-   shown from live LT, never typed; the ladder shown is `ladderFor(entryHf)`.
-4. **Protection grant** — what the keeper may do, in the words of §3: repay from idle USDC up to N per day;
-   **sell up to M ZEC per day to stop a liquidation** (on by default — decision 1; Advanced mode can set M to
-   zero); never move funds anywhere else; you can cancel in one transaction.
-5. **Review** — the risk list (§9 items), the exact instruction the wallet will sign, the account address.
+1. **"Your ZEC on Solana is a bridged token."** Kamino's tooltip **verbatim**, rendered as a dated, attributed
+   quotation (`web/lib/solana/kamino-wording.json`, held equal to the facts file by test), then Oilskin's
+   additions in plain words: the bridge program is upgradeable by its operators and the only minter; Circle can
+   freeze USDC; Kamino's market owner can change every parameter; **the way out is through the program**, whose
+   upgrade authority is a single key until the Squads hand-over (the S3 finding). Links to `RISKS.md` §22 and
+   `PRIVACY.md` §6. One checkbox.
+2. **Amount**, beside the pool as it is from `/v1/solana/borrow` (§7): what it can lend today, the rate now, the
+   deposit room, each with the slot and age of the read, "snapshot" when it is the demo; a refusal the venue
+   would make is shown in plain words.
+3. **Health factor** — the Base slider on Kamino's numbers (`web/lib/solana/plan.ts`): debt = collateral × LT ÷ HF
+   both ways; the lowest offered HF is **Kamino's own 40 % cap (1.625)**, named as such, above the registry floor
+   and above both marks (shown, disabled, with the reason); the rate **after this borrow** and the account's share
+   of the pool's debt from the route; the ladder is `ladderFor(entryHf)`, each rung in words for a Kamino
+   position; the acknowledgment under the Sheltered mark as on Base.
+4. **Review** — every number with its slot, the disclosures the route named by id (words in
+   `web/lib/solana/copy.ts`), Oilskin's Solana risk list (the keeper may sell — decision 1; Scope's 180 s; new
+   code, unaudited; demo), and the exact transactions to sign, one sentence each.
+5. **Sign** — separate transactions (together they exceed Solana's size): `init_account` when the wallet has
+   no Account, `deposit`, `borrow`, then `grant` (30 days, per-day budgets sized to this position — the whole debt
+   to repay, the whole collateral to sell — 2 % allowance under the Scope floor, every rung). Each refusal is
+   decoded to the program's error name and said in plain words. Demo mode says what would be signed and offers
+   the wallet button.
 
-Copy rules: `BANNED_WORDS` apply ("private", "shielded", "non-custodial", …); "self-custodial" is not claimed
-for a bridged asset; acronyms spelled out on first use.
+**The position page** reads the wallet's Account, its obligation (collateral through the reserve's cToken rate,
+debt, Kamino's cached HF with its slot), the token accounts and the grant in one call, recomputes the HF from
+Scope's price, shows the liquidation price and the ladder the keeper runs today (the shared one — a
+per-position ladder from the recorded entry waits on the program), and offers the two things only the owner can
+do: **repay everything and take the ZEC home** (top up USDC if the account is short, `close_position`,
+`transfer_out` both tokens — the exit hatch, one button) and **revoke** the keeper.
+
+Not in this build: exercising the signed path against a live wallet (the localnet specs prove the program; the
+web's encoders are pinned to the IDL; a wallet-driven run on localnet is the next check), Advanced mode's
+sell-budget of zero (decision 1 leaves it on by default), and the cross-chain forecast (Stream C). Copy rules:
+`BANNED_WORDS` scan the new files; Kamino's quotation is a quotation.
 
 ## 9 · Risks specific to this module (for `RISKS.md` §22 and `web/lib/copy.ts`)
 

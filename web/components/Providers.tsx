@@ -9,6 +9,7 @@ import { ModeProvider } from "@/lib/mode";
 import { NotifyPrefsProvider } from "@/lib/notifyPrefs";
 import { ENV } from "@/lib/env";
 import E2EMockWalletConnector from "./E2EMockWalletConnector";
+import SolanaProviders from "./solana/SolanaProviders";
 
 /** RainbowKit modal in the Oilcloth palette: brass accent on waxed green. */
 const theme = darkTheme({
@@ -50,7 +51,7 @@ export default function Providers({ children }: { children: ReactNode }) {
                   <E2EMockWalletConnector />
                 </Suspense>
               )}
-              {children}
+              <SolanaProviders>{children}</SolanaProviders>
             </NotifyPrefsProvider>
           </ModeProvider>
         </RainbowKitProvider>

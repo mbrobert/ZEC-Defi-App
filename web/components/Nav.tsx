@@ -16,6 +16,7 @@ const TABS = [
   { href: "/new", label: "New position", advancedOnly: false },
   { href: "/spot", label: "Spot", advancedOnly: true },
   { href: "/onboard", label: "ZEC → cbZEC", advancedOnly: false },
+  { href: "/solana", label: "ZEC on Solana", advancedOnly: false },
 ];
 
 export function OilskinMark({ size = 30 }: { size?: number }) {

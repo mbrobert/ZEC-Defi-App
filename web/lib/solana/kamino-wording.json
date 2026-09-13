@@ -1,0 +1,7 @@
+{
+  "_about": "Kamino's own words about ZEC on Solana, quoted verbatim on the Solana surfaces as the floor for Oilskin's copy (VERIFIED-SOLANA-FACTS.md, 'Kamino's own disclosure wording'). A quotation with its source and date; Oilskin's own sentences live in lib/solana/copy.ts and obey lib/copy.ts BANNED_WORDS. test/solana-copy.test.ts holds this file equal to the facts file.",
+  "source": "kamino.com → Borrow → ZCASH Market → \"What is Zcash?\" tooltip",
+  "readAt": "2026-09-12T00:57:00Z",
+  "learnMore": "https://z.cash/learn/what-is-zcash/",
+  "quote": "ZEC is the native currency of Zcash, a payments blockchain supporting transparent and shielded transactions. Shielded transactions use zero-knowledge proofs to protect financial information. On Solana, ZEC is a bridged representation available through NEAR Intents. Holding or transferring it on Solana does not provide Zcash's shielded transaction privacy."
+}

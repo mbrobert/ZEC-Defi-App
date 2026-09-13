@@ -139,7 +139,12 @@ endpoint), `NEXT_PUBLIC_YIELD_URL` (default
 wallets only; Coinbase Wallet and injected wallets work without it),
 `NEXT_PUBLIC_OILSKIN_FACTORY`, `NEXT_PUBLIC_OILSKIN_ROUTER` (registry, venues and
 engine are read from the router — `readDeployment`), `NEXT_PUBLIC_OILSKIN_KEEPER`
-(optional), `NEXT_PUBLIC_COW_APP_CODE`, `NEXT_PUBLIC_FORCE_DEMO=1` (e2e).
+(optional), `NEXT_PUBLIC_COW_APP_CODE`, `NEXT_PUBLIC_FORCE_DEMO=1` (e2e). Solana surfaces (`web/lib/solana/env.ts`, 2026-09-13):
+`NEXT_PUBLIC_SOLANA_CLUSTER` (`mainnet-beta` or `localnet`; unset = the Solana pages run on a labelled snapshot and
+sign nothing), `NEXT_PUBLIC_OILSKIN_SOLANA_PROGRAM` (the deployed program, never defaulted),
+`NEXT_PUBLIC_OILSKIN_SOLANA_KEEPER` (optional; enables the protection grant step), `NEXT_PUBLIC_SOLANA_RPC_URL`
+(default: the cluster's public endpoint; `127.0.0.1:8899` on localnet). After an IDL change run
+`node web/scripts/sync-solana-idl.mjs`; `test/solana-idl.test.ts` fails on drift.
 
 ```bash
 npm run web                       # http://localhost:3000 — demo mode until the factory/router are set
