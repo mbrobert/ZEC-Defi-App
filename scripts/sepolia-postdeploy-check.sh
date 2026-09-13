@@ -17,6 +17,18 @@ RPC="${RPC:-https://sepolia.base.org}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOC="${DEPLOYMENTS_MD:-$HERE/../docs/DEPLOYMENTS.md}"
 command -v cast >/dev/null 2>&1 || { echo "cast (Foundry) is not on PATH" >&2; exit 2; }
+command -v python3 >/dev/null 2>&1 || { echo "python3 is not on PATH (needed for 256-bit arithmetic)" >&2; exit 2; }
+
+# The entry-HF floor the deploy writes into the registry. ONE place to change, and it must match
+# `contracts/script/Deploy.s.sol` ENTRY_HF_FLOOR_WAD (default 1.25e18, pinned 2026-09-12) and
+# packages/shared ENTRY_HF_FLOOR. Override if you deployed with a different ENTRY_HF_FLOOR_WAD.
+# Every offered-LTV expectation below is DERIVED from whatever the registry actually reports, so
+# only this one line carries the number — the 2026-09-12 floor change rotted three hard-coded
+# expectations here and in DEPLOY-SEPOLIA.md, and derivation is what stops that recurring.
+EXPECT_FLOOR_WAD="${ENTRY_HF_FLOOR_WAD:-1250000000000000000}"
+
+# min(LT × 1e18 ÷ floorWad, venue max LTV) — CollateralRegistry.maxOfferedLtvBps, integer division.
+offered() { python3 -c "import sys; lt,f,v=(int(x) for x in sys.argv[1:4]); print(min(lt*10**18//f, v))" "$1" "$2" "$3"; }
 
 # The first 0x… (40 hex) on the row whose first cell is the key, inside the Base Sepolia section.
 fromdoc() {
@@ -94,13 +106,21 @@ else
   fail=$((fail + 1)); echo "FAIL  registry.owner() = $owner, pendingOwner = $pending (expected registryOwner $REGISTRY_OWNER as owner or pending)"
 fi
 check "registry.TIMELOCK_DELAY()" "$(call "$REGISTRY" 'TIMELOCK_DELAY()(uint256)')" 172800
-check "registry.entryHfFloorWad()" "$(call "$REGISTRY" 'entryHfFloorWad()(uint256)')" 1550000000000000000
+floor=$(call "$REGISTRY" 'entryHfFloorWad()(uint256)')
+check "registry.entryHfFloorWad()" "$floor" "$EXPECT_FLOOR_WAD"
 check "isEnabled(WBTC stand-in)" "$(call "$REGISTRY" 'isEnabled(address)(bool)' "$WBTC")" true
 check "isEnabled(WETH)" "$(call "$REGISTRY" 'isEnabled(address)(bool)' "$WETH")" true
 optional CBZEC "$CBZEC" && check "isEnabled(cbZEC double) — disabled with its note" "$(call "$REGISTRY" 'isEnabled(address)(bool)' "$CBZEC")" false
-check "maxOfferedLtvBps(WBTC)" "$(call "$REGISTRY" 'maxOfferedLtvBps(address)(uint256)' "$WBTC")" 5000
-check "maxOfferedLtvBps(WETH)" "$(call "$REGISTRY" 'maxOfferedLtvBps(address)(uint256)' "$WETH")" 5000
-optional CBZEC "$CBZEC" && check "maxOfferedLtvBps(cbZEC double)" "$(call "$REGISTRY" 'maxOfferedLtvBps(address)(uint256)' "$CBZEC")" 0
+# Derived, never typed: min(LT ÷ floor, the venue's own max LTV). No product cap sits above those
+# two — `MAX_OFFERED_LTV_CAP_BPS` was removed 2026-09-12 with the floor decision.
+optional AAVE_VENUE "$AAVE_VENUE" && for a in "WBTC:$WBTC" "WETH:$WETH"; do
+  sym="${a%%:*}"; addr="${a#*:}"
+  lt=$(call "$AAVE_VENUE" 'liquidationThresholdBps(address)(uint256)' "$addr")
+  vltv=$(call "$AAVE_VENUE" 'maxLtvBps(address)(uint256)' "$addr")
+  check "maxOfferedLtvBps($sym) = min(LT $lt ÷ floor, venue LTV $vltv)" \
+    "$(call "$REGISTRY" 'maxOfferedLtvBps(address)(uint256)' "$addr")" "$(offered "$lt" "$floor" "$vltv")"
+done
+optional CBZEC "$CBZEC" && check "maxOfferedLtvBps(cbZEC double) — disabled, so 0" "$(call "$REGISTRY" 'maxOfferedLtvBps(address)(uint256)' "$CBZEC")" 0
 
 echo "--- 5.3 risk parameters, read live from Aave (facts: WETH 8500/8350, WBTC 8300/8150)"
 optional AAVE_VENUE "$AAVE_VENUE" && {

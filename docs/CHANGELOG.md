@@ -3,6 +3,34 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-13 — Three things that would have gone wrong on Sepolia, and a test command that could not run on this Mac
+
+The 2026-09-12 floor decision (1.25, and the 50 % product cap deleted) did not reach three places that
+only bite at deploy time, which is why no suite caught them. Found by walking the Sepolia runbook as
+if running it.
+
+- **`scripts/sepolia-postdeploy-check.sh` would have FAILED on a correct deploy.** It asserted
+  `entryHfFloorWad() == 1.55e18` and `maxOfferedLtvBps == 5000` for both assets — the old floor and the
+  removed cap. The floor expectation is now one named constant (`ENTRY_HF_FLOOR_WAD`, default 1.25e18,
+  overridable), and **both LTV rows are now DERIVED** from what the registry and the venue actually
+  report — `min(LT × 1e18 ÷ floor, venue maxLtv)`, the registry's own formula — so a future floor change
+  cannot rot them again.
+- **`docs/DEPLOY-SEPOLIA.md` §5.2 taught the same three wrong numbers.** Corrected to 1.25e18, and to
+  WBTC **6640** / WETH **6800**, with the derivation written out. Those follow from Sepolia's Aave
+  parameters **re-read live 2026-09-13 at block 46,775,990** — WETH LT 8500 / LTV 8350, WBTC LT 8300 /
+  LTV 8150, unchanged from Addendum 2 — and 1.25: the floor binds on both assets, the venue LTV does not.
+- **`prototype/test/run-all.mjs` failed every suite on macOS** while each suite passed when run
+  directly: it FORCED `CHROMIUM_PATH=/opt/pw-browsers/chromium`, the container's path, whenever the
+  variable was unset. It no longer overrides the environment, and `_harness.mjs` now ignores a
+  `CHROMIUM_PATH` that does not exist instead of forwarding it to Playwright. `node
+  prototype/test/run-all.mjs` → **every suite green: 130 · 116 · 62 · 6.**
+- **Both prototypes' pinned block** said `ladderFor(1.55) is HF_LADDER`; it is `ladderFor(ENTRY_HF_FLOOR)`,
+  which is 1.25. One edit applied to both files, byte-equality re-verified.
+- **`docs/BUILD-SPEC-2026-09.md` carried a History banner it never had** — it still said "all engineers
+  build to THIS" while naming container paths, the `master` branch, "Base-first", and the deleted 5000
+  cap. Banner added pointing at the plan of record, and the `maxOfferedLtvBps` line corrected in place.
+  This was also the last live (non-History) doc matching BUILD-PLAN §6's grep list.
+
 ## 2026-09-13 — The feeds' own history, read whole: a 0.5 % deviation threshold, no ZEC heartbeat at all, and a keeper probe that was measuring volatility
 
 - **The question Addendum 16 left open was `ChainlinkOracleAdapter`'s immutable `maxAge`.** Answering it

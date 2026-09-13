@@ -1,7 +1,8 @@
 /* Shared harness for the prototype suites: Playwright loader, localhost http
    server for /prototype, a page factory that captures console errors, and a
    tiny named-check runner. Run any suite with:
-     CHROMIUM_PATH=/opt/pw-browsers/chromium node prototype/test/verify-simple.mjs */
+     node prototype/test/verify-simple.mjs
+   Playwright's own Chromium is used unless CHROMIUM_PATH names one that exists. */
 import { createRequire } from "node:module";
 import http from "node:http";
 import fs from "node:fs";
@@ -28,8 +29,23 @@ export async function serve(root = ROOT) {
   return { url: (file) => `http://127.0.0.1:${port}/${file}`, close: () => srv.close() };
 }
 
+/**
+ * A CHROMIUM_PATH that does not exist is IGNORED rather than passed on to Playwright.
+ * The suites were written in a container where Chromium lives at /opt/pw-browsers/chromium; on a
+ * machine without that directory Playwright's own bundled browser is correct, and forwarding a
+ * dead path turns every suite into "executable doesn't exist" — which is exactly how
+ * `run-all.mjs` failed on macOS while each suite passed when run directly.
+ */
+function chromiumPath() {
+  const p = process.env.CHROMIUM_PATH;
+  if (!p) return undefined;
+  if (fs.existsSync(p)) return p;
+  console.error(`  (CHROMIUM_PATH=${p} does not exist — using Playwright's own Chromium)`);
+  return undefined;
+}
+
 export async function browser() {
-  return pw.chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined, args: ["--disable-background-networking", "--disable-component-update", "--no-first-run"] });
+  return pw.chromium.launch({ executablePath: chromiumPath(), args: ["--disable-background-networking", "--disable-component-update", "--no-first-run"] });
 }
 
 /** New page in a fresh context (own localStorage) with console/page errors captured on page.__errors. */

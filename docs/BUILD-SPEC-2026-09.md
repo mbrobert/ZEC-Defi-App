@@ -1,4 +1,13 @@
-# Oilskin Base-first v1 — build spec (all engineers build to THIS; deviations are reported, not improvised)
+> **History.** The build spec written for the container era (2026-09; note the `/home/claude/zyo`
+> paths, the `master` branch and the test counts of that day). **The plan of record is now
+> `docs/BUILD-PLAN-2026-09-12.md`**, with `docs/ROADMAP.md` for dates — build to those, not to this.
+> Kept because the audit ledgers cite it and it records why several contracts are shaped as they are.
+> Two things in it were superseded by the founder's decisions of 2026-09-12 and are corrected in
+> place below so no one builds to them: the **50 % product cap on offered LTV is gone** (the entry-HF
+> floor and the venue's own max LTV are the only ceilings), and the product is **not "Base-first"** —
+> the Base and Solana modules are built in full and launch together.
+
+# Oilskin v1 — build spec (2026-09, superseded; see the banner above)
 Read first: /home/claude/zyo/docs/BASE-PIVOT-2026-09.md (why), /home/claude/zyo/docs/VERIFIED-BASE-FACTS.md
 (every address/parameter — use ONLY these; anything else must be probed before use), and
 /home/claude/zyo/docs/AUDIT-FINDINGS-2026-09-03.md (what went wrong last time; Part 6 lessons are binding).
@@ -51,8 +60,10 @@ money path, and no Oilskin contract ever holds a user's funds.
   deposit, decimals-aware dust floor, per-id try/catch close paying what closed, and the re-mint price band
   read from the pool's `slot0()` failing closed. Width bounds [150, 5000] total tick span; presets from shared.
 - `CollateralRegistry` (owner-set): asset → {venue, decimals, priceFeed, enabled, maxOfferedLtvBps, note}.
-  maxOfferedLtvBps is DERIVED on-chain as floor(liquidationThresholdBps / entryHfFloor) capped at 5000, never
-  typed. cbZEC registered with enabled=false, note="no collateral market on Base yet".
+  maxOfferedLtvBps is DERIVED on-chain, never typed. **Corrected 2026-09-12:** it is
+  `min(liquidationThresholdBps × 1e18 / entryHfFloorWad, the venue's own maxLtvBps)` — the venue's LTV
+  is read too (audit B-MED-1), and the 5000 product cap this line used to name was REMOVED with the
+  floor decision of 2026-09-12. cbZEC registered with enabled=false, note="no collateral market on Base yet".
 - `StrategyRouter` — stateless; `openLeveragedLp(OpenParams)` executes, via the caller's OilskinAccount
   (creating it if absent): Permit2 pull → venue.supply → venue.borrow(USDC) → swap to the LP entry token if
   needed (via a minimal `ISwapAdapter`; v1 implementation = direct Aerodrome router call with minOut+deadline;

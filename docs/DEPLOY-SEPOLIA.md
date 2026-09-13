@@ -164,7 +164,7 @@ cast call $LP_VENUE 'ENGINE()(address)' --rpc-url $SEPOLIA_RPC_URL       # → $
 cast call $REGISTRY 'owner()(address)' --rpc-url $SEPOLIA_RPC_URL          # → $DEPLOYER, until §5.5a
 cast call $REGISTRY 'pendingOwner()(address)' --rpc-url $SEPOLIA_RPC_URL   # → $REGISTRY_OWNER
 cast call $REGISTRY 'TIMELOCK_DELAY()(uint256)' --rpc-url $SEPOLIA_RPC_URL # → 172800
-cast call $REGISTRY 'entryHfFloorWad()(uint256)' --rpc-url $SEPOLIA_RPC_URL # → 1550000000000000000
+cast call $REGISTRY 'entryHfFloorWad()(uint256)' --rpc-url $SEPOLIA_RPC_URL # → 1250000000000000000
 cast call $REGISTRY 'assets()(address[])' --rpc-url $SEPOLIA_RPC_URL       # → [WBTC, WETH, cbZEC mock]
 ```
 
@@ -174,14 +174,23 @@ Per asset — WBTC and WETH enabled, the cbZEC stand-in registered but **disable
 cast call $REGISTRY 'isEnabled(address)(bool)' $WBTC --rpc-url $SEPOLIA_RPC_URL   # true
 cast call $REGISTRY 'isEnabled(address)(bool)' $WETH --rpc-url $SEPOLIA_RPC_URL   # true
 cast call $REGISTRY 'isEnabled(address)(bool)' $CBZEC --rpc-url $SEPOLIA_RPC_URL  # false
-cast call $REGISTRY 'maxOfferedLtvBps(address)(uint256)' $WBTC --rpc-url $SEPOLIA_RPC_URL  # 5000
-cast call $REGISTRY 'maxOfferedLtvBps(address)(uint256)' $WETH --rpc-url $SEPOLIA_RPC_URL  # 5000
+cast call $REGISTRY 'maxOfferedLtvBps(address)(uint256)' $WBTC --rpc-url $SEPOLIA_RPC_URL  # 6640
+cast call $REGISTRY 'maxOfferedLtvBps(address)(uint256)' $WETH --rpc-url $SEPOLIA_RPC_URL  # 6800
 cast call $REGISTRY 'maxOfferedLtvBps(address)(uint256)' $CBZEC --rpc-url $SEPOLIA_RPC_URL # 0
 cast call $REGISTRY 'config(address)((address,uint8,address,bool,string))' $CBZEC --rpc-url $SEPOLIA_RPC_URL
 ```
 
 The last one must show `decimals = 8`, `enabled = false`, and the note
 `no collateral market on Base yet`.
+
+**Where 6,640 and 6,800 come from — nothing is typed.** `maxOfferedLtvBps` is
+`min(LT ÷ entryHfFloor, the venue's own max LTV)`; the 50 % product cap that used to sit above them
+was removed with the floor decision of 2026-09-12. At a **1.25** floor and the Sepolia reserve
+parameters re-read live on 2026-09-13 (block 46,775,990, unchanged from Addendum 2): WBTC
+8300 ÷ 1.25 = 6640 against a venue LTV of 8150, and WETH 8500 ÷ 1.25 = 6800 against 8350 — the
+floor binds on both. **If you deploy with a different `ENTRY_HF_FLOOR_WAD`, both numbers move**, and
+`scripts/sepolia-postdeploy-check.sh` derives them from whatever the registry reports rather than
+comparing against a constant, so it follows automatically.
 
 ### 5.3 Risk parameters are read live, never typed
 
