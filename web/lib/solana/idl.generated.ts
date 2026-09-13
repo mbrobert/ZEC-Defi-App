@@ -2,7 +2,7 @@
 // The web's Solana encoders read this and nothing else; test/solana-idl.test.ts fails on drift from the committed IDL.
 export const OILSKIN_SOLANA_IDL = {
   "address": "Gw2UE3MixYgA8c7nLZC9UF2z3z5dWfzrFW7ESmi5Scog",
-  "sha256": "ab89346ff023f0d633cb22d461953749195b5fb2a7ed89e1ed6295eb02e50f7c",
+  "sha256": "34ccbfc8609a545c871471910bea43d22e3d72c7514f3220d9648d1287ffb2ae",
   "instructions": {
     "borrow": {
       "discriminator": [
@@ -452,6 +452,232 @@ export const OILSKIN_SOLANA_IDL = {
         [
           "amount_zec",
           "u64"
+        ]
+      ]
+    },
+    "deposit_for_burn": {
+      "discriminator": [
+        215,
+        60,
+        61,
+        46,
+        114,
+        55,
+        128,
+        176
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true,
+          "address": null
+        },
+        {
+          "name": "account",
+          "writable": true,
+          "signer": false,
+          "address": null
+        },
+        {
+          "name": "obligation",
+          "writable": true,
+          "signer": false,
+          "address": null
+        },
+        {
+          "name": "account_usdc",
+          "writable": true,
+          "signer": false,
+          "address": null
+        },
+        {
+          "name": "kamino.klend_program",
+          "writable": false,
+          "signer": false,
+          "address": "KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD"
+        },
+        {
+          "name": "kamino.lending_market",
+          "writable": false,
+          "signer": false,
+          "address": "GBJ3bzUiMfwC9ugaF3MM68EXMDyTUb5UryRRAcVjEowd"
+        },
+        {
+          "name": "kamino.lending_market_authority",
+          "writable": false,
+          "signer": false,
+          "address": null
+        },
+        {
+          "name": "kamino.zec_reserve",
+          "writable": true,
+          "signer": false,
+          "address": "6e8XcrdencrXBjXtTqYkRS63nS36petvzkV3gBf2ezbH"
+        },
+        {
+          "name": "kamino.usdc_reserve",
+          "writable": true,
+          "signer": false,
+          "address": "EW9vT7g2VH2aTFfcbaXRUCbF7jEfaLwMiJpckwDZwUZd"
+        },
+        {
+          "name": "kamino.zec_mint",
+          "writable": false,
+          "signer": false,
+          "address": "A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS"
+        },
+        {
+          "name": "kamino.usdc_mint",
+          "writable": false,
+          "signer": false,
+          "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+        },
+        {
+          "name": "kamino.zec_liquidity_supply",
+          "writable": true,
+          "signer": false,
+          "address": "7muPXroaziH8RTD62Ea4gQ3NuAPZswf8Gj7iuPZ6Ae6Y"
+        },
+        {
+          "name": "kamino.zec_collateral_mint",
+          "writable": true,
+          "signer": false,
+          "address": "FQc32zaNbQnUZmQxd3Fqhg3enqfozyX6K74xcCCHw4NU"
+        },
+        {
+          "name": "kamino.zec_collateral_supply",
+          "writable": true,
+          "signer": false,
+          "address": "8yr67socgzkzXYPMPC8KNCh8eLDPjGvqucLGXmCGdwq4"
+        },
+        {
+          "name": "kamino.usdc_liquidity_supply",
+          "writable": true,
+          "signer": false,
+          "address": "C7ipQ9XPEncrVhCLXfHE4aCXPSk1HpPQUr127RwgVG9h"
+        },
+        {
+          "name": "kamino.usdc_fee_vault",
+          "writable": true,
+          "signer": false,
+          "address": "HwgFUiBaEHv2QnrpgVxPmWuUC5nqt7iGSna99ZQL8oTB"
+        },
+        {
+          "name": "kamino.scope_prices",
+          "writable": false,
+          "signer": false,
+          "address": "3t4JZcueEzTbVP6kLxXrL3VpWx45jDer4eqysweBchNH"
+        },
+        {
+          "name": "kamino.farms_program",
+          "writable": false,
+          "signer": false,
+          "address": "FarmsPZpWu9i7Kky8tPN37rs2TpmMrAZrC7S7vJa91Hr"
+        },
+        {
+          "name": "kamino.instructions_sysvar",
+          "writable": false,
+          "signer": false,
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        },
+        {
+          "name": "kamino.token_program",
+          "writable": false,
+          "signer": false,
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "cctp.token_messenger_minter_program",
+          "writable": false,
+          "signer": false,
+          "address": "CCTPV2vPZJS2u2BBsUoscuikbYjnpFmbFsvVuJdgUMQe"
+        },
+        {
+          "name": "cctp.message_transmitter_program",
+          "writable": false,
+          "signer": false,
+          "address": "CCTPV2Sm4AdWt5296sk4P66VBZ7bEhcARwFaaS9YPbeC"
+        },
+        {
+          "name": "cctp.sender_authority_pda",
+          "writable": false,
+          "signer": false,
+          "address": "45hzrGLQ2EGo1Ln7QpXjDwb589GDQ9H2aEXXw6ds6BFE"
+        },
+        {
+          "name": "cctp.denylist_account",
+          "writable": false,
+          "signer": false,
+          "address": null
+        },
+        {
+          "name": "cctp.message_transmitter",
+          "writable": true,
+          "signer": false,
+          "address": "W1k5ijkaSTo5iA5zChNpfzcy796fLhkBxfmJuR8W8HU"
+        },
+        {
+          "name": "cctp.token_messenger",
+          "writable": false,
+          "signer": false,
+          "address": "AawthJCGRmggpfv9MMWV6Jmo9cue4gL9wUZgRBShg58W"
+        },
+        {
+          "name": "cctp.remote_token_messenger",
+          "writable": false,
+          "signer": false,
+          "address": "BwmDYtQ7jFj8ddaTmKa7fz9hyuK9n58mvc8G7DYNcKjM"
+        },
+        {
+          "name": "cctp.token_minter",
+          "writable": false,
+          "signer": false,
+          "address": "E1bQJ8eMMn3zmeSewW3HQ8zmJr7KR75JonbwAtWx2bux"
+        },
+        {
+          "name": "cctp.local_token",
+          "writable": true,
+          "signer": false,
+          "address": "CRBBbuLCyrkQy4dCTHxqstSmDQv4ajBeUVb9qUdMVaP1"
+        },
+        {
+          "name": "cctp.usdc_mint",
+          "writable": true,
+          "signer": false,
+          "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+        },
+        {
+          "name": "cctp.event_authority",
+          "writable": false,
+          "signer": false,
+          "address": null
+        },
+        {
+          "name": "message_sent_event_data",
+          "writable": true,
+          "signer": true,
+          "address": null
+        },
+        {
+          "name": "system_program",
+          "writable": false,
+          "signer": false,
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        [
+          "amount",
+          "u64"
+        ],
+        [
+          "max_fee",
+          "u64"
+        ],
+        [
+          "min_finality_threshold",
+          "u32"
         ]
       ]
     },
@@ -973,6 +1199,38 @@ export const OILSKIN_SOLANA_IDL = {
       ],
       "args": []
     },
+    "set_base_account": {
+      "discriminator": [
+        142,
+        81,
+        205,
+        64,
+        247,
+        254,
+        130,
+        196
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": false,
+          "signer": true,
+          "address": null
+        },
+        {
+          "name": "account",
+          "writable": true,
+          "signer": false,
+          "address": null
+        }
+      ],
+      "args": [
+        [
+          "base_account",
+          "{\"array\":[\"u8\",32]}"
+        ]
+      ]
+    },
     "transfer_out": {
       "discriminator": [
         202,
@@ -1319,8 +1577,16 @@ export const OILSKIN_SOLANA_IDL = {
         "u64"
       ],
       [
+        "entry_hf_bps",
+        "u64"
+      ],
+      [
+        "base_account",
+        "{\"array\":[\"u8\",32]}"
+      ],
+      [
         "_reserved",
-        "{\"array\":[\"u8\",64]}"
+        "{\"array\":[\"u8\",24]}"
       ]
     ]
   },
@@ -1454,6 +1720,26 @@ export const OILSKIN_SOLANA_IDL = {
       "code": 6025,
       "name": "WrongTokenAccount",
       "msg": "Token account is not the account's associated token account for that mint"
+    },
+    {
+      "code": 6026,
+      "name": "NoBaseAccount",
+      "msg": "No Base account is recorded for this account; set_base_account first"
+    },
+    {
+      "code": 6027,
+      "name": "InvalidBaseAccount",
+      "msg": "A Base account must not be zero"
+    },
+    {
+      "code": 6028,
+      "name": "ReserveShort",
+      "msg": "The burn would leave the Account's USDC under the reserve the debt requires"
+    },
+    {
+      "code": 6029,
+      "name": "WrongCctpAccount",
+      "msg": "A CCTP account is not the one this program was built against"
     }
   ]
 } as const;
