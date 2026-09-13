@@ -3,6 +3,22 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-13 — The Sepolia dry run re-proved against the live chain, six days on
+
+`DEPLOY-SEPOLIA.md` §3's dry run was last run on 2026-09-07. Re-run today against live Base Sepolia — a
+simulation only, no `--broadcast`, no key, nothing signed: **`SIMULATION COMPLETE`, `Chain 84532`**, every
+deployment and the faucet mint simulated, and the script's guard clear. So no dependency has drifted in six
+days, and Aave's reserve parameters are the ones Addendum 2 records (re-read the same day at block
+46,775,968: WETH LT 8500 / LTV 8350, WBTC LT 8300 / LTV 8150).
+
+- **The gas estimate has moved and the runbook now says so: 25,658,546 gas ≈ 0.000282 ETH**, up from
+  19,505,395 / 0.000215 on 2026-09-07 — the tree has grown since, `ChainlinkOracleAdapter` and the
+  cross-chain router code among it. §2c now recommends holding **0.05 ETH**, which covers §5.5's four
+  signed transactions too and saves a second trip to the faucet.
+- The runbook already told the founder to re-read the mainnet cbZEC/USDC tick before deploying; that it has
+  genuinely moved (−24509 → **−24046**, 4.7 % in price) is recorded at §2d so the step reads as live rather
+  than boilerplate.
+
 ## 2026-09-13 — `docs/BACKLOG.md`, the file ROADMAP rule 3 has been pointing at
 
 Rule 3 says non-safety bugs go to `docs/BACKLOG.md`. The file did not exist, so everything deliberately

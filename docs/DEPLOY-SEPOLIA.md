@@ -69,8 +69,11 @@ export TREASURY=$DEPLOYER
 export REGISTRY_OWNER=<a second address you control>
 ```
 
-**c. Fund the deployer with Sepolia ETH.** The dry run estimated **19,505,395 gas ≈ 0.000215 ETH**
-at 0.011 gwei. Base Sepolia base fee moves, so hold a margin.
+**c. Fund the deployer with Sepolia ETH.** **Re-estimated 2026-09-13: 25,658,546 gas ≈ 0.000282 ETH**
+at a 0.011 gwei max fee (0.005 gwei base). That is up from the 19,505,395 gas / 0.000215 ETH of
+2026-09-07 because the tree has grown since — `ChainlinkOracleAdapter` and the cross-chain router
+code among it. Base Sepolia's base fee moves, and §5.5 has four more transactions to send, so hold
+a margin: **0.05 ETH is ample and saves a second trip to the faucet.**
 
 ```bash
 cast balance $DEPLOYER --rpc-url $SEPOLIA_RPC_URL --ether
@@ -92,6 +95,12 @@ cast call 0x0Fc47C17AF86078d809358db1b4db2DeBC988566 'slot0()(uint160,int24,uint
 ---
 
 ## 3. Dry run — no `--broadcast`, nothing is signed
+
+> **Re-run 2026-09-13 and it passes.** `SIMULATION COMPLETE`, `Chain 84532`, every deployment and the
+> faucet mint simulated, the guard clear against live Aave — so no dependency has drifted in the six
+> days since the first dry run, and the Aave reserve parameters are the ones Addendum 2 records
+> (re-read the same day: WETH LT 8500 / LTV 8350, WBTC LT 8300 / LTV 8150). Run it again yourself
+> anyway: it is free, and it is the step that tells you whether the chain moved overnight.
 
 This is the exact command that was run on 2026-09-07 and passed: the guard cleared against live
 Aave, and all eight deployments plus the faucet mint simulated.
