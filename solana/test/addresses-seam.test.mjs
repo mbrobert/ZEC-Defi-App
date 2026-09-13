@@ -5,7 +5,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { KAMINO_ZCASH_MARKET, SOLANA_PROGRAMS, SOLANA_TOKENS } from "@zyo/shared";
+import { createHash } from "node:crypto";
+import { CCTP_DOMAINS, CCTP_V2_SOLANA, KAMINO_ZCASH_MARKET, SOLANA_PROGRAMS, SOLANA_TOKENS } from "@zyo/shared";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const rs = readFileSync(join(here, "..", "programs", "oilskin", "src", "generated", "addresses.rs"), "utf8");
@@ -44,4 +45,23 @@ test("the generator's --check agrees", () => {
 test("no LTV, threshold or rate constant exists in the generated addresses (those are read live)", () => {
   const consts = rs.split("\n").filter((l) => l.startsWith("pub const ")).join("\n");
   assert.doesNotMatch(consts, /LTV|THRESHOLD|APR|RATE_BPS/);
+});
+
+test("Circle's CCTP V2 programs, PDAs, domains, seeds and the burn's discriminator are shared's (Addenda 1 and 3)", () => {
+  assert.equal(key("CCTP_TOKEN_MESSENGER_MINTER_V2"), CCTP_V2_SOLANA.programs.tokenMessengerMinterV2);
+  assert.equal(key("CCTP_MESSAGE_TRANSMITTER_V2"), CCTP_V2_SOLANA.programs.messageTransmitterV2);
+  assert.equal(key("CCTP_TOKEN_MESSENGER"), CCTP_V2_SOLANA.pdas.tokenMessenger);
+  assert.equal(key("CCTP_TOKEN_MINTER"), CCTP_V2_SOLANA.pdas.tokenMinter);
+  assert.equal(key("CCTP_SENDER_AUTHORITY"), CCTP_V2_SOLANA.pdas.senderAuthority);
+  assert.equal(key("CCTP_LOCAL_TOKEN_USDC"), CCTP_V2_SOLANA.pdas.localTokenUsdc);
+  assert.equal(key("CCTP_REMOTE_TOKEN_MESSENGER_BASE"), CCTP_V2_SOLANA.pdas.remoteTokenMessengerBase);
+  assert.equal(key("CCTP_MESSAGE_TRANSMITTER"), CCTP_V2_SOLANA.pdas.messageTransmitter);
+  assert.match(rs, new RegExp(`CCTP_DOMAIN_SOLANA: u32 = ${CCTP_DOMAINS.solana};`));
+  assert.match(rs, new RegExp(`CCTP_DOMAIN_BASE: u32 = ${CCTP_DOMAINS.base};`));
+  assert.match(rs, new RegExp(`CCTP_SEED_DENYLIST: &\\[u8\\] = b"${CCTP_V2_SOLANA.seeds.denylistAccount}";`));
+  assert.match(rs, new RegExp(`CCTP_SEED_EVENT_AUTHORITY: &\\[u8\\] = b"${CCTP_V2_SOLANA.seeds.eventAuthority}";`));
+  const disc = Array.from(createHash("sha256").update(CCTP_V2_SOLANA.depositForBurnDiscriminatorPreimage).digest().subarray(0, 8));
+  const m = rs.match(/CCTP_DEPOSIT_FOR_BURN_DISCRIMINATOR: \[u8; 8\] = \[([^\]]+)\];/);
+  assert.ok(m, "discriminator missing");
+  assert.deepEqual(m[1].split(",").map((x) => Number(x.trim())), disc);
 });

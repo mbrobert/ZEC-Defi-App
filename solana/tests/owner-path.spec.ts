@@ -44,6 +44,8 @@ const OB = { depositedValueSf: 1192, bfAdjustedDebtSf: 2208, unhealthySf: 2256, 
 const SF = 1n << 60n;
 const u128 = (b: Buffer, o: number) => b.readBigUInt64LE(o) + (b.readBigUInt64LE(o + 8) << 64n);
 const keyFile = (p: string) => Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(p, "utf8"))));
+/** The fixtures directory the validator under test was started with (`FIXTURES=` in scripts/localnet.sh); the default for the default validator. */
+const FIXTURES = process.env.OILSKIN_FIXTURES ?? "fixtures";
 
 describe("owner path (localnet)", () => {
   const provider = anchor.AnchorProvider.env();
@@ -57,8 +59,8 @@ describe("owner path (localnet)", () => {
 
   const owner = Keypair.generate();
   const keeper = Keypair.generate();
-  const zecAuthority = keyFile("fixtures/local-mint-authority.json");
-  const usdcAuthority = keyFile("fixtures/local-usdc-mint-authority.json");
+  const zecAuthority = keyFile(`${FIXTURES}/local-mint-authority.json`);
+  const usdcAuthority = keyFile(`${FIXTURES}/local-usdc-mint-authority.json`);
 
   const [account] = PublicKey.findProgramAddressSync([Buffer.from("account"), owner.publicKey.toBuffer()], program.programId);
   const [userMetadata] = PublicKey.findProgramAddressSync([Buffer.from("user_meta"), account.toBuffer()], KLEND);

@@ -54,4 +54,12 @@ pub enum OilskinError {
     InsufficientUsdcToClose,
     #[msg("Token account is not the account's associated token account for that mint")]
     WrongTokenAccount,
+    #[msg("No Base account is recorded for this account; set_base_account first")]
+    NoBaseAccount,
+    #[msg("A Base account must not be zero")]
+    InvalidBaseAccount,
+    #[msg("The burn would leave the Account's USDC under the reserve the debt requires")]
+    ReserveShort,
+    #[msg("A CCTP account is not the one this program was built against")]
+    WrongCctpAccount,
 }

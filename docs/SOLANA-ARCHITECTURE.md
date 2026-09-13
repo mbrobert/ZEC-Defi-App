@@ -150,10 +150,12 @@ the program checks is the HF Kamino would liquidate against at that slot.
 |---|---|---|---|
 | `init_account` | — | creates the Account PDA and its two ATAs; CPI `initUserMetadata` and `initObligation` (tag 0, id 0) with the Account PDA as `obligationOwner` via `invoke_signed` | idempotent by PDA existence; refuses a wallet that is itself a PDA |
 | `deposit` | `amount_zec: u64` | wallet ATA → Account ATA; CPI `depositReserveLiquidityAndObligationCollateralV2` | Kamino's deposit limit and 24-h withdrawal cap apply; nothing to add |
-| `borrow` | `amount_usdc: u64` | CPI `borrowObligationLiquidityV2` to the Account USDC ATA | **after the borrow: HF ≥ ENTRY_HF_FLOOR (1.25) and LTV ≤ the reserve's own LTV (40 %)** — no product-wide cap under the venue's since 2026-09-12; today that is 40 % and HF 1.625 at the top of the slider |
+| `borrow` | `amount_usdc: u64` | CPI `borrowObligationLiquidityV2` to the Account USDC ATA | **after the borrow: HF ≥ ENTRY_HF_FLOOR (1.25) and LTV ≤ the reserve's own LTV (40 %)**; **the refreshed HF is then recorded as `entry_hf_bps` (2026-09-13, D7 parity — the ladder derives from it, §14.2)** — no product-wide cap under the venue's since 2026-09-12; today that is 40 % and HF 1.625 at the top of the slider |
 | `repay` | `amount_usdc: u64` or `u64::MAX` | CPI `repayObligationLiquidityV2` from the Account USDC ATA | — |
 | `withdraw` | `collateral_amount: u64` (cToken units) or `u64::MAX` | CPI `withdrawObligationCollateralAndRedeemReserveCollateralV2` to the Account ZEC ATA. `u64::MAX` withdraws **the most Kamino allows** (everything when there is no debt, and then klend closes the emptied obligation) | **after the withdraw: HF ≥ ENTRY_HF_FLOOR unless debt ≤ LOAN_DUST_UNITS** (the twin of the router's exit floor and slice C's one dust threshold) |
 | `transfer_out` | `mint, amount: u64` | Account ATA → wallet ATA | owner-only; this plus `repay`/`withdraw` is the always-exit path — no grant, no keeper, no Oilskin off-chain component needed |
+| `set_base_account` | `base_account: [u8; 32]` | records the user's Base `OilskinAccount` (an EVM address left-padded; zero and a non-padded value refused) as the ONLY `mint_recipient` a burn may name (**2026-09-13, D6 §14.1**) | owner-only |
+| `deposit_for_burn` | `amount, max_fee, min_finality_threshold` | refreshes the obligation, computes the reserve the live debt requires on THIS account's ladder (§14.3), refuses `ReserveShort` / `NoBaseAccount` / `InsufficientUsdcToClose`, then one CPI into Circle's TokenMessengerMinterV2 with the Account PDA as the burn authority (`cctp.rs`; every CCTP account by address, the denylist entry and the event authority derived) — native USDC burned, the message Circle attests written to the caller's fresh event account (**2026-09-13, D6 §14.4**) | owner-only; rides a v0 transaction with an address lookup table (the account list is over the legacy size) |
 | `close_position` | `min_zec_out: u64` | `repay(MAX)` then `withdraw(MAX)` in one instruction; the "unwind" | refuses if the Account USDC ATA cannot cover the debt (the user tops up first) |
 | `grant` | `keeper, expiry_ts, period_secs, repay_usdc_per_period, sell_zec_per_period, max_sell_slippage_bps, allowed_rungs` | creates or overwrites the Grant; **a re-grant inside a live period carries spend forward** (Base's rule) | refuses `expiry ≤ now`, `period == 0`, an empty rung mask, a zero repay budget, slippage > 500 bps |
 | `revoke` | `keeper` | kills that Grant (`expiry = 0`); refuses a Grant that never existed, so a watcher can tell a kill switch from a no-op | — |
@@ -504,6 +506,8 @@ direction. Facts every number here rests on: `VERIFIED-SOLANA-FACTS.md` Addenda 
 `StrategyRouter.openLpOnly` / `setSolanaRecipient` / `closeLpAndBurn` (BUILD-PLAN A5); the keeper's class is
 §14.7; the two-chain runbook is Stream C.
 
+**Built 2026-09-13 (B3.1)** — §14.1–14.4 as written, proven on localnet against the cloned CCTP V2 programs (`tests/crosschain.spec.ts`, 8; the ladder and keeper specs re-derived on the recorded entry; 34 / 34); the keeper's Solana path derives each account's ladder from the record (§14.7's first half). What the run settled that the design had not: the burn's account list needs a **v0 transaction with an address lookup table** (1,422 bytes against the legacy 1,232 — §14.4); Circle's `MessageSent` account is `8 + rent_payer 32 + created_at 8 + Vec<u8>` and its `messageSender` is the Account PDA (the burn authority), so a Base-side check of the sender can pin the Account, not the wallet.
+
 ### 14.1 The account learns two things
 
 | Field (carved out of `UserAccount._reserved`, 64 → 24 bytes; the layout length does not change) | Written by | Zero means |
@@ -580,8 +584,12 @@ pays rent for. Steps, in order:
 4. Emit `BurnedToBase { account, amount, base_account, max_fee, min_finality_threshold, reserve_required,
    usdc_after }`.
 
-The CCTP program ids, PDAs and domain ids come from `packages/shared` (`solana.ts` `CCTP_V2`, `chains.ts`
-`CCTP_DOMAINS`) through `generated/addresses.rs`, pinned by the addresses seam to Addendum 3.
+The CCTP program ids, PDAs, seeds, domain ids and the burn's Anchor discriminator come from `packages/shared`
+(`cctp.ts`) through `generated/addresses.rs`, pinned by the addresses seam to Addendum 3. **Transaction size:** Kamino's
+context (16 accounts, for the refresh) plus Circle's (11) plus the Account's own is more than a legacy transaction
+holds, so the client sends a v0 transaction with an address lookup table — Kamino's market table (`4X1u…xu2`,
+Addendum 1) plus an Oilskin table holding the CCTP PDAs and the program's static accounts, **created once at deploy
+and recorded in `DEPLOYMENTS.md`** (a founder task beside the program deploy; the localnet spec creates its own).
 
 ### 14.5 What the Base side records, mirrored
 

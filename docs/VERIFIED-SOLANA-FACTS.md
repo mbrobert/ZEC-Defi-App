@@ -488,3 +488,17 @@ mint rather than clone Circle's authority.
 2. `feeExecuted` at delivery against `maxFee` — the keeper's Stream C measures one real transfer on devnet ↔
    Sepolia (Addendum 1's open item 1 stands).
 3. The four multisig signers' identities.
+
+### Addendum 3, follow-up (2026-09-13, localnet against the cloned programs) — the three open items, two settled
+
+1. **The discriminator and the `#[event_cpi]` pair — settled.** `sha256("global:deposit_for_burn")[..8]` =
+   `[215, 60, 61, 46, 114, 55, 128, 176]`, with the event authority `["__event_authority"]` of the messenger program
+   and the program itself appended last: the cloned TokenMessengerMinterV2 accepted the instruction as
+   `solana/programs/oilskin/src/cctp.rs` builds it (`tests/crosschain.spec.ts`, 2026-09-13). Two facts the run added:
+   the account list (Kamino's refresh context plus Circle's) is **1,422 bytes as a legacy transaction, over the 1,232
+   limit** — the burn rides a v0 transaction with an address lookup table (which itself has to be extended in chunks
+   of ≈ 12 addresses); and Circle's `MessageSent` account is `8-byte discriminator + rent_payer (32) + created_at (8)
+   + message (Vec<u8>)`, its body's `messageSender` being the **burn token account's owner** — the Account PDA — not
+   the wallet that signed.
+2. `feeExecuted` against `maxFee` at delivery — still open (Stream C, devnet ↔ Sepolia).
+3. The multisig signers — still open.

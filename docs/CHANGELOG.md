@@ -53,6 +53,26 @@ liquidity provision; EIP = Ethereum Improvement Proposal.
   regenerations older); the hour-after pool observation moved into Addendum 14, which the top now cites.
   Levers unchanged (×12.2 inside ×12.16–×12.25; ×8.67 inside ×7.06–×10.23).
 
+## 2026-09-13 — B3.1: the Solana side of the loop — entry record, per-position ladder on chain, the reserve, `deposit_for_burn`
+
+- **Program** (`SOLANA-ARCHITECTURE.md` §14 as built): `UserAccount.entry_hf_bps` written by `borrow` and
+  `base_account` by the new `set_base_account` (from the reserved bytes; layout unchanged); `health::ladder_for`,
+  the integer twin of shared `ladderBpsFor`, and `keeper_protect` judging THAT ladder — the D7 parity the program
+  lacked (a 1.625 entry runs 1.57 / 1.40 / 1.23 / 1.06, and the floor's rungs refused the keeper there);
+  `health::reserve_units_for`; `deposit_for_burn` — refresh, the reserve check (`ReserveShort`), one CPI into Circle's
+  TokenMessengerMinterV2 with the Account PDA as the burn authority (`cctp.rs`: Circle's account order and Borsh
+  params, the discriminator generated from shared's preimage). Generated constants: the derivation set in
+  `ladder.rs`, Circle's programs / PDAs / seeds / domains / discriminator in `addresses.rs`.
+- **Keeper** (`agent/src/solana`): the account layout decodes the two fields; the monitor derives each account's
+  ladder from the record with the same integer rule (`resolveLadder`, the Base twin) and writes the disarm level on
+  the dispatch record; the dispatcher sizes to it.
+- **Localnet:** the two CCTP V2 programs and five state accounts cloned; `crosschain.spec.ts` (8) proves the record,
+  the link, the refusals, a real burn and the message Circle would attest; 26 → **34**. Program unit 8 → **12**,
+  seams 12 → **14**, IDL re-synced. `scripts/localnet.sh`: a second validator must name its own `FIXTURES=`
+  directory (the specs read `OILSKIN_FIXTURES`) — the script had been replacing the running validator's mint keys.
+- Settled by the run, for the web and the deploy: the burn rides a v0 transaction with an address lookup table
+  (Kamino's market table plus an Oilskin table for the CCTP PDAs, created at deploy).
+
 ## 2026-09-13 — A5.1: the cross-chain receiving side on Base — `openLpOnly`, `setSolanaRecipient`, `closeLpAndBurn`
 
 - **`StrategyRouter`** (BUILD-PLAN D6 / A5; design `SOLANA-ARCHITECTURE.md` §14): `openLpOnly` puts USDC the

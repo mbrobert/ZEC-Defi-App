@@ -20,7 +20,7 @@
 
 use crate::errors::OilskinError;
 use crate::events::KeeperProtected;
-use crate::generated::ladder::{LADDER, RUNG_ID_WARN};
+use crate::generated::ladder::{Rung, LADDER, RUNG_ID_WARN};
 use crate::health;
 use crate::instructions::kamino_ctx::*;
 use crate::kamino;
@@ -53,10 +53,12 @@ pub struct KeeperProtect<'info> {
     pub token_program: Program<'info, Token>,
 }
 
-/// The most severe rung the grant allows whose threshold `hf_bps` is below. `None` when no allowed rung is crossed.
-fn expected_rung(hf_bps: u64, allowed_rungs: u8) -> Option<u8> {
-    for i in (0..LADDER.len()).rev() {
-        let r = LADDER[i];
+/// The most severe rung of `ladder` the grant allows whose threshold `hf_bps` is below. `None` when no allowed
+/// rung is crossed. The ladder is the ACCOUNT's (`health::ladder_for_recorded(entry_hf_bps)`, §14.2) — the
+/// floor's only for an account with no record.
+fn expected_rung(hf_bps: u64, allowed_rungs: u8, ladder: &[Rung; 4]) -> Option<u8> {
+    for i in (0..ladder.len()).rev() {
+        let r = ladder[i];
         if allowed_rungs & (1u8 << i) != 0 && hf_bps < r.hf_bps {
             return Some(i as u8);
         }
@@ -85,9 +87,11 @@ pub fn handler(ctx: Context<KeeperProtect>, rung_id: u8, repay_usdc: u64, sell_z
     let account = &ctx.accounts.account;
     let grant = &mut ctx.accounts.grant;
 
-    // 1. The grant is live and the rung is one it names.
+    // 1. The grant is live and the rung is one it names — on THIS account's ladder (derived from the entry HF it
+    //    recorded at its last borrow; the floor's when it has none).
+    let ladder = health::ladder_for_recorded(account.entry_hf_bps);
     require!(grant.is_live(account.grant_epoch, now), OilskinError::GrantNotLive);
-    require!((rung_id as usize) < LADDER.len(), OilskinError::UnknownRung);
+    require!((rung_id as usize) < ladder.len(), OilskinError::UnknownRung);
     require!(rung_id != RUNG_ID_WARN, OilskinError::RungIsNotifyOnly);
     require!(grant.allowed_rungs & (1u8 << rung_id) != 0, OilskinError::RungNotAllowed);
     require!(repay_usdc > 0 || sell_zec > 0, OilskinError::ZeroAmount);
@@ -116,13 +120,13 @@ pub fn handler(ctx: Context<KeeperProtect>, rung_id: u8, repay_usdc: u64, sell_z
     );
     let before = kamino::read_obligation(&ctx.accounts.obligation, clock.slot)?;
     let hf_before = health::hf_bps(&before)?;
-    match expected_rung(hf_before, grant.allowed_rungs) {
+    match expected_rung(hf_before, grant.allowed_rungs, &ladder) {
         None => return err!(OilskinError::RungNotCrossed),
         Some(expected) if expected == rung_id => {}
         Some(expected) if expected > rung_id => return err!(OilskinError::RungUnderstated),
         Some(_) => return err!(OilskinError::RungNotCrossed),
     }
-    let rung = LADDER[rung_id as usize];
+    let rung = ladder[rung_id as usize];
 
     // 4. Repay first (from the Account's USDC: idle, or what the keeper put there for this action).
     let account_info = ctx.accounts.account.to_account_info();
@@ -201,13 +205,20 @@ mod tests {
     #[test]
     fn the_most_severe_allowed_crossed_rung_is_expected() {
         // ladder (generated from shared, the 1.25 floor's): warn 1.23, repay 1.16, derisk 1.09, emergency 1.05
-        assert_eq!(expected_rung(16_000, 0b1111), None);
-        assert_eq!(expected_rung(12_000, 0b1111), Some(0)); // warn crossed only
-        assert_eq!(expected_rung(11_300, 0b1111), Some(1)); // repay
-        assert_eq!(expected_rung(10_700, 0b1111), Some(2)); // derisk
-        assert_eq!(expected_rung(10_000, 0b1111), Some(3)); // emergency
-        assert_eq!(expected_rung(10_700, 0b0010), Some(1)); // only repay allowed: still "repay" while below it
-        assert_eq!(expected_rung(10_700, 0b1000), None); // only emergency allowed, not crossed
+        assert_eq!(expected_rung(16_000, 0b1111, &LADDER), None);
+        assert_eq!(expected_rung(12_000, 0b1111, &LADDER), Some(0)); // warn crossed only
+        assert_eq!(expected_rung(11_300, 0b1111, &LADDER), Some(1)); // repay
+        assert_eq!(expected_rung(10_700, 0b1111, &LADDER), Some(2)); // derisk
+        assert_eq!(expected_rung(10_000, 0b1111, &LADDER), Some(3)); // emergency
+        assert_eq!(expected_rung(10_700, 0b0010, &LADDER), Some(1)); // only repay allowed: still "repay" while below it
+        assert_eq!(expected_rung(10_700, 0b1000, &LADDER), None); // only emergency allowed, not crossed
+        // the same HF on the ladder a 1.625 entry derives (1.57 / 1.40 / 1.23 / 1.06): 1.20 is DE-RISK there, not warn
+        let derived = crate::health::ladder_for_recorded(16_250);
+        assert_eq!(expected_rung(16_000, 0b1111, &derived), None);
+        assert_eq!(expected_rung(15_000, 0b1111, &derived), Some(0));
+        assert_eq!(expected_rung(13_000, 0b1111, &derived), Some(1));
+        assert_eq!(expected_rung(12_000, 0b1111, &derived), Some(2));
+        assert_eq!(expected_rung(10_500, 0b1111, &derived), Some(3));
         // the numbers above are inside the generated bands, whatever the exact rungs are
         assert!(LADDER[1].hf_bps < 12_000 && 12_000 < LADDER[0].hf_bps);
         assert!(LADDER[2].hf_bps < 11_300 && 11_300 < LADDER[1].hf_bps);

@@ -59,7 +59,7 @@ on 2026-09-12 (the counts `docs/TESTING.md` records, evening tree): contracts **
 12 fork tests skipped without `FORK_URL` (**12 / 12** pass against Base at block 51,222,568 — 2026-09-13 A5.1, plus
 `scripts/check-cbzec-b20.sh`); keeper **269** tests / 52 suites + ABI seam **113/113** + Solana IDL seam
 **77/77**; yield **167**; web **180** unit (179 + 1 skipped) and **14 / 0 / 6** Playwright scenarios; shared
-**85**; Solana seam **7** (program unit **8**, localnet **26**, toolchain needed — `solana/SETUP.md`);
+**85**; Solana seam **14** (program unit **12**, localnet **34** — 2026-09-13 B3.1, a validator with the CCTP V2 clones; toolchain needed — `solana/SETUP.md`);
 prototypes **130 + 116 + 62** checks + **6** fuzz; root ABI seam **426**. CI runs every one of these on push
 (`docs/TESTING.md` "CI"; the contracts suite as three jobs).
 

@@ -19,6 +19,27 @@ pub struct Borrowed {
     pub amount_usdc: u64,
     pub hf_after_bps: u64,
     pub ltv_after_bps: u64,
+    /// The record the ladder now derives from (= hf_after_bps unless the borrow was dust).
+    pub entry_hf_bps: u64,
+}
+
+#[event]
+pub struct BaseAccountSet {
+    pub account: Pubkey,
+    pub base_account: [u8; 32],
+}
+
+#[event]
+pub struct BurnedToBase {
+    pub account: Pubkey,
+    pub amount: u64,
+    pub base_account: [u8; 32],
+    pub max_fee: u64,
+    pub min_finality_threshold: u32,
+    /// The reserve the debt required at this burn (0 with no non-dust debt).
+    pub reserve_required: u64,
+    /// The Account's USDC after the burn.
+    pub usdc_after: u64,
 }
 
 #[event]

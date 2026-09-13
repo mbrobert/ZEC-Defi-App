@@ -17,7 +17,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { KAMINO_ZCASH_MARKET, SOLANA_PROGRAMS, SOLANA_TOKENS, rungById, type HfRung } from "@zyo/shared";
+import { KAMINO_ZCASH_MARKET, SOLANA_PROGRAMS, SOLANA_TOKENS, ladderBpsFor, rungById, type HfRung } from "@zyo/shared";
 import type { Oilskin } from "../target/types/oilskin";
 import { keepWebSocketWarm } from "./support/wsKeepalive";
 
@@ -40,11 +40,23 @@ const OB = { deposit0Amount: 96 + 32, borrow0AmountSf: 1208 + 88 };
 const SF = 1n << 60n;
 const u128 = (b: Buffer, o: number) => b.readBigUInt64LE(o) + (b.readBigUInt64LE(o + 8) << 64n);
 const keyFile = (p: string) => Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(p, "utf8"))));
+/** The fixtures directory the validator under test was started with (`FIXTURES=` in scripts/localnet.sh); the default for the default validator. */
+const FIXTURES = process.env.OILSKIN_FIXTURES ?? "fixtures";
 /** The cloned ZEC reserve's liquidation threshold, LTV cap and price sanity band (VERIFIED-SOLANA-FACTS.md). */
 const LT = 0.65;
 const KAMINO_LTV_CAP = 0.4;
 const PRICE_BAND_LOWER_USD = 400;
-const RUNGS = { warn: rungById("warn"), repay: rungById("repay"), derisk: rungById("derisk"), emergency: rungById("emergency") };
+/**
+ * The ladder THIS account runs on: derived from the entry HF the program recorded at the borrow
+ * (`UserAccount.entry_hf_bps`, D7 / SOLANA-ARCHITECTURE §14.2) with the same integer rule the program applies —
+ * set right after the borrow below. Until then the floor's, which is what an account with no record runs.
+ */
+let RUNGS = { warn: rungById("warn"), repay: rungById("repay"), derisk: rungById("derisk"), emergency: rungById("emergency") };
+const ladderOf = (entryHfBps: number) => {
+  const l = ladderBpsFor(entryHfBps);
+  const asRung = (i: number): HfRung => ({ ...rungById(l[i].id), hf: l[i].hfBps / 10_000, disarmHf: l[i].disarmHfBps / 10_000 });
+  return { warn: asRung(0), repay: asRung(1), derisk: asRung(2), emergency: asRung(3) };
+};
 /** Midway between two adjacent rungs' thresholds: inside the milder rung's band, above the more severe one. */
 const between = (mild: HfRung, severe: HfRung) => (mild.hf + severe.hf) / 2;
 
@@ -72,11 +84,11 @@ describe("keeper agent (localnet, the real reader/dispatcher/monitor against the
 
   const owner = Keypair.generate();
   const keeper = Keypair.generate();
-  const zecAuthority = keyFile("fixtures/local-mint-authority.json");
-  const usdcAuthority = keyFile("fixtures/local-usdc-mint-authority.json");
+  const zecAuthority = keyFile(`${FIXTURES}/local-mint-authority.json`);
+  const usdcAuthority = keyFile(`${FIXTURES}/local-usdc-mint-authority.json`);
   const workDir = mkdtempSync(join(tmpdir(), "oilskin-keeper-"));
   const storePath = join(workDir, "store.json");
-  const keeperKeyPath = resolve("fixtures/local-keeper.json");
+  const keeperKeyPath = resolve(`${FIXTURES}/local-keeper.json`);
 
   const [account] = PublicKey.findProgramAddressSync([Buffer.from("account"), owner.publicKey.toBuffer()], program.programId);
   const [userMetadata] = PublicKey.findProgramAddressSync([Buffer.from("user_meta"), account.toBuffer()], KLEND);
@@ -183,6 +195,10 @@ describe("keeper agent (localnet, the real reader/dispatcher/monitor against the
     await stamp();
     // Kamino's 40 % cap: 40 % of $10,000 → HF 1.625, above every rung; the 3,990 USDC stays idle in the Account
     await ownerCall(program.methods.borrow(new BN((3_990n * ONE_USDC).toString())).accounts({ owner: owner.publicKey, account, obligation, accountUsdc, kamino } as any));
+    // The borrow recorded the entry HF (≈ 1.625); the agent derives the same ladder from it (1.57 / 1.40 / 1.23 /
+    // 1.06) — every band below is on THAT ladder, and the program refuses a rung named on any other.
+    RUNGS = ladderOf(Number((await program.account.userAccount.fetch(account)).entryHfBps));
+    expect(RUNGS.repay.hf).to.be.greaterThan(rungById("repay").hf);
     // The grant, timed by the CHAIN clock (a warped localnet runs hours ahead of the host).
     const chainNow = (await conn.getBlockTime(await conn.getSlot("confirmed")))!;
     await confirmed(
@@ -215,7 +231,7 @@ describe("keeper agent (localnet, the real reader/dispatcher/monitor against the
     const keeperUsdc0 = await balance(keeperUsdc);
     const idle0 = await balance(accountUsdc);
     expect(idle0).to.equal(3_990n * ONE_USDC);
-    // On the floor's ladder: repay fires under 1.16, de-risk under 1.09 → the band's middle is 1.125, ≈ $690 here.
+    // On this account's ladder (entry ≈ 1.625): repay fires under 1.40, de-risk under 1.23 → the band's middle is ≈ 1.315.
     const target = between(RUNGS.repay, RUNGS.derisk);
     repayPrice = await priceForHf(target);
     await setZecPrice(repayPrice);
@@ -271,7 +287,7 @@ describe("keeper agent (localnet, the real reader/dispatcher/monitor against the
     expect(await balance(accountUsdc)).to.equal(0n);
     const keeperUsdc0 = await balance(keeperUsdc);
     const keeperZec0 = await balance(keeperZec);
-    // On the floor's ladder: de-risk fires under 1.09, emergency under 1.05 → the band's middle is 1.07, ≈ $623 here.
+    // On this account's ladder: de-risk fires under 1.23, emergency under 1.06 → the band's middle is ≈ 1.145.
     const target = between(RUNGS.derisk, RUNGS.emergency);
     deriskPrice = await priceForHf(target);
     const before = await position(deriskPrice);

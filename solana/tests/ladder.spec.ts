@@ -17,7 +17,7 @@ import {
 } from "@solana/spl-token";
 import { expect } from "chai";
 import { readFileSync } from "node:fs";
-import { KAMINO_ZCASH_MARKET, SOLANA_PROGRAMS, SOLANA_TOKENS, rungById, type HfRung } from "@zyo/shared";
+import { KAMINO_ZCASH_MARKET, SOLANA_PROGRAMS, SOLANA_TOKENS, ladderBpsFor, rungById, type HfRung } from "@zyo/shared";
 import type { Oilskin } from "../target/types/oilskin";
 import { keepWebSocketWarm } from "./support/wsKeepalive";
 
@@ -36,6 +36,8 @@ const OB = { depositedValueSf: 1192, bfAdjustedDebtSf: 2208, unhealthySf: 2256, 
 const SF = 1n << 60n;
 const u128 = (b: Buffer, o: number) => b.readBigUInt64LE(o) + (b.readBigUInt64LE(o + 8) << 64n);
 const keyFile = (p: string) => Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(p, "utf8"))));
+/** The fixtures directory the validator under test was started with (`FIXTURES=` in scripts/localnet.sh); the default for the default validator. */
+const FIXTURES = process.env.OILSKIN_FIXTURES ?? "fixtures";
 const RUNG = { warn: 0, repay: 1, derisk: 2, emergency: 3 } as const;
 /** The cloned ZEC reserve's liquidation threshold and LTV cap (VERIFIED-SOLANA-FACTS.md); the program reads both from the reserve. */
 const LT = 0.65;
@@ -43,7 +45,17 @@ const KAMINO_LTV_CAP = 0.4;
 const SLIPPAGE_BPS = 200;
 /** Over the disarm level a repay aims 2 %: the interest accrued between the read and the refresh, and integer rounding. */
 const HEADROOM = 1.02;
-const RUNGS = { warn: rungById("warn"), repay: rungById("repay"), derisk: rungById("derisk"), emergency: rungById("emergency") };
+/**
+ * The ladder THIS account runs on: derived from the entry HF the program recorded at the borrow
+ * (`UserAccount.entry_hf_bps`, D7 / SOLANA-ARCHITECTURE §14.2) with the same integer rule the program applies —
+ * set right after the borrow below. Until then the floor's, which is what an account with no record runs.
+ */
+let RUNGS = { warn: rungById("warn"), repay: rungById("repay"), derisk: rungById("derisk"), emergency: rungById("emergency") };
+const ladderOf = (entryHfBps: number) => {
+  const l = ladderBpsFor(entryHfBps);
+  const asRung = (i: number): HfRung => ({ ...rungById(l[i].id), hf: l[i].hfBps / 10_000, disarmHf: l[i].disarmHfBps / 10_000 });
+  return { warn: asRung(0), repay: asRung(1), derisk: asRung(2), emergency: asRung(3) };
+};
 /** Midway between two adjacent rungs' thresholds: inside the milder rung's band, above the more severe one. */
 const between = (mild: HfRung, severe: HfRung) => (mild.hf + severe.hf) / 2;
 
@@ -58,8 +70,8 @@ describe("ladder (localnet, Scope mock walks the ZEC price)", () => {
 
   const owner = Keypair.generate();
   const keeper = Keypair.generate();
-  const zecAuthority = keyFile("fixtures/local-mint-authority.json");
-  const usdcAuthority = keyFile("fixtures/local-usdc-mint-authority.json");
+  const zecAuthority = keyFile(`${FIXTURES}/local-mint-authority.json`);
+  const usdcAuthority = keyFile(`${FIXTURES}/local-usdc-mint-authority.json`);
 
   const [account] = PublicKey.findProgramAddressSync([Buffer.from("account"), owner.publicKey.toBuffer()], program.programId);
   const [userMetadata] = PublicKey.findProgramAddressSync([Buffer.from("user_meta"), account.toBuffer()], KLEND);
@@ -165,6 +177,12 @@ describe("ladder (localnet, Scope mock walks the ZEC price)", () => {
     await stamp();
     await program.methods.borrow(new BN(borrowed.toString())).accounts({ owner: owner.publicKey, account, obligation, accountUsdc, kamino } as any).preInstructions(cu).signers([owner]).rpc();
     expect((await readObligation()).hf).to.be.closeTo(LT / KAMINO_LTV_CAP, 0.01);
+    // The borrow recorded the entry HF; the ladder every rung below is judged on derives from it (1.57 / 1.40 /
+    // 1.23 / 1.06 at ≈ 1.625), not the floor's 1.23 / 1.16 / 1.09 / 1.05.
+    const recorded = Number((await program.account.userAccount.fetch(account)).entryHfBps);
+    expect(recorded / 10_000).to.be.closeTo(LT / KAMINO_LTV_CAP, 0.01);
+    RUNGS = ladderOf(recorded);
+    expect(RUNGS.repay.hf).to.be.greaterThan(rungById("repay").hf, "derived rungs sit above the floor's");
     expect((await readObligation()).hf).to.be.greaterThan(RUNGS.warn.hf);
     // Grant: repay 5,000 USDC / day, sell 5 ZEC / day, 2 % slippage allowance, every rung named.
     const now = Math.floor(Date.now() / 1000);
@@ -194,7 +212,7 @@ describe("ladder (localnet, Scope mock walks the ZEC price)", () => {
   });
 
   it("price into the repay band (HF midway between repay and de-risk, ≈ −31 %) crosses repay: naming derisk is refused (not crossed); a repay that cannot reach the disarm level is refused as ineffective; a repay from the Account's idle USDC sized to the disarm level clears it", async () => {
-    // On the floor's ladder: repay fires under 1.16, de-risk under 1.09 → the band's middle is 1.125, ≈ $690 here.
+    // On this account's ladder (entry ≈ 1.625): repay fires under 1.40, de-risk under 1.23 → the band's middle is ≈ 1.315.
     const target = between(RUNGS.repay, RUNGS.derisk);
     repayPrice = await priceForHf(target);
     await setZecPrice(repayPrice);
@@ -220,7 +238,7 @@ describe("ladder (localnet, Scope mock walks the ZEC price)", () => {
   });
 
   it("price into the de-risk band (HF midway between de-risk and emergency, ≈ −39 %) crosses de-risk: naming repay is refused as understated; a sale below the Scope floor is refused by name; the keeper pays USDC in, the program repays, releases 1 ZEC and delegates exactly that", async () => {
-    // On the floor's ladder: de-risk fires under 1.09, emergency under 1.05 → the band's middle is 1.07, ≈ $614 here.
+    // On this account's ladder: de-risk fires under 1.23, emergency under 1.06 → the band's middle is ≈ 1.145.
     const target = between(RUNGS.derisk, RUNGS.emergency);
     deriskPrice = await priceForHf(target);
     await setZecPrice(deriskPrice);

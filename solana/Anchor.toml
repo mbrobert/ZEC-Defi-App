@@ -93,3 +93,27 @@ address = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 
 [[test.validator.clone]]
 address = "5mRY96MiFac9DBToh16j5dgq6kiJCPqhPXPzpoNNtxmw"
+
+# Circle's CCTP V2 (VERIFIED-SOLANA-FACTS Addenda 1 and 3): the two programs and the five state accounts
+# `deposit_for_burn` needs. Nothing is attested on localnet (there is no Circle); the spec reads the message
+# Circle would attest out of the event account the burn writes.
+[[test.validator.clone]]
+address = "CCTPV2vPZJS2u2BBsUoscuikbYjnpFmbFsvVuJdgUMQe"
+
+[[test.validator.clone]]
+address = "CCTPV2Sm4AdWt5296sk4P66VBZ7bEhcARwFaaS9YPbeC"
+
+[[test.validator.clone]]
+address = "AawthJCGRmggpfv9MMWV6Jmo9cue4gL9wUZgRBShg58W"
+
+[[test.validator.clone]]
+address = "E1bQJ8eMMn3zmeSewW3HQ8zmJr7KR75JonbwAtWx2bux"
+
+[[test.validator.clone]]
+address = "CRBBbuLCyrkQy4dCTHxqstSmDQv4ajBeUVb9qUdMVaP1"
+
+[[test.validator.clone]]
+address = "BwmDYtQ7jFj8ddaTmKa7fz9hyuK9n58mvc8G7DYNcKjM"
+
+[[test.validator.clone]]
+address = "W1k5ijkaSTo5iA5zChNpfzcy796fLhkBxfmJuR8W8HU"

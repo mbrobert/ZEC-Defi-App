@@ -115,11 +115,28 @@ export interface UserAccountView {
   grantEpoch: bigint;
   obligation: PublicKey;
   createdSlot: bigint;
+  /**
+   * The health factor recorded at the last `borrow`, in bps (D7 / SOLANA-ARCHITECTURE §14.1–14.2) — the
+   * ladder this account runs on derives from it (`ladderBpsFor`); 0n = no record, the floor's ladder.
+   */
+  entryHfBps: bigint;
+  /** The user's Base `OilskinAccount` left-padded to 32 bytes (§14.1); all zero = not linked. */
+  baseAccount: Uint8Array;
 }
-export const USER_ACCOUNT_LEN = 8 + 32 + 1 + 1 + 8 + 32 + 8 + 64;
+/** 8 + owner 32 + bump 1 + version 1 + grant_epoch 8 + obligation 32 + created_slot 8 + entry_hf_bps 8 + base_account 32 + reserved 24. */
+export const USER_ACCOUNT_LEN = 8 + 32 + 1 + 1 + 8 + 32 + 8 + 8 + 32 + 24;
 export function decodeUserAccount(b: Buffer): UserAccountView {
   if (b.length !== USER_ACCOUNT_LEN || !hasDisc(b, OILSKIN_ACCOUNT.userAccount)) throw new Error(`not a UserAccount (${b.length} bytes)`);
-  return { owner: pk(b, 8), bump: b[40], version: b[41], grantEpoch: u64(b, 42), obligation: pk(b, 50), createdSlot: u64(b, 82) };
+  return {
+    owner: pk(b, 8),
+    bump: b[40],
+    version: b[41],
+    grantEpoch: u64(b, 42),
+    obligation: pk(b, 50),
+    createdSlot: u64(b, 82),
+    entryHfBps: u64(b, 90),
+    baseAccount: Uint8Array.from(b.subarray(98, 130)),
+  };
 }
 
 export interface GrantView {

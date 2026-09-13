@@ -72,7 +72,7 @@ class FakeWorld {
 
   add(collateralZec: bigint, debtUsdc: bigint, idleUsdc = 0n): string {
     const account = Keypair.generate().publicKey;
-    const view: UserAccountView = { owner: Keypair.generate().publicKey, bump: 255, version: 1, grantEpoch: 0n, obligation: Keypair.generate().publicKey, createdSlot: this.slot };
+    const view: UserAccountView = { owner: Keypair.generate().publicKey, bump: 255, version: 1, grantEpoch: 0n, obligation: Keypair.generate().publicKey, createdSlot: this.slot, entryHfBps: 0n, baseAccount: new Uint8Array(32) };
     this.positions.set(account.toBase58(), { view, collateralZec, debtUsdc, idleUsdc, idleZec: 0n });
     return account.toBase58();
   }

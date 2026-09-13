@@ -10,6 +10,17 @@ pub const HF_HYSTERESIS_BPS: u64 = 200;
 /// Debt at or below this many loan-token base units is "fully repaid" (shared LOAN_DUST_UNITS).
 pub const LOAN_DUST_UNITS: u64 = 100;
 
+/// The per-position ladder's derivation (shared `ladderBpsFor`, BUILD-PLAN D7 / SOLANA-ARCHITECTURE §14.2):
+/// rung_i = round_to_100bps(1_000_000 + (e − 10_000) × k_i) in hundredths of a bp, emergency ≥ the minimum, each
+/// milder rung ≥ the next + 100; hysteresis = round_to_100bps(max(min, scale × (e − 10_000) ÷ span)).
+pub const LADDER_RUNG_FACTORS_PCT: [u64; 4] = [91, 64, 36, 9];
+pub const EMERGENCY_HF_MIN_BPS: u64 = 10500;
+pub const HF_HYSTERESIS_MIN_BPS: u64 = 200;
+pub const HF_HYSTERESIS_SCALE_BPS: u64 = 500;
+pub const HF_HYSTERESIS_SPAN_BPS: u64 = 5500;
+/// Below this entry HF four rungs do not fit; a record under it (or 0) runs the floor's ladder (shared MIN_LADDER_ENTRY_HF).
+pub const MIN_LADDER_ENTRY_HF_BPS: u64 = 11000;
+
 /// The ladder, mildest → most severe, in the order shared HF_LADDER declares it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rung {

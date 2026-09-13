@@ -52,3 +52,33 @@ pub const USDC_DECIMALS: u8 = 6;
 pub const KLEND_SEED_LENDING_MARKET_AUTHORITY: &[u8] = b"lma";
 pub const KLEND_SEED_USER_METADATA: &[u8] = b"user_meta";
 
+// Circle's CCTP V2 — the USDC rail to the user's Base account (docs/VERIFIED-SOLANA-FACTS.md Addenda 1 and 3;
+// packages/shared/src/cctp.ts). PDAs derived with Circle's seeds and read live 2026-09-13; the program passes
+// them by address so a wrong one cannot be handed to `deposit_for_burn`.
+/// TokenMessengerMinterV2 program.
+pub const CCTP_TOKEN_MESSENGER_MINTER_V2: Pubkey = pubkey!("CCTPV2vPZJS2u2BBsUoscuikbYjnpFmbFsvVuJdgUMQe");
+/// MessageTransmitterV2 program.
+pub const CCTP_MESSAGE_TRANSMITTER_V2: Pubkey = pubkey!("CCTPV2Sm4AdWt5296sk4P66VBZ7bEhcARwFaaS9YPbeC");
+/// ["token_messenger"] of the messenger program.
+pub const CCTP_TOKEN_MESSENGER: Pubkey = pubkey!("AawthJCGRmggpfv9MMWV6Jmo9cue4gL9wUZgRBShg58W");
+/// ["token_minter"].
+pub const CCTP_TOKEN_MINTER: Pubkey = pubkey!("E1bQJ8eMMn3zmeSewW3HQ8zmJr7KR75JonbwAtWx2bux");
+/// ["sender_authority"] — signs the transmitter CPI; no account exists at it.
+pub const CCTP_SENDER_AUTHORITY: Pubkey = pubkey!("45hzrGLQ2EGo1Ln7QpXjDwb589GDQ9H2aEXXw6ds6BFE");
+/// ["local_token", USDC mint] — carries the 10 M USDC per-message burn cap.
+pub const CCTP_LOCAL_TOKEN_USDC: Pubkey = pubkey!("CRBBbuLCyrkQy4dCTHxqstSmDQv4ajBeUVb9qUdMVaP1");
+/// ["remote_token_messenger", "6"] — names Base's TokenMessengerV2.
+pub const CCTP_REMOTE_TOKEN_MESSENGER_BASE: Pubkey = pubkey!("BwmDYtQ7jFj8ddaTmKa7fz9hyuK9n58mvc8G7DYNcKjM");
+/// ["message_transmitter"] of the transmitter program (local domain 5).
+pub const CCTP_MESSAGE_TRANSMITTER: Pubkey = pubkey!("W1k5ijkaSTo5iA5zChNpfzcy796fLhkBxfmJuR8W8HU");
+/// CCTP domain ids (Circle's fee endpoints; Base's transmitter says 6, Solana's 5).
+pub const CCTP_DOMAIN_SOLANA: u32 = 5;
+pub const CCTP_DOMAIN_BASE: u32 = 6;
+/// Seeds the program derives per call: Circle's denylist entry for an owner, and Anchor's event authority.
+pub const CCTP_SEED_DENYLIST: &[u8] = b"denylist_account";
+pub const CCTP_SEED_EVENT_AUTHORITY: &[u8] = b"__event_authority";
+/// Anchor's global instruction discriminator preimage for the burn.
+pub const CCTP_DEPOSIT_FOR_BURN_PREIMAGE: &[u8] = b"global:deposit_for_burn";
+/// sha256(that preimage)[..8] — Anchor's instruction discriminator, computed here, pinned by the seam test.
+pub const CCTP_DEPOSIT_FOR_BURN_DISCRIMINATOR: [u8; 8] = [215, 60, 61, 46, 114, 55, 128, 176];
+

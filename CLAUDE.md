@@ -33,8 +33,9 @@ built in full — never a "lite" notify-only variant — and launched together:
   into Aerodrome; a Solana-side USDC reserve keeps the repay rung atomic on
   Solana. The Base half is built (2026-09-13, A5.1: `StrategyRouter.openLpOnly`,
   `setSolanaRecipient`, `closeLpAndBurn`; design `SOLANA-ARCHITECTURE.md` §14);
-  the Solana burn and reserve (B3), the keeper's cross-chain class (A5.2) and
-  Stream C are not.
+  the Solana burn and reserve are built too (2026-09-13, B3.1: `set_base_account`,
+  `deposit_for_burn`, the entry-HF record and the per-position ladder on chain);
+  the keeper's cross-chain class (A5.2) and Stream C are not.
 
 The yield model is a **forecast, not a gate** (D4, D5): every curated pool is
 depositable in both modes after the user sees the forecast and acknowledges

@@ -6,9 +6,10 @@
 //   node solana/scripts/gen-addresses.mjs            → writes the file
 //   node solana/scripts/gen-addresses.mjs --check    → exit 1 if the committed file differs
 import { readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { KAMINO_ZCASH_MARKET, SOLANA_PROGRAMS, SOLANA_TOKENS, KLEND_SEEDS } from "@zyo/shared";
+import { CCTP_DOMAINS, CCTP_V2_SOLANA, KAMINO_ZCASH_MARKET, SOLANA_PROGRAMS, SOLANA_TOKENS, KLEND_SEEDS } from "@zyo/shared";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const target = join(here, "..", "programs", "oilskin", "src", "generated", "addresses.rs");
@@ -63,6 +64,29 @@ L.push("");
 L.push("/// klend PDA seed strings (klend-sdk 12.0.0 `utils/seeds.js`).");
 L.push(`pub const KLEND_SEED_LENDING_MARKET_AUTHORITY: &[u8] = b"${KLEND_SEEDS.lendingMarketAuthority}";`);
 L.push(`pub const KLEND_SEED_USER_METADATA: &[u8] = b"${KLEND_SEEDS.userMetadata}";`);
+L.push("");
+L.push("// Circle's CCTP V2 — the USDC rail to the user's Base account (docs/VERIFIED-SOLANA-FACTS.md Addenda 1 and 3;");
+L.push("// packages/shared/src/cctp.ts). PDAs derived with Circle's seeds and read live 2026-09-13; the program passes");
+L.push("// them by address so a wrong one cannot be handed to `deposit_for_burn`.");
+c("CCTP_TOKEN_MESSENGER_MINTER_V2", "TokenMessengerMinterV2 program.", CCTP_V2_SOLANA.programs.tokenMessengerMinterV2);
+c("CCTP_MESSAGE_TRANSMITTER_V2", "MessageTransmitterV2 program.", CCTP_V2_SOLANA.programs.messageTransmitterV2);
+c("CCTP_TOKEN_MESSENGER", "[\"token_messenger\"] of the messenger program.", CCTP_V2_SOLANA.pdas.tokenMessenger);
+c("CCTP_TOKEN_MINTER", "[\"token_minter\"].", CCTP_V2_SOLANA.pdas.tokenMinter);
+c("CCTP_SENDER_AUTHORITY", "[\"sender_authority\"] — signs the transmitter CPI; no account exists at it.", CCTP_V2_SOLANA.pdas.senderAuthority);
+c("CCTP_LOCAL_TOKEN_USDC", "[\"local_token\", USDC mint] — carries the 10 M USDC per-message burn cap.", CCTP_V2_SOLANA.pdas.localTokenUsdc);
+c("CCTP_REMOTE_TOKEN_MESSENGER_BASE", "[\"remote_token_messenger\", \"6\"] — names Base's TokenMessengerV2.", CCTP_V2_SOLANA.pdas.remoteTokenMessengerBase);
+c("CCTP_MESSAGE_TRANSMITTER", "[\"message_transmitter\"] of the transmitter program (local domain 5).", CCTP_V2_SOLANA.pdas.messageTransmitter);
+L.push(`/// CCTP domain ids (Circle's fee endpoints; Base's transmitter says 6, Solana's 5).`);
+L.push(`pub const CCTP_DOMAIN_SOLANA: u32 = ${CCTP_DOMAINS.solana};`);
+L.push(`pub const CCTP_DOMAIN_BASE: u32 = ${CCTP_DOMAINS.base};`);
+L.push(`/// Seeds the program derives per call: Circle's denylist entry for an owner, and Anchor's event authority.`);
+L.push(`pub const CCTP_SEED_DENYLIST: &[u8] = b"${CCTP_V2_SOLANA.seeds.denylistAccount}";`);
+L.push(`pub const CCTP_SEED_EVENT_AUTHORITY: &[u8] = b"${CCTP_V2_SOLANA.seeds.eventAuthority}";`);
+L.push(`/// Anchor's global instruction discriminator preimage for the burn.`);
+L.push(`pub const CCTP_DEPOSIT_FOR_BURN_PREIMAGE: &[u8] = b"${CCTP_V2_SOLANA.depositForBurnDiscriminatorPreimage}";`);
+const disc = createHash("sha256").update(CCTP_V2_SOLANA.depositForBurnDiscriminatorPreimage).digest().subarray(0, 8);
+L.push(`/// sha256(that preimage)[..8] — Anchor's instruction discriminator, computed here, pinned by the seam test.`);
+L.push(`pub const CCTP_DEPOSIT_FOR_BURN_DISCRIMINATOR: [u8; 8] = [${Array.from(disc).join(", ")}];`);
 L.push("");
 const out = L.join("\n") + "\n";
 

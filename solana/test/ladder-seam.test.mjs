@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { ENTRY_HF_FLOOR, HF_LADDER, LOAN_DUST_UNITS, hysteresisFor } from "@zyo/shared";
+import { EMERGENCY_HF_MIN_BPS, ENTRY_HF_FLOOR, HF_HYSTERESIS_MIN_BPS, HF_HYSTERESIS_SCALE_BPS, HF_HYSTERESIS_SPAN_BPS, HF_LADDER, LADDER_RUNG_FACTORS_PCT, LOAN_DUST_UNITS, MIN_LADDER_ENTRY_HF, hysteresisFor } from "@zyo/shared";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const rs = readFileSync(join(here, "..", "programs", "oilskin", "src", "generated", "ladder.rs"), "utf8");
@@ -59,4 +59,16 @@ test("no rung is disarmable below its own threshold, and rungs strictly descend 
     prev = r.hf;
   }
   assert.ok(HF_LADDER[0].hf < ENTRY_HF_FLOOR, "warn must sit below the entry floor");
+});
+
+test("the per-position derivation constants are shared's (the program derives each account's ladder from its recorded entry, §14.2)", () => {
+  const arr = rs.match(/pub const LADDER_RUNG_FACTORS_PCT: \[u64; (\d+)\] = \[([^\]]+)\];/);
+  assert.ok(arr, "LADDER_RUNG_FACTORS_PCT missing");
+  assert.equal(Number(arr[1]), LADDER_RUNG_FACTORS_PCT.length);
+  assert.deepEqual(arr[2].split(",").map((x) => Number(x.trim())), [...LADDER_RUNG_FACTORS_PCT]);
+  assert.equal(constU64("EMERGENCY_HF_MIN_BPS"), EMERGENCY_HF_MIN_BPS);
+  assert.equal(constU64("HF_HYSTERESIS_MIN_BPS"), HF_HYSTERESIS_MIN_BPS);
+  assert.equal(constU64("HF_HYSTERESIS_SCALE_BPS"), HF_HYSTERESIS_SCALE_BPS);
+  assert.equal(constU64("HF_HYSTERESIS_SPAN_BPS"), HF_HYSTERESIS_SPAN_BPS);
+  assert.equal(constU64("MIN_LADDER_ENTRY_HF_BPS"), Math.round(MIN_LADDER_ENTRY_HF * 10_000));
 });

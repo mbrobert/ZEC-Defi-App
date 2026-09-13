@@ -15,6 +15,7 @@
  * (the program admits one collateral).
  */
 import { PublicKey } from "@solana/web3.js";
+import { MIN_LADDER_ENTRY_HF, ladderBpsFor } from "@zyo/shared";
 import { stepLadder, validateLadder, type LadderRung, type LadderState } from "../engine/ladder.js";
 import type { Logger } from "../log.js";
 import { eventNow, type KeeperEvent, type Notifier } from "../notify/notifier.js";
@@ -104,6 +105,26 @@ export class SolanaMonitor {
 
   private get lastResortRung(): LadderRung {
     return [...this.d.ladder].sort((a, b) => a.severity - b.severity)[this.d.ladder.length - 1];
+  }
+
+  /**
+   * The ladder THIS account runs on (the twin of `HealthMonitor.resolveLadder`): derived from the entry HF
+   * the program recorded at the account's last borrow (`UserAccount.entry_hf_bps`, BUILD-PLAN D7 /
+   * SOLANA-ARCHITECTURE §14.2) with the same INTEGER rule the program applies (`ladderBpsFor`), so the rung
+   * the keeper names is the rung `keeper_protect` expects; the floor's ladder (`deps.ladder`) when there is
+   * no usable record, and the record says so (`entryHf: null`).
+   */
+  private resolveLadder(view: DiscoveredSolanaAccount | undefined): { ladder: readonly LadderRung[]; entryHf: number | null } {
+    const e = view ? Number(view.view.entryHfBps) : 0;
+    if (!Number.isFinite(e) || e < MIN_LADDER_ENTRY_HF * 10_000) return { ladder: this.d.ladder, entryHf: null };
+    try {
+      const bps = ladderBpsFor(e);
+      const ladder = bps.map((r, i) => ({ id: r.id, hf: r.hfBps / 10_000, disarmHf: r.disarmHfBps / 10_000, severity: r.severity, action: this.d.ladder[i]!.action }));
+      validateLadder(ladder);
+      return { ladder, entryHf: e / 10_000 };
+    } catch {
+      return { ladder: this.d.ladder, entryHf: null };
+    }
   }
 
   private async emit(e: Omit<KeeperEvent, "at">): Promise<void> {
@@ -301,11 +322,12 @@ export class SolanaMonitor {
     }
 
     const hf = valuation.kind === "OK" ? valuation.hf : Number.POSITIVE_INFINITY;
-    const { ladder: startState, refires, rearmedIds } = this.reArmIneffective(rec, hf, l);
-    const step = stepLadder(this.d.ladder, startState, hf);
+    const { ladder, entryHf } = this.resolveLadder(view);
+    const { ladder: startState, refires, rearmedIds } = this.reArmIneffective(rec, hf, l, ladder);
+    const step = stepLadder(ladder, startState, hf);
 
     if (!step.fire) {
-      const patch: Partial<Rec> = { ladder: step.next, lastHf: Number.isFinite(hf) ? hf : null, lastValuation: valuation.kind, lastEvaluatedAt: nowIso, unknownStreak: 0, rungRefires: refires };
+      const patch: Partial<Rec> = { ladder: step.next, lastHf: Number.isFinite(hf) ? hf : null, lastValuation: valuation.kind, lastEvaluatedAt: nowIso, unknownStreak: 0, rungRefires: refires, entryHf };
       if (step.episodeEnded) patch.episode = null;
       if (step.rearmed.length) l.info("rungs re-armed", { rungs: step.rearmed.map((r) => r.id), hf });
       if (step.episodeEnded) l.info("episode ended — account healthy again", { episode: rec.episode });
@@ -336,9 +358,10 @@ export class SolanaMonitor {
             d.updatedAt = nowIso;
           }
         }
-        const d: Disp = { key, account: rec.account, episode: a.episode, seq, action: fire.action, rung: fire.id, hf: valuation.hf, status: "PENDING", attempts: 0, createdAt: nowIso, updatedAt: nowIso };
+        const d: Disp = { key, account: rec.account, episode: a.episode, seq, action: fire.action, rung: fire.id, hf: valuation.hf, status: "PENDING", attempts: 0, createdAt: nowIso, updatedAt: nowIso, disarmHf: fire.disarmHf };
         s.dispatches.push(d);
         a.ladder = step.next;
+        a.entryHf = entryHf;
         a.lastHf = valuation.hf;
         a.lastValuation = "OK";
         a.lastEvaluatedAt = nowIso;
@@ -385,13 +408,13 @@ export class SolanaMonitor {
   }
 
   /** A rung whose action CONFIRMED but did not clear it re-arms, bounded per rung (Base audit C-MED-2). */
-  private reArmIneffective(rec: Rec, hf: number, l: Logger): { ladder: LadderState; refires: Record<string, number>; rearmedIds: string[] } {
+  private reArmIneffective(rec: Rec, hf: number, l: Logger, ladder: readonly LadderRung[]): { ladder: LadderState; refires: Record<string, number>; rearmedIds: string[] } {
     const refires: Record<string, number> = { ...(rec.rungRefires ?? {}) };
     const rearmedIds: string[] = [];
     const inFlight = this.d.store.listDispatches({ account: rec.account }).some((d) => d.status === "PENDING" || d.status === "SENT");
     if (inFlight) return { ladder: rec.ladder, refires, rearmedIds };
     const fired = [...rec.ladder.fired];
-    for (const rung of this.d.ladder) {
+    for (const rung of ladder) {
       if (!fired.includes(rung.id) || !(hf < rung.hf)) continue;
       const last = this.d.store
         .listDispatches({ account: rec.account })

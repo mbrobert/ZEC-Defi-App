@@ -7,7 +7,18 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { ENTRY_HF_FLOOR, HF_LADDER, LOAN_DUST_UNITS, hysteresisFor } from "@zyo/shared";
+import {
+  EMERGENCY_HF_MIN_BPS,
+  ENTRY_HF_FLOOR,
+  HF_HYSTERESIS_MIN_BPS,
+  HF_HYSTERESIS_SCALE_BPS,
+  HF_HYSTERESIS_SPAN_BPS,
+  HF_LADDER,
+  LADDER_RUNG_FACTORS_PCT,
+  LOAN_DUST_UNITS,
+  MIN_LADDER_ENTRY_HF,
+  hysteresisFor,
+} from "@zyo/shared";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const target = join(here, "..", "programs", "oilskin", "src", "generated", "ladder.rs");
@@ -31,6 +42,17 @@ lines.push(`/// A rung disarms once HF climbs back to rung + this: the floor lad
 lines.push(`pub const HF_HYSTERESIS_BPS: u64 = ${bps(hysteresisFor(ENTRY_HF_FLOOR))};`);
 lines.push(`/// Debt at or below this many loan-token base units is "fully repaid" (shared LOAN_DUST_UNITS).`);
 lines.push(`pub const LOAN_DUST_UNITS: u64 = ${LOAN_DUST_UNITS};`);
+lines.push("");
+lines.push("/// The per-position ladder's derivation (shared `ladderBpsFor`, BUILD-PLAN D7 / SOLANA-ARCHITECTURE §14.2):");
+lines.push("/// rung_i = round_to_100bps(1_000_000 + (e − 10_000) × k_i) in hundredths of a bp, emergency ≥ the minimum, each");
+lines.push("/// milder rung ≥ the next + 100; hysteresis = round_to_100bps(max(min, scale × (e − 10_000) ÷ span)).");
+lines.push(`pub const LADDER_RUNG_FACTORS_PCT: [u64; ${LADDER_RUNG_FACTORS_PCT.length}] = [${LADDER_RUNG_FACTORS_PCT.join(", ")}];`);
+lines.push(`pub const EMERGENCY_HF_MIN_BPS: u64 = ${EMERGENCY_HF_MIN_BPS};`);
+lines.push(`pub const HF_HYSTERESIS_MIN_BPS: u64 = ${HF_HYSTERESIS_MIN_BPS};`);
+lines.push(`pub const HF_HYSTERESIS_SCALE_BPS: u64 = ${HF_HYSTERESIS_SCALE_BPS};`);
+lines.push(`pub const HF_HYSTERESIS_SPAN_BPS: u64 = ${HF_HYSTERESIS_SPAN_BPS};`);
+lines.push(`/// Below this entry HF four rungs do not fit; a record under it (or 0) runs the floor's ladder (shared MIN_LADDER_ENTRY_HF).`);
+lines.push(`pub const MIN_LADDER_ENTRY_HF_BPS: u64 = ${bps(MIN_LADDER_ENTRY_HF)};`);
 lines.push("");
 lines.push("/// The ladder, mildest → most severe, in the order shared HF_LADDER declares it.");
 lines.push("#[derive(Clone, Copy, Debug, PartialEq, Eq)]");

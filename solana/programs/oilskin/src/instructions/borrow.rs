@@ -1,6 +1,8 @@
 //! `borrow`: USDC from the Kamino reserve into the Account's USDC ATA, with the entry floor enforced HERE —
 //! after the borrow the refreshed HF must be ≥ ENTRY_HF_FLOOR (1.25) and the LTV ≤ the reserve's own LTV — the
-//! only two ceilings since 2026-09-12 (no product-wide cap; BUILD-PLAN D7).
+//! only two ceilings since 2026-09-12 (no product-wide cap; BUILD-PLAN D7). The refreshed HF is then RECORDED
+//! on the Account (`entry_hf_bps`, the twin of `StrategyRouter.entryHfWad`): the ladder `keeper_protect` judges
+//! against derives from it (SOLANA-ARCHITECTURE §14.2), and the last borrow is the record.
 
 use crate::errors::OilskinError;
 use crate::events::Borrowed;
@@ -41,6 +43,10 @@ pub fn handler(ctx: Context<Borrow>, amount_usdc: u64) -> Result<()> {
     let ltv = health::ltv_bps(&view)?;
     require!(ltv <= health::offered_ltv_cap_bps(zec.loan_to_value_pct), OilskinError::LtvAboveOffer);
 
-    emit!(Borrowed { account: ctx.accounts.account.key(), amount_usdc, hf_after_bps: hf, ltv_after_bps: ltv });
+    // A dust borrow reads as the no-debt sentinel and records nothing; the previous record stands.
+    if hf != health::HF_NO_DEBT {
+        ctx.accounts.account.entry_hf_bps = hf;
+    }
+    emit!(Borrowed { account: ctx.accounts.account.key(), amount_usdc, hf_after_bps: hf, ltv_after_bps: ltv, entry_hf_bps: ctx.accounts.account.entry_hf_bps });
     Ok(())
 }

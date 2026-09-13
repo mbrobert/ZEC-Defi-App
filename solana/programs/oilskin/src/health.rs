@@ -4,7 +4,10 @@
 //! expressed in basis points of 1.0 so it compares directly with the generated ladder constants. No debt (or
 //! dust) is `u64::MAX`, the "healthy" sentinel, never a division by zero.
 
-use crate::generated::ladder::{ENTRY_HF_FLOOR_BPS, LOAN_DUST_UNITS};
+use crate::generated::ladder::{
+    Rung, EMERGENCY_HF_MIN_BPS, ENTRY_HF_FLOOR_BPS, HF_HYSTERESIS_MIN_BPS, HF_HYSTERESIS_SCALE_BPS, HF_HYSTERESIS_SPAN_BPS,
+    LADDER, LADDER_RUNG_FACTORS_PCT, LOAN_DUST_UNITS, MIN_LADDER_ENTRY_HF_BPS,
+};
 use crate::kamino::ObligationView;
 use crate::errors::OilskinError;
 use anchor_lang::prelude::*;
@@ -64,6 +67,65 @@ pub fn require_entry_floor(view: &ObligationView, err: OilskinError) -> Result<u
         return Err(err.into());
     }
     Ok(hf)
+}
+
+// ---------------------------------------------------------------- the per-position ladder (D7 / §14.2)
+
+/// Round a value in hundredths of a basis point to the nearest 100 bps (0.01 of HF), halves up — shared `round2`.
+fn round_to_100_bps(hundredths: u128) -> u64 {
+    ((hundredths + 5_000) / 10_000 * 100) as u64
+}
+
+/// shared `hysteresisBpsFor`: max(min, scale × (e − 1) ÷ span), to 0.01. Input and output in bps.
+pub fn hysteresis_bps_for(entry_hf_bps: u64) -> u64 {
+    let buffer = (entry_hf_bps - 10_000) as u128;
+    let scaled = (HF_HYSTERESIS_SCALE_BPS as u128) * 100 * buffer / (HF_HYSTERESIS_SPAN_BPS as u128);
+    round_to_100_bps(scaled.max((HF_HYSTERESIS_MIN_BPS as u128) * 100))
+}
+
+/// shared `ladderBpsFor`: the four rungs a position opened at `entry_hf_bps` runs on, in the generated order,
+/// each with its disarm level. Requires `entry_hf_bps ≥ MIN_LADDER_ENTRY_HF_BPS` (the caller falls back below it).
+pub fn ladder_for(entry_hf_bps: u64) -> [Rung; 4] {
+    let buffer = (entry_hf_bps - 10_000) as u128;
+    let h = hysteresis_bps_for(entry_hf_bps);
+    let mut hf = [0u64; 4];
+    for i in 0..4 {
+        hf[i] = round_to_100_bps(1_000_000 + buffer * (LADDER_RUNG_FACTORS_PCT[i] as u128));
+    }
+    hf[3] = hf[3].max(EMERGENCY_HF_MIN_BPS);
+    for i in (0..3).rev() {
+        hf[i] = hf[i].max(hf[i + 1] + 100);
+    }
+    let mut out = LADDER;
+    for i in 0..4 {
+        out[i].hf_bps = hf[i];
+        out[i].disarm_hf_bps = hf[i] + h;
+    }
+    out
+}
+
+/// The ladder for a recorded entry, or the floor's when there is no usable record — shared `ladderForRecorded`:
+/// 0 (no record), under the minimum, or a warn rung that would not sit below the entry → `LADDER`.
+pub fn ladder_for_recorded(entry_hf_bps: u64) -> [Rung; 4] {
+    if entry_hf_bps < MIN_LADDER_ENTRY_HF_BPS || entry_hf_bps == HF_NO_DEBT {
+        return LADDER;
+    }
+    let l = ladder_for(entry_hf_bps);
+    if l[0].hf_bps >= entry_hf_bps {
+        return LADDER;
+    }
+    l
+}
+
+/// The cross-chain reserve (§14.3): the USDC that lifts HF from the repay rung to its disarm level with no
+/// collateral change — ceil(D × (disarm₂ − rung₂) ÷ disarm₂) — for a debt in base units, on the recorded ladder.
+pub fn reserve_units_for(debt_units: u64, entry_hf_bps: u64) -> Result<u64> {
+    let repay = ladder_for_recorded(entry_hf_bps)[1];
+    let num = (debt_units as u128)
+        .checked_mul((repay.disarm_hf_bps - repay.hf_bps) as u128)
+        .ok_or(OilskinError::HealthOverflow)?;
+    let den = repay.disarm_hf_bps as u128;
+    Ok(u64::try_from((num + den - 1) / den).map_err(|_| OilskinError::HealthOverflow)?)
 }
 
 #[cfg(test)]
@@ -131,6 +193,60 @@ mod tests {
         assert_eq!(hf_bps(&dust).unwrap(), HF_NO_DEBT);
         let not_dust = view(10_000, 1, 65, LOAN_DUST_UNITS as u128 + 1);
         assert!(!debt_is_dust(&not_dust));
+    }
+
+    #[test]
+    fn the_ladder_derives_from_the_entry_as_shared_does() {
+        // shared health.test.ts: 1.625 → 1.57 / 1.40 / 1.23 / 1.06, hysteresis 0.06
+        let l = ladder_for(16_250);
+        assert_eq!(l.iter().map(|r| (r.hf_bps, r.disarm_hf_bps)).collect::<Vec<_>>(), vec![(15_700, 16_300), (14_000, 14_600), (12_300, 12_900), (10_600, 11_200)]);
+        assert_eq!(hysteresis_bps_for(16_250), 600);
+        // the floor: 1.23 / 1.16 / 1.09 / 1.05, hysteresis 0.02 — equal to the generated floor ladder
+        assert_eq!(ladder_for(12_500).iter().map(|r| r.hf_bps).collect::<Vec<_>>(), LADDER.iter().map(|r| r.hf_bps).collect::<Vec<_>>());
+        assert_eq!(ladder_for(12_500).iter().map(|r| r.disarm_hf_bps).collect::<Vec<_>>(), LADDER.iter().map(|r| r.disarm_hf_bps).collect::<Vec<_>>());
+        // BUILD-PLAN §2b's worked row: 1.30 → 1.27 / 1.19 / 1.11 / 1.05, hysteresis 0.03
+        assert_eq!(ladder_for(13_000).iter().map(|r| r.hf_bps).collect::<Vec<_>>(), vec![12_700, 11_900, 11_100, 10_500]);
+        assert_eq!(hysteresis_bps_for(13_000), 300);
+        // a generous entry: 2.60 → 2.46 / 2.02 / 1.58 / 1.14, hysteresis 0.15
+        assert_eq!(ladder_for(26_000).iter().map(|r| r.hf_bps).collect::<Vec<_>>(), vec![24_600, 20_200, 15_800, 11_400]);
+        assert_eq!(hysteresis_bps_for(26_000), 1_500);
+        // near the bottom the clamp lifts the rungs 0.01 apart: 1.10 → 1.09 / 1.07 / 1.06 / 1.05
+        assert_eq!(ladder_for(11_000).iter().map(|r| r.hf_bps).collect::<Vec<_>>(), vec![10_900, 10_700, 10_600, 10_500]);
+        // ids and severities travel with the rungs
+        assert_eq!(ladder_for(16_250).iter().map(|r| r.id).collect::<Vec<_>>(), vec![0, 1, 2, 3]);
+        // shape, every entry from the minimum to 5.00: strictly descending, disarm above the trigger, warn under the entry
+        let mut e = MIN_LADDER_ENTRY_HF_BPS;
+        while e <= 50_000 {
+            let l = ladder_for(e);
+            assert!(l[0].hf_bps < e, "{e}");
+            for i in 0..4 {
+                assert!(l[i].disarm_hf_bps > l[i].hf_bps);
+                if i > 0 {
+                    assert!(l[i].hf_bps < l[i - 1].hf_bps, "{e}");
+                }
+            }
+            assert!(l[3].hf_bps >= EMERGENCY_HF_MIN_BPS);
+            e += 100;
+        }
+    }
+
+    #[test]
+    fn no_record_or_an_unusable_one_runs_the_floors_ladder() {
+        assert_eq!(ladder_for_recorded(0), LADDER);
+        assert_eq!(ladder_for_recorded(10_900), LADDER);
+        assert_eq!(ladder_for_recorded(HF_NO_DEBT), LADDER);
+        assert_eq!(ladder_for_recorded(16_250), ladder_for(16_250));
+        assert_ne!(ladder_for_recorded(16_250), LADDER);
+    }
+
+    #[test]
+    fn the_reserve_is_the_rung_two_requirement_rounded_up() {
+        // shared health.test.ts: 4,000 USDC of debt at entry 1.625 → ceil(4_000e6 × 600 / 14_600) = 164,383,562
+        assert_eq!(reserve_units_for(4_000_000_000, 16_250).unwrap(), 164_383_562);
+        assert_eq!(reserve_units_for(0, 16_250).unwrap(), 0);
+        assert_eq!(reserve_units_for(1, 16_250).unwrap(), 1);
+        // no record: the floor ladder's (1.18 − 1.16) / 1.18 = 1.69 %
+        assert_eq!(reserve_units_for(4_000_000_000, 0).unwrap(), 67_796_611);
     }
 
     #[test]

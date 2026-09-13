@@ -34,7 +34,14 @@ pub struct UserAccount {
     /// The Kamino obligation this account owns (PDA of klend, owner = this account).
     pub obligation: Pubkey,
     pub created_slot: u64,
-    pub _reserved: [u8; 64],
+    /// The health factor right after the last `borrow`, in bps — the twin of `StrategyRouter.entryHfWad`
+    /// (BUILD-PLAN D7; SOLANA-ARCHITECTURE §14.1–14.2). The ladder the keeper acts on derives from it. 0 = no
+    /// record (an account from before this field, or never borrowed): the floor's ladder runs.
+    pub entry_hf_bps: u64,
+    /// The user's Base `OilskinAccount`, left-padded to 32 bytes: the only `mint_recipient` a burn may name
+    /// (§14.1). Zero = not linked; `deposit_for_burn` refuses.
+    pub base_account: [u8; 32],
+    pub _reserved: [u8; 24],
 }
 
 /// A keeper's delegation. The keeper may call `keeper_protect` and nothing else, inside these bounds.

@@ -99,7 +99,9 @@ export class KeeperSolanaDispatcher implements SolanaDispatcher {
     const account = new PublicKey(record.account);
     const rungIx = this.d.rungIndex(record.rung);
     if (rungIx === undefined) return { status: "REFUSED", permanent: true, reason: `unknown rung ${record.rung}` };
-    const rung = this.d.rungs[rungIx];
+    // The disarm level is the ACCOUNT's (the monitor derived its ladder from the recorded entry HF and wrote
+    // the level on the record); the floor ladder's only for a record from before that.
+    const rung: RungTarget = { id: rungIx, disarmHf: record.disarmHf ?? this.d.rungs[rungIx].disarmHf };
 
     // 1. Re-value now.
     const view = await this.readUserAccount(account, signal);

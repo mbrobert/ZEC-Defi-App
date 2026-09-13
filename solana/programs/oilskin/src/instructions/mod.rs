@@ -1,21 +1,25 @@
 pub mod borrow;
 pub mod close_position;
 pub mod deposit;
+pub mod deposit_for_burn;
 pub mod grant;
 pub mod init_account;
 pub mod kamino_ctx;
 pub mod keeper_protect;
 pub mod repay;
+pub mod set_base_account;
 pub mod transfer_out;
 pub mod withdraw;
 
 pub use borrow::*;
 pub use close_position::*;
 pub use deposit::*;
+pub use deposit_for_burn::*;
 pub use grant::*;
 pub use init_account::*;
 pub use kamino_ctx::*;
 pub use keeper_protect::*;
 pub use repay::*;
+pub use set_base_account::*;
 pub use transfer_out::*;
 pub use withdraw::*;

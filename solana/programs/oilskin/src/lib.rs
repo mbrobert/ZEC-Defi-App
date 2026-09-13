@@ -11,6 +11,7 @@
 
 use anchor_lang::prelude::*;
 
+pub mod cctp;
 pub mod errors;
 pub mod events;
 pub mod generated;
@@ -55,6 +56,17 @@ pub mod oilskin {
     /// Any token from the Account's ATA to the wallet. Owner-only, no other gate.
     pub fn transfer_out(ctx: Context<TransferOut>, amount: u64) -> Result<()> {
         instructions::transfer_out::handler(ctx, amount)
+    }
+
+    /// Record the user's Base `OilskinAccount` (left-padded to 32 bytes) as the only place a burn may go (D6, §14.1).
+    pub fn set_base_account(ctx: Context<SetBaseAccount>, base_account: [u8; 32]) -> Result<()> {
+        instructions::set_base_account::handler(ctx, base_account)
+    }
+
+    /// Burn USDC from the Account through Circle's CCTP V2 for a mint to the recorded Base account (D6, §14.4);
+    /// refused when the Account's USDC after the burn would be under the reserve the debt requires.
+    pub fn deposit_for_burn(ctx: Context<DepositForBurn>, amount: u64, max_fee: u64, min_finality_threshold: u32) -> Result<()> {
+        instructions::deposit_for_burn::handler(ctx, amount, max_fee, min_finality_threshold)
     }
 
     /// Repay everything then withdraw everything.
