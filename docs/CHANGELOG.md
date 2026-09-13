@@ -151,6 +151,26 @@ liquidity provision; EIP = Ethereum Improvement Proposal.
   regenerations older); the hour-after pool observation moved into Addendum 14, which the top now cites.
   Levers unchanged (×12.2 inside ×12.16–×12.25; ×8.67 inside ×7.06–×10.23).
 
+## 2026-09-13 — Internal audit of the Solana module and the cross-chain code: two fixes, six observations
+
+`docs/AUDIT-2026-09-13.md` — the first adversarial read of everything built today (A5.1, B3.1, A5.2, Stream C)
+and the standing B6 pass over the Solana program and keeper.
+
+- **S-1, medium:** the bridge stall window could never expire. A burn's age was measured from the dispatch
+  record's `updatedAt`, which every tick rewrote, so it read about zero for ever — a rung stuck behind an
+  outage at Circle would have waited indefinitely instead of falling back to the keeper-funded sale after
+  thirty minutes. Measured from `createdAt` now, with a regression test that ages a record by two hours.
+- **S-2, medium:** `closeLpAndBurn` required only that Circle's fee be below the amount burned, so a
+  compromised keeper — still inside its USDC budget, still burning to the user's own account — could authorise
+  a fee of the whole burn less one unit and almost nothing would arrive. Capped at 1 % (`MAX_CCTP_FEE_BPS`)
+  against Circle's real 1.3 basis points, refused as `MaxFeeTooLarge`. The design's claim that a compromised
+  key "can at worst churn within budgets" is true again.
+- Six observations recorded rather than changed, each with why it is a judgement: the reserve unspent while a
+  bridged rung crosses the full need, an entry HF unbounded above, the keeper paying the delivery's rent, a
+  Solana recipient the router cannot verify, a mismatch re-logged every tick, and the reserve being a
+  burn-time check the owner may withdraw past.
+- Contracts 404 → **407 / 0 / 12** (37 suites); ABI 440 → **442**; keeper 310 → **311**; web **199**.
+
 ## 2026-09-13 — Stream C: the cross-chain glue — Circle's attestation, the Solana delivery, and the runbook
 
 The five-step rung is now a **resumable stage machine** (`docs/CROSSCHAIN-RUNBOOK-2026-09-13.md`): each stage is

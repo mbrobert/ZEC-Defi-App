@@ -7672,6 +7672,11 @@
           "stateMutability": "view",
           "outputs": "address"
         },
+        "MAX_CCTP_FEE_BPS()": {
+          "selector": "0x49e4bece",
+          "stateMutability": "view",
+          "outputs": "uint256"
+        },
         "PERMIT2()": {
           "selector": "0x6afdd850",
           "stateMutability": "view",
@@ -7882,6 +7887,9 @@
         "MaxFeeNotBelowAmount(uint256,uint256)": {
           "selector": "0x78b7d035"
         },
+        "MaxFeeTooLarge(uint256,uint256)": {
+          "selector": "0x7e66d4ce"
+        },
         "NoSolanaRecipient(address)": {
           "selector": "0x6c99c2d5"
         },
@@ -8000,6 +8008,19 @@
               "name": "",
               "type": "address",
               "internalType": "contract ILpVenue"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "MAX_CCTP_FEE_BPS",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256",
+              "internalType": "uint256"
             }
           ],
           "stateMutability": "view"
@@ -9066,6 +9087,22 @@
             },
             {
               "name": "amount",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "MaxFeeTooLarge",
+          "inputs": [
+            {
+              "name": "maxFee",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "cap",
               "type": "uint256",
               "internalType": "uint256"
             }

@@ -51,6 +51,13 @@ contract StrategyRouter is Peripheral {
     IPermit2 public immutable PERMIT2;
     /// @notice The debt asset (USDC on Base).
     address public immutable USDC;
+    /// @notice The most of a burn a caller may authorise Circle to take as its delivery fee, in basis points
+    ///         (1 %). Circle's own Fast Transfer minimum on this route was 1.3 bp when it was read
+    ///         (`VERIFIED-SOLANA-FACTS.md` Addendum 1), so this is generous — it exists only so that
+    ///         "below the amount" cannot mean "nearly all of it". Without it a keeper acting inside its USDC
+    ///         budget could authorise a fee of the whole burn less one unit and the user would receive
+    ///         almost nothing on the other chain (audit 2026-09-13, S-2).
+    uint256 public constant MAX_CCTP_FEE_BPS = 100;
     /// @notice Circle's CCTP V2 TokenMessengerV2 on this chain (`docs/VERIFIED-SOLANA-FACTS.md` Addenda 1
     ///         and 3) and Solana's CCTP domain (5) — the rail `closeLpAndBurn` sends USDC home on
     ///         (BUILD-PLAN D6 / A5). `address(0)` on a deployment without the cross-chain loop (Base
@@ -227,6 +234,7 @@ contract StrategyRouter is Peripheral {
     error CrossChainDisabled();
     error NoSolanaRecipient(address account);
     error MaxFeeNotBelowAmount(uint256 maxFee, uint256 amount);
+    error MaxFeeTooLarge(uint256 maxFee, uint256 cap);
     error PoolWithoutUsdc(bytes32 poolId);
     /// @notice Neither LP venue serves `poolId`.
     error UnknownPool(bytes32 poolId);
@@ -484,7 +492,8 @@ contract StrategyRouter is Peripheral {
     ///      and the swap follow `unwind`'s rules exactly (an un-closable id is skipped, the swap is
     ///      bounded by the quote and the band, a dust leg is kept and reported); `burnAmount = max`
     ///      burns the account's whole USDC balance after the close and a fixed amount reverts
-    ///      `UsdcShort` when the account holds less; `maxFee` is below the amount; the approval is
+    ///      `UsdcShort` when the account holds less; `maxFee` is below the amount AND within
+    ///      `MAX_CCTP_FEE_BPS` of it; the approval is
     ///      exact and reset, so a keeper grant's USDC budget bounds what leaves; the router's balance
     ///      of every token touched is unchanged.
     function closeLpAndBurn(BurnParams calldata p) external returns (uint256 usdcFromLp, uint256 burned) {
@@ -506,6 +515,8 @@ contract StrategyRouter is Peripheral {
         if (burned == 0) revert ZeroAmount();
         if (held < burned) revert UsdcShort(burned, held);
         if (p.maxFee >= burned) revert MaxFeeNotBelowAmount(p.maxFee, burned);
+        uint256 feeCap = (burned * MAX_CCTP_FEE_BPS) / 10_000;
+        if (p.maxFee > feeCap) revert MaxFeeTooLarge(p.maxFee, feeCap);
 
         _approveCallReset(
             USDC,

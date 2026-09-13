@@ -450,13 +450,18 @@ export class SolanaMonitor {
    * Age in seconds of the youngest Base burn still in flight for the account — a dispatch with `bridge` whose
    * stage is not "delivered" and whose status is SENT or CONFIRMED — or null. The dispatcher waits on it
    * inside the stall window and falls back to the single-chain path past it (`bridgeDecision`).
+   *
+   * Measured from `createdAt`, the moment the rung fired. It was `updatedAt` until the 2026-09-13 audit
+   * (S-1): every tick re-enters a SENT record and rewrites `updatedAt`, so the age never grew, the stall
+   * window never expired, and a bridge stuck behind an outage at Circle would have kept the account waiting
+   * for ever instead of falling back to the keeper-funded sale — the one thing the window exists to do.
    */
   private bridgeInFlightAgeS(account: string): number | null {
     const nowMs = this.now().getTime();
     let youngest: number | null = null;
     for (const d of this.d.store.listDispatches({ account })) {
       if (!d.bridge || d.bridge.stage === "delivered" || (d.status !== "SENT" && d.status !== "CONFIRMED")) continue;
-      const age = Math.max(0, Math.floor((nowMs - Date.parse(d.updatedAt)) / 1000));
+      const age = Math.max(0, Math.floor((nowMs - Date.parse(d.createdAt)) / 1000));
       if (youngest === null || age < youngest) youngest = age;
     }
     return youngest;

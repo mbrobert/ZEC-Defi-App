@@ -481,4 +481,35 @@ describe("the cross-chain pair on the Solana monitor (D6 / A5.2)", () => {
     );
     await r.close();
   });
+
+  it("AUDIT-2026-09-13 S-1: a burn in flight ages from when the rung FIRED, not from the last tick — the stall window has to be able to expire", async () => {
+    const r = await rig();
+    const id = r.world.add(10n * ONE_ZEC, debtForHf(10n * ONE_ZEC, 1000, 1.63), 0n);
+    await r.tick();
+    r.world.zecUsd = priceAt(between(R.derisk, R.emergency));
+    r.fake.script.push((intent) => {
+      intent.onPairRead?.(linked);
+      return { status: "SENT", signature: BASE_HASH, bridge: { chain: "base", stage: "burn-confirmed", burnTxHash: BASE_HASH, amountUsdc: "1000000000", recipient: linked.expectedRecipient } };
+    });
+    await r.tick();
+
+    // Two hours pass with the keeper re-entering the record every tick, which rewrites `updatedAt`. Before the
+    // fix the age was measured from THAT, so it read ~0 for ever and the fallback to the single-chain path
+    // could never trigger, however long Circle was down.
+    const firedAt = new Date(Date.now() - 7200_000).toISOString();
+    await r.store.mutate((s) => {
+      const d = s.dispatches.find((x) => x.account === id && x.bridge)!;
+      d.createdAt = firedAt;
+      d.updatedAt = new Date().toISOString();
+    });
+    const seen: (number | null | undefined)[] = [];
+    r.fake.script.push((intent) => {
+      seen.push(intent.inFlightAgeS);
+      return { status: "SENT", signature: BASE_HASH, bridge: { chain: "base", stage: "burn-confirmed", burnTxHash: BASE_HASH, amountUsdc: "1000000000", recipient: linked.expectedRecipient } };
+    });
+    await r.tick();
+    assert.equal(seen.length, 1, "the rung fired again and the dispatcher was asked");
+    assert.ok(typeof seen[0] === "number" && seen[0]! >= 7100, `the burn should read about two hours old, got ${seen[0]}`);
+    await r.close();
+  });
 });
