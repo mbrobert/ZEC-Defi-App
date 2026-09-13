@@ -5,6 +5,9 @@ import { KAMINO_WORDING, SOLANA_DISCLOSURES } from "@/lib/solana/copy";
 const RISKS_URL = "https://github.com/mbrobert/ZEC-Defi-App/blob/main/docs/RISKS.md#22--solana-module-bridged-zec-on-kamino";
 const PRIVACY_URL = "https://github.com/mbrobert/ZEC-Defi-App/blob/main/docs/PRIVACY.md";
 
+/** The step's title and the first disclosure's title are one string (SOLANA-ARCHITECTURE §8). */
+const STEP_TITLE = SOLANA_DISCLOSURES.bridged_zec.title;
+
 /**
  * Step 1 (SOLANA-ARCHITECTURE.md §8): what the user's ZEC on Solana is, in Kamino's own words first and then
  * Oilskin's additions, before any number is shown. One decision: "I have read this."
@@ -14,7 +17,7 @@ export default function BridgedZecStep({ acknowledged, onAcknowledge }: { acknow
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-[19px]">Your ZEC on Solana is a bridged token</h2>
+        <h2 className="text-[19px]">{STEP_TITLE}</h2>
         <p className="mt-1 text-[13.5px] text-oil-ink2">Before any number, what you would be depositing and who can change the rules. Kamino, the lending market this position lives on, says this about the token:</p>
       </div>
       <blockquote className="card border-l-4 border-oil-brass p-4 text-[13.5px] text-oil-ink" data-testid="kamino-wording">
@@ -28,9 +31,11 @@ export default function BridgedZecStep({ acknowledged, onAcknowledge }: { acknow
       </blockquote>
       <div className="space-y-3">
         {ours.map((d) => (
+          // The first disclosure IS this step's title (SOLANA-ARCHITECTURE §8 names the step after it), so its
+          // card carries the body alone — printing the heading twice in a row read as a rendering fault.
           <div key={d.title} className="card p-4">
-            <div className="text-[14px] font-semibold">{d.title}</div>
-            <p className="mt-1 text-[13px] text-oil-ink2">{d.body}</p>
+            {d.title !== STEP_TITLE && <div className="text-[14px] font-semibold">{d.title}</div>}
+            <p className={`text-[13px] text-oil-ink2 ${d.title === STEP_TITLE ? "" : "mt-1"}`}>{d.body}</p>
           </div>
         ))}
       </div>

@@ -371,6 +371,32 @@ test.describe("Oilskin demo mode", () => {
       await page.getByTestId("wizard-next").click();
       await noOverflow(`/new sign (${mode})`);
     }
+
+    // Page-level overflow is not the only kind. A grid item can paint OUTSIDE its own card while the
+    // document never scrolls sideways — which is what the collateral cards did: at 1024 the cbZEC card's
+    // "disabled" chip ended 31px past the card's right edge, in the gutter before the projection panel.
+    // Neither project viewport (1360, 390) covers the band where three cards sit beside that panel, so
+    // nothing failed. This checks the cards against their OWN boxes, at a width inside that band.
+    const noEscapingContent = async (label: string) => {
+      const escaped = await page.evaluate(() =>
+        [...document.querySelectorAll('[data-testid^="collateral-"], [data-testid^="strategy-"]')]
+          .filter((el) => el.scrollWidth > el.clientWidth + 1)
+          .map((el) => `${(el as HTMLElement).dataset.testid}: content ${el.scrollWidth}px in a ${el.clientWidth}px card`),
+      );
+      expect(escaped, label).toEqual([]);
+    };
+    await page.setViewportSize({ width: 1024, height: 720 });
+    for (const mode of ["simple", "advanced"] as const) {
+      await page.goto("/new");
+      await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+      await setMode(page, mode);
+      await noOverflow(`/new collateral at 1024 (${mode})`);
+      await noEscapingContent(`/new collateral at 1024 (${mode})`);
+      await page.getByTestId("wizard-next").click();
+      await page.getByTestId("wizard-next").click();
+      await noOverflow(`/new strategy at 1024 (${mode})`);
+      await noEscapingContent(`/new strategy at 1024 (${mode})`);
+    }
   });
 
   test("wallet connect control: one primary button disconnected; connected pill (avatar, address, chain, USDC) with copy/Basescan/disconnect menu", async ({ page }) => {

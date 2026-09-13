@@ -3,6 +3,34 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-13 — Five findings from driving the site, and the overflow test that could not have caught the first
+
+The web app was walked page by page in demo mode at 1024 and 375 wide. Web unit **199 / 199**, e2e **18 passed /
+6 skipped**, zero console errors on every page, before and after.
+
+- **Collateral cards painted outside themselves.** At 1024 the cbZEC card's "disabled" chip ended 31 px past the
+  card's right edge, in the gutter before the projection panel — `overflow-x: visible`, so nothing was clipped and
+  nothing scrolled; it simply escaped. The same cards also **centred their content vertically** (a `<button>`'s
+  default), so Price / Liq. threshold sat at three different heights across the row. Both fixed in
+  `CollateralStep`: the card is a top-aligned column that may shrink (`min-w-0`), the header row wraps.
+- **The e2e overflow test could not have caught it.** It measures `documentElement.scrollWidth` only — page-level
+  sideways scroll — and its two viewports are 1360 and 390, neither inside the band where three cards sit beside
+  the projection panel. It now also checks every collateral and strategy card against **its own** box at 1024.
+  Reverting the fix makes it fail by name ("collateral-cbZEC: content 198px in a 167px card"), which is the only
+  evidence a regression test is worth anything.
+- **The forecast line is grouped, not shortened.** Every number D5 asks for is still there — both LP-net models
+  are a decision, not decoration (`BETA-SCOPE` yield row) — but the run-on now wraps at its separators instead of
+  mid-phrase, and the two-model comparison is one step dimmer because it qualifies LP net rather than standing
+  beside it. The first attempt used `whitespace-nowrap` and pushed the 390 px phone sideways by 44 px; the
+  overflow test caught that too.
+- **The Solana step stopped printing its own title twice.** `BridgedZecStep`'s heading and the first disclosure's
+  heading are one string by design (`SOLANA-ARCHITECTURE` §8 names the step after it), so the card now carries the
+  body alone — two identical headings in a row read as a rendering fault.
+- **The nav tab strip.** It shared a row with the controls from `sm` up, so between 768 and 1180 it was squeezed to
+  a scrollable sliver and "ZEC on Solana" sat off-screen with nothing to say so. It takes its own full-width row
+  below `xl`, which is where the 1180 px container can actually hold logo + tabs + controls. On a phone the nav's
+  fourth row of chrome is gone: the "Demo" chip said exactly what the full-width demo banner below it says.
+
 ## 2026-09-13 — ROADMAP §1 stops keeping its own copy of the counts, and `git status` is clean
 
 §1 was measured at `d2f7760` and never re-measured. By the end of the same day every number in its table was

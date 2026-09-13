@@ -95,10 +95,31 @@ export default function StrategyStep({
             {c.stale && <Chip kind="warn">stale sample</Chip>}
           </div>
           {c.lpPriced ? (
-            <div className="num mt-0.5 text-[12.3px] text-oil-ink3" data-testid={`forecast-${c.poolId}-${c.setting}`}>
-              rewards {fmtPct(c.emissionsGrossPct ?? NaN, 1)} gross → {fmtPct(c.emissionsNetPct ?? NaN, 1)} after fees · price-move drag {fmtSignedPct(c.dragPct ?? NaN, 1)} · LP net {fmtSignedPct(c.lpNetPct ?? NaN, 2)} (stricter model {c.mcLpNetPct === null ? "—" : fmtSignedPct(c.mcLpNetPct, 2)}
-              {c.modelGapPts !== null ? `, gap ${c.modelGapPts.toFixed(2)} pt` : ""}) · borrow −{fmtPct(c.borrowAprAfterPct ?? c.borrowAprNowPct ?? borrowShown, 2)}
-              {c.breakEvenEmissionsMultiple !== null ? ` · needs ${c.breakEvenEmissionsMultiple.toFixed(2)}× today's rewards to break even` : ""}
+            <div className="num mt-0.5 flex flex-wrap items-baseline gap-x-1.5 text-[12.3px] text-oil-ink3" data-testid={`forecast-${c.poolId}-${c.setting}`}>
+              {/* Every number D5 asks for, in groups that wrap at the separators instead of mid-phrase; the
+                  two-model comparison is the same fact, one step dimmer, because it qualifies LP net rather
+                  than standing beside it. Do not collapse the text — BETA-SCOPE's yield row names it. */}
+              <span>
+                rewards {fmtPct(c.emissionsGrossPct ?? NaN, 1)} gross → {fmtPct(c.emissionsNetPct ?? NaN, 1)} after fees
+              </span>
+              <span aria-hidden="true" className="text-oil-ink3/50">·</span>
+              <span>price-move drag {fmtSignedPct(c.dragPct ?? NaN, 1)}</span>
+              <span aria-hidden="true" className="text-oil-ink3/50">·</span>
+              <span>
+                LP net {fmtSignedPct(c.lpNetPct ?? NaN, 2)}{" "}
+                <span className="text-oil-ink3/70">
+                  (stricter model {c.mcLpNetPct === null ? "—" : fmtSignedPct(c.mcLpNetPct, 2)}
+                  {c.modelGapPts !== null ? `, gap ${c.modelGapPts.toFixed(2)} pt` : ""})
+                </span>
+              </span>
+              <span aria-hidden="true" className="text-oil-ink3/50">·</span>
+              <span>borrow −{fmtPct(c.borrowAprAfterPct ?? c.borrowAprNowPct ?? borrowShown, 2)}</span>
+              {c.breakEvenEmissionsMultiple !== null && (
+                <>
+                  <span aria-hidden="true" className="text-oil-ink3/50">·</span>
+                  <span>{`needs ${c.breakEvenEmissionsMultiple.toFixed(2)}× today's rewards to break even`}</span>
+                </>
+              )}
             </div>
           ) : (
             <div className="mt-0.5 text-[12.3px] text-oil-ink3" data-testid={`forecast-${c.poolId}-${c.setting}`}>

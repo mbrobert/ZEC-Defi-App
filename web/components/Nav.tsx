@@ -44,7 +44,10 @@ export default function Nav() {
           <OilskinMark />
           Oilskin
         </Link>
-        <div className="order-3 flex w-full gap-1 overflow-x-auto sm:order-none sm:w-auto sm:flex-1">
+        {/* The tabs share the controls' row only from xl, where the 1180px container can hold logo +
+            tabs + controls. Below that they take their own full-width row: sharing it squeezed the
+            strip to a scrollable sliver and left "ZEC on Solana" off-screen with no affordance. */}
+        <div className="order-3 flex w-full gap-1 overflow-x-auto xl:order-none xl:w-auto xl:flex-1">
           {TABS.filter((t) => mode === "advanced" || !t.advancedOnly).map((t) => {
             const on = path === t.href || path.startsWith(`${t.href}/`);
             return (
@@ -63,13 +66,17 @@ export default function Nav() {
         <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
           <ModeToggle />
           {btc !== undefined && (
-            <span className="num hidden items-center gap-2 rounded-full border border-oil-line bg-oil-surface px-3 py-1.5 text-[13px] md:flex" title={`cbBTC ${market.source === "live" ? "live oracle read" : "snapshot"}`}>
+            <span className="num hidden items-center gap-2 rounded-full border border-oil-line bg-oil-surface px-3 py-1.5 text-[13px] lg:flex" title={`cbBTC ${market.source === "live" ? "live oracle read" : "snapshot"}`}>
               <span className="pulse" />
               cbBTC <b>{fmtUsd0(btc)}</b>
               <span className="text-[11px] text-oil-ink3">{market.source === "live" ? "live" : "snapshot"}</span>
             </span>
           )}
-          {s.mode === "demo" ? <Chip kind="mute" title="No wallet connected — illustrative data, nothing moves">Demo</Chip> : s.wrongNetwork ? (
+          {s.mode === "demo" ? (
+            <span className="hidden sm:inline-flex" title="No wallet connected — illustrative data, nothing moves">
+              <Chip kind="mute">Demo</Chip>
+            </span>
+          ) : s.wrongNetwork ? (
             <button className="btn-ghost text-status-warn" onClick={() => switchChain({ chainId: CHAIN_ID })} disabled={isPending}>
               {isPending ? "Switching…" : "Wrong network — switch to Base"}
             </button>

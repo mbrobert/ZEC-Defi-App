@@ -53,11 +53,11 @@ export default function CollateralStep({
               role="radio"
               aria-checked={sel}
               disabled={!usable}
-              className={`opt ${sel ? "sel" : ""}`}
+              className={`opt flex min-w-0 flex-col items-stretch justify-start ${sel ? "sel" : ""}`}
               onClick={() => usable && onCollateral(sym)}
               data-testid={`collateral-${sym}`}
             >
-              <div className="flex items-center gap-2.5">
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1">
                 <TokenMark symbol={sym} size={28} />
                 <span className="font-semibold">{sym}</span>
                 {usable ? <Chip kind="good">live</Chip> : <Chip kind="mute">disabled</Chip>}
