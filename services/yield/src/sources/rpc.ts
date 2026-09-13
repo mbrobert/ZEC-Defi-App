@@ -16,6 +16,13 @@ export interface RpcOptions {
   retries?: number;
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
+  /**
+   * Milliseconds to wait between consecutive posts inside `callMany` (0 = none). Public endpoints
+   * such as mainnet.base.org answer a burst with `over rate limit`; with `batchSize: 1` and a pace
+   * of ~400 ms the same reads go through one at a time, the way `scripts/ledger-read.sh` paces
+   * `cast call` (2026-09-12, slice M: the pinned-block yield sample).
+   */
+  paceMs?: number;
 }
 
 interface RpcRequest {
@@ -52,6 +59,7 @@ export class RpcClient {
   private readonly retries: number;
   private readonly timeoutMs: number;
   private readonly fetchImpl: typeof fetch;
+  private readonly paceMs: number;
   private readonly tsCache = new Map<number, number>();
 
   constructor(readonly url: string, opts: RpcOptions = {}) {
@@ -65,6 +73,7 @@ export class RpcClient {
     this.retries = opts.retries ?? 3;
     this.timeoutMs = opts.timeoutMs ?? 30_000;
     this.fetchImpl = opts.fetchImpl ?? fetch;
+    this.paceMs = Math.max(0, opts.paceMs ?? 0);
   }
 
   private async post(body: RpcRequest | RpcRequest[]): Promise<RpcResponse | RpcResponse[]> {
@@ -105,8 +114,10 @@ export class RpcClient {
     const out: T[] = new Array(calls.length);
     for (let i = 0; i < calls.length; i += this.batchSize) {
       const slice = calls.slice(i, i + this.batchSize);
+      if (i > 0 && this.paceMs > 0) await sleep(this.paceMs);
       if (slice.length === 1 || this.batchSize === 1) {
         for (let j = 0; j < slice.length; j++) {
+          if (j > 0 && this.paceMs > 0) await sleep(this.paceMs);
           out[i + j] = await this.call<T>(slice[j].method, slice[j].params);
         }
         continue;

@@ -16,7 +16,16 @@
  *               scripts/lp-sim.py consumes (the model re-run input)
  *   all         scan → timestamps → receipts → cohorts
  *
- * Usage: npm run backfill -- <subcommand> [--to-block N]
+ * Usage: npm run backfill -- <subcommand> [--to-block N] [--block N]
+ *
+ *   --block N   (`sample` only, 2026-09-12 slice M) pin EVERY eth_call of the sample to block N and
+ *               stamp the sample with that block's timestamp, so the words are the same read the
+ *               ledger (`scripts/ledger-read.sh <rpc> N`) and the demo snapshot are taken at —
+ *               `scripts/refresh-demo-snapshot.mjs` drives it. GeckoTerminal prices have no block;
+ *               they are read at the wall clock, which the sample records as `pricesSampledAt`.
+ *   RPC_BATCH_SIZE / RPC_PACE_MS   (env) batch size and pacing for the RPC client — public
+ *               endpoints refuse a 20-call burst (`over rate limit`); `RPC_BATCH_SIZE=1
+ *               RPC_PACE_MS=400` reads one call at a time, as `cast` is paced in the ledger script.
  */
 
 import { writeFileSync } from "node:fs";
@@ -40,7 +49,11 @@ import type { Address, PoolBands } from "./types.js";
 const cfg = loadConfig();
 
 function makeRpc(): RpcClient {
-  if (cfg.baseRpcUrl) return new RpcClient(cfg.baseRpcUrl);
+  const opts = {
+    ...(process.env.RPC_BATCH_SIZE ? { batchSize: Math.max(1, Number(process.env.RPC_BATCH_SIZE)) } : {}),
+    ...(process.env.RPC_PACE_MS ? { paceMs: Math.max(0, Number(process.env.RPC_PACE_MS)) } : {}),
+  };
+  if (cfg.baseRpcUrl) return new RpcClient(cfg.baseRpcUrl, opts);
   if (cfg.blockscoutKey) return new BlockscoutSource(cfg.blockscoutKey).rpc;
   throw new Error(
     "No chain source: set BASE_RPC_URL (any Base RPC) and/or BLOCKSCOUT_PRO_API_KEY in .env"
@@ -180,13 +193,17 @@ async function verifyEvents(): Promise<void> {
  * shape scripts/lp-sim.py reads. Every number is a raw chain word or a
  * priced value with its source; nothing is typed.
  */
-async function sample(): Promise<void> {
+async function sample(block?: number): Promise<void> {
   const rpc = makeRpc();
   const gecko = new GeckoSource();
   const gauges = new GaugeSource(rpc);
-  const aave = new AaveSource(rpc);
-  const head = await rpc.blockNumber();
-  const rates = await aave.sample();
+  // Pinned (--block N): the head IS that block, the sample's clock is the block's own timestamp and
+  // every eth_call below carries the block tag. Unpinned: the live service's shape, unchanged.
+  const head = block ?? (await rpc.blockNumber());
+  const blockTs = block === undefined ? undefined : await rpc.blockTimestamp(block);
+  const aave = blockTs === undefined ? new AaveSource(rpc) : new AaveSource(rpc, () => blockTs * 1000);
+  const wallClock = new Date().toISOString();
+  const rates = await aave.sample(block);
   const live = new Map<string, Awaited<ReturnType<GeckoSource["liveSample"]>>>();
   // GeckoTerminal's public tier allows about 30 requests a minute and the source's own retries
   // (4 attempts, backing off) count against it, so a 12-pool burst that trips the limit once keeps
@@ -212,7 +229,8 @@ async function sample(): Promise<void> {
     if (token1Usd === undefined) throw new Error(`${p.id}: no token1 price`);
     const e = await gauges.sample(p.id, p.poolAddress as Address, {
       aeroUsd, poolTvlUsd: l.tvlUsd, token1Usd, token1Decimals: t1.decimals,
-    }, p.gauge as Address | undefined);
+      ...(blockTs === undefined ? {} : { nowSeconds: blockTs }),
+    }, p.gauge as Address | undefined, block);
     pools[p.id] = {
       pool: e.pool, gauge: e.gauge, rewardRateWeiPerSec: e.rewardRateWeiPerSec, periodFinish: e.periodFinish,
       epochActive: e.epochActive, poolTvlUsd: l.tvlUsd, vol24Usd: l.volume24hUsd, wholePoolAprPct: e.wholePoolAprPct,
@@ -223,18 +241,26 @@ async function sample(): Promise<void> {
   }
   const out = {
     sampledAt: rates.sampledAt, block: head, aeroUsd, voter: AERODROME_VOTER,
+    // A pinned sample says so: the chain words are as of `block` (its timestamp is `sampledAt`);
+    // the GeckoTerminal prices (AERO, token1, TVL) were read at `pricesSampledAt` on the wall clock.
+    ...(blockTs === undefined ? {} : { pinned: true, blockTimestamp: blockTs, pricesSampledAt: wallClock }),
     method: "APR(bps)=rewardRate*yr*AEROusd / V_staked(w); w=1.0001^(bps/2)-1; V_staked(w)=stakedLiquidity*sqrtP*(2-sqrt(1-w)-1/sqrt(1+w))/10^dec1*token1Usd (marginal, in-range, staked); wholePool=rewardRate*yr*AEROusd/poolTVL",
     aave: rates, pools,
   };
   const path = join(cfg.samplesDir, `gauge-emissions-${rates.sampledAt.slice(0, 10)}.json`);
   writeFileSync(path, JSON.stringify(out, null, 1));
-  console.log(`sample → ${path} (borrow ${rates.borrow.variableBorrowAprPct}%)`);
+  console.log(`sample → ${path} (borrow ${rates.borrow.variableBorrowAprPct}%${block === undefined ? "" : `, pinned to block ${block}`})`);
 }
 
 const [cmd, ...rest] = process.argv.slice(2);
 const toBlockArg = rest.includes("--to-block")
   ? Number(rest[rest.indexOf("--to-block") + 1])
   : undefined;
+const blockArg = rest.includes("--block") ? Number(rest[rest.indexOf("--block") + 1]) : undefined;
+if (blockArg !== undefined && !(Number.isInteger(blockArg) && blockArg > 0)) {
+  console.error(`--block must be a positive block number, got ${rest[rest.indexOf("--block") + 1]}`);
+  process.exit(2);
+}
 
 const run = async () => {
   switch (cmd) {
@@ -243,14 +269,14 @@ const run = async () => {
     case "receipts": return receipts();
     case "cohorts": return cohorts();
     case "verify-events": return verifyEvents();
-    case "sample": return sample();
+    case "sample": return sample(blockArg);
     case "all":
       await scan(toBlockArg);
       await timestamps();
       await receipts();
       return cohorts();
     default:
-      console.log("usage: npm run backfill -- <scan|timestamps|receipts|cohorts|verify-events|sample|all> [--to-block N]");
+      console.log("usage: npm run backfill -- <scan|timestamps|receipts|cohorts|verify-events|sample|all> [--to-block N] [sample --block N]");
       process.exitCode = 2;
   }
 };

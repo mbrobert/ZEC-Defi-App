@@ -196,6 +196,13 @@ export function decodeStrategyAddress(raw: string | undefined): Address {
   return addr;
 }
 
+/** The JSON-RPC block tag for a pinned read, or "latest" (the live service's). */
+export function blockTag(block?: number): string {
+  if (block === undefined) return "latest";
+  if (!Number.isInteger(block) || block < 0) throw new AaveDecodeError("block", `not a block number: ${block}`);
+  return `0x${block.toString(16)}`;
+}
+
 export class AaveSource {
   readonly dataProvider: Address = AAVE_V3.poolDataProvider.toLowerCase() as Address;
 
@@ -221,24 +228,30 @@ export class AaveSource {
   /**
    * One sample. Throws on ANY unreadable reserve — a half-read sample would
    * let the gate run on a borrow rate whose collateral side is missing.
+   *
+   * `block` (2026-09-12, slice M): when given, EVERY `eth_call` of the sample carries that block
+   * tag, so the words are one pinned read the ledger (`scripts/ledger-read.sh`) and the demo
+   * snapshot can be paired with; the injected clock should then be the block's timestamp. Without
+   * it the calls are at `latest`, as the live service samples.
    */
-  async sample(): Promise<AaveRatesSample> {
+  async sample(block?: number): Promise<AaveRatesSample> {
+    const tag = blockTag(block);
     const reserves = this.reserves();
     const calls = reserves.flatMap((r) => [
       {
         method: "eth_call",
-        params: [{ to: this.dataProvider, data: SEL_GET_RESERVE_DATA + encodeAddressArg(r.address) }, "latest"],
+        params: [{ to: this.dataProvider, data: SEL_GET_RESERVE_DATA + encodeAddressArg(r.address) }, tag],
       },
       {
         method: "eth_call",
         params: [
           { to: this.dataProvider, data: SEL_GET_RESERVE_CONFIGURATION_DATA + encodeAddressArg(r.address) },
-          "latest",
+          tag,
         ],
       },
       {
         method: "eth_call",
-        params: [{ to: this.dataProvider, data: SEL_GET_PAUSED + encodeAddressArg(r.address) }, "latest"],
+        params: [{ to: this.dataProvider, data: SEL_GET_PAUSED + encodeAddressArg(r.address) }, tag],
       },
     ]);
     // The borrow reserve's strategy address rides in the same round; its rate data needs a second
@@ -247,7 +260,7 @@ export class AaveSource {
     const borrowAddress = reserves[0]!.address;
     calls.push({
       method: "eth_call",
-      params: [{ to: this.dataProvider, data: SEL_GET_INTEREST_RATE_STRATEGY_ADDRESS + encodeAddressArg(borrowAddress) }, "latest"],
+      params: [{ to: this.dataProvider, data: SEL_GET_INTEREST_RATE_STRATEGY_ADDRESS + encodeAddressArg(borrowAddress) }, tag],
     });
     const results = await this.rpc.callMany<string>(calls);
     if (results.length !== calls.length) {
@@ -262,7 +275,7 @@ export class AaveSource {
     }
     const strategy = decodeStrategyAddress(results[calls.length - 1]);
     const rateData = await this.rpc.callMany<string>([
-      { method: "eth_call", params: [{ to: strategy, data: SEL_GET_INTEREST_RATE_DATA_BPS + encodeAddressArg(borrowAddress) }, "latest"] },
+      { method: "eth_call", params: [{ to: strategy, data: SEL_GET_INTEREST_RATE_DATA_BPS + encodeAddressArg(borrowAddress) }, tag] },
     ]);
     if (rateData.length !== 1) throw new AaveDecodeError("batch", `expected 1 strategy result, got ${rateData.length}`);
     const borrowCurve = decodeBorrowCurve(strategy, rateData[0]);

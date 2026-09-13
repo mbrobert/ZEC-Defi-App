@@ -117,7 +117,12 @@ if any served cell drifts from the generated numbers by > 0.01 pt, or if
 borrow rate** — see `samples/MODEL-NUMBERS.md` and `docs/RISKS.md` §14.
 `npm run model` takes every input from the sample file named in
 `package.json` (`scripts/run-model.mjs`: as-of, borrow, supply, LT); nothing
-is typed.
+is typed. Since 2026-09-13 the sample, the model, the two demo payloads and the
+ledger the demo snapshot quotes are ONE pinned block: `scripts/refresh-demo-snapshot.mjs`
+runs them in order and re-points `package.json`'s `model` script and the
+generators' defaults at the new dated files, so the commands above reproduce
+the committed run; a pinned sample says so (`pinned`, `blockTimestamp`,
+`pricesSampledAt` for the GeckoTerminal prices, which have no block).
 
 ## Staleness contract (audit Lens F / round 3)
 
@@ -194,7 +199,13 @@ signature in the test suite. After any engine upgrade run
 set -a; . ./.env; set +a
 
 npm run backfill -- sample     # live gauge words + Aave rates → samples/gauge-emissions-<date>.json
+npm run backfill -- sample --block N   # the same sample PINNED to block N: every eth_call tagged, sampledAt = the block's timestamp (slice M, 2026-09-13)
 npm run model                  # re-run the sim + regenerate MODEL-NUMBERS.md from the sample package.json names (as-of, borrow, supply, LT are READ from that file by scripts/run-model.mjs — nothing typed)
+
+# The whole demo snapshot at ONE block — sample, model, ledger, reserve read, demo payloads, the facts
+# file's top ledger, web/lib/demo.ts, both prototypes, the measured kit levers — as one read-only command
+# (from the repo root; a second run at the same block is a no-op; docs/TESTING.md "Slice M, the tool"):
+node scripts/refresh-demo-snapshot.mjs --rpc https://mainnet.base.org --block latest --sample-rpc https://base.drpc.org
 npm run backfill -- all        # scan → timestamps → receipts → cohorts (resumable)
 npm run yield                  # serve http://127.0.0.1:8787
 ```

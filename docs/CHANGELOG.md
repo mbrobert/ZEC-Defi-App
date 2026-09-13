@@ -3,6 +3,24 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-13 — Slice M, the tool: the demo snapshot refresh as one read-only command
+
+- `scripts/refresh-demo-snapshot.mjs --rpc <url> --block <n|latest>`: the yield sample pinned to the block
+  (`backfill -- sample --block N` — `sources/aave.ts` `sample(block?)`, `sources/gauges.ts` `sample(…, block?)` /
+  `gaugeFor(…, block?)`: every `eth_call` carries the tag, the sample is stamped with the block's timestamp and
+  says `pinned`), the model on it, `scripts/ledger-read.sh` parsed into `docs/research/ledger-read-<N>.json`,
+  the USDC reserve read from the same words, the demo payloads, the facts file's top ledger (regenerated from
+  the record, the previous read as the drift column), `web/lib/demo.ts` and the demo banner, both prototypes'
+  `OIL_CHAIN_READ` and `OIL_MODEL`, the kit's disagreement-band levers measured on the pages' own `gate()`,
+  `docs/MODEL-NUMBERS-<date>.md` with the superseded banner on its predecessor, the dated names in the yield
+  tests, a drift table. Idempotent at a block; `--force` redoes it. `RpcClient` gains `paceMs`
+  (`RPC_BATCH_SIZE` / `RPC_PACE_MS` in the backfill) because `mainnet.base.org` refuses a batched burst.
+  Yield 167 → **172** (+5 `sample-block.test.ts`). `docs/TESTING.md` "Slice M, the tool", `YIELD-SERVICE.md`.
+- Bootstrapped at the 2026-09-12 ledger's block 51,226,072 (nothing re-sampled): the top ledger is now the
+  generated shape with every figure unchanged; Pyth's `publishTime` reads 2026-09-04T19:29:54Z (the doc had
+  typed 00:49:54Z) and the demo payloads carry the committed model's own stamp (they named one three
+  regenerations older); the hour-after pool observation moved into Addendum 14, which the top now cites.
+  Levers unchanged (×12.2 inside ×12.16–×12.25; ×8.67 inside ×7.06–×10.23).
 ## 2026-09-13 — D6 design before code: the cross-chain loop's Solana side and the CCTP V2 call shapes
 
 - **`docs/SOLANA-ARCHITECTURE.md` §14** (§13 no longer lists moving USDC between chains as another product):

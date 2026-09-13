@@ -828,7 +828,8 @@ const OIL_SHARED = Object.freeze({
    constants in production: PoolDataProvider / feeds / gauges at call time).
    Values are the 2026-09-12 re-read at block 51,226,072 (19:31:31 UTC) in
    docs/VERIFIED-BASE-FACTS.md — the block the yield sample behind OIL_MODEL
-   was taken at, so the page's chain read and its model are one read. ── */
+   was taken at, so the page's chain read and its model are one read
+   (scripts/refresh-demo-snapshot.mjs; raw words docs/research/ledger-read-51226072.json). ── */
 const OIL_CHAIN_READ = Object.freeze({
   readAt: "2026-09-12T19:31:31Z",
   readBlock: 51226072,
@@ -845,7 +846,7 @@ const OIL_CHAIN_READ = Object.freeze({
     cbZEC: null,
   },
   feeds: { cbBTC: 77140.83, WETH: 2520.38, USDC: 1.00, BTC: 77165.17 },
-  /* The same posted update the 2026-09-05 read saw (publishTime 1788550194): 691,297 s old at block 51,226,072. */
+  /* Pyth ZEC/USD as posted (publishTime 1788550194): 691,297 s old at block 51,226,072. */
   pythZecUsd: { price: 1035.20, ageS: 691297, stale: true },
   /* slot0 tick −24,205 → 100 × 1.0001^24,205 USDC per cbZEC; the gauge's rewardRate (wei/s) and periodFinish (unix s). */
   cbzecUsdcPool: { priceUsdc: 1125.01, gaugeRewardRate: 7140520125989201, gaugePeriodFinish: 1789603200 },

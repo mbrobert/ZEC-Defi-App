@@ -3,8 +3,8 @@
  *
  * Nothing here is a product constant. `DEMO_MARKET` is a SNAPSHOT of the chain
  * reads recorded in docs/VERIFIED-BASE-FACTS.md (Base mainnet block 51,226,072,
- * 2026-09-12 19:31:31 UTC — the block the demo gate's yield sample was read at,
- * so the snapshot and the gate are one read; Addendum 14) so the demo can run
+ * 2026-09-12 19:31:31 UTC — the block the demo's yield sample was read at,
+ * so the snapshot, the model and the forecast are one read; scripts/refresh-demo-snapshot.mjs) so the demo can run
  * where no RPC is reachable; live mode
  * performs the same reads through lib/reads.ts and never consults this file.
  * Every derived number (presets, HF, liquidation price, net yield) is still
@@ -30,7 +30,7 @@ import DEMO_GATE_RAW from "./demo-gate.json";
 import DEMO_FORECAST_RAW from "./demo-forecast.json";
 
 export const DEMO_SNAPSHOT_AT = "2026-09-12T19:31:31Z";
-/** The pinned block every DEMO_MARKET number was read at (VERIFIED-BASE-FACTS.md, Addendum 14). */
+/** The pinned block every DEMO_MARKET number was read at (docs/research/ledger-read-51226072.json, VERIFIED-BASE-FACTS.md's top ledger). */
 export const DEMO_SNAPSHOT_BLOCK = 51_226_072;
 /** cbZEC/USDC Slipstream pool at that block: slot0 tick −24,205 → 100 × 1.0001^24,205 USDC per cbZEC. Demo spot quotes only. */
 export const DEMO_CBZEC_PRICE_USDC = 1125.01;

@@ -11,7 +11,7 @@
   "stakedLiquidityProvenance": "one verified block read; marked corroborated because demo mode records a warm service. A live sample must earn corroboration from MIN_STAKED_SAMPLES independent readings.",
   "usdcReserveReadAt": "2026-09-12T20:25:49Z",
   "usdcReserveBlock": 51227701,
-  "modelGeneratedAt": "2026-09-13T02:38:48+00:00",
+  "modelGeneratedAt": "2026-09-13T02:43:16+00:00",
   "entryHf": 1.25,
   "entryHfFloor": 1.25,
   "depositUsd": null,
@@ -21,7 +21,7 @@
   "volatilityAsOf": "2026-08-31",
   "engineFeeBps": 1500,
   "stale": false,
-  "mcCalibrationGeneratedAt": "2026-09-13T02:38:48+00:00",
+  "mcCalibrationGeneratedAt": "2026-09-13T02:43:16+00:00",
   "settings": [
     {
       "id": "sheltered",
@@ -4406,6 +4406,6 @@
       ]
     }
   ],
-  "generatedAt": "2026-09-13T02:38:48+00:00",
+  "generatedAt": "2026-09-13T02:43:16+00:00",
   "methodologyUrl": "https://github.com/mbrobert/ZEC-Defi-App/blob/main/docs/YIELD-SERVICE.md"
 }

@@ -213,11 +213,11 @@ export class GaugeSource {
    * When the caller knows the gauge from the verified registry, the voter's
    * answer must match it — a mismatch fails closed.
    */
-  async gaugeFor(pool: Address, expected?: Address): Promise<Address> {
+  async gaugeFor(pool: Address, expected?: Address, block?: number): Promise<Address> {
     const key = pool.toLowerCase();
     const cached = this.gaugeCache.get(key);
     if (cached) return cached;
-    const raw = await this.rpc.ethCall(AERODROME_VOTER, SEL.gauges + encodeAddressArg(pool));
+    const raw = await this.rpc.ethCall(AERODROME_VOTER, SEL.gauges + encodeAddressArg(pool), block ?? "latest");
     const hex = strict(pool, raw, 1, "voter.gauges");
     const gauge = `0x${wordAt(hex, 0).slice(24)}`.toLowerCase() as Address;
     if (!/^0x[0-9a-f]{40}$/.test(gauge) || /^0x0{40}$/.test(gauge)) {
@@ -238,7 +238,9 @@ export class GaugeSource {
     poolId: string,
     pool: Address,
     prices: GaugePriceInputs,
-    expectedGauge?: Address
+    expectedGauge?: Address,
+    /** Pin every `eth_call` of this sample to one block (slice M); `latest` when absent. Pass the block's timestamp as `prices.nowSeconds` with it. */
+    block?: number
   ): Promise<EmissionsSample> {
     if (!(prices.aeroUsd > 0) || !(prices.poolTvlUsd > 0) || !(prices.token1Usd > 0)) {
       throw new Error(
@@ -246,13 +248,14 @@ export class GaugeSource {
           `poolTvlUsd=${prices.poolTvlUsd}, token1Usd=${prices.token1Usd})`
       );
     }
-    const gauge = await this.gaugeFor(pool, expectedGauge);
+    const gauge = await this.gaugeFor(pool, expectedGauge, block);
+    const tag = block === undefined ? "latest" : `0x${block.toString(16)}`;
     const results = await this.rpc.callMany<string>([
-      { method: "eth_call", params: [{ to: gauge, data: SEL.rewardRate }, "latest"] },
-      { method: "eth_call", params: [{ to: gauge, data: SEL.periodFinish }, "latest"] },
-      { method: "eth_call", params: [{ to: pool, data: SEL.slot0 }, "latest"] },
-      { method: "eth_call", params: [{ to: pool, data: SEL.stakedLiquidity }, "latest"] },
-      { method: "eth_call", params: [{ to: pool, data: SEL.fee }, "latest"] },
+      { method: "eth_call", params: [{ to: gauge, data: SEL.rewardRate }, tag] },
+      { method: "eth_call", params: [{ to: gauge, data: SEL.periodFinish }, tag] },
+      { method: "eth_call", params: [{ to: pool, data: SEL.slot0 }, tag] },
+      { method: "eth_call", params: [{ to: pool, data: SEL.stakedLiquidity }, tag] },
+      { method: "eth_call", params: [{ to: pool, data: SEL.fee }, tag] },
     ]);
     if (results.length !== 5) throw new GaugeDecodeError(pool, "batch", `expected 5 results, got ${results.length}`);
     const [rewardRateRaw, periodFinishRaw, slot0Raw, stakedRaw, feeRaw] = results;

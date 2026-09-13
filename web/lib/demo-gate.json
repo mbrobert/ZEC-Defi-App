@@ -8,8 +8,8 @@
   },
   "asOf": "2026-09-12T19:31:31+00:00",
   "stakedLiquidityProvenance": "one verified block read; marked corroborated because demo mode records a warm service. A live sample must earn corroboration from MIN_STAKED_SAMPLES independent readings.",
-  "modelGeneratedAt": "2026-09-13T02:38:48+00:00",
-  "mcCalibrationGeneratedAt": "2026-09-13T02:38:48+00:00",
+  "modelGeneratedAt": "2026-09-13T02:43:16+00:00",
+  "mcCalibrationGeneratedAt": "2026-09-13T02:43:16+00:00",
   "borrowAprPct": 4.5174,
   "liquidationThresholdBps": {
     "cbBTC": 7800,
@@ -2047,5 +2047,5 @@
     }
   ],
   "qualifying": [],
-  "generatedAt": "2026-09-13T02:38:48+00:00"
+  "generatedAt": "2026-09-13T02:43:16+00:00"
 }
