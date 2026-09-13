@@ -3,6 +3,43 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-13 — D9: an owner action re-records the entry health factor, and the keeper's never does
+
+**The defect (LADDER-1, Medium, `AUDIT-2026-09-13.md` Part 3).** The ladder derives from the health factor
+a position was opened at, and `entryHfWad` was written by the open and by nothing else — while withdrawing
+collateral is gated by the registry floor (1.25) and nothing else. The two rules disagreed about what a
+position is. An owner who opened at **2.60** and then legally withdrew 51 % of their collateral landed at
+HF **1.27** — above the floor, so the router allowed it — and was then **below their own derisk rung of
+1.58**, so the keeper repaid the debt and closed their liquidity position seconds after they had
+deliberately moved it. An owner who simply opened at 1.25 and sat at the same 1.27 was left alone: **the
+more conservative opener was the one punished.**
+
+**The decision (D9).** An OWNER action that moves debt or collateral re-records the entry, in both
+directions. `StrategyRouter.unwind` now calls `_rerecordEntryHf` when `repaid != 0 || withdrawn != 0`.
+Three exclusions, each a defect of its own if got wrong:
+
+- **The keeper must not re-record.** Its protective rungs move debt too, and a keeper that could rewrite
+  the ladder it is judged against would loosen its own bounds on every rung it fired. The router asks the
+  account: **`OilskinAccount.keeperActor()`** (new, on `IOilskinAccount`) exposes the transient actor slot
+  the account already kept — the keeper's address during `execAsKeeper`, zero on every owner path, zero
+  outside any call.
+- **An unwind that moves nothing must not re-record** — closing liquidity positions alone changes neither
+  debt nor collateral, so the health factor is wherever the market has taken it, and writing that in would
+  quietly relax the owner's chosen protection at the worst moment.
+- **No debt, no record:** cleared to 0, which the keeper already reads as "run the registry floor's ladder".
+
+**The Solana twins carry it too** — `withdraw`, `repay` and `close_position` — where the owner/keeper
+distinction is free, because `keeper_protect` is a separate instruction. `deposit` is deliberately excluded:
+it only RAISES the health factor, leaving the ladder tighter than it needs to be, which is the safe
+direction. The owner's raw `account.exec` to the protocol still bypasses the router and so the re-record;
+that is the documented exit hatch and is recorded as a known limit, not closed.
+
+- Also removed: a dead `LADDER` import in `keeper_protect.rs`, unused since `1bdbe63` moved it to
+  `ladder_for_recorded` — the Rust build is warning-free again.
+- Measured: contracts **433 passed / 0 failed / 13 skipped** (39 suites, +7 — `EntryHfRerecord.t.sol`),
+  ABI seam **123/123 strict** and the bundle regenerated for `keeperActor` (260 functions), agent 316,
+  web 199, shared 99, Rust 12, Solana seam 14.
+
 ## 2026-09-13 — D10: the acting rungs stop deriving above an entry of 2.00, so the keeper cannot unwind a position that is nowhere near danger
 
 **The defect.** The ladder is `rung = 1 + (e − 1) × k`, so every rung scales with the entry health

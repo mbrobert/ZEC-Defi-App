@@ -72,6 +72,12 @@ struct Permission {
 interface IOilskinAccount {
     function owner() external view returns (address);
 
+    /// @notice The keeper currently acting through this account, or the zero address when the call
+    ///         tree was started by the owner. Transient: meaningful only DURING an `exec*` call,
+    ///         which is exactly when a peripheral needs it to tell an owner's action from a
+    ///         keeper's. Reads zero outside a call.
+    function keeperActor() external view returns (address);
+
     function exec(address target, uint256 value, bytes calldata data)
         external
         payable

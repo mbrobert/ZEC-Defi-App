@@ -33,7 +33,10 @@ pub fn handler(ctx: Context<ClosePosition>) -> Result<()> {
     let k = &ctx.accounts.kamino;
 
     if !kamino::obligation_is_open(&ctx.accounts.obligation) {
-        // Already emptied and closed by klend: nothing to repay or withdraw.
+        // Already emptied and closed by klend: nothing to repay or withdraw — but the stale entry
+        // record must still go, or the next borrow would be judged against a ladder from a position
+        // that no longer exists (D9).
+        ctx.accounts.account.entry_hf_bps = 0;
         emit!(PositionClosed { account: ctx.accounts.account.key() });
         return Ok(());
     }
@@ -49,6 +52,9 @@ pub fn handler(ctx: Context<ClosePosition>) -> Result<()> {
     if view.has_zec_deposit {
         kamino::withdraw(k, &ctx.accounts.account.to_account_info(), &ctx.accounts.obligation, &ctx.accounts.account_zec.to_account_info(), u64::MAX, seeds)?;
     }
+    // D9: the position is gone, so there is no entry to derive a ladder from. The next borrow
+    // writes a fresh one; until then `ladder_for_recorded(0)` is the registry floor's ladder.
+    ctx.accounts.account.entry_hf_bps = 0;
     emit!(PositionClosed { account: ctx.accounts.account.key() });
     Ok(())
 }

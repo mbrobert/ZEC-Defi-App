@@ -85,6 +85,11 @@
           "stateMutability": "payable",
           "outputs": "bytes[]"
         },
+        "keeperActor()": {
+          "selector": "0x197ade12",
+          "stateMutability": "view",
+          "outputs": "address"
+        },
         "onERC1155BatchReceived(address,address,uint256[],uint256[],bytes)": {
           "selector": "0xbc197c81",
           "stateMutability": "pure",
@@ -765,6 +770,19 @@
             }
           ],
           "stateMutability": "payable"
+        },
+        {
+          "type": "function",
+          "name": "keeperActor",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "stateMutability": "view"
         },
         {
           "type": "function",
@@ -9769,6 +9787,11 @@
           "stateMutability": "view",
           "outputs": "address[]"
         },
+        "keeperActor()": {
+          "selector": "0x197ade12",
+          "stateMutability": "view",
+          "outputs": "address"
+        },
         "owner()": {
           "selector": "0x8da5cb5b",
           "stateMutability": "view",
@@ -10167,6 +10190,19 @@
               "name": "tokens",
               "type": "address[]",
               "internalType": "address[]"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "keeperActor",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "address",
+              "internalType": "address"
             }
           ],
           "stateMutability": "view"

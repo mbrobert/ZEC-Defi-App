@@ -410,6 +410,28 @@ contract StrategyRouter is Peripheral {
         emit LeveragedLpUnwound(
             account, p.collateralAsset, closed, failedCount, usdcFromLp, repaid, withdrawn, healthFactor
         );
+        // D9 (founder, 2026-09-13): an OWNER action that moves debt or collateral re-records the
+        // entry health factor, so the ladder always describes where the owner has put the position.
+        // Without this, a withdrawal down to the registry floor left the ladder of a much higher
+        // open in force and the keeper unwound a position the owner had deliberately moved — two
+        // identical positions at HF 1.26 were treated oppositely because of how they were opened.
+        if (repaid != 0 || withdrawn != 0) _rerecordEntryHf(account, healthFactor);
+    }
+
+    /// @dev Re-record after an owner action. Three things this must NOT do:
+    ///      (1) fire for the KEEPER — its protective rungs move debt too, and a keeper that could
+    ///          rewrite the ladder it is judged against would loosen its own bounds on every rung;
+    ///      (2) fire when the owner only closed liquidity positions, which moves no debt and no
+    ///          collateral: the health factor is then simply wherever the market has taken it, and
+    ///          recording it would quietly relax the protection the owner chose, at the worst time;
+    ///      (3) record a no-debt position, which has no entry to speak of — the record is cleared,
+    ///          and the next open writes a fresh one.
+    function _rerecordEntryHf(address account, uint256 healthFactor) internal {
+        if (IOilskinAccount(account).keeperActor() != address(0)) return;
+        uint256 recorded = healthFactor == type(uint256).max ? 0 : healthFactor;
+        if (recorded == entryHfWad[account]) return;
+        entryHfWad[account] = recorded;
+        emit EntryHfRecorded(account, recorded);
     }
 
     /// @notice Send the account's whole balance of each token to the account's OWNER (earnings to

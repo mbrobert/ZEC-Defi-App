@@ -190,6 +190,8 @@ describe("owner path (localnet)", () => {
   });
 
   let topBorrowUsdc = 0n;
+  /** The entry health factor the borrow recorded, in bps — what D9's re-record is measured against. */
+  let entryRecordAtBorrow = 0;
 
   it("borrow above the offer (55 % LTV → HF 1.18) is refused — by Kamino's 40 % cap today, by our 1.25 floor (52 % LTV on LT 65 %) if the venue ever loosened past it", async () => {
     const price = await zecPriceUsd();
@@ -223,6 +225,8 @@ describe("owner path (localnet)", () => {
     expect(ob.ltv).to.be.lessThanOrEqual(KAMINO_LTV_CAP);
     expect(ob.hf).to.be.closeTo(LT / KAMINO_LTV_CAP, 0.01);
     expect(HF_LADDER.every((r) => ob.hf > r.hf), "no rung crossed at entry").to.equal(true);
+    entryRecordAtBorrow = Number((await program.account.userAccount.fetch(account)).entryHfBps);
+    expect(entryRecordAtBorrow / 10_000).to.be.closeTo(ob.hf, 0.01, "the borrow recorded the entry");
   });
 
   it("withdraw that would breach the exit floor is refused — by Kamino's LTV cap today (7 ZEC left: LTV 57 %), by our 1.25 floor (HF 1.14) if the venue ever loosened", async () => {
@@ -254,6 +258,12 @@ describe("owner path (localnet)", () => {
     let ob = await readObligation();
     expect(Number(ob.usdcDebt)).to.be.lessThan(Number(topBorrowUsdc - half) + 100);
     expect(ob.hf).to.be.greaterThan(3.0);
+    // D9 (2026-09-13), the twin of StrategyRouter._rerecordEntryHf: an OWNER action that moves debt
+    // re-records the entry, so the ladder describes where the owner has put the position rather than
+    // where they opened it. `keeper_protect` is a separate instruction and never does this.
+    const afterRepay = Number((await program.account.userAccount.fetch(account)).entryHfBps);
+    expect(afterRepay).to.be.greaterThan(entryRecordAtBorrow, "half the debt gone: the record follows it up");
+    expect(afterRepay / 10_000).to.be.closeTo(ob.hf, 0.01);
     await mintUsdcToAccount(2n * ONE_USDC); // the dollar moved out above, plus the interest accrued since the borrow
     await stamp();
     await ownerCall(program.methods.repay(U64_MAX).accounts({ owner: owner.publicKey, account, obligation, accountUsdc, kamino } as any));
@@ -263,6 +273,9 @@ describe("owner path (localnet)", () => {
     const left = (await getAccount(conn, accountUsdc)).amount;
     expect(Number(left)).to.be.lessThan(Number(2n * ONE_USDC));
     expect(Number(left)).to.be.greaterThan(0);
+    // D9: no debt, so there is no entry to derive a ladder from — the record is cleared, and the
+    // keeper's documented reading of 0 (run the registry floor's ladder) is what applies.
+    expect(Number((await program.account.userAccount.fetch(account)).entryHfBps)).to.equal(0, "D9: cleared with the debt");
   });
 
   it("withdraw everything is allowed once there is no debt; the ZEC is back in the Account", async () => {

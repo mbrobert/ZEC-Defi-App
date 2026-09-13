@@ -20,7 +20,7 @@
 
 use crate::errors::OilskinError;
 use crate::events::KeeperProtected;
-use crate::generated::ladder::{Rung, LADDER, RUNG_ID_WARN};
+use crate::generated::ladder::{Rung, RUNG_ID_WARN};
 use crate::health;
 use crate::instructions::kamino_ctx::*;
 use crate::kamino;

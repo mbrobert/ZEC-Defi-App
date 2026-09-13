@@ -45,6 +45,14 @@ pub fn handler(ctx: Context<Withdraw>, collateral_amount: u64) -> Result<()> {
         health::HF_NO_DEBT
     };
 
+
+    // D9 (founder, 2026-09-13), the twin of `StrategyRouter._rerecordEntryHf`: an OWNER action that
+    // moves debt or collateral re-records the entry, so the ladder always describes where the owner
+    // has put the position. `keeper_protect` is a different instruction and does NOT do this — a
+    // keeper that could rewrite the ladder it is judged against would loosen its own bounds on
+    // every rung it fired. A position left with no debt records nothing: the sentinel is cleared,
+    // and the next borrow writes a fresh entry.
+    ctx.accounts.account.entry_hf_bps = if hf == health::HF_NO_DEBT { 0 } else { hf };
     emit!(Withdrawn { account: ctx.accounts.account.key(), collateral_amount, hf_after_bps: hf });
     Ok(())
 }

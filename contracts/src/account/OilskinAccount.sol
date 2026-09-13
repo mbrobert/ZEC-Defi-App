@@ -387,6 +387,18 @@ contract OilskinAccount is IOilskinAccount, IERC721Receiver, IERC1155Receiver {
     // ------------------------------------------------------------------- views
 
     /// @inheritdoc IOilskinAccount
+    /// @dev The transient actor slot: set to the keeper for the duration of `execAsKeeper`, zero on
+    ///      every owner path (`exec`, `execWithCallback`, `execBatch`, `initialize`,
+    ///      `execBatchFromFactory`) and zero again the moment the call tree ends. `StrategyRouter`
+    ///      reads it to decide whether an `unwind` is the owner's own exit — which re-records the
+    ///      position's entry health factor — or the keeper's protective rung, which must NOT, since
+    ///      a keeper that could rewrite the ladder it is judged against would be marking its own
+    ///      homework.
+    function keeperActor() external view override returns (address) {
+        return address(uint160(_tload(T_ACTOR)));
+    }
+
+    /// @inheritdoc IOilskinAccount
     function grantOf(address keeper, address target, bytes4 selector)
         external
         view

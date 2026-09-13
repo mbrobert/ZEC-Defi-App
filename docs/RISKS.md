@@ -194,9 +194,17 @@ notifies, keeps deriving — so a position opened at the 1.25 floor runs warn 1.
 derisk 1.09, emergency 1.05 with 0.02 of hysteresis (`HF_LADDER`, the floor's
 own ladder), one opened at 1.30 runs 1.27 / 1.19 / 1.11 / 1.05 with 0.03, and
 one opened at the Sheltered mark 1.55 runs the 1.50 / 1.35 / 1.20 / 1.05 table
-the product ran before the pin, with 0.05. An account with no record (opened before the record existed, or a
-router that reads 0) runs the floor's ladder and its store record says
-`entryHf: null`; the disarm threshold a rung fired at travels on the dispatch
+the product ran before the pin, with 0.05. **Since D9 (2026-09-13) the record follows the owner**: any owner action through
+the router that moves debt or collateral re-records it, in both directions, so a
+withdrawal down to the floor no longer leaves a much higher entry's ladder in
+force. The keeper's own protective actions never re-record — it would be marking
+its own homework — and neither does an unwind that moves nothing, which would
+otherwise write a market-drifted health factor in as the "entry" at the worst
+moment. The owner's raw `account.exec` straight to the protocol bypasses the
+router and therefore the re-record; that is the exit hatch, and it is a known
+limit rather than a closed one. An account with no record (opened before the
+record existed, a position fully repaid, or a router that reads 0) runs the
+floor's ladder and its store record says `entryHf: null`; the disarm threshold a rung fired at travels on the dispatch
 record, so a resumed action is judged against the ladder that fired it, never
 against a table. A registry floor under 1.10 (`MIN_LADDER_ENTRY_HF`) cannot
 hold four rungs; the keeper then runs the floor's ladder and logs an error
