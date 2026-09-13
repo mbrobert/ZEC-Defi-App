@@ -23,8 +23,9 @@ Oilskin lets a wallet on Base (Coinbase Wallet, MetaMask, WalletConnect, or any
 EIP-6963 wallet — EIP is an Ethereum Improvement Proposal) deposit **cbBTC or
 WETH** as collateral on **Aave v3**, borrow **USDC** at the live rate, and
 either keep the USDC or put it into an **Aerodrome Slipstream** concentrated-
-liquidity (CL) position through the **Snuggle/MaxFi engine** — but only when the
-yield gate says that pool clears the borrow rate. Spot swaps go through **CoW
+liquidity (CL) position through the **Snuggle/MaxFi engine** — after reading the
+yield forecast for that pool (both models, the drag, the break-even; today a
+loss on every pool) and acknowledging it; only safety refuses. Spot swaps go through **CoW
 Protocol** batch auctions. **cbZEC** (Coinbase Wrapped ZEC) is usable in spot; it
 is registered as collateral but **disabled** with the reason shown, because no
 lending market on Base lists it (`CollateralRegistry.register(cbZEC, …,
@@ -119,7 +120,7 @@ drawdown to liquidation for that position. The forecast is computed, never curat
 |---|---|---|
 | `contracts/` | Foundry — `OilskinAccount` + factory, `StrategyRouter`, `AaveV3Venue`, `SnuggleLpVenue`, `SlipstreamLpVenue` + `SlipstreamPoolSwapAdapter` (cbZEC/USDC held directly on the second Slipstream deployment, 2026-09-11), `CollateralRegistry`, `AerodromeSwapAdapter`, `MorphoBlueVenue` (built over the two verified Base markets; not the registry's venue until propose → timelock → accept), `PythOracleAdapter` (v1.1, unused) | 374 passed / 0 failed / 12 skipped (2026-09-11; the 12 fork tests need `FORK_URL` — 10 of them run against Base on 2026-09-10: 9 pass / 1 fail, `docs/TESTING.md`), 29 suites |
 | `agent/` | Keeper daemon (viem) — discovers accounts, values health fail-closed across every venue the registry names (the Aave pool cross-checked by G1–G4, any other venue against the Chainlink feeds by V1–V4, the worst venue runs the ladder) with per-feed staleness, acts only via one root `StrategyRouter.unwind` inside the user's grant, and notifies | 233 tests / 45 suites; `verify-abi` 72/72 |
-| `services/yield/` | Live Aave rates, Aerodrome gauge emissions, the two-model yield gate, the LP model, empirical bands — HTTP API + backfill CLI | 131 tests |
+| `services/yield/` | Live Aave rates, Aerodrome gauge emissions, the two-model yield forecast (`/v1/forecast`; `/v1/gate` is the same model as a verdict, kept for its consumers), the LP model, empirical bands — HTTP API + backfill CLI | 131 tests |
 | `web/` | Next.js 14 — wallet connect, cbZEC onboarding, wizard, venue-aware chain-read dashboard with a keeper panel and a pending-venue banner, CoW spot; demo mode without a wallet | 152 unit tests (150 passed, 2 skipped); Playwright 12/12 |
 | `packages/shared/` | The one source for addresses, fees, the health-factor ladder (`ladderFor(entryHf)` — a position's rungs derive from the entry HF it opened at), the slider's bounds, widths, pools | 85 tests |
 | `prototype/` | `simple.html` and `index.html` — dependency-free walkthroughs pinned to the same facts and model numbers, the risk slider and the derived ladder included | 308 checks (130 + 116 + 62) + 6 fuzz |

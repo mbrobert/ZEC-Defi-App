@@ -216,7 +216,7 @@ export const CURATED_POOLS: CuratedPool[] = [
      * position manager and gauge (docs/CBZEC-PATH-2026-09.md option 1, decided 2026-09-10, built
      * 2026-09-11) — the engine does not list this pool and the verified SwapRouter cannot reach
      * it. Its gauge received its first emissions vote in the epoch that began 2026-09-10
-     * (VERIFIED-BASE-FACTS Addendum 8); the vote is re-cast every epoch, so the yield gate reads
+     * (VERIFIED-BASE-FACTS Addendum 8); the vote is re-cast every epoch, so the yield service reads
      * `rewardRate()` / `periodFinish()` live and refuses the pool whenever the epoch has no vote.
      * Not in the Snuggle engine registry (no enginePoolId): its LP pool id is the pool address,
      * left-padded (`directPoolId`).
@@ -282,7 +282,7 @@ export function offerablePools(): CuratedPool[] {
 /**
  * Every pool the product can open an LP position in: the engine menu plus the DIRECT pools held
  * through `SlipstreamLpVenue` (2026-09-11). Whether any of them is OFFERED on a given day is the
- * yield gate's verdict, read live — this is the list the gate is asked about.
+ * yield forecast, read live — this is the list the service prices (and its gate is asked about).
  */
 export function lpMenu(): CuratedPool[] {
   return [...offerablePools(), ...directPools().filter((p) => !!p.poolAddress)];

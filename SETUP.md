@@ -55,13 +55,14 @@ is the short version; encode from the JSON, never from prose.
 
 See `README.md` ("Run every suite") for the commands and `docs/TESTING.md`
 for what each suite proves. Summary for this tree, all counted by running them
-on 2026-09-12 (the counts `docs/TESTING.md` records, evening tree): contracts **401** pass / 0 fail /
-12 fork tests skipped without `FORK_URL` (**12 / 12** pass against Base at block 51,222,568 — 2026-09-13 A5.1, plus
-`scripts/check-cbzec-b20.sh`); keeper **269** tests / 52 suites + ABI seam **113/113** + Solana IDL seam
-**77/77**; yield **167**; web **180** unit (179 + 1 skipped) and **14 / 0 / 6** Playwright scenarios; shared
-**85**; Solana seam **14** (program unit **12**, localnet **34** — 2026-09-13 B3.1, a validator with the CCTP V2 clones; toolchain needed — `solana/SETUP.md`);
-prototypes **130 + 116 + 62** checks + **6** fuzz; root ABI seam **426**. CI runs every one of these on push
-(`docs/TESTING.md` "CI"; the contracts suite as three jobs).
+on 2026-09-13 (slice N, every suite re-measured at `ecfb86f`; the counts `docs/TESTING.md` records): contracts
+**404** pass / 0 fail / 12 fork tests skipped without `FORK_URL` (**12 / 12** pass against Base at block 51,222,568 —
+2026-09-13 A5.1, plus `scripts/check-cbzec-b20.sh`); keeper **271** tests + ABI seam **113/113** + Solana IDL seam
+**77/77**; yield **172**; web **197** unit (0 skipped) and **18 / 0 / 6** Playwright scenarios; shared **93**; Solana
+seams **14** (program unit **12**, localnet **34** — 2026-09-13 B3.1, a validator with the CCTP V2 clones; toolchain
+needed — `solana/SETUP.md`); prototypes **130 + 116 + 62** checks + **6** fuzz; root ABI seam **440**. CI runs every
+one of these on push (`docs/TESTING.md` "CI"; the contracts suite as three jobs). The demo snapshot every suite
+pins to is refreshed as one read-only command, `scripts/refresh-demo-snapshot.mjs` (`docs/TESTING.md` "Slice M").
 
 ## Run
 
@@ -207,9 +208,12 @@ against the live chain cleared the guard on 2026-09-07 and estimated
 
 ## CI
 
-`.github/workflows/ci.yml` runs the contracts suite and the agent + yield
-suites on every push to `main` and on pull requests. It does **not** yet run
-the shared, web, or prototype suites, does not run the fork suite (no
-`BASE_RPC_URL` secret), and does not compile contracts before the agent job
-(so the agent's `verify-abi` skips loudly there — set `VERIFY_ABI_STRICT=1`
-once the ordering is fixed). Those are gaps, listed in `docs/TESTING.md`.
+`.github/workflows/ci.yml` (slice I, 2026-09-12) runs every suite on every push to
+`main` and on pull requests — the contracts suite as three jobs (unit /
+audit-regressions / invariant), `contracts-build` feeding the two ABI seams
+(strict: the keeper's `verify-abi` cannot skip), agent + yield, shared, web
+(typecheck + unit), the prototypes, the Solana seams and the Solana program on
+the real toolchain, static analysis (Slither, Aderyn, halmos) — and a `fork`
+job that FAILS as NOT VERIFIED until the founder creates the `BASE_RPC_URL`
+repository secret (none exists on 2026-09-13). `nightly-invariants.yml` runs the
+invariant suite at 1500 × 120 at 03:17 UTC. `docs/TESTING.md` "CI" is the record.

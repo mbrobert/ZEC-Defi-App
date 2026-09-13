@@ -114,9 +114,9 @@ if (shared) {
     const mcRows = md.split("\n").filter(l => /^\| (aero-[\w-]+|cbeth-weth) \| (sheltered|steady|working) \| \d+ \(/.test(l)).map(l => { const c = l.split("|").map(x => x.replace(/\*/g, "").trim()); return { id: c[1], w: parseInt(c[3]), mc: c[10] === "—" ? null : parseFloat(c[10]) }; }).filter(r => r.mc !== null);
     const badMc = mcRows.filter(r => { const pool = P.OIL_MODEL.pools.find(p => p.id === r.id); const v = P.mcLpNetPct(pool, r.w); return v === null || !near(v, r.mc, 0.011); });
     check(`model: all ${mcRows.length} MC-calibrated lpNet cells reproduce from the two pinned coefficients to 0.011 pt (one per priced cell)`, mcRows.length === pricedRows.length && badMc.length === 0, JSON.stringify(badMc.slice(0, 3)));
-    /* The doc's verdict — an empty menu, or the cells it lists as clearing — is what the page's gate says
-       at the model's borrow, cell for cell. */
-    const clearsDoc = /No pool × setting clears the gate/.test(md) ? [] : [...(md.match(/\*\*Clears the gate:\*\* (.*)$/m)?.[1] ?? "").matchAll(/([\w-]+) \/ (sheltered|steady|working)/g)].map(m => `${m[1]}/${m[2]}`);
+    /* The doc's summary — no cell beats the borrow on both models, or the cells it lists — is what the page's gate
+       says at the model's borrow, cell for cell. */
+    const clearsDoc = /No pool × setting beats the borrow on both models/.test(md) ? [] : [...(md.match(/\*\*Beats the borrow on both models:\*\* (.*)$/m)?.[1] ?? "").matchAll(/([\w-]+) \/ (sheltered|steady|working)/g)].map(m => `${m[1]}/${m[2]}`);
     const clearsPage = [];
     for (const p of P.OIL_MODEL.pools) for (const [pr, name] of [["CONSERVATIVE", "sheltered"], ["MODERATE", "steady"], ["AGGRESSIVE", "working"]]) if (P.gate(p, B, P.presetWidthBps(pr, p.pairClass)).ok) clearsPage.push(`${p.id}/${name}`);
     check(`model: the doc's verdict at ${B}% (${clearsDoc.length === 0 ? "no pool × setting clears" : clearsDoc.join(", ") + " clear"}) is the page's gate's verdict, cell for cell`, JSON.stringify(clearsDoc.sort()) === JSON.stringify(clearsPage.sort()), JSON.stringify({ doc: clearsDoc, page: clearsPage }));

@@ -175,7 +175,7 @@ export const AERODROME = {
     /**
      * cbZEC/USDC Slipstream pool (EIP-1167 clone). At read time its gauge had
      * rewardRate() = 0 and periodFinish() = 0 — created, never voted. LP here
-     * earns NO AERO until an emissions vote lands; the yield gate must read the
+     * earns NO AERO until an emissions vote lands; the yield service must read the
      * gauge live and never offer it on a typed assumption.
      */
     cbZEC_USDC: {

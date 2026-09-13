@@ -119,7 +119,7 @@ export interface CuratedPool {
   poolAddress?: string;
   /** The engine's bytes32 poolId from approvedPools — what engine deposits use. Absent for DIRECT pools. */
   enginePoolId?: string;
-  /** Aerodrome gauge (DIRECT pools). rewardRate()/periodFinish() read live by the yield gate. */
+  /** Aerodrome gauge (DIRECT pools). rewardRate()/periodFinish() read live by the yield service. */
   gauge?: string;
   /** Slipstream tick spacing (DIRECT pools). */
   tickSpacing?: number;

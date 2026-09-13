@@ -3,7 +3,7 @@
  *
  * Every input that is a risk parameter (liquidation threshold, borrow rate,
  * emissions, IL drag) arrives as an argument that was READ from chain or from
- * the yield gate. Nothing in this file types an LTV, HF, fee or ±.
+ * the yield forecast. Nothing in this file types an LTV, HF, fee or ±.
  * Ladder rungs and fee bps come from @zyo/shared.
  */
 import {

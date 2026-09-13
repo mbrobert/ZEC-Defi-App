@@ -763,7 +763,7 @@ said so, `StakeSkipped`); there is no rebalancer, the range is static; the
 fee chokepoint is on what `claim` / `close` collect (AERO from the gauge, any
 trading fees accrued while unstaked), once per distinct token, principal
 untaxed. *Risk lines it adds, each stated in code or copy:* a killed or
-unvoted gauge pays nothing (the yield gate reads `rewardRate` live and the
+unvoted gauge pays nothing (the yield service reads `rewardRate` live and the
 pool note says the vote is weekly); the range does not follow the price (the
 dashboard shows it; the disclosure says it earns nothing outside it); an
 early-withdraw penalty on the AERO — read 2026-09-11: 100 % of the reward for

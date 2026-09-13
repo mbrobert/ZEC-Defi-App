@@ -1,4 +1,4 @@
-/* verify-advanced — named checks for prototype/index.html (Base-first, full control).
+/* verify-advanced — named checks for prototype/index.html (the Base module, Advanced, full control).
    Covers the Lens H findings (net-APY sign, 100% LP withdrawal keeps debt, one
    position per confirm, absurd amounts, width bounds and computed ±, keyboard
    reachability) plus the pivot rules shared with the simple build. */

@@ -1,4 +1,4 @@
-/* verify-simple — named checks for prototype/simple.html (Base-first v1).
+/* verify-simple — named checks for prototype/simple.html (the Base module, Simple).
    Every rule from BUILD-SPEC, BASE-PIVOT §1/§4, AUDIT-FINDINGS Lens G and
    Part 5 "Prototypes" has a check here; the page's own pure logic is driven
    through window.__oil (the real reducer, not a reimplementation). */

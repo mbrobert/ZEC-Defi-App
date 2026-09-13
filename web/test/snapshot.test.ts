@@ -94,12 +94,12 @@ test("demo-gate.json is pinned to MODEL-NUMBERS.md (every served lpNet, drag, em
       `the gate's borrow ${DEMO_GATE_RAW.borrowAprPct}% differs from the market snapshot's ${DEMO_MARKET.usdcBorrowAprPct}% but is not the fresher read`
     );
   }
-  // The doc's verdict — an empty menu, or the cells it lists — is the payload's, cell for cell.
-  const clearsDoc = /No pool × setting clears the gate/.test(doc)
+  // The doc's summary — no cell beats the borrow on both models, or the cells it lists — is the payload's, cell for cell.
+  const clearsDoc = /No pool × setting beats the borrow on both models/.test(doc)
     ? []
-    : [...(doc.match(/\*\*Clears the gate:\*\* (.*)$/m)?.[1] ?? "").matchAll(/([\w-]+) \/ (sheltered|steady|working)/g)].map((m) => `${m[1]}/${m[2]}`).sort();
+    : [...(doc.match(/\*\*Beats the borrow on both models:\*\* (.*)$/m)?.[1] ?? "").matchAll(/([\w-]+) \/ (sheltered|steady|working)/g)].map((m) => `${m[1]}/${m[2]}`).sort();
   const clearsPayload = [...new Set(DEMO_GATE_RAW.qualifying.map((q: { poolId: string; setting: string }) => `${q.poolId}/${q.setting}`))].sort();
-  assert.deepEqual(clearsPayload, clearsDoc, "the cells demo-gate.json offers are exactly the cells MODEL-NUMBERS.md says clear");
+  assert.deepEqual(clearsPayload, clearsDoc, "the cells demo-gate.json marks as beating the borrow on both models are exactly the cells MODEL-NUMBERS.md lists");
 
   // Per pool × setting table: | pool | setting | width | delay | gross | net | realized | drag | **lpNet** | ...
   const rows = [...doc.matchAll(/^\| (aero-[a-z0-9-]+|cbeth-weth) \| (sheltered|steady|working) \| (\d+) \([^)]*\) \| (\d+)h \| ([\d.]+)% \| ([\d.]+)% \| ([-\d.]+%|—) \| ([-\d.]+%|—) \| \*\*([-\d.]+)%\*\*|^\| (aero-[a-z0-9-]+|cbeth-weth) \| (sheltered|steady|working) \| (\d+) \([^)]*\) \| (\d+)h \| ([\d.]+)% \| ([\d.]+)% \| — \| — \| — /gm)];

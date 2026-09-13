@@ -3,6 +3,20 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-13 — Slice N: the stale references and the vocabulary sweep (BUILD-PLAN §6); every suite re-measured
+
+- `/tmp/fix2` is gone from the tree's live text: the skipped web test pinned to the 2026-09-06 hand-off
+  `MODEL-NUMBERS-v2.md` deleted (web unit 198 → **197**, 0 skipped), both prototypes' `OIL_CONTRACTS` comment
+  points at `docs/CONTRACT-ABI.md`. The gate vocabulary: the report's summary line is "No pool × setting beats the
+  borrow on both models…" / "Beats the borrow on both models:" (`lp-sim.py`, the three parsers, the report
+  regenerated through the tool at the same block), the title "the Base module's yield model"; README's "only when
+  the yield gate says that pool clears the borrow rate" → the forecast and the acknowledgment; "the yield gate reads"
+  (RISKS §16, shared comments, `web/lib/math.ts`) → the yield service / the forecast; "Base-first" in the prototypes
+  and their suites → "the Base module". `SETUP.md`'s CI paragraph (pre-slice I) now describes the workflow.
+- Re-measured at `ecfb86f`: forge **404 / 0 / 12** (36 suites), root ABI seam **440**, shared **93**, Solana seams
+  **14**, keeper **271** + 113/113 + 77/77, yield **172**, web unit **197 / 0 / 0**, e2e **18 / 0 / 6**, prototypes
+  **130 · 116 · 62 · 6**; `docs/TESTING.md` Summary and `SETUP.md` carry them, dated.
+
 ## 2026-09-13 — Slice M, the refresh: the demo snapshot at block 51,241,497 (04:05:41 UTC), one read-only command
 
 - `scripts/refresh-demo-snapshot.mjs --block latest` (→ 51,241,497, the tip less a 20-block margin) re-read
