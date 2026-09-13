@@ -22,3 +22,9 @@ solana/.anchor/
 solana/test-ledger/
 solana/**/*-keypair.json
 solana/target/deploy/*.json
+
+# The Cowork handoff bundle the founder dropped in: every file in it is already
+# in the repo at its real path (docs/handoff/2026-09-12-cowork/WHERE-THESE-GO.md
+# says where), and its CLAUDE-CODE-HANDOFF.md says itself it is not committed.
+# Ignored rather than deleted — removing it is the founder's call, one line to undo.
+docs/handoff/

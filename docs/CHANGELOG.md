@@ -3,6 +3,25 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-13 — ROADMAP §1 stops keeping its own copy of the counts, and `git status` is clean
+
+§1 was measured at `d2f7760` and never re-measured. By the end of the same day every number in its table was
+superseded — contracts 388 → 433, the ABI seam 425 → 444, shared 85 → 99, the keeper 269 → 316, web 180 → 199,
+the Solana localnet 26 → 36 — and its "not done" list still named four things that had since shipped: the
+cross-chain loop (A5 + Stream C), the pool-size gate, the two audit packages and the launch parameters. This is
+the same failure rule 7 names for `TESTING.md`, in the file that states the rule.
+
+- **The counts table is gone from §1**, replaced by a pointer to `TESTING.md`'s summary, which is now the one
+  place a suite's command and number live. §1 keeps only what it is for: which workstreams are done (deferring
+  to `BUILD-PLAN` §4, reconciled at `18c8684`) and what is left.
+- **The remaining list is rewritten to what is actually left**: the Sepolia deploy, the beta scope sign-off, the
+  cross-chain loop's *operational* half (the two-key process, the address lookup table, the devnet ↔ Sepolia
+  run — the code is built and nothing has crossed a chain), the two non-code questions behind it (Fast versus
+  Standard, the reserve never sized against a drawdown), the founder's walk-through, and the H3 items.
+- **`docs/handoff/` is gitignored**, so `git status` is clean rather than clean-except-one-line. Every file in
+  that bundle is already in the repo at its real path and its own `CLAUDE-CODE-HANDOFF.md` says it is not
+  committed. Ignored, not deleted — removing it is the founder's call, and it is one line to undo.
+
 ## 2026-09-13 — The Sepolia dry run re-proved against the live chain, six days on
 
 `DEPLOY-SEPOLIA.md` §3's dry run was last run on 2026-09-07. Re-run today against live Base Sepolia — a

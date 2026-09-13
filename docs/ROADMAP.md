@@ -19,30 +19,45 @@ in November do not.
 > an afternoon: send the inquiry emails this week**, with "code freeze expected
 > 2026-12-11" stated. Everything else has slack. This does not.
 
-## 1 · Where we actually are (measured 2026-09-13 from the tree, HEAD `d2f7760`)
+## 1 · Where we actually are (re-measured 2026-09-13 at HEAD `7b90995`)
 
-This is further along than the build plan assumed — the plan was written before
-I could see this clone, and two of its biggest steps have already shipped.
+**Every suite's command and today's count live in one place: `docs/TESTING.md`'s
+summary table.** They are deliberately not repeated here. This section used to
+carry its own copy, measured at `d2f7760`, and by the end of that same day every
+number in it was wrong — contracts 388 → 433, the ABI seam 425 → 444, shared
+85 → 99, the keeper 269 → 316, web 180 → 199, the Solana localnet 26 → 36. Rule 7
+below is about `TESTING.md`; it applies to this file just as much.
 
-| Area | State | Evidence |
-|---|---|---|
-| Contracts | **388 passed / 0 failed / 11 skipped**, 33 suites | `forge test` |
-| Contracts, fork vs Base mainnet | **11 / 11 green** at block 51,222,568 — first all-green run | `test/fork/BaseFork.t.sol` |
-| ABI seam | 425 selectors across 19 contracts | `verify-abi` |
-| Shared | 85 | `@zyo/shared` |
-| Keeper | 269 tests / 52 suites + 113/113 ABI + 77/77 Solana IDL seams | `@zyo/agent` |
-| Yield service | 149 | `@zyo/yield` |
-| Web | 180 unit (1 skipped) + 14 e2e | `@zyo/web` |
-| Prototypes | 130 + 116 + 62 + 6 fuzz | `prototype/test` |
-| Solana program | 7 unit + **26 localnet passing** — owner path 11, keeper ladder 11, world 4 | `anchor test` |
-| **A3 gate → forecast** | **DONE** | `/v1/forecast`, `forecast.test.ts`, both prototype builds |
-| **A4 risk slider** | **DONE** | registry `entryHfFloorWad` setter at 1.25, `EntryHfRecorded` per position, `ladderFor(entryHf)`, HF ↔ borrow both ways in web + prototypes + e2e |
-| A1/A2/A6/A7/A8, B1–B4 | DONE | Sepolia package, Morpho venue, notifier, wallet pill, audit waves 2–3, Solana facts/architecture/program/keeper |
+Which workstream is where is `docs/BUILD-PLAN-2026-09-12.md` §4, reconciled
+against `git log` at `18c8684`. In one line: **A1–A9 and B1–B6 have all shipped
+code, and the cross-chain loop (D6) is now built on both chains and in the
+keeper** — A5.1 `e931bc0`, B3.1 `1bdbe63`, A5.2 `b369e81`, Stream C `2868e7e`.
+A8 closed at `dfa6e00`; the launch parameters are decided (D8, `0f04137`); both
+RFP packages are written and re-measured at the current tree (`16cf235`,
+`9a97ed2`); the audit inquiries went out on 2026-09-13.
 
-**Not done, and this is the whole remaining list:** the Sepolia deploy itself
-(founder's key), the cross-chain loop (A5 + Stream C — CCTP in both directions),
-the pool-size gate if `SOLANA-ARCHITECTURE.md` §7 is still unbuilt, a manual
-walk-through by the founder, and the two audit packages.
+**Not done — and this is the whole remaining list:**
+
+1. **The Base Sepolia deploy itself** (founder's key). The only H1 item left.
+2. **Beta scope signed off** — `docs/BETA-SCOPE-2026-09-13.md` is drafted and
+   waiting on the founder to confirm or amend it.
+3. **The cross-chain loop's operational half.** The code is built; **nothing has
+   crossed a chain.** Three things are missing, and two of them are the founder's:
+   a process that holds a Base key beside the Solana one (`runSolanaKeeper` takes
+   a `baseBurner` and is given none, so a linked pair's rungs 3–4 quietly take the
+   Solana-only path), the address lookup table both cross-chain transactions need
+   (the delivery measured 1,264 bytes against the 1,232 legacy limit), and the run
+   end to end on devnet ↔ Sepolia. Valve date **2026-11-13** (§3).
+4. **Two questions behind that loop that are not code.** Nothing yet *chooses*
+   Fast over Standard when the Fast allowance is exhausted; and the reserve —
+   today the rung-2 requirement, 4.11 % of the debt at a 1.625 entry — has never
+   been sized against a real ZEC drawdown. Both are
+   `docs/CROSSCHAIN-RUNBOOK-2026-09-13.md` §5.
+5. **The founder's own walk-through**, end to end on Sepolia and on localnet,
+   with what felt wrong written down (H2).
+6. **The H3 items**: one internal audit wave over everything merged since the
+   last, the `beta-audit-1` tag, the RFP packages sent at that hash, and the
+   lawyer's read on `AUDIT-SHORTLIST` §5.
 
 ## 2 · The four horizons
 
