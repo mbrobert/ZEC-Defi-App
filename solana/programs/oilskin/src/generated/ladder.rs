@@ -20,6 +20,9 @@ pub const HF_HYSTERESIS_SCALE_BPS: u64 = 500;
 pub const HF_HYSTERESIS_SPAN_BPS: u64 = 5500;
 /// Below this entry HF four rungs do not fit; a record under it (or 0) runs the floor's ladder (shared MIN_LADDER_ENTRY_HF).
 pub const MIN_LADDER_ENTRY_HF_BPS: u64 = 11000;
+/// Above this entry HF the ACTING rungs (repay / derisk / emergency) stop deriving and take this
+/// entry's rungs instead; `warn` keeps deriving because it only notifies (shared MAX_LADDER_ENTRY_HF, D10).
+pub const MAX_LADDER_ENTRY_HF_BPS: u64 = 20000;
 
 /// The ladder, mildest → most severe, in the order shared HF_LADDER declares it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

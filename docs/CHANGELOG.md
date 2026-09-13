@@ -3,6 +3,36 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-13 — D10: the acting rungs stop deriving above an entry of 2.00, so the keeper cannot unwind a position that is nowhere near danger
+
+**The defect.** The ladder is `rung = 1 + (e − 1) × k`, so every rung scales with the entry health
+factor without limit. The wizard's slider runs from the floor all the way to "borrow nothing", so a
+large deposit against a small borrow opens at a very high HF — and at an entry of 78 the rule put
+**repay at 50.28 and derisk at 28.72**. The keeper would spend the owner's USDC and close their
+liquidity position on something roughly fifty times clear of liquidation. Recorded as observation
+O-2 on 2026-09-12 and left open; the founder decided it on 2026-09-13.
+
+**The decision (D10).** `MAX_LADDER_ENTRY_HF = 2.00`. Above it the **acting** rungs — repay, derisk,
+emergency — stop deriving and take the 2.00 ladder's **1.64 / 1.36 / 1.09** (disarms 1.73 / 1.45 /
+1.18). **`warn` is not capped**: it only notifies, and telling a conservative owner their position
+has moved a long way from where they opened it is exactly what they asked for. At entry 78 the
+ladder is now warn < 71.07 (notify) and the cap's three acting rungs.
+
+- **Nothing at or below 2.00 moved** — 1.25, 1.30, 1.55 and Kamino's 1.625 are byte-identical, rung
+  and disarm, and the test asserts that explicitly rather than leaving it implied.
+- Applied in **both twins**: `ladderFor` (float) and `ladderBpsFor` (the integer rule the Solana
+  program runs), which agree rung for rung at every entry tested up to 78.
+- **The Solana program** carries it too: `MAX_LADDER_ENTRY_HF_BPS` generated into `ladder.rs` from
+  shared, and `health.rs` `ladder_for` capping the acting rungs; the Rust shape sweep now runs to
+  25.00 instead of 5.00 so it crosses the cap.
+- **Both prototypes' pinned block** mirrors it (byte-equal, and `verify-toggle` proves the mirror
+  against shared rung for rung).
+- **A consequence worth naming:** `reserveFractionFor` reads the repay rung, so the cross-chain
+  reserve also stops growing with the entry — 5.2 % of the debt above the cap, where a 2.60 entry
+  used to require 6.91 %.
+- Measured: shared **99 / 99** (+1, the D10 test), agent 316, yield 178, web 199, Solana seam 14,
+  Rust 12, prototypes 130 · 116 · 62 · 6.
+
 ## 2026-09-13 — Three things that would have gone wrong on Sepolia, and a test command that could not run on this Mac
 
 The 2026-09-12 floor decision (1.25, and the 50 % product cap deleted) did not reach three places that

@@ -187,7 +187,10 @@ The keeper ladder is the position's own since A4 (2026-09-12, BUILD-PLAN D7):
 (`entryHfWad[account]`, event `EntryHfRecorded`), the keeper reads it each tick
 and runs shared `ladderFor(entryHf)` — rung = 1 + (entry − 1) × 0.91 / 0.64 /
 0.36 / 0.09, emergency never under 1.05, hysteresis max(0.02, 0.05 × (entry − 1)
-÷ 0.55) — so a position opened at the 1.25 floor runs warn 1.23, repay 1.16,
+÷ 0.55), and since **D10 (2026-09-13)** the acting rungs stop deriving above an
+entry of 2.00 and take that entry's rungs (1.64 / 1.36 / 1.09) so the keeper
+never repays or de-risks a position far clear of liquidation; `warn`, which only
+notifies, keeps deriving — so a position opened at the 1.25 floor runs warn 1.23, repay 1.16,
 derisk 1.09, emergency 1.05 with 0.02 of hysteresis (`HF_LADDER`, the floor's
 own ladder), one opened at 1.30 runs 1.27 / 1.19 / 1.11 / 1.05 with 0.03, and
 one opened at the Sheltered mark 1.55 runs the 1.50 / 1.35 / 1.20 / 1.05 table

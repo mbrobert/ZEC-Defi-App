@@ -16,6 +16,7 @@ import {
   HF_LADDER,
   LADDER_RUNG_FACTORS_PCT,
   LOAN_DUST_UNITS,
+  MAX_LADDER_ENTRY_HF,
   MIN_LADDER_ENTRY_HF,
   hysteresisFor,
 } from "@zyo/shared";
@@ -53,6 +54,9 @@ lines.push(`pub const HF_HYSTERESIS_SCALE_BPS: u64 = ${HF_HYSTERESIS_SCALE_BPS};
 lines.push(`pub const HF_HYSTERESIS_SPAN_BPS: u64 = ${HF_HYSTERESIS_SPAN_BPS};`);
 lines.push(`/// Below this entry HF four rungs do not fit; a record under it (or 0) runs the floor's ladder (shared MIN_LADDER_ENTRY_HF).`);
 lines.push(`pub const MIN_LADDER_ENTRY_HF_BPS: u64 = ${bps(MIN_LADDER_ENTRY_HF)};`);
+lines.push(`/// Above this entry HF the ACTING rungs (repay / derisk / emergency) stop deriving and take this`);
+lines.push(`/// entry's rungs instead; \`warn\` keeps deriving because it only notifies (shared MAX_LADDER_ENTRY_HF, D10).`);
+lines.push(`pub const MAX_LADDER_ENTRY_HF_BPS: u64 = ${bps(MAX_LADDER_ENTRY_HF)};`);
 lines.push("");
 lines.push("/// The ladder, mildest → most severe, in the order shared HF_LADDER declares it.");
 lines.push("#[derive(Clone, Copy, Debug, PartialEq, Eq)]");

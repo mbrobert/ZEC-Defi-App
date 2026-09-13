@@ -47,6 +47,20 @@ export const HF_HYSTERESIS_SPAN = 0.55;
  * ladder that is born fired. A registry floor must sit at or above it.
  */
 export const MIN_LADDER_ENTRY_HF = 1.1;
+/**
+ * The entry HF above which the ACTING rungs stop deriving (founder's decision D10, 2026-09-13).
+ *
+ * The rungs are `1 + (e − 1) × k`, so they scale with the entry without limit. That is right near
+ * the floor — a 1.25 opener's repay at 1.16 really is close to liquidation — and wrong far from it.
+ * At an entry of 78 (a large deposit against a token borrow, which the slider allows: its left-hand
+ * end is "borrow nothing") the rule put repay at 50.28 and derisk at 28.72, so the keeper would
+ * spend the owner's USDC and close their liquidity position on something fifty times clear of
+ * liquidation. Above this cap, `repay` / `derisk` / `emergency` are the cap's rungs.
+ *
+ * `warn` is NOT capped: it only notifies, and telling a conservative owner that their position has
+ * moved a long way from where they opened it is exactly what they asked for.
+ */
+export const MAX_LADDER_ENTRY_HF = 2.0;
 /** The two quick-click marks on the slider (BUILD-PLAN D7). Marks, not modes: any HF ≥ the floor is allowed. */
 export const HF_MARKS: readonly { id: "sheltered" | "expert"; hf: number; label: string }[] = Object.freeze([
   { id: "sheltered", hf: 1.55, label: "Sheltered" },
@@ -102,8 +116,11 @@ function assertEntryHf(entryHf: number): void {
  */
 export function ladderFor(entryHf: number): readonly HfRung[] {
   assertEntryHf(entryHf);
-  const h = hysteresisFor(entryHf);
-  const raw = RUNG_SHAPE.map((sh) => round2(1 + (entryHf - 1) * LADDER_RUNG_FACTORS[sh.id]));
+  // D10: the acting rungs derive from the entry, capped; `warn` (notify only) derives from it uncapped.
+  const acting = Math.min(entryHf, MAX_LADDER_ENTRY_HF);
+  const hWarn = hysteresisFor(entryHf);
+  const hActing = hysteresisFor(acting);
+  const raw = RUNG_SHAPE.map((sh) => round2(1 + ((sh.id === "warn" ? entryHf : acting) - 1) * LADDER_RUNG_FACTORS[sh.id]));
   const hf: number[] = new Array(raw.length);
   // most severe first: the emergency floor, then each milder rung at least 0.01 above the next
   hf[raw.length - 1] = Math.max(raw[raw.length - 1]!, EMERGENCY_HF_MIN);
@@ -112,7 +129,16 @@ export function ladderFor(entryHf: number): readonly HfRung[] {
     throw new RangeError(`ladderFor(${entryHf}): the warn rung (${hf[0]}) would not sit below the entry — the buffer is too thin for four rungs`);
   }
   return Object.freeze(
-    RUNG_SHAPE.map((sh, i) => Object.freeze({ id: sh.id, hf: hf[i]!, disarmHf: round2(hf[i]! + h), severity: sh.severity, action: sh.action, label: sh.label }))
+    RUNG_SHAPE.map((sh, i) =>
+      Object.freeze({
+        id: sh.id,
+        hf: hf[i]!,
+        disarmHf: round2(hf[i]! + (sh.id === "warn" ? hWarn : hActing)),
+        severity: sh.severity,
+        action: sh.action,
+        label: sh.label,
+      })
+    )
   );
 }
 
@@ -268,6 +294,8 @@ export const EMERGENCY_HF_MIN_BPS = Math.round(EMERGENCY_HF_MIN * 10_000);
 export const HF_HYSTERESIS_MIN_BPS = Math.round(HF_HYSTERESIS_MIN * 10_000);
 export const HF_HYSTERESIS_SCALE_BPS = Math.round(HF_HYSTERESIS * 10_000);
 export const HF_HYSTERESIS_SPAN_BPS = Math.round(HF_HYSTERESIS_SPAN * 10_000);
+/** `MAX_LADDER_ENTRY_HF` in basis points of 1.0 — the cap the Solana program applies to the acting rungs. */
+export const MAX_LADDER_ENTRY_HF_BPS = Math.round(MAX_LADDER_ENTRY_HF * 10_000);
 
 /** A health factor in basis points of 1.0 (12_500 = 1.25), the unit every on-chain rung is compared in. */
 export interface HfRungBps {
@@ -310,15 +338,20 @@ function assertEntryHfBps(entryHfBps: number): void {
  */
 export function ladderBpsFor(entryHfBps: number): readonly HfRungBps[] {
   assertEntryHfBps(entryHfBps);
-  const h = hysteresisBpsFor(entryHfBps);
-  const raw = LADDER_RUNG_FACTORS_PCT.map((k) => roundTo100Bps(1_000_000 + (entryHfBps - 10_000) * k));
+  // D10, in integers: warn derives from the entry, the acting rungs from min(entry, cap).
+  const actingBps = Math.min(entryHfBps, MAX_LADDER_ENTRY_HF_BPS);
+  const hWarn = hysteresisBpsFor(entryHfBps);
+  const hActing = hysteresisBpsFor(actingBps);
+  const raw = LADDER_RUNG_FACTORS_PCT.map((k, i) => roundTo100Bps(1_000_000 + ((i === 0 ? entryHfBps : actingBps) - 10_000) * k));
   const hf: number[] = new Array(raw.length);
   hf[raw.length - 1] = Math.max(raw[raw.length - 1]!, EMERGENCY_HF_MIN_BPS);
   for (let i = raw.length - 2; i >= 0; i--) hf[i] = Math.max(raw[i]!, hf[i + 1]! + 100);
   if (!(hf[0]! < entryHfBps)) {
     throw new RangeError(`ladderBpsFor(${entryHfBps}): the warn rung (${hf[0]}) would not sit below the entry`);
   }
-  return Object.freeze(RUNG_SHAPE.map((sh, i) => Object.freeze({ id: sh.id, hfBps: hf[i]!, disarmHfBps: hf[i]! + h, severity: sh.severity })));
+  return Object.freeze(
+    RUNG_SHAPE.map((sh, i) => Object.freeze({ id: sh.id, hfBps: hf[i]!, disarmHfBps: hf[i]! + (i === 0 ? hWarn : hActing), severity: sh.severity }))
+  );
 }
 
 /**

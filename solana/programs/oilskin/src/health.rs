@@ -6,7 +6,7 @@
 
 use crate::generated::ladder::{
     Rung, EMERGENCY_HF_MIN_BPS, ENTRY_HF_FLOOR_BPS, HF_HYSTERESIS_MIN_BPS, HF_HYSTERESIS_SCALE_BPS, HF_HYSTERESIS_SPAN_BPS,
-    LADDER, LADDER_RUNG_FACTORS_PCT, LOAN_DUST_UNITS, MIN_LADDER_ENTRY_HF_BPS,
+    LADDER, LADDER_RUNG_FACTORS_PCT, LOAN_DUST_UNITS, MAX_LADDER_ENTRY_HF_BPS, MIN_LADDER_ENTRY_HF_BPS,
 };
 use crate::kamino::ObligationView;
 use crate::errors::OilskinError;
@@ -85,11 +85,18 @@ pub fn hysteresis_bps_for(entry_hf_bps: u64) -> u64 {
 
 /// shared `ladderBpsFor`: the four rungs a position opened at `entry_hf_bps` runs on, in the generated order,
 /// each with its disarm level. Requires `entry_hf_bps ≥ MIN_LADDER_ENTRY_HF_BPS` (the caller falls back below it).
+/// D10 (2026-09-13): index 0 is `warn`, which only notifies and therefore keeps deriving from the
+/// entry however high it is; 1..3 are the ACTING rungs, which derive from `min(entry, MAX)` so the
+/// keeper never repays or de-risks a position that is far clear of liquidation.
 pub fn ladder_for(entry_hf_bps: u64) -> [Rung; 4] {
-    let buffer = (entry_hf_bps - 10_000) as u128;
-    let h = hysteresis_bps_for(entry_hf_bps);
+    let acting_bps = entry_hf_bps.min(MAX_LADDER_ENTRY_HF_BPS);
+    let buffer_warn = (entry_hf_bps - 10_000) as u128;
+    let buffer_acting = (acting_bps - 10_000) as u128;
+    let h_warn = hysteresis_bps_for(entry_hf_bps);
+    let h_acting = hysteresis_bps_for(acting_bps);
     let mut hf = [0u64; 4];
     for i in 0..4 {
+        let buffer = if i == 0 { buffer_warn } else { buffer_acting };
         hf[i] = round_to_100_bps(1_000_000 + buffer * (LADDER_RUNG_FACTORS_PCT[i] as u128));
     }
     hf[3] = hf[3].max(EMERGENCY_HF_MIN_BPS);
@@ -99,7 +106,7 @@ pub fn ladder_for(entry_hf_bps: u64) -> [Rung; 4] {
     let mut out = LADDER;
     for i in 0..4 {
         out[i].hf_bps = hf[i];
-        out[i].disarm_hf_bps = hf[i] + h;
+        out[i].disarm_hf_bps = hf[i] + if i == 0 { h_warn } else { h_acting };
     }
     out
 }
@@ -207,16 +214,32 @@ mod tests {
         // BUILD-PLAN §2b's worked row: 1.30 → 1.27 / 1.19 / 1.11 / 1.05, hysteresis 0.03
         assert_eq!(ladder_for(13_000).iter().map(|r| r.hf_bps).collect::<Vec<_>>(), vec![12_700, 11_900, 11_100, 10_500]);
         assert_eq!(hysteresis_bps_for(13_000), 300);
-        // a generous entry: 2.60 → 2.46 / 2.02 / 1.58 / 1.14, hysteresis 0.15
-        assert_eq!(ladder_for(26_000).iter().map(|r| r.hf_bps).collect::<Vec<_>>(), vec![24_600, 20_200, 15_800, 11_400]);
+        // a generous entry, D10: warn still derives (2.46) but the acting rungs are the cap's
+        // (2.00 → 1.64 / 1.36 / 1.09). Before the cap this row was 2.46 / 2.02 / 1.58 / 1.14.
+        assert_eq!(ladder_for(26_000).iter().map(|r| r.hf_bps).collect::<Vec<_>>(), vec![24_600, 16_400, 13_600, 10_900]);
         assert_eq!(hysteresis_bps_for(26_000), 1_500);
+        // D10: above the cap every ACTING rung is the cap's, trigger and disarm, however high the entry;
+        // `warn` keeps deriving. The defect: at entry 78 this used to repay at 50.28 and derisk at 28.72.
+        let cap = ladder_for(MAX_LADDER_ENTRY_HF_BPS);
+        assert_eq!(cap.iter().map(|r| r.hf_bps).collect::<Vec<_>>(), vec![19_100, 16_400, 13_600, 10_900]);
+        for e in [20_500u64, 26_000, 40_000, 100_000, 780_000] {
+            let l = ladder_for(e);
+            assert_eq!(l[1..].iter().map(|r| (r.hf_bps, r.disarm_hf_bps)).collect::<Vec<_>>(), cap[1..].iter().map(|r| (r.hf_bps, r.disarm_hf_bps)).collect::<Vec<_>>(), "acting rungs at {e}");
+            assert!(l[0].hf_bps > cap[0].hf_bps, "warn still derives at {e}");
+            assert!(l[0].hf_bps < e, "warn sits under the entry at {e}");
+        }
+        // and at or below the cap nothing moved
+        for e in [11_000u64, 12_500, 13_000, 15_500, 16_250, 20_000] {
+            assert_eq!(ladder_for(e), ladder_for(e.min(MAX_LADDER_ENTRY_HF_BPS)), "unchanged at {e}");
+        }
         // near the bottom the clamp lifts the rungs 0.01 apart: 1.10 → 1.09 / 1.07 / 1.06 / 1.05
         assert_eq!(ladder_for(11_000).iter().map(|r| r.hf_bps).collect::<Vec<_>>(), vec![10_900, 10_700, 10_600, 10_500]);
         // ids and severities travel with the rungs
         assert_eq!(ladder_for(16_250).iter().map(|r| r.id).collect::<Vec<_>>(), vec![0, 1, 2, 3]);
-        // shape, every entry from the minimum to 5.00: strictly descending, disarm above the trigger, warn under the entry
+        // shape, every entry from the minimum to 25.00 (well past the D10 cap): strictly descending,
+        // disarm above the trigger, warn under the entry
         let mut e = MIN_LADDER_ENTRY_HF_BPS;
-        while e <= 50_000 {
+        while e <= 250_000 {
             let l = ladder_for(e);
             assert!(l[0].hf_bps < e, "{e}");
             for i in 0..4 {

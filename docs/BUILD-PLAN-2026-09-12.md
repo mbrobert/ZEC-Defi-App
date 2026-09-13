@@ -86,8 +86,8 @@ limits and which one is binding.
 | Bidirectional | HF ↔ borrow amount via the identity above; either field drives the other; live |
 | Binding caps shown | venue max LTV (Aave LT-derived, Kamino 40 %), pool liquidity, deposit caps — whichever binds is named on screen |
 | On-chain floor | `CollateralRegistry.entryHfFloor` — one number, `EntryHfTooLow` below it; the venue enforces it, the slider just cannot go under it |
-| Ladder for a chosen entry HF `e` | rungs scale with the chosen buffer: `rung = 1 + (e − 1) × k` with k = 0.91 / 0.64 / 0.36 / 0.09 (this reproduces the 1.50 / 1.35 / 1.20 / 1.05 table the product ran before the pin at e = 1.55; at the 1.25 floor the rungs are 1.23 / 1.16 / 1.09 / 1.05); **emergency never below 1.05**; hysteresis = 0.05 × (e − 1) ÷ 0.55, minimum 0.02 |
-| Worked | e = 1.30 → warn 1.27, repay 1.19, derisk 1.11, emergency 1.05 · e = 1.25 → 1.23 / 1.16 / 1.09 / 1.05 |
+| Ladder for a chosen entry HF `e` | rungs scale with the chosen buffer: `rung = 1 + (e − 1) × k` with k = 0.91 / 0.64 / 0.36 / 0.09 (this reproduces the 1.50 / 1.35 / 1.20 / 1.05 table the product ran before the pin at e = 1.55; at the 1.25 floor the rungs are 1.23 / 1.16 / 1.09 / 1.05); **emergency never below 1.05**; hysteresis = 0.05 × (e − 1) ÷ 0.55, minimum 0.02. **D10, 2026-09-13: above `MAX_LADDER_ENTRY_HF` = 2.00 the ACTING rungs (repay / derisk / emergency) stop deriving and take the 2.00 ladder's — 1.64 / 1.36 / 1.09 — while `warn` keeps deriving, because it only notifies.** Below the cap nothing changed |
+| Worked | e = 1.30 → warn 1.27, repay 1.19, derisk 1.11, emergency 1.05 · e = 1.25 → 1.23 / 1.16 / 1.09 / 1.05 · e = 2.60 → warn 2.46, then the cap's 1.64 / 1.36 / 1.09 |
 | Forecast panel | recomputes on every slider move: liquidation price, drawdown, borrow APR after this borrow, both LP-net numbers, user net |
 | Acknowledgment | required below the Sheltered mark (1.55); the copy names the drawdown-to-liquidation figure the user chose |
 

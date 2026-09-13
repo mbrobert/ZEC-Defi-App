@@ -1134,6 +1134,7 @@ const OIL_SHARED = Object.freeze({
   HF_HYSTERESIS_MIN: 0.02,
   HF_HYSTERESIS_SPAN: 0.55,
   MIN_LADDER_ENTRY_HF: 1.1,
+  MAX_LADDER_ENTRY_HF: 2,
   HF_MARKS: [
     { id: "sheltered", hf: 1.55, label: "Sheltered" },
     { id: "expert", hf: 1.3, label: "Expert" },
@@ -1361,10 +1362,12 @@ const LAD = Object.freeze({ entryHfFloor: SH.ENTRY_HF_FLOOR, hysteresis: Math.ro
 const RUNGS = SH.HF_LADDER.map(r=>r.id);                    // mildest → most severe
 /* The ladder for a chosen entry HF e (BUILD-PLAN-2026-09-12 §2b), mirroring shared/health.ts ladderFor:
    rung = 1 + (e − 1) × k, emergency never under EMERGENCY_HF_MIN, rungs kept strictly decreasing,
-   disarm = rung + hysteresis(e) with hysteresis = max(0.02, 0.05 × (e − 1) ÷ 0.55). ladderFor(ENTRY_HF_FLOOR) is HF_LADDER. */
+   disarm = rung + hysteresis(e) with hysteresis = max(0.02, 0.05 × (e − 1) ÷ 0.55). ladderFor(ENTRY_HF_FLOOR) is HF_LADDER.
+   D10 (2026-09-13): above MAX_LADDER_ENTRY_HF the ACTING rungs (repay/derisk/emergency) take that entry's
+   rungs instead of deriving; `warn` keeps deriving, since it only notifies. */
 const round2 = x => Math.round(x*100)/100;
 const hysteresisFor = e => round2(Math.max(SH.HF_HYSTERESIS_MIN, SH.HF_HYSTERESIS*(e-1)/SH.HF_HYSTERESIS_SPAN));
-const ladderFor = e => { const h = hysteresisFor(e); const raw = SH.HF_LADDER.map(r=>round2(1+(e-1)*SH.LADDER_RUNG_FACTORS[r.id])); const hf = new Array(raw.length); hf[raw.length-1] = Math.max(raw[raw.length-1], SH.EMERGENCY_HF_MIN); for(let i=raw.length-2;i>=0;i--) hf[i] = round2(Math.max(raw[i], hf[i+1]+0.01)); return SH.HF_LADDER.map((r,i)=>({ id:r.id, hf:hf[i], disarmHf: round2(hf[i]+h), severity:r.severity, action:r.action, label:r.label })); };
+const ladderFor = e => { const a = Math.min(e, SH.MAX_LADDER_ENTRY_HF); const hW = hysteresisFor(e), hA = hysteresisFor(a); const raw = SH.HF_LADDER.map(r=>round2(1+((r.id==="warn"?e:a)-1)*SH.LADDER_RUNG_FACTORS[r.id])); const hf = new Array(raw.length); hf[raw.length-1] = Math.max(raw[raw.length-1], SH.EMERGENCY_HF_MIN); for(let i=raw.length-2;i>=0;i--) hf[i] = round2(Math.max(raw[i], hf[i+1]+0.01)); return SH.HF_LADDER.map((r,i)=>({ id:r.id, hf:hf[i], disarmHf: round2(hf[i]+(r.id==="warn"?hW:hA)), severity:r.severity, action:r.action, label:r.label })); };
 /* A position's ladder in the LAD shape: derived from its recorded entry HF; the floor's (HF_LADDER) when there is none — the keeper's own fallback rule (HealthMonitor.resolveLadder). */
 const ladOf = e => { const own = Number.isFinite(e) && e >= SH.MIN_LADDER_ENTRY_HF; const l = own ? ladderFor(e) : SH.HF_LADDER; return { entryHf: own ? e : null, derived: own, hysteresis: round2(l[0].disarmHf - l[0].hf), rungs: Object.fromEntries(l.map(r=>[r.id, r.hf])), disarm: Object.fromEntries(l.map(r=>[r.id, r.disarmHf])) }; };
 const entryHfAtLtv = (asset, ltvPct) => { const hf = entryHf(asset, ltvPct); return Number.isFinite(hf) ? Math.floor(hf*1e4)/1e4 : hf; };   // what the router records: LT ÷ LTV to four decimals (shared entryHfAtLtvBps)

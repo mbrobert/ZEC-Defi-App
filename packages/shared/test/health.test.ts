@@ -123,6 +123,7 @@ import {
   EMERGENCY_HF_MIN,
   HF_HYSTERESIS_MIN,
   ladderBpsFor,
+  MAX_LADDER_ENTRY_HF,
   hysteresisBpsFor,
   reserveFractionFor,
   reserveUnitsFor,
@@ -157,13 +158,58 @@ test("the worked rows of BUILD-PLAN §2b: e = 1.30 → 1.27 / 1.19 / 1.11 / 1.05
   assert.deepEqual(ladderFor(1.25).map((r) => r.disarmHf), [1.25, 1.18, 1.11, 1.07]);
   // Kamino's top on ZEC (LT 65 % at its 40 % cap): every rung sits above today's fixed ladder.
   assert.deepEqual(ladderFor(1.625).map((r) => r.hf), [1.57, 1.4, 1.23, 1.06]);
-  // A generous position: the emergency rung follows the buffer, never the 1.05 floor alone.
-  assert.deepEqual(ladderFor(2.6).map((r) => r.hf), [2.46, 2.02, 1.58, 1.14]);
+  // A generous position, D10 (2026-09-13): `warn` still follows the buffer, but the ACTING rungs are
+  // capped at MAX_LADDER_ENTRY_HF's — 2.60 was 2.46 / 2.02 / 1.58 / 1.14 before the cap.
+  assert.deepEqual(ladderFor(2.6).map((r) => r.hf), [2.46, 1.64, 1.36, 1.09]);
   assert.equal(hysteresisFor(2.6), 0.15);
 });
 
+test("D10: the acting rungs stop deriving above MAX_LADDER_ENTRY_HF, `warn` does not, and nothing at or below the cap moves", () => {
+  // At and below the cap the rule is unchanged, rung for rung and disarm for disarm.
+  for (const e of [1.25, 1.3, 1.55, 1.625, 1.9, 2.0]) {
+    const L = ladderFor(e);
+    const acting = ladderFor(Math.min(e, MAX_LADDER_ENTRY_HF));
+    assert.deepEqual(L.map((r) => [r.hf, r.disarmHf]), acting.map((r) => [r.hf, r.disarmHf]), String(e));
+  }
+  const cap = ladderFor(MAX_LADDER_ENTRY_HF);
+  assert.deepEqual(cap.map((r) => r.hf), [1.91, 1.64, 1.36, 1.09], "the cap's own ladder");
+
+  // Above it, every ACTING rung is the cap's — trigger and disarm — however high the entry goes.
+  for (const e of [2.05, 2.6, 4, 10, 78, 500]) {
+    const L = ladderFor(e);
+    assert.deepEqual(
+      L.slice(1).map((r) => [r.id, r.hf, r.disarmHf]),
+      cap.slice(1).map((r) => [r.id, r.hf, r.disarmHf]),
+      `acting rungs at entry ${e}`
+    );
+    // …and `warn` keeps deriving, because a notification costs the owner nothing.
+    assert.equal(L[0]!.action, "notify");
+    assert.ok(L[0]!.hf > cap[0]!.hf, `warn still derives at ${e}`);
+    assert.ok(L[0]!.hf < e, `warn sits under the entry at ${e}`);
+  }
+
+  // The defect this fixes: at entry 78 the keeper used to REPAY at 50.28 and DE-RISK at 28.72.
+  const wild = ladderFor(78);
+  assert.equal(rungFor(50.28, wild)!.id, "warn", "a position 50× clear of liquidation is notified, not repaid");
+  assert.equal(rungFor(50.28, wild)!.action, "notify");
+  assert.equal(rungFor(1.63, wild)!.id, "repay", "and the acting rungs still bite where danger is real");
+  assert.equal(rungFor(1.35, wild)!.id, "derisk");
+  assert.equal(rungFor(1.08, wild)!.id, "emergency");
+
+  // The integer twin the Solana program runs agrees at every one of those entries.
+  for (const e of [1.25, 2.0, 2.6, 10, 78]) {
+    const f = ladderFor(e);
+    const b = ladderBpsFor(Math.round(e * 10_000));
+    assert.deepEqual(
+      b.map((r) => [r.id, r.hfBps, r.disarmHfBps]),
+      f.map((r) => [r.id, Math.round(r.hf * 10_000), Math.round(r.disarmHf * 10_000)]),
+      `bps twin at ${e}`
+    );
+  }
+});
+
 test("ladderFor: rungs strictly decrease, disarm sits above every trigger, the emergency rung never falls under 1.05, and the entry is never born fired", () => {
-  for (let e = MIN_LADDER_ENTRY_HF; e <= 5; e = Math.round((e + 0.01) * 100) / 100) {
+  for (let e = MIN_LADDER_ENTRY_HF; e <= 25; e = Math.round((e + 0.01) * 100) / 100) {
     const L = ladderFor(e);
     assert.equal(L.length, 4, String(e));
     for (let i = 0; i < 4; i++) {
@@ -315,7 +361,10 @@ test("ladderBpsFor is ladderFor in integers — every entry from 1.10 to 5.00, r
 test("the cross-chain reserve is the rung-2 requirement: 4.11 % of the debt at the 1.625 entry, rounded up in base units, zero debt → zero", () => {
   assert.equal(Math.round(reserveFractionFor(1.625) * 10_000) / 10_000, 0.0411, "(1.46 − 1.40) ÷ 1.46");
   assert.equal(Math.round(reserveFractionFor(1.25) * 10_000) / 10_000, 0.0169, "(1.18 − 1.16) ÷ 1.18");
-  assert.equal(Math.round(reserveFractionFor(2.6) * 10_000) / 10_000, 0.0691, "(2.17 − 2.02) ÷ 2.17");
+  // D10: above the cap the repay rung — and so the reserve — stops growing with the entry.
+  assert.equal(Math.round(reserveFractionFor(2.6) * 10_000) / 10_000, 0.052, "(1.73 − 1.64) ÷ 1.73, the cap's rung");
+  assert.equal(reserveFractionFor(2.6), reserveFractionFor(MAX_LADDER_ENTRY_HF));
+  assert.equal(reserveFractionFor(78), reserveFractionFor(MAX_LADDER_ENTRY_HF));
   // 4,000 USDC of debt at entry 1.625: ceil(4_000e6 × 600 / 14_600) = ceil(164,383,561.64) = 164,383,562
   assert.equal(reserveUnitsFor(4_000_000_000n, 16_250), 164_383_562n);
   assert.equal(reserveUnitsFor(0n, 16_250), 0n);
