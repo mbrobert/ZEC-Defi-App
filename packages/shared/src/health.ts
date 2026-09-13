@@ -256,3 +256,90 @@ export function assertBps(value: number, name: string): void {
     throw new RangeError(`${name} must be an integer in [0, 10000] bps, got ${String(value)}`);
   }
 }
+
+// ---------------------------------------------------------------------------
+// The integer twin of `ladderFor` (the Solana program's rule) and the cross-chain reserve (D6)
+// ---------------------------------------------------------------------------
+
+/** `LADDER_RUNG_FACTORS` as whole percents, the form the Solana program's generated constants carry. */
+export const LADDER_RUNG_FACTORS_PCT: readonly number[] = Object.freeze(RUNG_SHAPE.map((sh) => Math.round(LADDER_RUNG_FACTORS[sh.id] * 100)));
+/** `EMERGENCY_HF_MIN`, `HF_HYSTERESIS_MIN`, `HF_HYSTERESIS` and `HF_HYSTERESIS_SPAN` in basis points of 1.0. */
+export const EMERGENCY_HF_MIN_BPS = Math.round(EMERGENCY_HF_MIN * 10_000);
+export const HF_HYSTERESIS_MIN_BPS = Math.round(HF_HYSTERESIS_MIN * 10_000);
+export const HF_HYSTERESIS_SCALE_BPS = Math.round(HF_HYSTERESIS * 10_000);
+export const HF_HYSTERESIS_SPAN_BPS = Math.round(HF_HYSTERESIS_SPAN * 10_000);
+
+/** A health factor in basis points of 1.0 (12_500 = 1.25), the unit every on-chain rung is compared in. */
+export interface HfRungBps {
+  id: HfRungId;
+  hfBps: number;
+  disarmHfBps: number;
+  severity: HfRung["severity"];
+}
+
+/** Round a value in hundredths of a basis point to the nearest 100 bps (0.01 HF), halves up — `round2` in integers. */
+function roundTo100Bps(hundredthsOfBps: number): number {
+  return Math.floor((hundredthsOfBps + 5_000) / 10_000) * 100;
+}
+
+/**
+ * `hysteresisFor` in integers: max(HF_HYSTERESIS_MIN, HF_HYSTERESIS × (e − 1) ÷ HF_HYSTERESIS_SPAN), to
+ * 0.01. Inputs and output in basis points. The Solana program (`health.rs`) implements exactly this; the
+ * seam test walks every entry from 1.10 to 5.00 asserting it equals `hysteresisFor`.
+ */
+export function hysteresisBpsFor(entryHfBps: number): number {
+  assertEntryHfBps(entryHfBps);
+  const scaled = Math.floor((HF_HYSTERESIS_SCALE_BPS * 100 * (entryHfBps - 10_000)) / HF_HYSTERESIS_SPAN_BPS);
+  return roundTo100Bps(Math.max(HF_HYSTERESIS_MIN_BPS * 100, scaled));
+}
+
+function assertEntryHfBps(entryHfBps: number): void {
+  if (!Number.isInteger(entryHfBps) || entryHfBps < MIN_LADDER_ENTRY_HF * 10_000) {
+    throw new RangeError(`entryHfBps must be an integer ≥ ${MIN_LADDER_ENTRY_HF * 10_000}, got ${String(entryHfBps)}`);
+  }
+}
+
+/**
+ * `ladderFor` in integers, the rule the Solana program derives a position's rungs with
+ * (`SOLANA-ARCHITECTURE.md` §14.2):
+ *   raw_i  = 1_000_000 + (e − 10_000) × k_i            (hundredths of a bp; k in whole percents)
+ *   rung_i = round to 100 bps; emergency ≥ EMERGENCY_HF_MIN_BPS; each milder rung ≥ the next + 100;
+ *   disarm = rung + hysteresisBpsFor(e).
+ * Never carries a float: a consumer that has the entry HF as a number uses `ladderFor`; one that has
+ * it as bps (a chain record) uses this, and the two agree rung for rung (health.test.ts).
+ */
+export function ladderBpsFor(entryHfBps: number): readonly HfRungBps[] {
+  assertEntryHfBps(entryHfBps);
+  const h = hysteresisBpsFor(entryHfBps);
+  const raw = LADDER_RUNG_FACTORS_PCT.map((k) => roundTo100Bps(1_000_000 + (entryHfBps - 10_000) * k));
+  const hf: number[] = new Array(raw.length);
+  hf[raw.length - 1] = Math.max(raw[raw.length - 1]!, EMERGENCY_HF_MIN_BPS);
+  for (let i = raw.length - 2; i >= 0; i--) hf[i] = Math.max(raw[i]!, hf[i + 1]! + 100);
+  if (!(hf[0]! < entryHfBps)) {
+    throw new RangeError(`ladderBpsFor(${entryHfBps}): the warn rung (${hf[0]}) would not sit below the entry`);
+  }
+  return Object.freeze(RUNG_SHAPE.map((sh, i) => Object.freeze({ id: sh.id, hfBps: hf[i]!, disarmHfBps: hf[i]! + h, severity: sh.severity })));
+}
+
+/**
+ * The cross-chain reserve as a share of the debt (BUILD-PLAN D6; `SOLANA-ARCHITECTURE.md` §14.3): the USDC
+ * that lifts the health factor from the repay rung to its disarm level with no collateral change —
+ * (disarm₂ − rung₂) ÷ disarm₂. At the 1.625 entry Kamino's 40 % cap implies: (1.46 − 1.40) ÷ 1.46 = 4.11 %.
+ */
+export function reserveFractionFor(entryHf: number): number {
+  const repay = rungById("repay", ladderFor(entryHf));
+  return (repay.disarmHf - repay.hf) / repay.disarmHf;
+}
+
+/**
+ * The reserve in loan-token base units for a debt in base units, rounded UP — the number the Solana program
+ * computes from its bps ladder (`ceil(D × (disarm₂ − rung₂) / disarm₂)`) and refuses a burn under. Takes the
+ * entry in bps so the arithmetic is the chain's, exactly.
+ */
+export function reserveUnitsFor(debtUnits: bigint, entryHfBps: number): bigint {
+  if (typeof debtUnits !== "bigint" || debtUnits < 0n) throw new RangeError(`debtUnits must be a non-negative bigint, got ${String(debtUnits)}`);
+  const repay = ladderBpsFor(entryHfBps)[1]!;
+  const num = debtUnits * BigInt(repay.disarmHfBps - repay.hfBps);
+  const den = BigInt(repay.disarmHfBps);
+  return (num + den - 1n) / den;
+}

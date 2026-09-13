@@ -21,6 +21,21 @@ liquidity provision; EIP = Ethereum Improvement Proposal.
   typed 00:49:54Z) and the demo payloads carry the committed model's own stamp (they named one three
   regenerations older); the hour-after pool observation moved into Addendum 14, which the top now cites.
   Levers unchanged (×12.2 inside ×12.16–×12.25; ×8.67 inside ×7.06–×10.23).
+
+## 2026-09-13 — Shared: the integer ladder twin, the cross-chain reserve rule, the CCTP V2 constants
+
+- **`packages/shared/src/health.ts`**: `ladderBpsFor(entryHfBps)` / `hysteresisBpsFor` — `ladderFor` in
+  basis points with no float, the rule the Solana program derives a position's rungs with (§14.2); the
+  generated constants it needs (`LADDER_RUNG_FACTORS_PCT` 91/64/36/9, `EMERGENCY_HF_MIN_BPS`,
+  `HF_HYSTERESIS_{MIN,SCALE,SPAN}_BPS`); `reserveFractionFor(entryHf)` and `reserveUnitsFor(debt, entryHfBps)`
+  — the rung-2 requirement (disarm₂ − rung₂) ÷ disarm₂, rounded up in base units (4.11 % at 1.625). The test
+  walks every entry from 1.10 to 5.00 asserting the two ladders agree rung for rung.
+- **`packages/shared/src/cctp.ts`** (new): domains 5/6, the finality thresholds, the 10 M burn cap, the Base
+  proxies + implementations + verified selectors, the Solana programs, seeds, PDAs and `deposit_for_burn`
+  param order, the V2 message byte layout with `encodeCctpBurnMessageV2` / `decodeCctpBurnMessageV2`
+  (what the Base mock and Stream C build and read), `evmAddressToBytes32` both ways, and a dated fee snapshot
+  that no code reads as a live number. Every address is pinned to `VERIFIED-SOLANA-FACTS.md`. Shared 85 → **93**.
+
 ## 2026-09-13 — D6 design before code: the cross-chain loop's Solana side and the CCTP V2 call shapes
 
 - **`docs/SOLANA-ARCHITECTURE.md` §14** (§13 no longer lists moving USDC between chains as another product):

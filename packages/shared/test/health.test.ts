@@ -107,7 +107,31 @@ test("assertBps", () => {
 // ---------------------------------------------------------------------------
 // The derived ladder (BUILD-PLAN-2026-09-12 §2b, step A4)
 // ---------------------------------------------------------------------------
-import { ladderFor, hysteresisFor, hfFromWad, entryHfAtLtvBps, rungDropPctAtHf, ladderForRecorded, offeredLtvBounds, ltvForEntryHfBps, drawdownToLiquidationPct, HF_MARKS, MIN_LADDER_ENTRY_HF, LADDER_RUNG_FACTORS, EMERGENCY_HF_MIN, HF_HYSTERESIS_MIN } from "../dist/index.js";
+import {
+  ladderFor,
+  hysteresisFor,
+  hfFromWad,
+  entryHfAtLtvBps,
+  rungDropPctAtHf,
+  ladderForRecorded,
+  offeredLtvBounds,
+  ltvForEntryHfBps,
+  drawdownToLiquidationPct,
+  HF_MARKS,
+  MIN_LADDER_ENTRY_HF,
+  LADDER_RUNG_FACTORS,
+  EMERGENCY_HF_MIN,
+  HF_HYSTERESIS_MIN,
+  ladderBpsFor,
+  hysteresisBpsFor,
+  reserveFractionFor,
+  reserveUnitsFor,
+  LADDER_RUNG_FACTORS_PCT,
+  EMERGENCY_HF_MIN_BPS,
+  HF_HYSTERESIS_MIN_BPS,
+  HF_HYSTERESIS_SCALE_BPS,
+  HF_HYSTERESIS_SPAN_BPS,
+} from "../dist/index.js";
 
 test("HF_LADDER is ladderFor(ENTRY_HF_FLOOR) rung for rung — ladderFor(1.25) — and ladderFor(1.55) is the table the product ran before the pin", () => {
   assert.deepEqual(ladderFor(1.25), HF_LADDER);
@@ -262,4 +286,43 @@ test("offeredLtvBounds names what stops the slider — the 1.25 floor on cbBTC (
   // A tie (6250 / 1.25 = 5000 exactly, venue 5000): the floor is named — what the user cannot change comes first.
   assert.equal(offeredLtvBounds(6250, 5000).binding, "entry_hf_floor");
   assert.throws(() => offeredLtvBounds(0.78, 7300), RangeError);
+});
+
+test("ladderBpsFor is ladderFor in integers — every entry from 1.10 to 5.00, rung for rung, disarm for disarm (the Solana program's rule)", () => {
+  for (let e = MIN_LADDER_ENTRY_HF; e <= 5; e = Math.round((e + 0.01) * 100) / 100) {
+    const eBps = Math.round(e * 10_000);
+    const L = ladderFor(e);
+    const B = ladderBpsFor(eBps);
+    assert.equal(hysteresisBpsFor(eBps), Math.round(hysteresisFor(e) * 10_000), `hysteresis at ${e}`);
+    for (let i = 0; i < 4; i++) {
+      assert.equal(B[i].id, L[i].id);
+      assert.equal(B[i].hfBps, Math.round(L[i].hf * 10_000), `${e} ${L[i].id} rung`);
+      assert.equal(B[i].disarmHfBps, Math.round(L[i].disarmHf * 10_000), `${e} ${L[i].id} disarm`);
+      assert.equal(B[i].severity, L[i].severity);
+    }
+  }
+  assert.deepEqual(ladderBpsFor(16_250).map((r) => [r.hfBps, r.disarmHfBps]), [[15_700, 16_300], [14_000, 14_600], [12_300, 12_900], [10_600, 11_200]]);
+  assert.deepEqual(ladderBpsFor(12_500).map((r) => r.hfBps), HF_LADDER.map((r) => Math.round(r.hf * 10_000)));
+  assert.throws(() => ladderBpsFor(10_900), RangeError);
+  assert.throws(() => ladderBpsFor(12_500.5), RangeError);
+  assert.deepEqual(LADDER_RUNG_FACTORS_PCT, [91, 64, 36, 9]);
+  assert.equal(EMERGENCY_HF_MIN_BPS, 10_500);
+  assert.equal(HF_HYSTERESIS_MIN_BPS, 200);
+  assert.equal(HF_HYSTERESIS_SCALE_BPS, 500);
+  assert.equal(HF_HYSTERESIS_SPAN_BPS, 5_500);
+});
+
+test("the cross-chain reserve is the rung-2 requirement: 4.11 % of the debt at the 1.625 entry, rounded up in base units, zero debt → zero", () => {
+  assert.equal(Math.round(reserveFractionFor(1.625) * 10_000) / 10_000, 0.0411, "(1.46 − 1.40) ÷ 1.46");
+  assert.equal(Math.round(reserveFractionFor(1.25) * 10_000) / 10_000, 0.0169, "(1.18 − 1.16) ÷ 1.18");
+  assert.equal(Math.round(reserveFractionFor(2.6) * 10_000) / 10_000, 0.0691, "(2.17 − 2.02) ÷ 2.17");
+  // 4,000 USDC of debt at entry 1.625: ceil(4_000e6 × 600 / 14_600) = ceil(164,383,561.64) = 164,383,562
+  assert.equal(reserveUnitsFor(4_000_000_000n, 16_250), 164_383_562n);
+  assert.equal(reserveUnitsFor(0n, 16_250), 0n);
+  assert.equal(reserveUnitsFor(1n, 16_250), 1n, "rounds up, never to zero for a positive debt");
+  // the same number the float rule gives, within one unit
+  const f = reserveFractionFor(1.625) * 4_000_000_000;
+  assert.ok(Math.abs(Number(reserveUnitsFor(4_000_000_000n, 16_250)) - f) <= 1);
+  assert.throws(() => reserveUnitsFor(-1n, 16_250), RangeError);
+  assert.throws(() => reserveUnitsFor(5n, 10_000), RangeError);
 });
