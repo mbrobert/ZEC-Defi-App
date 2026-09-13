@@ -3,6 +3,20 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-13 — Slice O: the day's three fixes as properties (`AUDIT-2026-09-12.md` "Properties")
+
+- `contracts/test/audit-regressions/DustLegProperty.t.sol` (1 fuzz over leg, `quotedIn`, quoted price inside the
+  band, tolerance up to the cap): `StrategyRouter._toUsdc` either attempts the swap under the adapter's floor of
+  at least one USDC unit — `Swapped.minOut` equals `minOutFor`, or the refusal is for that floor (the router's
+  `TooLittleReceived`, the adapter's `InsufficientOutput`) — or emits `DustLegKept(account, token, amount)` and
+  leaves the token balance untouched; a zero floor never reaches the router. NI-HIGH-1 as a property, not four
+  cases. A halmos harness would be `RouterBalanceHalmos`'s cost for no new reach (said in the ledger).
+- `contracts/test/audit-regressions/ToRatioToleranceBound.t.sol` (2 fuzzes): `SlipstreamLpVenue.toRatioToleranceBps`
+  ≤ min(BPS / 2, `SWAP.MAX_SLIPPAGE_BPS()`) for every band the venue accepts and for any ordered pair — the bound the
+  Aderyn `unsafe-casting` suppression relies on. Forge 388 → **391** / 0 / 11 (35 suites).
+- `agent/test/valuation.test.ts` (+2): `evaluateSnapshot` is a pure function of the snapshot, and no snapshot
+  carrying a single applied poison evaluates to OK, whatever the baseline; the sticky-UNKNOWN property stays as
+  fixed in `0ce71c5`. Agent 269 → **271**, `verify-abi` 113 / 113, IDL seam 77 / 77.
 ## 2026-09-13 — Solana B5, part 2: the web flow — wallet, five-screen wizard, position page with the exit hatch
 
 - **`/solana/new`**: Kamino's own words about bridged ZEC first (a dated quotation held equal to the facts file

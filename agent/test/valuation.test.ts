@@ -426,6 +426,48 @@ describe("valuation — properties over adversarial account states", () => {
     assert.ok(applied > 1000, `only ${applied} poisons applied`);
   });
 
+  it("evaluateSnapshot is a pure function of the snapshot: a deep-equal snapshot evaluates to the same verdict, twice, and the snapshot is not mutated by evaluating it", () => {
+    // Slice O (2026-09-13), the property the sticky-UNKNOWN test was really after: the monitor may
+    // evaluate the same snapshot at two ticks, or two readers may evaluate byte-equal snapshots, and
+    // the verdict must be the same — the evaluator judges the snapshot in front of it, never a history.
+    fc.assert(
+      fc.property(arbRows, fc.option(arbPoison, { nil: null }), fc.constantFrom(1, -1) as fc.Arbitrary<1 | -1>, (rows, poison, sign) => {
+        const s1 = consistent(structuredClone(rows));
+        if (poison) applyPoison(s1, poison, sign);
+        const s2 = structuredClone(s1);
+        const before = JSON.stringify(s1, bigintJson);
+        const v1 = evaluateSnapshot(s1, PARAMS);
+        const v2 = evaluateSnapshot(s2, PARAMS);
+        const v3 = evaluateSnapshot(s1, PARAMS);
+        assert.deepEqual(v1, v2, "a deep-equal snapshot gives the same verdict");
+        assert.deepEqual(v1, v3, "evaluating twice gives the same verdict");
+        assert.equal(JSON.stringify(s1, bigintJson), before, "evaluating does not mutate the snapshot");
+      }),
+      { numRuns: 1500 }
+    );
+  });
+
+  it("no snapshot carrying a single poison evaluates to OK — whatever the baseline", () => {
+    // Slice O (2026-09-13). The "every poison forces UNKNOWN" property above restricts itself to a
+    // clean OK / NO_DEBT baseline without dust; this one drops every restriction: for ANY row set and
+    // ANY single poison that applied and changed the snapshot, the verdict is never OK. (It may be
+    // NO_DEBT — a poison on a snapshot with nothing to protect has nothing to register against.)
+    let applied = 0;
+    fc.assert(
+      fc.property(arbRows, arbPoison, fc.constantFrom(1, -1) as fc.Arbitrary<1 | -1>, (rows, poison, sign) => {
+        const clean = consistent(structuredClone(rows));
+        const s = consistent(structuredClone(rows));
+        if (!applyPoison(s, poison, sign)) return; // could not apply (no target row): not a poison
+        if (JSON.stringify(s, bigintJson) === JSON.stringify(clean, bigintJson)) return; // changed nothing: proves nothing
+        applied++;
+        const v = evaluateSnapshot(s, PARAMS);
+        assert.notEqual(v.kind, "OK", `${poison.t}: ${JSON.stringify(v, bigintJson)}`);
+      }),
+      { numRuns: 4000 }
+    );
+    assert.ok(applied > 1000, `only ${applied} poisons applied`);
+  });
+
   it("UNKNOWN is sticky: adding poison never turns UNKNOWN into OK or NO_DEBT", () => {
     // The three HF poisons REWRITE healthFactorWad rather than add to it, so a second one replaces the
     // first instead of poisoning further. CI caught the case on 2026-09-12 (fast-check seed
