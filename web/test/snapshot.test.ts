@@ -86,7 +86,8 @@ test("demo-gate.json is pinned to MODEL-NUMBERS.md (every served lpNet, drag, em
   // The demo is two dated reads: the market snapshot (DEMO_MARKET, the ledger read of
   // DEMO_SNAPSHOT_AT) and the gate (the model, at its own live borrow read). They may differ only
   // when the gate is the FRESHER read, and both carry their dates. Since the ledger re-read of
-  // 2026-09-12 both are block 51,226,072 and equal; the rule stays for the day one moves alone.
+  // 2026-09-12 both are one block (51,226,072 then; 51,241,497 since the 2026-09-13 refresh by
+  // scripts/refresh-demo-snapshot.mjs) and equal; the rule stays for the day one moves alone.
   if (DEMO_GATE_RAW.borrowAprPct !== DEMO_MARKET.usdcBorrowAprPct) {
     assert.ok(
       Date.parse(DEMO_GATE_RAW.emissionsSampledAt) > Date.parse(DEMO_MARKET.readAt),

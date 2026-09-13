@@ -414,19 +414,19 @@ test("recommend: with the model's forecast nothing beats the borrow → the leas
   if (r.kind === "lp") {
     assert.equal(r.cell.poolId, "aero-cbbtc-usdc");
     assert.equal(r.positive, false);
-    assert.match(r.why, /4\.52% borrow rate/);
+    assert.match(r.why, new RegExp(`${DEMO_MARKET.usdcBorrowAprPct.toFixed(2)}% borrow rate`), "the sentence names the snapshot's borrow at two decimals");
     assert.match(r.why, /still a loss/);
   }
   const best = f.cells.find((c) => c.poolId === "aero-cbbtc-usdc" && c.setting === "sheltered" && c.collateral === "cbBTC")!;
   const other = f.cells.find((c) => c.poolId === "aero-usdc-weth-5" && c.setting === "sheltered" && c.collateral === "cbBTC")!;
-  // lpNet 12 at 40 % LTV against the recorded borrow 4.5174 and supply 0.0115: 0.0115 + 0.4 × (12 − 4.5174) = 3.00
+  // lpNet 12 at 40 % LTV against the snapshot's recorded borrow and cbBTC supply: supply + 0.4 × (12 − borrow)
   const view = { ...f, cells: f.cells.map((c) => (c === best ? { ...c, lpNetPct: 12, mcLpNetPct: 11 } : c === other ? { ...c, lpPriced: true, lpNetPct: 8, mcLpNetPct: 7 } : c)) };
   const r2 = recommend(view, "cbBTC", 4000);
   assert.equal(r2.kind, "lp");
   if (r2.kind === "lp") {
     assert.equal(r2.cell.poolId, "aero-cbbtc-usdc");
     assert.equal(r2.positive, true);
-    assert.ok(Math.abs(r2.userNetPct - (0.0115 + 0.4 * (12 - 4.5174))) < 1e-9);
+    assert.ok(Math.abs(r2.userNetPct - (DEMO_MARKET.reserves.cbBTC!.supplyAprPct + 0.4 * (12 - DEMO_MARKET.usdcBorrowAprPct))) < 1e-9);
     assert.match(r2.why, /highest forecast net return/);
   }
   const none = { ...f, cells: f.cells.map((c) => ({ ...c, lpPriced: false, lpNetPct: null, lpUnpricedReason: "emissions_unavailable" })) };

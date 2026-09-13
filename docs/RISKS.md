@@ -850,10 +850,12 @@ slippage; solvers settle at or better than the limit or not at all.
 ## 14 · Yield forecast and rate drift
 
 **Risk.** The borrow rate moves (4.828 % on 2026-09-05, 4.5174 % on
-2026-09-12; Compound v3 USDC was at 90.05 % utilisation, above its kink, on
-2026-09-05) and so do the gauges; a forecast that reads one way today reads
-another way tomorrow. Today every forecast is a loss — and not because of
-the borrow rate.
+2026-09-12, 4.5143 % on 2026-09-13; Compound v3 USDC has sat above its 90 %
+kink on every read) and so do the gauges — and, as 2026-09-13 showed, the
+marginal emissions a staker sees can nearly triple overnight with no change
+in the gauge's own rate, because other stakers left; a forecast that reads
+one way today reads another way tomorrow. Today every forecast is a loss —
+and not because of the borrow rate.
 
 **What changed on 2026-09-12 (BUILD-PLAN D4/D5, step A3).** The yield model no
 longer refuses anything for profitability. It is served as a forecast
@@ -864,50 +866,71 @@ drawdown, and the borrow rate after the user's own borrow on Aave's curve
 user may open any pool after ticking one sentence that states those numbers
 for their position — including a pool the model expects to lose money. The
 only refusals left are safety: the registry entry floor, a borrow the pool
-cannot fund (24.77 M USDC available on 2026-09-12), stale rates, a paused or
+cannot fund (24.78 M USDC available on 2026-09-13), stale rates, a paused or
 inactive reserve, a disabled asset. That is the founder's decision, and the
 copy says what it means: a first-time user can now open a position the model
-forecasts at −10.92 % a year on the deployed USDC. The acknowledgment names
-that number; nothing hides it.
+forecasts at −3.75 % a year on the deployed USDC (−10.92 % the day before).
+The acknowledgment names that number; nothing hides it.
 
-**The forecast on the live read of 2026-09-12** (`MODEL-NUMBERS-2026-09-12.md`;
-gauge words and Aave rates read at block 51,226,072, 19:31 UTC,
-`VERIFIED-BASE-FACTS.md` Addendum 12; σ still the 2026-08-31 realized
-values). At the live USDC borrow of **4.5174 %** no pool × setting beats the
-borrow on both models, and the picture is worse than on 2026-09-05, not
-better: the AERO price rose 18 % but the gauges pay a marginal staker far
-less. The best cell, cbBTC/USDC at the sheltered width, forecasts
-**−10.92 %/yr** on the LP slice (−5.29 % before; gross emissions fell from
-14.13 % to 6.15 %) and would need **4.56 ×** today's net emissions to break
-even (2.02 × before), or a realized σ of 0.04 in place of 0.40 — which
-BTC/USD does not have. WETH/USDC at the sheltered width no longer even beats
-the borrow before impermanent loss (3.01 % net against 4.52 %); its steady
-and working widths need 11.2 × and 10.9 ×. WETH/cbBTC needs 7.4 × at steady
-and 7.1 × at working. **Every priced cell's LP net is negative, so no borrow
-rate — not even 0 % — would turn one positive at today's emissions;** the
-only lever is the gauge vote, which is Aerodrome's voters', not ours. The
-cbZEC/USDC gauge received its first vote in the week (≈ 617 AERO a day to
-2026-09-17, on about $1 M of pool liquidity): 1.06 / 3.34 / 16.99 % gross at
-the three widths, below the borrow at the two wider ones and without a
-calibrated σ at the narrowest, where it would beat the borrow only if
-cbZEC's realized σ were under 0.08 — it is not. The two-model check still
-does its work, now as a printed gap: at each priced cell's own break-even the
-closed form is 0.1 to **32.0 points** more optimistic than the Monte-Carlo
-form, and six of the seven cells the closed form alone would call positive
-there are not, on the stricter form. Recorded rather than smoothed: at
-TODAY's emissions the closed form's published headline for WETH/cbBTC at the
-working width (−82.90 %) sits **5.46 points** above the Monte-Carlo form
-(−88.36 %), outside the tolerance the sim caps at 0.98 × the borrow rate;
-both numbers are shown on that cell, the published column is too optimistic
-there — pinned by name in `services/yield/test/model-pin.test.ts` — and
-whether the headline should become the Monte-Carlo number is the founder's
-call. For a product whose forecast may be a loss on every pool, this is what
-"may" means today: it is a loss on every pool, it has been on every read
-since 2026-08-31, it stays one at any borrow rate, and it turns positive only
-if AERO emissions on the majors' gauges rise roughly four- to eleven-fold or
-a pool with a calibrated σ well below today's arrives. Until then the
-product is a forecast that says "no" in numbers, a user who may say "yes"
-anyway, and hold-USDC and spot beside it.
+**The forecast on the live read of 2026-09-13** (`MODEL-NUMBERS-2026-09-13.md`;
+gauge words and Aave rates read at block 51,241,497, 04:05:41 UTC, by
+`scripts/refresh-demo-snapshot.mjs` — the sample, the ledger, the model and
+both demo recordings are that one block; σ still the 2026-08-31 realized
+values). At the live USDC borrow of **4.5143 %** no pool × setting beats the
+borrow on both models: 0 of 81 cells. What moved overnight is not the AERO
+(every gauge's `rewardRate` is unchanged; AERO $0.5634 → $0.5662) but who is
+staked: the staked liquidity in the cbBTC/USDC gauge fell 62 % and in
+WETH/USDC 74 %, so the same AERO pays a marginal staker 2.7 × and 3.8 × more —
+cbBTC/USDC sheltered gross 6.15 → **16.31 %**, WETH/USDC sheltered 3.93 →
+15.10 % (above the borrow before drag again, so priced: −16.95 %) — while
+WETH/cbBTC's stake tripled and its sheltered and steady widths fell BELOW the
+borrow before any drag (1.02 % and 3.12 % net; unpriced). The best cell,
+cbBTC/USDC at the sheltered width, forecasts **−3.75 %/yr** on the LP slice
+(−10.92 % the day before) and would need **1.72 ×** today's net emissions to
+break even (4.56 × before), or a realized σ of 0.27 in place of 0.40; its
+steady and working widths need 1.47 × and 1.39 ×, WETH/USDC 3.16 / 2.90 /
+2.83 ×, WETH/cbBTC at the working width 23.0 × (its two wider widths 26.9 ×
+and 24.0 × merely to reach the borrow before drag). **Every priced cell's LP
+net is still negative (−3.75 % to −92.91 %), so no borrow rate — not even
+0 % — would turn one positive at today's emissions.** The lever is the gauge
+vote, which is Aerodrome's voters', not ours — and, it turns out, the other
+stakers: the same vote paid 2.7 × more this morning because they left, which
+is the `emissions_dilutable` disclosure running backwards, and it runs
+forwards again the day they return. The cbZEC/USDC gauge still pays ≈ 617
+AERO a day to 2026-09-17, but the pool's staked liquidity collapsed from
+1.48 × 10¹³ to 4.8 × 10¹⁰ and its active liquidity from 2.31 × 10¹³ to
+1.6 × 10¹¹ as the price moved to ≈ 1,135.52 USDC (tick −24,298: the position
+holding most of the depth is out of range), so the marginal reading is
+326 % / 1,031 % / 5,241 % gross at the three widths — above the borrow at the
+sheltered width but unpriced for lack of a σ (it would clear only if cbZEC's
+realized σ were under 1.65), and above the 1,000 % plausibility ceiling at the
+two tighter widths, refused as `emissions_implausible`: the reading of an
+emptied gauge, not a yield. The two-model check still does its work as a
+printed gap: at each priced cell's own break-even the closed form is −0.1 to
+**31.9 points** more optimistic than the Monte-Carlo form, and six of the
+seven cells the closed form alone would call positive there are not, on the
+stricter form (the seventh, cbBTC/USDC sheltered, is where the forms agree).
+Recorded rather than smoothed: at TODAY's emissions the closed form's
+published headline for cbBTC/USDC at the working width (−22.86 %) sits
+**6.03 points** above the Monte-Carlo form (−28.89 %), outside the tolerance
+the sim caps at 0.98 × the borrow rate (4.42 points); yesterday's breach,
+WETH/cbBTC at the working width (5.46 points), is back inside at 2.42. Both
+numbers are shown on the cell, the published column is too optimistic there —
+pinned by name in `services/yield/test/model-pin.test.ts` — and whether the
+headline should become the Monte-Carlo number is the founder's call. One
+more thing this read found: the Python sim had no plausibility ceiling while
+`gate.ts` has had one since slice K, so on the first reading above it the sim
+said `no_volatility_input` where the gate says `emissions_implausible`; the
+pin test caught the disagreement, and the sim now refuses in the gate's order
+from the gate's own constant (read through `model-inputs.json`, never typed).
+For a product whose forecast may be a loss on every pool, this is what "may"
+means today: it is a loss on every pool, it has been on every read since
+2026-08-31, it stays one at any borrow rate, and it turns positive only if
+AERO emissions on the majors' gauges rise roughly 1.7- to 3-fold from here —
+or the stakers who left this week stay away — or a pool with a calibrated σ
+well below today's arrives. Until then the product is a forecast that says
+"no" in numbers, a user who may say "yes" anyway, and hold-USDC and spot
+beside it.
 
 **Mitigates (code).** `/v1/forecast` never 503s: missing or stale inputs
 become safety refusals inside each cell, so the site always shows the picture
@@ -1161,7 +1184,12 @@ null calibration.
 a finite history; where both agree they can still be wrong together. The
 simulator's own tolerance is now structurally bounded below the borrow rate it
 validates (`min(preset ceiling, borrow × 0.98)`, exit 2 if that invariant is
-ever edited away), but a tolerance is not an error bar on reality. And a
+ever edited away), but a tolerance is not an error bar on reality — and one
+cell sits outside it on every read so far: WETH/cbBTC at the working width on
+2026-09-12 (5.46 points), cbBTC/USDC at the working width on 2026-09-13
+(6.03 points against a 4.42-point cap); `model-pin.test.ts` pins the breached
+set by name so a change in it is a finding to record, never a number to
+retype (§14). And a
 neighbouring class survives: the emissions anchor is corroborated by only three
 in-process readings, so a restart blinds a pool until it re-corroborates.
 

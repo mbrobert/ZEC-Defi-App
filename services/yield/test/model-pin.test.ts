@@ -1,5 +1,5 @@
 /**
- * ONE GENERATED SOURCE. scripts/lp-sim.py wrote samples/lp-model-2026-09-12.json
+ * ONE GENERATED SOURCE. scripts/lp-sim.py wrote samples/lp-model-2026-09-13.json
  * (and /tmp/build/MODEL-NUMBERS.md) from the recorded gauge words, the
  * recorded σ, the shared presets/fees, and the live Aave inputs of
  * 2026-09-05. This suite feeds the SAME raw words through the TypeScript
@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { CURATED_POOLS, ENTRY_HF_FLOOR, FEES, LTV_PRESET_FIXED_BPS, RANGE_PRESETS, poolById } from "@zyo/shared";
-import { evaluateGate } from "../src/gate.js";
+import { evaluateGate, MAX_ABS_NET_PCT, MAX_EMISSIONS_APR_PCT } from "../src/gate.js";
 import { ENGINE_FEE_BPS, SETTINGS } from "../src/model.js";
 import { GaugeSource, onchainToken1, SEL } from "../src/sources/gauges.js";
 import { RpcClient } from "../src/sources/rpc.js";
@@ -21,7 +21,7 @@ import { MIN_STAKED_SAMPLES } from "../src/sources/gauges.js";
 import { mcCalibrationFixture, NOW_S, ratesFixture, reserve, volatilityFixture } from "./fixtures/model.js";
 
 const read = (rel: string) => JSON.parse(readFileSync(new URL(rel, import.meta.url), "utf8"));
-const MODEL = read("../../samples/lp-model-2026-09-12.json") as {
+const MODEL = read("../../samples/lp-model-2026-09-13.json") as {
   inputs: { borrowAprPct: number; collateral: Record<string, { supplyAprPct: number; liquidationThresholdBps: number }>; gaugeSample: { sampledAt: string } };
   results: Record<string, Record<string, {
     rangeWidthBps: number; emissionsGrossPct?: number; emissionsNetPct?: number; emissionsRealizedPct?: number; dragPct?: number;
@@ -32,7 +32,7 @@ const MODEL = read("../../samples/lp-model-2026-09-12.json") as {
   boundaryGuard: { pool: string; setting: string; optimismPct: number; offeredByClosedFormAlone: boolean; offeredByServedGate: boolean }[];
   verdict: { clears: unknown[] };
 };
-const SAMPLE = read("../../samples/gauge-emissions-2026-09-12.json") as {
+const SAMPLE = read("../../samples/gauge-emissions-2026-09-13.json") as {
   aeroUsd: number;
   pools: Record<string, { pool: string; gauge: string; rewardRateWeiPerSec: string; periodFinish: number; sqrtPriceX96: string; stakedLiquidity: string | null; poolTvlUsd: number; token1Usd: number; dec1: number; feeBpsLive: number; token0: string; token1: string }>;
 };
@@ -40,6 +40,7 @@ const INPUTS = read("../../samples/model-inputs.json") as {
   settings: { id: string; preset: string; rangeWidthBps: Record<string, number>; rebalanceDelayHours: number }[];
   fees: { performanceBps: number; engineFeeBps: number };
   ltv: { entryHfFloor: number; maxOfferedLtvCapBps: number; fixedBps: Record<string, number> };
+  bounds: { maxEmissionsAprPct: number; maxAbsNetPct: number };
   pools: Record<string, { protocol: string; pairClass: string }>;
 };
 
@@ -90,6 +91,8 @@ test("samples/model-inputs.json matches @zyo/shared and the model today (drift f
   );
   assert.deepEqual(INPUTS.fees, { performanceBps: FEES.performanceBps, engineFeeBps: ENGINE_FEE_BPS });
   assert.deepEqual(INPUTS.ltv, { entryHfFloor: ENTRY_HF_FLOOR, fixedBps: { ...LTV_PRESET_FIXED_BPS } }, "no product cap since 2026-09-12; the floor is 1.25");
+  // The sim refuses an implausible marginal APR in the gate's order from the gate's own ceiling (2026-09-13).
+  assert.deepEqual(INPUTS.bounds, { maxEmissionsAprPct: MAX_EMISSIONS_APR_PCT, maxAbsNetPct: MAX_ABS_NET_PCT }, "the sim's ceilings are gate.ts's");
   for (const p of CURATED_POOLS.filter((x) => x.dex === "AERODROME")) {
     assert.equal(INPUTS.pools[p.id]!.protocol, p.protocol, p.id);
     assert.equal(INPUTS.pools[p.id]!.pairClass, p.pairClass, p.id);
@@ -97,17 +100,20 @@ test("samples/model-inputs.json matches @zyo/shared and the model today (drift f
 });
 
 test("the sim's own validation passed (affine calibration exact, closed form within a tolerance BELOW the borrow rate, gate never more permissive than the MC) and nothing clears at the model's borrow", () => {
-  const KNOWN_TOLERANCE_BREACH = ["aero-weth-cbbtc/working"];
-  // One validation row per PRICED cell (seven on 2026-09-12: WETH/USDC sheltered fell below the borrow before drag).
+  const KNOWN_TOLERANCE_BREACH = ["aero-cbbtc-usdc/working"];
+  // One validation row per PRICED cell (seven on 2026-09-13: cbBTC/USDC and WETH/USDC at all three widths, WETH/cbBTC
+  // at the working width only — its sheltered and steady widths fell below the borrow before drag, and WETH/USDC
+  // sheltered, refused before pricing on 2026-09-12, is priced again as the gauge's staked liquidity fell 74 %).
   const priced = Object.values(MODEL.results).flatMap((cells) => Object.values(cells)).filter((c) => c.lpNetPct !== null).length;
   assert.ok(priced >= 1);
   assert.equal(MODEL.validation.length, priced);
   // The SAFETY property holds for every priced cell: the served gate is never more permissive than the
   // Monte-Carlo form. The closed form's declared TOLERANCE (capped at 0.98 × the borrow rate) is met by
   // every cell except the ones listed here by name — a KNOWN validation breach, reported, not hidden:
-  // on 2026-09-12 aero-weth-cbbtc/working's published closed form (−82.90 %) sits 5.46 pt above the
-  // MC form (−88.36 %) while the cap is ±4.43 pt at a 4.5174 % borrow (RISKS.md §21, slice K). The
-  // gate still refuses the cell on both forms; the headline number is what is too optimistic.
+  // on 2026-09-13 aero-cbbtc-usdc/working's published closed form (−22.86 %) sits 6.03 pt above the
+  // MC form (−28.89 %) while the cap is ±4.42 pt at a 4.5143 % borrow (RISKS.md §21); on 2026-09-12 it
+  // was aero-weth-cbbtc/working (−82.90 % vs −88.36 %, 5.46 pt), now back inside at 2.42 pt. The gate
+  // still refuses the cell on both forms; the headline number is what is too optimistic.
   assert.ok(MODEL.validation.every((v) => v.neverMorePermissiveThanMc), "the served gate must never be more permissive than the MC form");
   const breached = MODEL.validation.filter((v) => !v.ok).map((v) => { const n = v as unknown as { pool: string; setting: string }; return `${n.pool}/${n.setting}`; }).sort();
   assert.deepEqual(breached, KNOWN_TOLERANCE_BREACH, `cells outside the closed form's tolerance: ${breached.join(", ") || "none"} — a change here is a model finding to record, not a number to retype`);

@@ -28,22 +28,22 @@ import { applyMcCalibration, calibrationIndex, calibrationKey, loadMcCalibration
 import { emissionsFixture, mcCalibrationFixture, NOW_S, ratesFixture, volatilityFixture } from "./fixtures/model.js";
 
 const read = (rel: string) => JSON.parse(readFileSync(new URL(rel, import.meta.url), "utf8"));
-const MODEL = read("../../samples/lp-model-2026-09-12.json") as {
+const MODEL = read("../../samples/lp-model-2026-09-13.json") as {
   inputs: { borrowAprPct: number };
-  results: Record<string, Record<string, { emissionsGrossPct?: number; breakEvenEmissionsMultiple?: number | null; feeBpsLive: number }>>;
+  results: Record<string, Record<string, { emissionsGrossPct?: number; breakEvenEmissionsMultiple?: number | null; lpNetPct?: number | null; feeBpsLive: number }>>;
   boundaryGuard: {
     pool: string; setting: string; grossEmissionsAtBoundaryPct: number; mcLpNetPct: number;
     optimismPct: number; offeredByClosedFormAlone: boolean; offeredByServedGate: boolean;
   }[];
 };
-const SAMPLE = read("../../samples/gauge-emissions-2026-09-12.json") as {
+const SAMPLE = read("../../samples/gauge-emissions-2026-09-13.json") as {
   pools: Record<string, { feeBpsLive: number }>;
 };
 
 const BORROW = MODEL.inputs.borrowAprPct;
 /** The rates the MODEL was generated with (borrow, supply, LT), on the fixture's shape — the fixture's own
  *  words are the 2026-09-05 read and would compare every cell against the wrong borrow. */
-const MODEL_INPUTS = (read("../../samples/lp-model-2026-09-12.json") as { inputs: { collateral: Record<string, { supplyAprPct: number; liquidationThresholdBps: number }> } }).inputs;
+const MODEL_INPUTS = (read("../../samples/lp-model-2026-09-13.json") as { inputs: { collateral: Record<string, { supplyAprPct: number; liquidationThresholdBps: number }> } }).inputs;
 function ratesFromModel() {
   const base = ratesFixture();
   return {
@@ -117,17 +117,28 @@ test("FIX D-HIGH-1: at MODEL-NUMBERS' own published break-even multiples the gat
   assert.ok(proven >= 5, `only ${proven} cells demonstrated the guard biting`);
 });
 
-test("FIX D-HIGH-1: the named case — aero-weth-cbbtc/steady at its published break-even multiple is refused, and it used to be offered at an LP net just above the borrow", () => {
-  const cell = MODEL.results["aero-weth-cbbtc"]!["steady"]!;
-  const gross = cell.emissionsGrossPct! * cell.breakEvenEmissionsMultiple! * 1.0001;
-  const v = evaluateGate(at("aero-weth-cbbtc", "steady", gross));
-  assert.ok(v.lpNetPct! > BORROW && v.lpNetPct! < BORROW + 0.5, `served headline ${v.lpNetPct} sits on the old boundary`);
-  assert.ok(v.mcLpNetPct! < v.lpNetPct!, "the MC-calibrated number is the conservative one");
-  assert.equal(v.qualifies, false);
-  assert.equal(v.reason, "within_model_uncertainty");
-  // The whole point: a user at 50 % LTV would have been shown a positive
-  // number on a position the Monte Carlo prices below the cost of the debt.
-  assert.ok(v.userNet.every((u) => u.userNetPct >= 0), "the closed form's user-net ladder does read positive");
+test("FIX D-HIGH-1: the named case, generalised — every PRICED steady cell at its published break-even multiple sits just above the borrow on the closed form and is refused when the Monte Carlo says otherwise (the audit named aero-weth-cbbtc/steady; on 2026-09-13 that cell is below the borrow before drag, so the guard is walked on whichever steady cells the model prices)", () => {
+  const steady = Object.entries(MODEL.results).filter(([, cells]) => cells["steady"]?.lpNetPct !== null && cells["steady"]?.lpNetPct !== undefined);
+  assert.ok(steady.length >= 1, "at least one priced steady cell");
+  let bitten = 0;
+  for (const [poolId, cells] of steady) {
+    const cell = cells["steady"]!;
+    const gross = cell.emissionsGrossPct! * cell.breakEvenEmissionsMultiple! * 1.0001;
+    const v = evaluateGate(at(poolId, "steady", gross));
+    assert.ok(v.lpNetPct! > BORROW && v.lpNetPct! < BORROW + 0.5, `${poolId}: served headline ${v.lpNetPct} sits on the closed form's boundary`);
+    assert.ok(v.mcLpNetPct! < v.lpNetPct!, `${poolId}: the MC-calibrated number is the conservative one`);
+    if (v.mcLpNetPct! > BORROW) {
+      assert.equal(v.qualifies, true, `${poolId}: both forms clear — offered`);
+    } else {
+      assert.equal(v.qualifies, false, `${poolId}: the MC says ${v.mcLpNetPct} ≤ ${BORROW} — must NOT be offered`);
+      assert.equal(v.reason, "within_model_uncertainty", poolId);
+      // The whole point: a user would have been shown a positive number on a position the Monte Carlo
+      // prices below the cost of the debt.
+      assert.ok(v.userNet.every((u) => u.userNetPct >= 0), `${poolId}: the closed form's user-net ladder does read positive`);
+      bitten++;
+    }
+  }
+  assert.ok(bitten >= 1, "the guard bites on at least one steady cell at its own boundary");
 });
 
 test("FIX D-HIGH-1: the Aggressive cell the audit measured — the served closed form at +5 % is refused, and the optimism exceeds the borrow rate itself", () => {

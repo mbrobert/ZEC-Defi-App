@@ -56,10 +56,13 @@ test("hfBoundsFor: an LTV→0 deprecation offers nothing (null), as do a frozen 
 test("the identity both ways: a typed borrow gives the HF, the HF gives the borrow back to the cent; the clamp pulls a low HF up to the 1.25 floor and lets +∞ (borrow nothing) through", () => {
   const b = hfBoundsFor(DEMO_MARKET, "cbBTC")!;
   const collateralUsd = 0.5 * DEMO_MARKET.reserves.cbBTC!.priceUsd;
-  const hf = entryHfForBorrow(15_428.17, collateralUsd, 7800);
+  // The borrow HF 1.95 allows on 0.5 cbBTC at the snapshot price (debt = collateral × LT ÷ HF), to the cent —
+  // derived from the snapshot, never typed (15,428.17 at the 2026-09-12 price, 15,434.66 at the 2026-09-13 one).
+  const borrowAt195 = Math.round((collateralUsd * 0.78 / 1.95) * 100) / 100;
+  const hf = entryHfForBorrow(borrowAt195, collateralUsd, 7800);
   assert.ok(Math.abs(hf - 1.95) < 1e-6, `${hf}`);
-  const loan = planLoan({ collateralAmount: 0.5, collateralPriceUsd: DEMO_MARKET.reserves.cbBTC!.priceUsd, liquidationThresholdBps: 7800, entryHf: hf, borrowAprPct: 4.5174 });
-  assert.equal(loan.borrowUsdc.toFixed(2), "15428.17");
+  const loan = planLoan({ collateralAmount: 0.5, collateralPriceUsd: DEMO_MARKET.reserves.cbBTC!.priceUsd, liquidationThresholdBps: 7800, entryHf: hf, borrowAprPct: DEMO_MARKET.usdcBorrowAprPct });
+  assert.equal(loan.borrowUsdc.toFixed(2), borrowAt195.toFixed(2));
   assert.equal(entryHfForBorrow(0, collateralUsd, 7800), Number.POSITIVE_INFINITY);
   assert.equal(clampEntryHf(1.2, b), 1.25);
   assert.equal(clampEntryHf(1.3, b), 1.3, "the Expert mark is reachable now");
@@ -104,15 +107,14 @@ test("deriveReview (lp): a pool the model forecasts at a loss is priced, flagged
   assert.equal(d.gateOk, false, "informational: it does not beat the borrow");
   assert.deepEqual(d.problems, [], "a negative forecast is not a problem");
   assert.equal(d.cell?.poolId, "aero-cbbtc-usdc");
-  assert.equal(d.cell?.lpNetPct, -10.92);
+  assert.equal(d.cell?.lpNetPct, entry.lpNetPct, "the review shows the gate entry's own cell");
   assert.equal(d.cell?.allowed, true);
-  assert.equal(d.verdict?.lpNetPct, -10.92);
+  assert.equal(d.verdict?.lpNetPct, entry.lpNetPct);
   assert.equal(d.lpParams?.rangeWidthBps, 4500);
   assert.equal(d.lpParams?.rebalanceDelayHours, 48);
   assert.ok(d.yieldPlan && d.yieldPlan.totalUsd < 0);
-  // The review's user net is the market snapshot's borrow and supply (the 2026-09-12 ledger read at
-  // block 51,226,072: 4.5174 % / 0.0115 %) applied to the gate's lpNet (−10.92, the same block):
-  // 0.0115 + 0.4 × (−10.92 − 4.5174).
+  // The review's user net is the market snapshot's borrow and supply (the pinned ledger read the demo
+  // is taken at) applied to the gate's lpNet (the same block): supply + 0.4 × (lpNet − borrow).
   // Computed here from the same two inputs, never typed as a result.
   const expected = DEMO_MARKET.reserves.cbBTC!.supplyAprPct + 0.4 * (entry.lpNetPct! - DEMO_MARKET.usdcBorrowAprPct);
   assert.ok(Math.abs(d.yieldPlan!.userNetPct - expected) < 0.01, `${d.yieldPlan!.userNetPct} vs ${expected}`);

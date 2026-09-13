@@ -2,8 +2,8 @@
  * DEMO MODE — shown only when no wallet is connected (or NEXT_PUBLIC_FORCE_DEMO=1).
  *
  * Nothing here is a product constant. `DEMO_MARKET` is a SNAPSHOT of the chain
- * reads recorded in docs/VERIFIED-BASE-FACTS.md (Base mainnet block 51,226,072,
- * 2026-09-12 19:31:31 UTC — the block the demo's yield sample was read at,
+ * reads recorded in docs/VERIFIED-BASE-FACTS.md (Base mainnet block 51,241,497,
+ * 2026-09-13 04:05:41 UTC — the block the demo's yield sample was read at,
  * so the snapshot, the model and the forecast are one read; scripts/refresh-demo-snapshot.mjs) so the demo can run
  * where no RPC is reachable; live mode
  * performs the same reads through lib/reads.ts and never consults this file.
@@ -29,27 +29,27 @@ import { normalizeForecast, type ForecastView } from "./forecast";
 import DEMO_GATE_RAW from "./demo-gate.json";
 import DEMO_FORECAST_RAW from "./demo-forecast.json";
 
-export const DEMO_SNAPSHOT_AT = "2026-09-12T19:31:31Z";
-/** The pinned block every DEMO_MARKET number was read at (docs/research/ledger-read-51226072.json, VERIFIED-BASE-FACTS.md's top ledger). */
-export const DEMO_SNAPSHOT_BLOCK = 51_226_072;
-/** cbZEC/USDC Slipstream pool at that block: slot0 tick −24,205 → 100 × 1.0001^24,205 USDC per cbZEC. Demo spot quotes only. */
-export const DEMO_CBZEC_PRICE_USDC = 1125.01;
+export const DEMO_SNAPSHOT_AT = "2026-09-13T04:05:41Z";
+/** The pinned block every DEMO_MARKET number was read at (docs/research/ledger-read-51241497.json, VERIFIED-BASE-FACTS.md's top ledger). */
+export const DEMO_SNAPSHOT_BLOCK = 51_241_497;
+/** cbZEC/USDC Slipstream pool at that block: slot0 tick −24,298 → 100 × 1.0001^24,298 USDC per cbZEC. Demo spot quotes only. */
+export const DEMO_CBZEC_PRICE_USDC = 1135.52;
 export const DEMO_SNAPSHOT_SOURCE = "docs/VERIFIED-BASE-FACTS.md";
 
 /** The model that produced demo-gate.json states these same inputs; the pin test cross-checks them. */
 export { DEMO_GATE_RAW, DEMO_FORECAST_RAW };
 
 /**
- * The USDC reserve's lendable balance, read 2026-09-12 20:25 UTC at Base block 51,227,701
- * (docs/VERIFIED-BASE-FACTS.md Addendum 13): totalAToken 182,806,571.52 − variable debt
- * 158,038,067.33. A later read than the rest of this snapshot, and dated separately for that reason.
+ * The USDC reserve's lendable balance at the SAME block (services/yield/samples/gauge-emissions-2026-09-13.json's Aave
+ * words, recorded in samples/aave-usdc-reserve-2026-09-13.json): totalAToken 182,863,963.12 − variable debt
+ * 158,079,427.64.
  */
-export const DEMO_USDC_AVAILABLE_READ_AT = "2026-09-12T20:25:49Z";
+export const DEMO_USDC_AVAILABLE_READ_AT = "2026-09-13T04:05:41Z";
 
 export const DEMO_MARKET: MarketRead = {
   readAt: DEMO_SNAPSHOT_AT,
   source: "snapshot",
-  usdcBorrowAprPct: 4.5174,
+  usdcBorrowAprPct: 4.5143,
   reserves: {
     cbBTC: {
       symbol: "cbBTC",
@@ -60,9 +60,9 @@ export const DEMO_MARKET: MarketRead = {
       borrowingEnabled: true,
       isActive: true,
       isFrozen: false,
-      variableBorrowAprPct: 0.6716,
-      supplyAprPct: 0.0115,
-      priceUsd: 77140.83,
+      variableBorrowAprPct: 0.6742,
+      supplyAprPct: 0.0117,
+      priceUsd: 77173.3,
     },
     WETH: {
       symbol: "WETH",
@@ -73,9 +73,9 @@ export const DEMO_MARKET: MarketRead = {
       borrowingEnabled: true,
       isActive: true,
       isFrozen: false,
-      variableBorrowAprPct: 2.3861,
-      supplyAprPct: 1.7422,
-      priceUsd: 2520.38,
+      variableBorrowAprPct: 2.4008,
+      supplyAprPct: 1.7638,
+      priceUsd: 2520.58,
     },
     /** Not listed on Aave (config returns zeros) → null, exactly as a live read would decode it. */
     cbZEC: null,
@@ -88,10 +88,10 @@ export const DEMO_MARKET: MarketRead = {
       borrowingEnabled: true,
       isActive: true,
       isFrozen: false,
-      variableBorrowAprPct: 4.5174,
-      supplyAprPct: 3.5169,
+      variableBorrowAprPct: 4.5143,
+      supplyAprPct: 3.5122,
       priceUsd: 1.0,
-      availableUnits: 24_768_504.193361,
+      availableUnits: 24_784_535.4793,
     },
   },
 };

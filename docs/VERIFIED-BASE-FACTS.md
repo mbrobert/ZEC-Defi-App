@@ -1,26 +1,26 @@
-# Verified Base mainnet facts for the Base module (first read 2026-09-05 ~01:00 UTC; top ledger re-read 2026-09-12 at block 51,226,072, 19:31:31 UTC; chain id 8453)
+# Verified Base mainnet facts for the Base module (first read 2026-09-05 ~01:00 UTC; top ledger re-read 2026-09-13 at block 51,241,497, 04:05:41 UTC; chain id 8453)
 
 Method: `eth_getCode` / `eth_call` against public Base RPCs from a networked sandbox, selectors computed with
 `cast sig`. **Every address below has been confirmed to hold code and to answer the calls stated.** Anything not
 listed here is unverified and must be probed before code depends on it — this is the rule that would have caught
 the C-2 mainnet-bricking bug (see `AUDIT-FINDINGS-2026-09-03.md`).
 
-**Re-read 2026-09-12 (`scripts/refresh-demo-snapshot.mjs`).** Every number in this top section was read again, read-only, at one
-pinned block — **51,226,072** (timestamp 1,789,241,491 = 2026-09-12T19:31:31Z), the block the 2026-09-12 yield sample was
-taken at (`services/yield/samples/gauge-emissions-2026-09-12.json`) — with `cast call --block 51226072` (`scripts/ledger-read.sh`) against
+**Re-read 2026-09-13 (`scripts/refresh-demo-snapshot.mjs`).** Every number in this top section was read again, read-only, at one
+pinned block — **51,241,497** (timestamp 1,789,272,341 = 2026-09-13T04:05:41Z), the block the 2026-09-13 yield sample was
+taken at (`services/yield/samples/gauge-emissions-2026-09-13.json`) — with `cast call --block 51241497` (`scripts/ledger-read.sh`) against
 `https://mainnet.base.org`, so the demo's market snapshot (`web/lib/demo.ts` `DEMO_MARKET`, the prototypes' `OIL_CHAIN_READ`), its
-yield model and its forecast are one read. The 2026-09-05 figures stay in the last column of each table as the drift.
-Raw words: `docs/research/ledger-read-51226072.json`; the 2026-09-12 read's are in Addendum 14.
+yield model and its forecast are one read. The 2026-09-12 figures (block 51,226,072) stay in the last column of each table as the drift.
+Raw words: `docs/research/ledger-read-51241497.json`; the 2026-09-12 read's are in Addendum 14.
 
 ## Tokens (all verified: `symbol()`, `decimals()`, `totalSupply()`)
 
-| Token | Address | Decimals | Total supply (2026-09-12, block 51,226,072) | Total supply (2026-09-05) | Notes |
+| Token | Address | Decimals | Total supply (2026-09-13, block 51,241,497) | Total supply (2026-09-12) | Notes |
 |---|---|---|---|---|---|
-| USDC | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` | 6 | 4,279,450,714.61 | 4,250,344,054.96 | native Circle USDC |
-| WETH | `0x4200000000000000000000000000000000000006` | 18 | 237,550.57 | 242,120.99 | OP-stack predeploy |
-| cbBTC | `0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf` | 8 | 45,881.88 | 45,244.24 | plain ERC-20 (code len 3,102) |
-| **cbZEC** | `0xB2000000000000000000008501b13360000cb2EC` | 8 | **1,311.87** | 603.25 | **B20 precompile: `eth_getCode` returns `0xef`.** `name()` = "Coinbase Wrapped ZEC". `multiplier()` = 1e18 (rebase multiplier present, still 1.0). `owner()` and `paused()` revert (not exposed). |
-| AERO | `0x940181a94A35A4569E4529A3CDfB74e38FD98631` | 18 | 1,978,450,301.48 | 1,973,685,089.49 | |
+| USDC | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` | 6 | 4,276,493,282.04 | 4,279,450,714.61 | native Circle USDC |
+| WETH | `0x4200000000000000000000000000000000000006` | 18 | 238,692.78 | 237,550.57 | OP-stack predeploy |
+| cbBTC | `0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf` | 8 | 45,846.25 | 45,881.88 | plain ERC-20 (code len 3,102) |
+| **cbZEC** | `0xB2000000000000000000008501b13360000cb2EC` | 8 | **1,360.59** | 1,311.87 | **B20 precompile: `eth_getCode` returns `0xef`.** `name()` = "Coinbase Wrapped ZEC". `multiplier()` = 1e18 (rebase multiplier present, still 1.0). `owner()` and `paused()` revert (not exposed). |
+| AERO | `0x940181a94A35A4569E4529A3CDfB74e38FD98631` | 18 | 1,978,450,301.48 | 1,978,450,301.48 | |
 
 ## Aave v3 on Base (verified via PoolAddressesProvider → `getPool()` / `getPoolDataProvider()` / `getPriceOracle()`)
 
@@ -29,33 +29,33 @@ Raw words: `docs/research/ledger-read-51226072.json`; the 2026-09-12 read's are 
 - PoolDataProvider `0x0F43731EB8d45A581f4a36DD74F5f358bc90C73A` (EIP-55 casing corrected 2026-09-05; the first print of this file had a non-checksum casing of the same hex, which viem's `getAddress` rejects — `packages/shared/src/base.ts` pins this form)
 - AaveOracle `0x2Cc0Fc26eD4563A5ce5e8bdcfe1A2878676Ae156`
 
-Reserve configuration (`getReserveConfigurationData`, bps) and rates (`getReserveData`, ray → %) at block 51,226,072
-(2026-09-12T19:31:31Z); the last column is the 2026-09-05 read:
+Reserve configuration (`getReserveConfigurationData`, bps) and rates (`getReserveData`, ray → %) at block 51,241,497
+(2026-09-13T04:05:41Z); the last column is the 2026-09-12 read:
 
-| Reserve | LTV | Liq. threshold | Liq. bonus | Collateral | Borrowable | Variable borrow APR | Supply APR | 2026-09-05 (borrow / supply) |
+| Reserve | LTV | Liq. threshold | Liq. bonus | Collateral | Borrowable | Variable borrow APR | Supply APR | 2026-09-12 (borrow / supply) |
 |---|---|---|---|---|---|---|---|---|
-| cbBTC | 73.00% | **78.00%** | 7.5% | yes | yes | 0.6716% | 0.0115% | 0.673% / 0.012% |
-| WETH | 80.00% | **83.00%** | 5.0% | yes | yes | 2.3861% | 1.7422% | 2.454% / 1.843% |
-| USDC | 75.00% | **78.00%** | 5.0% | yes | yes | **4.5174%** | 3.5169% | 4.828% / 3.921% |
+| cbBTC | 73.00% | **78.00%** | 7.5% | yes | yes | 0.6742% | 0.0117% | 0.6716% / 0.0115% |
+| WETH | 80.00% | **83.00%** | 5.0% | yes | yes | 2.4008% | 1.7638% | 2.3861% / 1.7422% |
+| USDC | 75.00% | **78.00%** | 5.0% | yes | yes | **4.5143%** | 3.5122% | 4.5174% / 3.5169% |
 | cbZEC | — | — | — | **NOT LISTED** (the config call reverted at this read; it returned zeros on 2026-09-05) | | | | |
 
 The rates are the ray words truncated at 1e-4 % exactly as the yield service's `rayToPct` does (integer division,
 `services/yield/src/sources/aave.ts`), so the model, the demo and this table carry the same digits; the ray words
 themselves, the reserves' `lastUpdateTimestamp` and the `getPaused` reads (false on all three) are in
-`docs/research/ledger-read-51226072.json`.
+`docs/research/ledger-read-51241497.json`.
 
-Product implication: borrowing USDC against cbBTC at Aave costs **4.52%** today (4.5174 %; 4.83 % on 2026-09-05); the
+Product implication: borrowing USDC against cbBTC at Aave costs **4.51%** today (4.5143 %; 4.52 % on 2026-09-12); the
 liquidation threshold that drives our health-factor ladder is **0.78 for cbBTC and 0.83 for WETH** (per-asset, read from
 chain, never a constant).
 
 ## Chainlink price feeds on Base (verified `description()` + `latestRoundData()`)
 
-| Feed | Address | Answer at block 51,226,072 (2026-09-12) | Age at that block | 2026-09-05 answer (age) |
+| Feed | Address | Answer at block 51,241,497 (2026-09-13) | Age at that block | 2026-09-12 answer (age) |
 |---|---|---|---|---|
-| BTC / USD | `0x64c911996D3c6aC71f9b455B1E8E7266BcbD848F` | 77,165.17 | 226 s | 79,593.77 (109 s) |
-| ETH / USD | `0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70` | 2,520.38 | 798 s | 2,453.45 (625 s) |
-| USDC / USD | `0x7e860098F58bBFC8648a4311b374B1D669a2bc6B` | 1.00 | 24,608 s (heartbeat-driven; raw answer 0.99986476) | 1.00 (44,475 s) |
-| cbBTC / USD | `0x07DA0E54543a844a80ABE69c8A12F22B3aA59f9D` | 77,140.83 | 234 s | 79,630.89 (833 s) |
+| BTC / USD | `0x64c911996D3c6aC71f9b455B1E8E7266BcbD848F` | 77,186.69 | 454 s | 77,165.17 (226 s) |
+| ETH / USD | `0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70` | 2,520.58 | 550 s | 2,520.38 (798 s) |
+| USDC / USD | `0x7e860098F58bBFC8648a4311b374B1D669a2bc6B` | 1.00 | 55,458 s (heartbeat-driven; raw answer 0.99986476) | 1.00 (24,608 s) |
+| cbBTC / USD | `0x07DA0E54543a844a80ABE69c8A12F22B3aA59f9D` | 77,173.30 | 346 s | 77,140.83 (234 s) |
 
 Aave's own sources: cbBTC → `0x3a932b286715abc4a86a4acaf68a6cdd89e0d446`, WETH → `0x9da00d23465282005db222a441a663ee7b9dfcc8`,
 USDC → `0xf52d010c7d4ecbfda92c2509900593ce34535d86` (these are Aave's adapters, not the raw feeds).
@@ -65,8 +65,8 @@ USDC → `0xf52d010c7d4ecbfda92c2509900593ce34535d86` (these are Aave's adapters
 
 - Pyth contract `0x8250f4aF4B972684F7b336503E2D6dFeDeB1487a`
 - `Crypto.ZEC/USD` price id `0xbe9b59d178f0d6a97ab4c343bff2aa69caa1eaae3e9048a65788c529b125bb24`
-- `getPriceUnsafe` at block 51,226,072 (2026-09-12): **$1,035.20 ± 0.16** (103,519,851,737 × 1e−8, conf 15,630,582),
-  expo −8, `publishTime` 1,788,550,194 = 2026-09-04T19:29:54Z — **691,297 s (8.0 days) old at that block**, the same posted update the 2026-09-05 read saw (then 19,779 s / 5.5 h old): nobody has posted a ZEC/USD update on Base since, and the pool below has moved 8.7 % away from it. Pyth is
+- `getPriceUnsafe` at block 51,241,497 (2026-09-13): **$1,035.20 ± 0.16** (103,519,851,737 × 1e−8, conf 15,630,582),
+  expo −8, `publishTime` 1,788,550,194 = 2026-09-04T19:29:54Z — **722,147 s (8.4 days) old at that block**, the same posted update the 2026-09-12 read saw (then 691,297 s / 192.0 h old): nobody has posted a ZEC/USD update on Base since, and the pool below has moved 9.7 % away from it. Pyth is
   pull-based: the on-chain price is only as fresh as the last update anyone posted. **Any oracle adapter must pull
   a fresh update (Hermes) inside the same transaction and enforce a max age, or it is pricing stale data.**
 
@@ -74,25 +74,25 @@ USDC → `0xf52d010c7d4ecbfda92c2509900593ce34535d86` (these are Aave's adapters
 
 - Voter `0x16613524e02ad97eDfeF371bC883F2F5d6C480A5`
 - **cbZEC/USDC Slipstream pool `0x0Fc47C17AF86078d809358db1b4db2DeBC988566`** (EIP-1167 clone, code len 92):
-  token0 = USDC, token1 = cbZEC, fee 2000 (0.2%), tickSpacing 200. At block 51,226,072 (2026-09-12) slot0 tick −24,205 →
-  **≈ 1,125 USDC per cbZEC** (100 × 1.0001^24,205 = 1,125.01; the pool is 8.7 % above Pyth's 8.0-day-old $1,035.20), active
-  liquidity L = 23,138,875,907,679. On 2026-09-05: tick −23,228 → ≈ 1,020 USDC per cbZEC, L = 15,382,171,343,960. The depth here is a few ticks wide: the position holding most of it goes
+  token0 = USDC, token1 = cbZEC, fee 2000 (0.2%), tickSpacing 200. At block 51,241,497 (2026-09-13) slot0 tick −24,298 →
+  **≈ 1,136 USDC per cbZEC** (100 × 1.0001^24,298 = 1,135.52; the pool is 9.7 % above Pyth's 8.4-day-old $1,035.20), active
+  liquidity L = 161,874,864,892. On 2026-09-12: tick −24,205 → ≈ 1,125 USDC per cbZEC, L = 23,138,875,907,679. The depth here is a few ticks wide: the position holding most of it goes
   out of range when the price crosses a spacing boundary (seen an hour after the 2026-09-12 read, Addendum 14).
 - **Gauge for that pool: `0x8779e34e5d38358b0cb957c553b40cc1208c81fb` — `rewardRate()` 7,140,520,125,989,201 wei/s
-  (≈ 616.9 AERO/day), `periodFinish()` 1,789,603,200 (2026-09-17T00:00:00Z) at block 51,226,072.** At the 2026-09-05 read both were 0: created, never voted, no AERO.
+  (≈ 616.9 AERO/day), `periodFinish()` 1,789,603,200 (2026-09-17T00:00:00Z) at block 51,241,497.** On 2026-09-12: `rewardRate()` 7,140,520,125,989,201 wei/s (≈ 616.9 AERO/day), `periodFinish()` 1,789,603,200.
   The first emissions vote landed in the epoch that began 2026-09-10 (Addendum 8, 0.083 % of the Voter's weight).
 - The MaxFi/Snuggle engine facts (index-getter `userPositions(address,uint256)`, replace-on-rekey, total-span
   widths, `slot0()` on CL pools) are in `AUDIT-FINDINGS-2026-09-03.md` Part 1 and still hold.
 
 ## Other infrastructure (code presence verified)
 
-- Morpho Blue `0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb` — present (15,623 bytes of code at block 51,226,072; the first print counted the
+- Morpho Blue `0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb` — present (15,623 bytes of code at block 51,241,497; the first print counted the
   31,248 hex characters of `eth_getCode`). Market listing via the
   public GraphQL API failed on schema field names three times on 2026-09-05; the working query (`marketId`, not
   `uniqueKey`/`id`; `OracleFeed` has `address` only) and both chain-verified ids are in the Morpho addendum
   below. No cbZEC market exists (consistent with the research).
 - Compound v3 USDC Comet `0xb125E6687d4313864e53df431d5425969c15Eb2F` — present; `baseToken()` = USDC;
-  utilization **90.53 %** at block 51,226,072 (90.05 % on 2026-09-05; above the kink → borrow rate elevated; read the
+  utilization **90.69 %** at block 51,241,497 (90.5253 % on 2026-09-12; above the kink → borrow rate elevated; read the
   live rate before quoting it).
 - Permit2 `0x000000000022D473030F116dDEE9F6B43aC78BA3` — present (9,152 bytes).
 - CoW Protocol GPv2Settlement `0x9008D19f58AAbD9eD0D60971565AA8510560ab41` — present (16,165 bytes).

@@ -386,6 +386,18 @@ for pid, s in SAMPLE["pools"].items():
             out["verdict"]["fails"].append({"pool": pid, "setting": st["id"], "reason": "no_emissions"})
             print(f"{pid:18}{st['id']:10}{bps:5d}{w*100:7.2f}{delay:6d}{0:8.2f}{0:8.2f}{'':8}{'':8}{'':8}{'':10}      | no_emissions (rewardRate 0 / periodFinish ≤ as-of)")
             continue
+        if apr > INP["bounds"]["maxEmissionsAprPct"]:
+            # gate.ts refuses a marginal APR above MAX_EMISSIONS_APR_PCT (`emissions_implausible`) BEFORE the
+            # borrow and σ checks, and publishes no net figure for it. The sim had no such step until the
+            # first reading above the ceiling arrived (2026-09-13: the cbZEC/USDC gauge's staked liquidity
+            # had collapsed to 4.8e10, a 1,031 % / 5,241 % marginal reading at the two tighter widths), and
+            # test/model-pin.test.ts caught the sim saying `no_volatility_input` where the gate says
+            # `emissions_implausible`. The bound is read from model-inputs.json (gate.ts's constant), never typed.
+            cell.update({"reason": "emissions_implausible", "emissionsNetPct": None, "lpNetPct": None, "mcLpNetPct": None, "qualifies": False})
+            out["results"].setdefault(pid, {})[st["id"]] = cell
+            out["verdict"]["fails"].append({"pool": pid, "setting": st["id"], "reason": "emissions_implausible", "emissionsGrossPct": apr})
+            print(f"{pid:18}{st['id']:10}{bps:5d}{w*100:7.2f}{delay:6d}{apr:8.2f}{'':8}{'':8}{'':8}{'':8}{'':10}      | emissions_implausible ({apr:.2f} > {INP['bounds']['maxEmissionsAprPct']} ceiling)")
+            continue
         if not net > BORROW:
             # The GATE returns before computing any of the model fields on this
             # branch, so the sim must too — publishing an lpNet ladder for a
@@ -548,7 +560,8 @@ if args.md:
             width = f"{c['rangeWidthBps']} (±{c['halfWidth']*100:.2f}%)"
             mc = c.get("monteCarlo")
             if c.get("lpNetPct") is None:
-                L.append(f"| {pid} | {sid} | {width} | {c['rebalanceDelayHours']}h | {c.get('emissionsGrossPct', 0):.2f}% | {c.get('emissionsNetPct', 0):.2f}% | — | — | — | — | — | — | {c['reason']} |")
+                net_txt = "—" if c.get("emissionsNetPct") is None else f"{c['emissionsNetPct']:.2f}%"
+                L.append(f"| {pid} | {sid} | {width} | {c['rebalanceDelayHours']}h | {c.get('emissionsGrossPct', 0):.2f}% | {net_txt} | — | — | — | — | — | — | {c['reason']} |")
             else:
                 L.append(f"| {pid} | {sid} | {width} | {c['rebalanceDelayHours']}h | {c['emissionsGrossPct']:.2f}% | {c['emissionsNetPct']:.2f}% | {c['emissionsRealizedPct']:.2f}% | {c['dragPct']:.2f}% | **{c['lpNetPct']:+.2f}%** | **{c['mcLpNetPct']:+.2f}%** | {mc['timeInRange']*100:.0f}% | {c['lpNetPct']-c['mcLpNetPct']:+.1f} | {'**CLEARS**' if c['qualifies'] else c['reason']} |")
     L.append("")

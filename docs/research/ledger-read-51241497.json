@@ -1,0 +1,209 @@
+{
+  "block": 51241497,
+  "timestamp": 1789272341,
+  "readAt": "2026-09-13T04:05:41Z",
+  "chainId": 8453,
+  "supplies": {
+    "USDC": "4276493282041539",
+    "WETH": "238692782461736822311185",
+    "cbBTC": "4584625190786",
+    "cbZEC": "136059196483",
+    "AERO": "1978450301483024928860547401"
+  },
+  "aave": {
+    "reserves": {
+      "cbBTC": {
+        "decimals": 8,
+        "ltvBps": 7300,
+        "liquidationThresholdBps": 7800,
+        "liquidationBonusWord": 10750,
+        "reserveFactorBps": 5000,
+        "usageAsCollateralEnabled": true,
+        "borrowingEnabled": true,
+        "stableBorrowEnabled": false,
+        "isActive": true,
+        "isFrozen": false,
+        "listed": true,
+        "unbacked": "0",
+        "accruedToTreasuryScaled": "80930",
+        "totalAToken": "279553171754",
+        "totalStableDebt": "0",
+        "totalVariableDebt": "9741715146",
+        "liquidityRateRay": "117476800735012205625082",
+        "variableBorrowRateRay": "6742367276063969304345243",
+        "liquidityIndexRay": "1002031128504592020328272284",
+        "variableBorrowIndexRay": "1018733607519371923931359202",
+        "lastUpdateTimestamp": 1789272251,
+        "isPaused": false
+      },
+      "WETH": {
+        "decimals": 18,
+        "ltvBps": 8000,
+        "liquidationThresholdBps": 8300,
+        "liquidationBonusWord": 10500,
+        "reserveFactorBps": 1500,
+        "usageAsCollateralEnabled": true,
+        "borrowingEnabled": true,
+        "stableBorrowEnabled": false,
+        "isActive": true,
+        "isFrozen": false,
+        "listed": true,
+        "unbacked": "0",
+        "accruedToTreasuryScaled": "626576897067422606",
+        "totalAToken": "84082013870314036235160",
+        "totalStableDebt": "0",
+        "totalVariableDebt": "72672995532973022793108",
+        "liquidityRateRay": "17638023362980209563369410",
+        "variableBorrowRateRay": "24008456857373386298847573",
+        "liquidityIndexRay": "1050410902283622513045896812",
+        "variableBorrowIndexRay": "1078859300552619003998206168",
+        "lastUpdateTimestamp": 1789272325,
+        "isPaused": false
+      },
+      "USDC": {
+        "decimals": 6,
+        "ltvBps": 7500,
+        "liquidationThresholdBps": 7800,
+        "liquidationBonusWord": 10500,
+        "reserveFactorBps": 1000,
+        "usageAsCollateralEnabled": true,
+        "borrowingEnabled": true,
+        "stableBorrowEnabled": false,
+        "isActive": true,
+        "isFrozen": false,
+        "listed": true,
+        "unbacked": "0",
+        "accruedToTreasuryScaled": "1572300275",
+        "totalAToken": "182863963122726",
+        "totalStableDebt": "0",
+        "totalVariableDebt": "158079427643426",
+        "liquidityRateRay": "35122405079825872834670329",
+        "variableBorrowRateRay": "45143848513376276554435687",
+        "liquidityIndexRay": "1145534712108005795143276700",
+        "variableBorrowIndexRay": "1202480063750610360377503656",
+        "lastUpdateTimestamp": 1789272315,
+        "isPaused": false
+      },
+      "cbZEC": {
+        "listed": false,
+        "isPaused": false
+      }
+    },
+    "provider": {
+      "pool": "0xA238Dd80C259a72e81d7e4664a9801593F98d1c5",
+      "dataProvider": "0x0F43731EB8d45A581f4a36DD74F5f358bc90C73A",
+      "oracle": "0x2Cc0Fc26eD4563A5ce5e8bdcfe1A2878676Ae156"
+    }
+  },
+  "chainlink": {
+    "BTC_USD": {
+      "roundId": "55340232221128658195",
+      "answer": "7718669000000",
+      "startedAt": 1789271872,
+      "updatedAt": 1789271887,
+      "answeredInRound": "55340232221128658195",
+      "description": "BTC / USD"
+    },
+    "ETH_USD": {
+      "roundId": "55340232221128657652",
+      "answer": "252058000000",
+      "startedAt": 1789271776,
+      "updatedAt": 1789271791,
+      "answeredInRound": "55340232221128657652",
+      "description": "ETH / USD"
+    },
+    "USDC_USD": {
+      "roundId": "55340232221128654872",
+      "answer": "99986476",
+      "startedAt": 1789216868,
+      "updatedAt": 1789216883,
+      "answeredInRound": "55340232221128654872",
+      "description": "USDC / USD"
+    },
+    "cbBTC_USD": {
+      "roundId": "36893488147419117908",
+      "answer": "7717329770481",
+      "startedAt": 1789271981,
+      "updatedAt": 1789271995,
+      "answeredInRound": "36893488147419117908",
+      "description": "cbBTC / USD"
+    }
+  },
+  "pyth": {
+    "price": "103519851737",
+    "conf": "15630582",
+    "expo": -8,
+    "publishTime": 1788550194
+  },
+  "pool": {
+    "sqrtPriceX96": "23512156655327894353222416616",
+    "tick": -24298,
+    "observationIndex": 1207,
+    "observationCardinality": 2048,
+    "observationCardinalityNext": 2048,
+    "unlocked": true,
+    "liquidity": "161874864892",
+    "fee": 2000
+  },
+  "gauge": {
+    "rewardRate": "7140520125989201",
+    "periodFinish": 1789603200
+  },
+  "comet": {
+    "utilization": "906924749921014483"
+  },
+  "code": {
+    "Morpho": 15623,
+    "Permit2": 9152,
+    "CoWSettlement": 16165,
+    "Pyth": 680
+  },
+  "cbzecMultiplier": "1000000000000000000",
+  "script": "scripts/ledger-read.sh",
+  "rpc": "https://mainnet.base.org",
+  "readAtWallClock": "2026-09-13T04:10:37.139Z",
+  "log": [
+    "block 51241497 timestamp 1789272341 (2026-09-13T04:05:41Z) chain 8453",
+    "== token supplies",
+    "USDC totalSupply 4276493282041539",
+    "WETH totalSupply 238692782461736822311185",
+    "cbBTC totalSupply 4584625190786",
+    "cbZEC totalSupply 136059196483",
+    "AERO totalSupply 1978450301483024928860547401",
+    "cbZEC multiplier 1000000000000000000",
+    "== aave provider",
+    "pool 0xA238Dd80C259a72e81d7e4664a9801593F98d1c5 dataProvider 0x0F43731EB8d45A581f4a36DD74F5f358bc90C73A oracle 0x2Cc0Fc26eD4563A5ce5e8bdcfe1A2878676Ae156",
+    "== aave reserves (config: decimals,ltv,lt,bonus,reserveFactor,collateral,borrowing,stableBorrow,active,frozen | data: unbacked,accruedToTreasury,totalAToken,totalStableDebt,totalVariableDebt,liquidityRate,variableBorrowRate,stableBorrowRate,avgStable,liquidityIndex,variableBorrowIndex,lastUpdate)",
+    "cbBTC config: 8 7300 7800 10750 5000 true true false true false ",
+    "cbBTC data: 0 80930 279553171754 0 9741715146 117476800735012205625082 6742367276063969304345243 0 0 1002031128504592020328272284 1018733607519371923931359202 1789272251 ",
+    "cbBTC paused: false",
+    "WETH config: 18 8000 8300 10500 1500 true true false true false ",
+    "WETH data: 0 626576897067422606 84082013870314036235160 0 72672995532973022793108 17638023362980209563369410 24008456857373386298847573 0 0 1050410902283622513045896812 1078859300552619003998206168 1789272325 ",
+    "WETH paused: false",
+    "USDC config: 6 7500 7800 10500 1000 true true false true false ",
+    "USDC data: 0 1572300275 182863963122726 0 158079427643426 35122405079825872834670329 45143848513376276554435687 0 0 1145534712108005795143276700 1202480063750610360377503656 1789272315 ",
+    "USDC paused: false",
+    "cbZEC config: 0 0 0 0 0 false false false false false ",
+    "cbZEC data: ",
+    "cbZEC paused: false",
+    "== chainlink feeds (roundId, answer, startedAt, updatedAt, answeredInRound)",
+    "BTC_USD 55340232221128658195 7718669000000 1789271872 1789271887 55340232221128658195  desc=\"BTC / USD\"",
+    "ETH_USD 55340232221128657652 252058000000 1789271776 1789271791 55340232221128657652  desc=\"ETH / USD\"",
+    "USDC_USD 55340232221128654872 99986476 1789216868 1789216883 55340232221128654872  desc=\"USDC / USD\"",
+    "cbBTC_USD 36893488147419117908 7717329770481 1789271981 1789271995 36893488147419117908  desc=\"cbBTC / USD\"",
+    "== pyth ZEC/USD (price, conf, expo, publishTime)",
+    "(103519851737 [1.035e11], 15630582 [1.563e7], -8, 1788550194 [1.788e9])",
+    "== cbZEC/USDC pool + gauge",
+    "slot0 23512156655327894353222416616 -24298 1207 2048 2048 true ",
+    "liquidity 161874864892",
+    "fee 2000",
+    "gauge rewardRate 7140520125989201 periodFinish 1789603200",
+    "== compound v3 usdc comet utilization",
+    "906924749921014483",
+    "== code presence (bytes)",
+    "Morpho 15623",
+    "Permit2 9152",
+    "CoWSettlement 16165",
+    "Pyth 680"
+  ]
+}

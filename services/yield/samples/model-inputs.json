@@ -40,6 +40,10 @@
    "p40": 4000
   }
  },
+ "bounds": {
+  "maxEmissionsAprPct": 1000,
+  "maxAbsNetPct": 2000
+ },
  "pools": {
   "aero-cbbtc-usdc": {
    "protocol": "SNUGGLEFI",

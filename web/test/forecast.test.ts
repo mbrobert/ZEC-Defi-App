@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ENTRY_HF_FLOOR } from "@zyo/shared";
-import { DEMO_FORECAST_RAW, demoForecast } from "../lib/demo";
+import { DEMO_FORECAST_RAW, DEMO_MARKET, DEMO_SNAPSHOT_BLOCK, demoForecast } from "../lib/demo";
 import {
   acknowledgmentText,
   bestPerPool,
@@ -23,12 +23,12 @@ const SERVICE_REFUSALS = ["entry_hf_below_floor", "collateral_disabled", "rates_
 const SERVICE_UNPRICED = ["rates_unavailable", "rates_stale", "emissions_unavailable", "emissions_stale", "no_emissions", "staked_liquidity_outlier", "insufficient_samples", "no_staked_liquidity", "emissions_implausible", "no_volatility_input", "net_out_of_bounds"];
 const SERVICE_DISCLOSURES = ["forecast_not_advice", "model_uncertainty", "no_forecast", "emissions_dilutable", "borrow_rate_moves", "liquidation_at_chosen_hf", "impermanent_loss"];
 
-test("demo forecast = evaluateForecast on the 2026-09-12 recording: 81 cells at the floor, 27 priced, 54 allowed, none beats the borrow on both models — and every number the wizard shows is there", () => {
+test("demo forecast = evaluateForecast on the 2026-09-13 recording: 81 cells at the floor, 27 priced, 54 allowed, none beats the borrow on both models — and every number the wizard shows is there", () => {
   const f = demoForecast();
   assert.equal(f.source, "demo");
   assert.equal(f.entryHf, ENTRY_HF_FLOOR);
   assert.equal(f.entryHfFloor, ENTRY_HF_FLOOR);
-  assert.equal(f.borrowAprPct, 4.5174);
+  assert.equal(f.borrowAprPct, DEMO_MARKET.usdcBorrowAprPct, "the forecast and the market snapshot are one read");
   assert.equal(f.engineFeeBps, 1500);
   assert.equal(f.stale, false);
   assert.equal(f.cells.length, 81);
@@ -36,30 +36,33 @@ test("demo forecast = evaluateForecast on the 2026-09-12 recording: 81 cells at 
   assert.equal(f.cells.filter((c) => c.allowed).length, 54);
   assert.equal(f.cells.filter((c) => c.clearsBorrow.both === true).length, 0);
   const best = findCell(f, { poolId: "aero-cbbtc-usdc", setting: "sheltered", collateral: "cbBTC" })!;
-  assert.equal(best.lpNetPct, -10.92);
-  assert.equal(best.mcLpNetPct, -10.89);
-  assert.equal(best.modelGapPts, -0.02, "lpNet − mcLpNet from the unrounded forms: −10.92 and −10.89 round from a 0.024-point gap");
+  // The best cell as MODEL-NUMBERS-2026-09-13 publishes it (literal pins, the mutation guard).
+  assert.equal(best.lpNetPct, -3.75);
+  assert.equal(best.mcLpNetPct, -3.68);
+  assert.equal(best.modelGapPts, -0.07, "lpNet − mcLpNet from the unrounded forms, rounded once");
   assert.equal(best.dragPct, -15.25);
-  assert.equal(best.breakEvenEmissionsMultiple, 4.56);
+  assert.equal(best.breakEvenEmissionsMultiple, 1.72);
   assert.equal(best.ltvAtEntryBps, 6240, "LT 78 % ÷ the pinned 1.25 floor");
   assert.equal(best.drawdownToLiquidationPct, 20);
   assert.equal(best.userNetBorrowBasis, "now");
   assert.equal(best.borrowAprAfterPct, null, "the recording has no deposit size, so no post-borrow rate");
-  assert.equal(Math.round(best.poolAvailableUsd!), 24_768_504);
+  assert.equal(Math.round(best.poolAvailableUsd!), Math.round(DEMO_MARKET.reserves.USDC!.availableUnits!), "the liquidity picture is the snapshot's own USDC reserve read");
   assert.deepEqual(best.refusals, []);
   assert.ok(best.allowed);
   assert.deepEqual([...best.disclosures].sort(), ["borrow_rate_moves", "emissions_dilutable", "forecast_not_advice", "impermanent_loss", "liquidation_at_chosen_hf", "model_uncertainty"]);
   // The raw file is the same recording the service's own test pins.
-  assert.equal((DEMO_FORECAST_RAW as { usdcReserveBlock: number }).usdcReserveBlock, 51_227_701);
+  assert.equal((DEMO_FORECAST_RAW as { usdcReserveBlock: number }).usdcReserveBlock, DEMO_SNAPSHOT_BLOCK, "the reserve read is the snapshot's block since 2026-09-13 (one read)");
 });
 
 test("user net at the chosen LTV is the identity supply + LTV × (lpNet − borrow), reproducing the model's ladder", () => {
   const f = demoForecast();
   const best = findCell(f, { poolId: "aero-cbbtc-usdc", setting: "sheltered", collateral: "cbBTC" })!;
-  // MODEL-NUMBERS-2026-09-12: −4.62 / −6.16 / −9.62 at 30 / 40 / 62.4 % (the top at the pinned 1.25 floor).
-  assert.equal(Math.round(userNetAtLtv(best, 3000)! * 100) / 100, -4.62);
-  assert.equal(Math.round(userNetAtLtv(best, 4000)! * 100) / 100, -6.16);
-  assert.equal(Math.round(userNetAtLtv(best, 6240)! * 100) / 100, -9.62);
+  // MODEL-NUMBERS-2026-09-13: −2.47 / −3.30 / −5.15 at 30 / 40 / 62.4 % (the top at the pinned 1.25 floor). The
+  // model's ladder is computed from the unrounded lpNet; the site's identity runs on the served two-decimal
+  // lpNet, so the two agree to a hundredth of a point (−3.294 here against the doc's −3.30), never further.
+  for (const [ltv, doc] of [[3000, -2.47], [4000, -3.3], [6240, -5.15]] as const) {
+    assert.ok(Math.abs(userNetAtLtv(best, ltv)! - doc) < 0.011, `${ltv}: ${userNetAtLtv(best, ltv)} vs the doc's ${doc}`);
+  }
   assert.equal(userNetAtLtv({ ...best, lpNetPct: null }, 4000), null);
   // An unpriced cell has no user net, and sorts last.
   const cells = cellsFor(f, "cbBTC", 4000);
@@ -79,10 +82,10 @@ test("entryFromCell: the wizard's entry shape — qualifies means beats-the-borr
   const e = entryFromCell(best);
   assert.equal(e.qualifies, false);
   assert.equal(e.reason, "net_below_borrow");
-  assert.equal(e.lpNetPct, -10.92);
-  assert.equal(e.borrowAprPct, 4.5174);
+  assert.equal(e.lpNetPct, best.lpNetPct);
+  assert.equal(e.borrowAprPct, DEMO_MARKET.usdcBorrowAprPct);
   assert.deepEqual(e.userNet.map((u) => u.ltvBps), [3000, 4000, 6240], "the registry presets: 30 / 40 / top = LT ÷ 1.25");
-  assert.equal(Math.round(e.userNet[1]!.userNetPct * 100) / 100, -6.16);
+  assert.ok(Math.abs(e.userNet[1]!.userNetPct - -3.3) < 0.011, `${e.userNet[1]!.userNetPct} vs the doc's −3.30 at 40 %`);
   const unpriced = findCell(f, { poolId: "aero-aero-weth", setting: "sheltered", collateral: "cbBTC" })!;
   assert.equal(unpriced.lpPriced, false);
   assert.equal(entryFromCell(unpriced).reason, unpriced.lpUnpricedReason);
@@ -107,8 +110,9 @@ test("the words cover the service's unions, none is a bare code, and the acknowl
   const best = findCell(f, { poolId: "aero-cbbtc-usdc", setting: "sheltered", collateral: "cbBTC" })!;
   const lp = acknowledgmentText({ strategy: "lp", collateral: "cbBTC", cell: best, borrowAprPct: 4.828, drawdownToLiquidationPct: 48.7 });
   assert.match(lp, /USDC\/cbBTC/);
-  assert.match(lp, /−10\.92%/);
-  assert.match(lp, /stricter model says −10\.89%/);
+  // The sentence names THIS cell's numbers — derived from the cell, never typed.
+  assert.match(lp, new RegExp(`−${Math.abs(best.lpNetPct!).toFixed(2)}%`));
+  assert.match(lp, new RegExp(`stricter model says −${Math.abs(best.mcLpNetPct!).toFixed(2)}%`));
   assert.match(lp, /4\.83% a year today and that rate moves/);
   assert.match(lp, /48\.7% fall in cbBTC would liquidate/);
   assert.match(lp, /nothing here is advice or a promise/);

@@ -18,6 +18,7 @@ import {
   LTV_PRESET_FIXED_BPS,
   RANGE_PRESETS,
 } from "@zyo/shared";
+import { MAX_ABS_NET_PCT, MAX_EMISSIONS_APR_PCT } from "../dist/src/gate.js";
 import { ENGINE_FEE_BPS, SETTINGS } from "../dist/src/model.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -41,6 +42,9 @@ const inputs = {
     entryHfFloor: ENTRY_HF_FLOOR,
     fixedBps: { ...LTV_PRESET_FIXED_BPS },
   },
+  // gate.ts's plausibility ceiling on a marginal APR and its bound on a net figure, so the sim refuses in
+  // the gate's order (`emissions_implausible` before the borrow and σ checks) from the same numbers.
+  bounds: { maxEmissionsAprPct: MAX_EMISSIONS_APR_PCT, maxAbsNetPct: MAX_ABS_NET_PCT },
   pools: Object.fromEntries(
     CURATED_POOLS.filter((p) => p.dex === "AERODROME").map((p) => [
       p.id,

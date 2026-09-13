@@ -6,8 +6,22 @@ import { test, expect, type Page } from "@playwright/test";
  * and in BOTH product modes (Simple = guided, Advanced = full suite).
  */
 
+import { DEMO_FORECAST_RAW, DEMO_MARKET } from "../lib/demo";
+
 const PINNED_CBZEC = "0xB2000000000000000000008501b13360000cb2EC";
 const DEMO_ACCOUNT = "0x2222222222222222222222222222222222222222";
+
+// Every figure the demo renders is derived here from the SAME snapshot the app renders it from
+// (web/lib/demo.ts, one pinned ledger read), never typed: 0.5 cbBTC at the snapshot price, Aave's 78 %
+// threshold, debt = collateral × LT ÷ HF.
+const CBBTC_USD = DEMO_MARKET.reserves.cbBTC!.priceUsd;
+const LT = DEMO_MARKET.reserves.cbBTC!.liquidationThresholdBps / 10_000;
+const COLLATERAL_USD = 0.5 * CBBTC_USD;
+const usd2 = (v: number) => v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const borrowAtHf = (hf: number) => usd2((COLLATERAL_USD * LT) / hf);
+const BORROW_PCT = `${DEMO_MARKET.usdcBorrowAprPct.toFixed(2)}%`;
+const BEST = DEMO_FORECAST_RAW.cells.find((c) => c.poolId === "aero-cbbtc-usdc" && c.setting === "sheltered" && c.collateral === "cbBTC")!;
+const EMISSIONS_SAMPLED = `${DEMO_FORECAST_RAW.emissionsSampledAt.slice(0, 10)} ${DEMO_FORECAST_RAW.emissionsSampledAt.slice(11, 16)}Z`;
 
 function watchConsole(page: Page): { errors: string[] } {
   const errors: string[] = [];
@@ -87,7 +101,7 @@ test.describe("Oilskin demo mode", () => {
     await expect(slider).toHaveAttribute("data-min-hf", "1.25");
     await expect(slider).toHaveAttribute("data-binding", "entry_hf_floor");
     await expect(page.getByTestId("entry-hf")).toHaveText("1.55"); // the default: the Sheltered mark, offered as is
-    await expect(page.getByTestId("borrow-usdc")).toContainText("19,409.63"); // 38,570.415 × 0.78 ÷ 1.55
+    await expect(page.getByTestId("borrow-usdc")).toContainText(borrowAtHf(1.55)); // collateral × 0.78 ÷ 1.55
     await expect(page.getByTestId("ltv-line")).toContainText("50.3% LTV");
     await expect(page.getByTestId("entry-floor")).toHaveText("1.25");
     await expect(page.getByTestId("mark-sheltered")).toBeEnabled();
@@ -98,7 +112,7 @@ test.describe("Oilskin demo mode", () => {
     // entry's first and last rung (ladderFor(1.30) = 1.27 … 1.05), and holds Continue until ticked.
     await page.getByTestId("mark-expert").click();
     await expect(page.getByTestId("entry-hf")).toHaveText("1.30");
-    await expect(page.getByTestId("borrow-usdc")).toContainText("23,142.25"); // 30,084.92 ÷ 1.30
+    await expect(page.getByTestId("borrow-usdc")).toContainText(borrowAtHf(1.3)); // collateral × 0.78 ÷ 1.30
     await expect(page.getByTestId("hf-acknowledgment")).toHaveCount(1);
     await expect(page.getByTestId("hf-ack-text")).toContainText("entry health factor of 1.30, under the Sheltered mark of 1.55");
     await expect(page.getByTestId("hf-ack-text")).toContainText("A 23.1% fall in cbBTC");
@@ -106,21 +120,21 @@ test.describe("Oilskin demo mode", () => {
     await expect(page.getByTestId("wizard-next")).toBeDisabled();
     await page.getByTestId("hf-ack").check();
     await expect(page.getByTestId("wizard-next")).toBeEnabled();
-    // Type a health factor: the borrow follows (debt = collateral × LT ÷ HF; 38,570.415 × 0.78 ÷ 1.95); the tick is voided by the change.
+    // Type a health factor: the borrow follows (debt = collateral × LT ÷ HF, at 1.95); the tick is voided by the change.
     await page.getByTestId("hf-input").fill("1.95");
     await page.getByTestId("hf-input").press("Enter");
     await expect(page.getByTestId("entry-hf")).toHaveText("1.95");
-    await expect(page.getByTestId("borrow-usdc")).toContainText("15,428.17");
+    await expect(page.getByTestId("borrow-usdc")).toContainText(borrowAtHf(1.95));
     await expect(page.getByTestId("ltv-line")).toContainText("40.0% LTV");
-    // Type a borrow: the HF follows (30,084.92 ÷ 12,000 = 2.5071) — and one above the offered maximum is pulled back to it.
+    // Type a borrow: the HF follows (collateral × LT ÷ 12,000) — and one above the offered maximum is pulled back to it.
     await page.getByTestId("borrow-input").fill("12000");
     await page.getByTestId("borrow-input").press("Enter");
-    await expect(page.getByTestId("entry-hf")).toHaveText("2.51");
+    await expect(page.getByTestId("entry-hf")).toHaveText(((COLLATERAL_USD * LT) / 12_000).toFixed(2));
     await expect(page.getByTestId("hf-acknowledgment")).toHaveCount(0);
     await page.getByTestId("borrow-input").fill("30000");
     await page.getByTestId("borrow-input").press("Enter");
     await expect(page.getByTestId("entry-hf")).toHaveText("1.25");
-    await expect(page.getByTestId("borrow-usdc")).toContainText("24,067.94"); // 30,084.92 ÷ 1.25, the floor's own ladder 1.23 / 1.16 / 1.09 / 1.05
+    await expect(page.getByTestId("borrow-usdc")).toContainText(borrowAtHf(1.25)); // collateral × 0.78 ÷ 1.25, the floor's own ladder 1.23 / 1.16 / 1.09 / 1.05
     await expect(page.getByTestId("rung-ladder")).toContainText("Warning (HF < 1.23");
     await expect(page.getByTestId("hf-acknowledgment")).toHaveCount(1); // 1.25 is under the Sheltered mark too
     await page.getByTestId("hf-input").fill("1.95");
@@ -146,12 +160,12 @@ test.describe("Oilskin demo mode", () => {
     await expect(page.getByTestId("advanced-controls")).toHaveCount(0);
     const note = page.getByTestId("recommendation-note");
     await expect(note).toContainText("USDC/cbBTC (conservative) is the least bad forecast");
-    await expect(note).toContainText("4.52% borrow rate");
+    await expect(note).toContainText(`${BORROW_PCT} borrow rate`);
     await expect(note).toContainText("still a loss");
     await expect(note).not.toContainText("_");
     const bestCard = page.getByTestId("strategy-aero-cbbtc-usdc-sheltered");
     await expect(bestCard).toContainText("least bad forecast");
-    await expect(bestCard).toContainText("LP net -10.92% (stricter model -10.89%");
+    await expect(bestCard).toContainText(`LP net ${BEST.lpNetPct!.toFixed(2)}% (stricter model ${BEST.mcLpNetPct!.toFixed(2)}%`);
     await expect(bestCard).toContainText("below the borrow");
     await expect(bestCard).toBeEnabled();
     await expect(page.getByTestId("strategy-aero-aero-weth-sheltered")).toContainText("No forecast:");
@@ -213,15 +227,15 @@ test.describe("Oilskin demo mode", () => {
 
     // No empty-menu banner any more: every pool × setting is a card with both models' numbers.
     await expect(page.getByTestId("gate-empty")).toHaveCount(0);
-    await expect(page.getByTestId("gate-line")).toContainText("emissions sampled 2026-09-12 19:31Z");
+    await expect(page.getByTestId("gate-line")).toContainText(`emissions sampled ${EMISSIONS_SAMPLED}`);
     await expect(page.getByTestId("gate-line")).toContainText("engine fee 15%");
     await expect(page.getByTestId("gate-line")).not.toContainText("STALE");
     // Every pool × setting: 8 openable pools × 3 settings (the direct-venue cbZEC/USDC pool is filtered out on the demo deployment).
     await expect(page.locator('[data-testid^="strategy-"][data-priced]')).toHaveCount(24);
     const best = page.getByTestId("forecast-aero-cbbtc-usdc-sheltered");
-    await expect(best).toContainText("LP net -10.92% (stricter model -10.89%, gap -0.02 pt)");
-    await expect(best).toContainText("borrow −4.52%");
-    await expect(best).toContainText("needs 4.56× today's rewards to break even");
+    await expect(best).toContainText(`LP net ${BEST.lpNetPct!.toFixed(2)}% (stricter model ${BEST.mcLpNetPct!.toFixed(2)}%, gap ${BEST.modelGapPts!.toFixed(2)} pt)`);
+    await expect(best).toContainText(`borrow −${BORROW_PCT}`);
+    await expect(best).toContainText(`needs ${BEST.breakEvenEmissionsMultiple!.toFixed(2)}× today's rewards to break even`);
     await expect(page.getByTestId("strategy-aero-cbbtc-usdc-sheltered")).toContainText("below the borrow");
     const unpriced = page.getByTestId("forecast-aero-aero-weth-sheltered");
     await expect(unpriced).toContainText("No forecast:");
@@ -319,7 +333,7 @@ test.describe("Oilskin demo mode", () => {
     await page.getByTestId("sell-token").selectOption("cbBTC");
     await page.getByTestId("buy-token").selectOption("USDC");
     await page.getByTestId("sell-amount").fill("0.1");
-    await expect(page.getByTestId("quote")).toContainText("7,714");
+    await expect(page.getByTestId("quote")).toContainText(Math.floor(0.1 * CBBTC_USD).toLocaleString("en-US")); // 0.1 cbBTC at the snapshot price
     await expect(page.getByTestId("disclosures-spot")).toContainText("Spot orders via CoW");
     expect(errors).toEqual([]);
   });

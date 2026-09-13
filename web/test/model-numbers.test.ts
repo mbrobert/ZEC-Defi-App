@@ -138,7 +138,7 @@ test("…and matches the round's MODEL-NUMBERS-v2 handover doc", (t) => {
 });
 
 test("the gate's own headline numbers are the ones the product quotes", () => {
-  assert.equal(gate.borrowAprPct, 4.5174);
+  assert.equal(gate.borrowAprPct, DEMO_MARKET.usdcBorrowAprPct);
   // The gate and the market snapshot are ONE read since the ledger re-read of 2026-09-12: the same
   // block (51,226,072) and the same borrow digits. snapshot.test.ts keeps the freshness rule for the
   // day one of them moves without the other.
@@ -148,7 +148,8 @@ test("the gate's own headline numbers are the ones the product quotes", () => {
   assert.equal(gate.engineFeeBps, 1500);
   assert.equal(gate.engineFeeBps! / 100, 15);
   assert.equal(FEES.performanceBps / 100, 10);
-  assert.equal(gate.emissionsSampledAt, "2026-09-12T19:31:30.077Z");
+  // The gate's gauge words are the snapshot's instant: one pinned read since 2026-09-13 (the source stamps it with milliseconds).
+  assert.equal(Date.parse(gate.emissionsSampledAt), Date.parse(DEMO_MARKET.readAt));
   assert.ok(gate.mcCalibrationGeneratedAt.length > 0, "the MC calibration stamp is served and shown");
   assert.equal(gate.stale, false);
   assert.equal(gate.verdicts.length, 81, "27 pool × setting cells × 3 collaterals");
@@ -178,31 +179,32 @@ test("nothing beats the borrow on both models; every row has both a code and a s
     assert.equal(rec.cell.setting, "sheltered");
     assert.equal(rec.positive, false);
     assert.ok(rec.userNetPct < 0);
-    assert.ok(rec.why.includes("4.52%"), rec.why);
+    assert.ok(rec.why.includes(`${DEMO_MARKET.usdcBorrowAprPct.toFixed(2)}%`), rec.why);
     assert.ok(/still a loss/.test(rec.why), rec.why);
     assert.ok(!rec.why.includes("_"), rec.why);
   }
 });
 
-test("the best priced cell is exactly the one MODEL-NUMBERS-2026-09-12 publishes (literal pins, the mutation guard)", () => {
+test("the best priced cell is exactly the one MODEL-NUMBERS-2026-09-13 publishes (literal pins, the mutation guard)", () => {
   const best = find("aero-cbbtc-usdc", "sheltered", "cbBTC")!;
-  assert.equal(best.lpNetPct, -10.92);
-  assert.equal(best.mcLpNetPct, -10.89);
+  assert.equal(best.lpNetPct, -3.75);
+  assert.equal(best.mcLpNetPct, -3.68);
   assert.equal(best.dragPct, -15.25);
-  assert.equal(best.emissionsGrossPct, 6.15);
-  assert.equal(best.emissionsNetPct, 4.7);
-  assert.equal(best.emissionsRealizedPct, 4.34);
+  assert.equal(best.emissionsGrossPct, 16.31);
+  assert.equal(best.emissionsNetPct, 12.48);
+  assert.equal(best.emissionsRealizedPct, 11.5);
   assert.equal(best.sigma, 0.4);
-  assert.equal(best.breakEvenEmissionsMultiple, 4.56);
-  assert.equal(best.userNet.find((u) => u.ltvBps === 3000)?.userNetPct, -4.62);
-  assert.equal(best.userNet.find((u) => u.ltvBps === 4000)?.userNetPct, -6.16);
-  assert.equal(best.userNet.find((u) => u.ltvBps === 6240)?.userNetPct, -9.62, "the top at the pinned 1.25 floor: 62.4 %");
-  // Two more priced cells, at their 2026-09-12 values.
-  assert.equal(find("aero-cbbtc-usdc", "steady", "cbBTC")!.lpNetPct, -29.14);
-  assert.equal(find("aero-weth-cbbtc", "steady", "cbBTC")!.lpNetPct, -42.35);
-  // WETH/USDC sheltered fell below the borrow before any drag on 2026-09-12 (net 3.01 % < 4.52 %):
-  // refused before pricing, nothing published.
-  const wethSheltered = find("aero-usdc-weth-5", "sheltered", "cbBTC")!;
+  assert.equal(best.breakEvenEmissionsMultiple, 1.72);
+  assert.equal(best.userNet.find((u) => u.ltvBps === 3000)?.userNetPct, -2.47);
+  assert.equal(best.userNet.find((u) => u.ltvBps === 4000)?.userNetPct, -3.3);
+  assert.equal(best.userNet.find((u) => u.ltvBps === 6240)?.userNetPct, -5.15, "the top at the pinned 1.25 floor: 62.4 %");
+  // Two more priced cells, at their 2026-09-13 values.
+  assert.equal(find("aero-cbbtc-usdc", "steady", "cbBTC")!.lpNetPct, -10.01);
+  assert.equal(find("aero-usdc-weth-5", "steady", "cbBTC")!.lpNetPct, -39.59);
+  // WETH/cbBTC steady fell below the borrow before any drag on 2026-09-13 (net 3.12 % < 4.51 %; its
+  // gauge's staked liquidity tripled overnight): refused before pricing, nothing published. (On
+  // 2026-09-12 the cell in this state was WETH/USDC sheltered, priced again today at −16.95 %.)
+  const wethSheltered = find("aero-weth-cbbtc", "steady", "cbBTC")!;
   assert.equal(wethSheltered.reason, "emissions_below_borrow");
   assert.equal(wethSheltered.lpNetPct, null);
   // …and the cell that must no longer publish anything at all (since 2026-09-05).

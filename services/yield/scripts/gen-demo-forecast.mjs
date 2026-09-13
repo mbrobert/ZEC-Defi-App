@@ -27,11 +27,11 @@ const arg = (name, fallback) => {
   return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : fallback;
 };
 
-const samplePath = resolve(arg("sample", join(samples, "gauge-emissions-2026-09-12.json")));
-const modelPath = resolve(arg("model", join(samples, "lp-model-2026-09-12.json")));
+const samplePath = resolve(arg("sample", join(samples, "gauge-emissions-2026-09-13.json")));
+const modelPath = resolve(arg("model", join(samples, "lp-model-2026-09-13.json")));
 const volPath = resolve(arg("vol", join(samples, "volatility.json")));
 const calPath = resolve(arg("calibration", join(samples, "mc-calibration.json")));
-const reservePath = resolve(arg("reserve", join(samples, "aave-usdc-reserve-2026-09-12.json")));
+const reservePath = resolve(arg("reserve", join(samples, "aave-usdc-reserve-2026-09-13.json")));
 const outPath = resolve(arg("out", join(samples, "demo-forecast.json")));
 
 const sample = readJson(samplePath);

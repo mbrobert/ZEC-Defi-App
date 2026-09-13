@@ -28,16 +28,17 @@ const DEMO = read("../../samples/demo-forecast.json") as {
   usdcReserveBlock: number;
   cells: ForecastCell[];
 };
-const SAMPLE = read("../../samples/gauge-emissions-2026-09-12.json") as {
+const SAMPLE = read("../../samples/gauge-emissions-2026-09-13.json") as {
   sampledAt: string;
   aeroUsd: number;
   aave: { borrow: AaveReserve; collateral: Record<string, AaveReserve> };
   pools: Record<string, { pool: string; gauge: string; rewardRateWeiPerSec: string; periodFinish: number; sqrtPriceX96: string; stakedLiquidity: string | null; dec1: number; token1Usd: number; feeBpsLive: number; wholePoolAprPct: number }>;
 };
-const MODEL = read("../../samples/lp-model-2026-09-12.json") as {
+const MODEL = read("../../samples/lp-model-2026-09-13.json") as {
   inputs: { asOf: string; borrowAprPct: number; collateral: Record<string, { supplyAprPct: number; liquidationThresholdBps: number }> };
+  results: Record<string, Record<string, { reason: string | null }>>;
 };
-const RESERVE = read("../../samples/aave-usdc-reserve-2026-09-12.json") as {
+const RESERVE = read("../../samples/aave-usdc-reserve-2026-09-13.json") as {
   block: number;
   decimals: number;
   strategy: string;
@@ -123,7 +124,7 @@ test("demo-forecast.json is evaluateForecast() on the recorded inputs, cell for 
   assert.equal(n, 81);
 });
 
-test("what the recording says on 2026-09-12: 27 cells priced (the three σ-calibrated pools), 54 allowed (every cbBTC/WETH cell), none clears the borrow on both forms — shown, not refused", () => {
+test("what the recording says on 2026-09-13: 27 cells priced (the three σ-calibrated pools), 54 allowed (every cbBTC/WETH cell), none clears the borrow on both forms — shown, not refused", () => {
   const priced = DEMO.cells.filter((c) => c.lpPriced);
   const allowed = DEMO.cells.filter((c) => c.allowed);
   assert.equal(priced.length, 27);
@@ -147,7 +148,17 @@ test("what the recording says on 2026-09-12: 27 cells priced (the three σ-calib
   // Unpriced cells say why, by name, and are still allowed.
   const unpriced = DEMO.cells.filter((c) => !c.lpPriced && c.collateral === "cbBTC");
   assert.ok(unpriced.length > 0);
-  assert.ok(unpriced.every((c) => c.lpUnpricedReason === "no_volatility_input" && c.allowed && c.disclosures.includes("no_forecast")));
+  // The forecast prices EVERY σ-calibrated cell (D4: the gate's "emissions below the borrow" is information,
+  // not a stop), so an unpriced cell is one of two things, and which one is the MODEL's call: a reading the
+  // gate refuses as implausible (2026-09-13: cbZEC/USDC at the two tighter widths, where the gauge's collapsed
+  // stake reads 1,031 % / 5,241 %, above the 1,000 % ceiling), or a pool with no σ — allowed either way, and
+  // disclosed as having no forecast.
+  for (const c of unpriced) {
+    const modelReason = MODEL.results[c.poolId]![c.setting]!.reason;
+    assert.equal(c.lpUnpricedReason, modelReason === "emissions_implausible" ? "emissions_implausible" : "no_volatility_input", `${c.poolId}/${c.setting} (model: ${modelReason})`);
+    assert.ok(c.allowed && c.disclosures.includes("no_forecast"), `${c.poolId}/${c.setting}`);
+  }
+  assert.deepEqual([...new Set(unpriced.map((c) => c.lpUnpricedReason))].sort(), ["emissions_implausible", "no_volatility_input"]);
 });
 
 test("the web mirror is byte-identical", () => {

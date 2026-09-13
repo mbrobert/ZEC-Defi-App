@@ -115,7 +115,7 @@ export const RISKS: readonly RiskItem[] = [
   {
     id: "demo",
     title: "Demo mode",
-    body: "With no wallet connected the app shows illustrative positions. Nothing is signed, nothing moves. Numbers in demo mode are a snapshot of chain reads from 2026-09-12 (Base block 51,226,072) and are labelled as such.",
+    body: "With no wallet connected the app shows illustrative positions. Nothing is signed, nothing moves. Numbers in demo mode are a snapshot of chain reads from 2026-09-13 (Base block 51,241,497) and are labelled as such.",
     scope: ["review", "dashboard", "spot", "footer"],
   },
 ];

@@ -3,6 +3,27 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-13 — Slice M, the refresh: the demo snapshot at block 51,241,497 (04:05:41 UTC), one read-only command
+
+- `scripts/refresh-demo-snapshot.mjs --block latest` (→ 51,241,497, the tip less a 20-block margin) re-read
+  everything the demo quotes at one block: the yield sample pinned (publicnode), the model, the ledger
+  (`docs/research/ledger-read-51241497.json`), the USDC reserve read from the same words, both demo recordings,
+  the facts file's top ledger (the 2026-09-12 read as the drift column), `web/lib/demo.ts` and the banner,
+  both prototypes' `OIL_CHAIN_READ` and `OIL_MODEL`, `docs/MODEL-NUMBERS-2026-09-13.md` (2026-09-12's carries
+  the superseded banner). USDC borrow 4.5174 → **4.5143 %**; the gauges' staked liquidity fell 62 % / 74 % on
+  the two majors so a marginal staker's emissions nearly tripled; the best cell is −3.75 % (break-even 1.72×),
+  every priced cell still negative, nothing clears — `RISKS.md` §14 re-written from the report, not softened.
+- The pin test found the sim without the gate's plausibility ceiling: `lp-sim.py` now refuses
+  `emissions_implausible` in `gate.ts`'s order from the gate's own constant (`model-inputs.json` `bounds`,
+  pinned by `model-pin.test.ts`), and the report prints no net figure for such a cell. The closed form's
+  tolerance breach moved to cbBTC/USDC working (6.03 pt), named in the test and in `RISKS.md` §21.
+- The kit's levers measured on the pages' own `gate()` and moved by the tool: ×12.2 → **×3.17**, ×8.67 →
+  **×23.1**, the whole-multiple lever ×5 → **×2** (cbBTC/USDC opens at ×1.72). Every test that typed a snapshot
+  figure derives it or is re-pinned to the 2026-09-13 report (`docs/TESTING.md`, the four rows). The tool also
+  learned: `latest` = tip − 20, a 6 s GeckoTerminal pace, `--redo-model`, the sim's exit 1 as a reported breach.
+- Suites: yield **172**, web typecheck clean, unit **198** (197 + 1 skipped), e2e **18 / 0 / 6**, prototypes
+  **130 · 116 · 62 · 6**. A further run at the same block is byte-identical. Nothing signed, no acceptVenue.
+
 ## 2026-09-13 — Slice O: the day's three fixes as properties (`AUDIT-2026-09-12.md` "Properties")
 
 - `contracts/test/audit-regressions/DustLegProperty.t.sol` (1 fuzz over leg, `quotedIn`, quoted price inside the

@@ -1,0 +1,33 @@
+{
+  "_about": "Aave v3 Base USDC reserve — the borrow side's curve and totals at block 51241497, the SAME pinned read as the gauge sample and the ledger (scripts/refresh-demo-snapshot.mjs; the curve from the sample's borrowCurve, the totals and ray words from docs/research/ledger-read-51241497.json). Feeds the demo forecast's post-borrow rate and liquidity refusal; the live service reads the same words every sample.",
+  "readAt": "2026-09-13T04:05:41Z",
+  "block": 51241497,
+  "poolDataProvider": "0x0F43731EB8d45A581f4a36DD74F5f358bc90C73A",
+  "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  "decimals": 6,
+  "strategy": "0x86ab1c62a8bf868e1b3e1ab87d587aba6fbcbdc5",
+  "getInterestRateDataBps": {
+    "optimalUsageBps": 9000,
+    "baseVariableBorrowRateBps": 0,
+    "variableRateSlope1Bps": 470,
+    "variableRateSlope2Bps": 1000
+  },
+  "getReserveData": {
+    "unbacked": "0",
+    "accruedToTreasuryScaled": "1572300275",
+    "totalAToken": "182863963122726",
+    "totalStableDebt": "0",
+    "totalVariableDebt": "158079427643426",
+    "liquidityRateRay": "35122405079825872834670329",
+    "variableBorrowRateRay": "45143848513376276554435687",
+    "lastUpdateTimestamp": 1789272315
+  },
+  "reserveFactorBps": 1000,
+  "derived": {
+    "utilizationPct": 86.45,
+    "variableBorrowAprPct": 4.5143,
+    "curveAtUtilizationPct": 4.5144,
+    "availableFromTotalsUsdc": 24784535.4793,
+    "note": "available = totalAToken − totalVariableDebt; the strategy's own denominator is the virtual balance + debt (the treasury accrual apart, < 0.001 %). The aToken's USDC balance is not part of this read."
+  }
+}

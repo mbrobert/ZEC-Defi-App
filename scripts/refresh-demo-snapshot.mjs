@@ -3,7 +3,7 @@
  * refresh-demo-snapshot — the demo's ONE chain read, refreshed as one command (slice M, 2026-09-13).
  *
  *   node scripts/refresh-demo-snapshot.mjs --rpc <url> --block <n|latest> [--sample-rpc <url>]
- *                                          [--force] [--skip-levers]
+ *                                          [--force] [--redo-model] [--skip-levers]
  *
  * Read-only: `eth_call` / `eth_getBlockByNumber` through the yield service's client and `cast call
  * --block` through scripts/ledger-read.sh; no key, nothing signed. Everything the demo quotes is
@@ -35,6 +35,12 @@
  *                                 the previous one; the dated sample names in the yield tests
  *  11. a printed drift table, old read → new read
  *
+ * `--redo-model` keeps the block's sample (it must exist) and redoes everything from the model on —
+ * for a change to scripts/lp-sim.py's report, or to the generators, without another GeckoTerminal
+ * round. GeckoTerminal: the free tier blocks for ~15 min from the LAST attempt once tripped, and the
+ * source's own four retries count, so the pace between pool requests defaults to 6 s
+ * (GECKO_MIN_INTERVAL_MS overrides) and a refused run is retried only after that silence.
+ *
  * Not done here, on purpose: the prose that judges the numbers (docs/RISKS.md §14, the CHANGELOG,
  * TESTING) and any test that typed a model figure instead of deriving it — those are read and
  * re-written by a person after the run, never softened by a script.
@@ -55,9 +61,10 @@ const RPC = arg("rpc", "https://mainnet.base.org");
 const SAMPLE_RPC = arg("sample-rpc", RPC);
 const BLOCK_ARG = arg("block");
 const FORCE = flag("force");
+const REDO_MODEL = flag("redo-model");
 const SKIP_LEVERS = flag("skip-levers");
 if (!BLOCK_ARG) {
-  console.error("usage: refresh-demo-snapshot.mjs --rpc <url> --block <n|latest> [--sample-rpc <url>] [--force] [--skip-levers]");
+  console.error("usage: refresh-demo-snapshot.mjs --rpc <url> --block <n|latest> [--sample-rpc <url>] [--force] [--redo-model] [--skip-levers]");
   process.exit(2);
 }
 
@@ -81,7 +88,8 @@ const die = (s) => {
 function run(cmd, args, opts = {}) {
   log(`$ ${cmd} ${args.join(" ")}${opts.cwd ? `  (in ${opts.cwd.replace(REPO, ".")})` : ""}`);
   const r = spawnSync(cmd, args, { stdio: opts.capture ? ["ignore", "pipe", "inherit"] : "inherit", cwd: opts.cwd ?? REPO, env: { ...process.env, ...(opts.env ?? {}) }, encoding: "utf8" });
-  if (r.status !== 0) die(`${cmd} ${args[0]} exited ${r.status}`);
+  if (!(opts.okStatus ?? [0]).includes(r.status)) die(`${cmd} ${args[0]} exited ${r.status}`);
+  if (r.status !== 0) log(`${cmd} ${args[0]} exited ${r.status} — accepted (${opts.okStatusMeans ?? "reported, not an error"})`);
   return r.stdout ?? "";
 }
 
@@ -499,6 +507,25 @@ function pickLever(current, band) {
   if (oneDp <= hi + 1e-9) return oneDp;
   return Math.ceil(lo * 100 - 1e-9) / 100;
 }
+/**
+ * The kit's "opens the menu" lever: the smallest WHOLE multiple above cbBTC/USDC's own break-even (the
+ * rule prototype/test/verify-simple.mjs states); the check beside it asserts that the multiple below does
+ * not open the pool. Page button, both suites' dispatches and their texts move together.
+ */
+function moveWholeLever(current, next) {
+  if (current === next) return false;
+  const cur = String(current), nxt = String(next), curBelow = String(current - 1), nxtBelow = String(next - 1);
+  for (const p of [...PAGES, PROTO_TESTS.simple, PROTO_TESTS.advanced]) {
+    let s = readFileSync(p, "utf8");
+    const before = s;
+    s = s.split(`data-tk="mult:${cur}">WHAT-IF emissions ×${cur} (opens the menu)`).join(`data-tk="mult:${nxt}">WHAT-IF emissions ×${nxt} (opens the menu)`)
+      .split(`{ type: "setMult", mult: ${cur} }`).join(`{ type: "setMult", mult: ${nxt} }`)
+      .split(`what-if ×${cur}`).join(`what-if ×${nxt}`).split(`WHAT-IF ×${cur}`).join(`WHAT-IF ×${nxt}`)
+      .split(`, 4500, ${cur})).ok`).join(`, 4500, ${nxt})).ok`).split(`, 4500, ${curBelow})).ok`).join(`, 4500, ${nxtBelow})).ok`);
+    if (s !== before) writeFileSync(p, s);
+  }
+  return true;
+}
 function moveLever(pagePath, testPath, current, next) {
   if (current === next) return false;
   const cur = String(current), nxt = String(next);
@@ -516,14 +543,18 @@ function moveLever(pagePath, testPath, current, next) {
 async function main() {
   const wall = new Date().toISOString();
   // ---- the block
-  let block = BLOCK_ARG === "latest" ? Number(await rpcCall(RPC, "eth_blockNumber", [])) : Number(BLOCK_ARG);
+  // `latest` is the tip LESS a margin of 20 blocks (≈ 40 s on Base): a public endpoint other than the one
+  // that answered eth_blockNumber can lag the tip by a few blocks and answer a pinned read at it with
+  // `null` / HTTP 500 (base.drpc.org did, 2026-09-13). The block is then pinned for every step.
+  const TIP_MARGIN = 20;
+  let block = BLOCK_ARG === "latest" ? Number(await rpcCall(RPC, "eth_blockNumber", [])) - TIP_MARGIN : Number(BLOCK_ARG);
   if (!Number.isInteger(block) || block <= 0) die(`--block: ${BLOCK_ARG}`);
   const hdr = await rpcCall(RPC, "eth_getBlockByNumber", [`0x${block.toString(16)}`, false]);
   if (!hdr) die(`block ${block} not served by ${RPC}`);
   const ts = Number(hdr.timestamp);
   const readAt = iso(ts);
   const date = readAt.slice(0, 10);
-  log(`block ${block} = ${readAt} (${BLOCK_ARG === "latest" ? "resolved from latest" : "pinned"}), wall clock ${wall}`);
+  log(`block ${block} = ${readAt} (${BLOCK_ARG === "latest" ? `resolved from latest − ${TIP_MARGIN}` : "pinned"}), wall clock ${wall}`);
 
   // ---- 1. the sample, pinned
   const sampleFile = join(SAMPLES, `gauge-emissions-${date}.json`);
@@ -531,28 +562,33 @@ async function main() {
   // A sample is the block's when it names the block: a pinned one, or a pre-slice-M sample taken at
   // `latest` in the same instant (2026-09-12's, whose ledger was read at its block by hand).
   const sampleOk = () => existsSync(sampleFile) && readJson(sampleFile).block === block;
-  if (!FORCE && sampleOk()) log(`1 sample: ${sampleFile.replace(REPO, ".")} is already the read of block ${block} — kept`);
+  if (REDO_MODEL && !sampleOk()) die(`--redo-model needs the block's sample at ${sampleFile.replace(REPO, ".")}`);
+  if ((!FORCE || REDO_MODEL) && sampleOk()) log(`1 sample: ${sampleFile.replace(REPO, ".")} is already the read of block ${block} — kept`);
   else {
     const paced = /mainnet\.base\.org/.test(SAMPLE_RPC);
     run("npm", ["run", "backfill", "-w", "@zyo/yield", "--", "sample", "--block", String(block)], {
-      env: { BASE_RPC_URL: SAMPLE_RPC, GECKO_MIN_INTERVAL_MS: process.env.GECKO_MIN_INTERVAL_MS ?? "2500", ...(paced ? { RPC_BATCH_SIZE: "1", RPC_PACE_MS: "400" } : {}) },
+      env: { BASE_RPC_URL: SAMPLE_RPC, GECKO_MIN_INTERVAL_MS: process.env.GECKO_MIN_INTERVAL_MS ?? "6000", ...(paced ? { RPC_BATCH_SIZE: "1", RPC_PACE_MS: "400" } : {}) },
     });
     if (!sampleOk()) die(`the sample was not written pinned to block ${block}`);
     sampleFresh = true;
   }
   const sample = readJson(sampleFile);
   if (sample.pinned) {
-    if (sample.sampledAt !== readAt) die(`sample.sampledAt ${sample.sampledAt} ≠ block timestamp ${readAt}`);
+    // The source stamps the instant with milliseconds ("…41.000Z"); the same instant, compared as one.
+    if (Date.parse(sample.sampledAt) !== Date.parse(readAt)) die(`sample.sampledAt ${sample.sampledAt} ≠ block timestamp ${readAt}`);
   } else if (Math.abs(Date.parse(sample.sampledAt) - Date.parse(readAt)) > 60_000) die(`sample.sampledAt ${sample.sampledAt} is not the instant of block ${block} (${readAt})`);
   else log(`1 sample: taken at \`latest\` (${sample.sampledAt}), block ${block} = ${readAt} — the same read, not pinned`);
 
   // ---- 2. the model
   const modelFile = join(SAMPLES, `lp-model-${date}.json`);
   const modelOk = () => existsSync(modelFile) && readJson(modelFile).inputs?.gaugeSample?.block === block && String(readJson(modelFile).inputs?.gaugeSample?.file ?? "").endsWith(`gauge-emissions-${date}.json`);
-  if (!FORCE && !sampleFresh && modelOk()) log(`2 model: ${modelFile.replace(REPO, ".")} already generated from that sample — kept`);
+  if (!FORCE && !REDO_MODEL && !sampleFresh && modelOk()) log(`2 model: ${modelFile.replace(REPO, ".")} already generated from that sample — kept`);
   else {
     run("npm", ["run", "model-inputs", "-w", "@zyo/yield"]);
-    run("node", ["scripts/run-model.mjs", "--sample", `samples/gauge-emissions-${date}.json`], { cwd: YIELD });
+    // lp-sim.py writes every file and then exits 1 when a priced cell breaches the closed form's declared
+    // tolerance (its validation table) — a model finding to RECORD (services/yield/test/model-pin.test.ts
+    // pins the breached cells by name; RISKS §21), not a failed run. 2 / 3 are input errors.
+    run("node", ["scripts/run-model.mjs", "--sample", `samples/gauge-emissions-${date}.json`], { cwd: YIELD, okStatus: [0, 1], okStatusMeans: "a validation breach is reported in the table — record it" });
     if (!modelOk()) die("the model was not generated from the pinned sample");
   }
   const model = readJson(modelFile);
@@ -685,7 +721,12 @@ async function main() {
     levers.simple = { band: m.simple.band, was: curS, now: nextS, moved: moveLever(PAGES[0], PROTO_TESTS.simple, curS, nextS) };
     levers.advanced = { band: m.advanced.band, was: curA, now: nextA, moved: moveLever(PAGES[1], PROTO_TESTS.advanced, curA, nextA) };
     levers.x5opens = m.simpleCbbtc.firstOpen;
-    log(`9 levers: simple WETH/USDC band ×${m.simple.band[0]}–×${m.simple.band[1]} → ×${nextS}${levers.simple.moved ? ` (was ×${curS}; page + test moved)` : " (unchanged)"}; advanced WETH/cbBTC@150 band ×${m.advanced.band[0]}–×${m.advanced.band[1]} → ×${nextA}${levers.advanced.moved ? ` (was ×${curA}; page + test moved)` : " (unchanged)"}; cbBTC/USDC first opens at ×${m.simpleCbbtc.firstOpen}${m.simpleCbbtc.firstOpen !== null && m.simpleCbbtc.firstOpen > 5 ? " — the kit's ×5 no longer opens it (hand edit the ×5 lever)" : ""}`);
+    const curW = Number((simplePage.match(/data-tk="mult:(\d+)">WHAT-IF emissions ×\d+ \(opens the menu\)/) ?? [])[1]);
+    if (!curW) die("levers: the pages' whole-multiple button was not found");
+    if (m.simpleCbbtc.firstOpen === null) die("levers: cbBTC/USDC never opens at any multiple up to ×60 — the kit's lever needs a hand edit");
+    const nextW = Math.max(2, Math.ceil(m.simpleCbbtc.firstOpen + 1e-9));
+    levers.whole = { firstOpen: m.simpleCbbtc.firstOpen, was: curW, now: nextW, moved: moveWholeLever(curW, nextW) };
+    log(`9 levers: simple WETH/USDC band ×${m.simple.band[0]}–×${m.simple.band[1]} → ×${nextS}${levers.simple.moved ? ` (was ×${curS}; page + test moved)` : " (unchanged)"}; advanced WETH/cbBTC@150 band ×${m.advanced.band[0]}–×${m.advanced.band[1]} → ×${nextA}${levers.advanced.moved ? ` (was ×${curA}; page + test moved)` : " (unchanged)"}; cbBTC/USDC first opens at ×${m.simpleCbbtc.firstOpen} → the kit's whole multiple ×${nextW}${levers.whole.moved ? ` (was ×${curW}; both pages + both suites moved)` : " (unchanged)"}`);
   }
 
   // ---- 10. docs/MODEL-NUMBERS-<date>.md and the superseded banner; the dated names in the yield tests
@@ -733,12 +774,12 @@ async function main() {
     ["cbZEC/USDC pool price (tick)", P.pool ? `${fmt(P.pool.priceUsdc, 2)} (${P.pool.tick})` : "—", `${fmt(F.pool.priceUsdc, 2)} (${F.pool.tick})`],
     ["pool liquidity L", P.pool ? fmtInt(P.pool.liquidity) : "—", fmtInt(F.pool.liquidity)],
     ["gauge AERO/day (periodFinish)", P.gauge ? `${fmt(P.gauge.aeroPerDay, 1)} (${P.gauge.periodFinish})` : "—", `${fmt(F.gauge.aeroPerDay, 1)} (${F.gauge.periodFinish})`],
-    ["Comet utilisation %", P.cometUtilPct ?? "—", F.cometUtilPct.toFixed(2)],
+    ["Comet utilisation %", P.cometUtilPct === null || P.cometUtilPct === undefined ? "—" : Number(P.cometUtilPct).toFixed(2), F.cometUtilPct.toFixed(2)],
     ["USDC available to lend", "—", fmt(reserve.derived.availableFromTotalsUsdc, 2)],
-    ["AERO $ (sample)", "—", String(r2(sample.aeroUsd * 100) / 100)],
-    ["model best cell lpNet % (cbBTC/USDC sheltered)", "—", best ? `${best.lpNetPct} (mc ${best.mcLpNetPct}, ${best.reason})` : "—"],
+    ["AERO $ (sample)", "—", sample.aeroUsd.toFixed(4)],
+    ["model best cell lpNet % (cbBTC/USDC sheltered)", "—", best ? `${r2(best.lpNetPct)} (mc ${r2(best.mcLpNetPct)}, ${best.reason}; break-even ×${r2(best.breakEvenEmissionsMultiple)})` : "—"],
     ["gate: cells clearing / forecast: cells clearing both forms", "—", `${gate.qualifying.length} / ${fc.cells.filter((c) => c.clearsBorrow?.both).length} of ${fc.cells.length}`],
-    ["levers", "—", SKIP_LEVERS ? "skipped" : `simple ×${levers.simple.now}, advanced ×${levers.advanced.now}, ×5 opens cbBTC/USDC first at ×${levers.x5opens}`],
+    ["levers", "—", SKIP_LEVERS ? "skipped" : `simple ×${levers.simple.now}, advanced ×${levers.advanced.now}, whole ×${levers.whole.now} (cbBTC/USDC first opens at ×${levers.x5opens})`],
   ];
   const w0 = Math.max(...rows.map((r) => r[0].length)), w1 = Math.max(...rows.map((r) => String(r[1]).length));
   console.log(`\nDrift, ${P.date} → ${F.date} (block ${fmtInt(F.block)}):`);

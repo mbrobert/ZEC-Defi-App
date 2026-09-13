@@ -40,7 +40,7 @@ const DEMO = read("../../samples/demo-gate.json") as {
   qualifying: unknown[];
   liquidationThresholdBps: Record<string, number>;
 };
-const SAMPLE = read("../../samples/gauge-emissions-2026-09-12.json") as {
+const SAMPLE = read("../../samples/gauge-emissions-2026-09-13.json") as {
   sampledAt: string;
   aeroUsd: number;
   pools: Record<string, {
@@ -48,7 +48,7 @@ const SAMPLE = read("../../samples/gauge-emissions-2026-09-12.json") as {
     stakedLiquidity: string | null; dec1: number; token1Usd: number; feeBpsLive: number; wholePoolAprPct: number;
   }>;
 };
-const MODEL = read("../../samples/lp-model-2026-09-12.json") as {
+const MODEL = read("../../samples/lp-model-2026-09-13.json") as {
   inputs: { borrowAprPct: number; collateral: Record<string, { supplyAprPct: number; liquidationThresholdBps: number }> };
 };
 

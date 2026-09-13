@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { KNOWN_REASONS, findVerdict, normalizeGate, offeredEntries, reasonPlain, reasonText, rejectedEntries, unavailableGate, verdictsFor } from "../lib/gate";
-import { DEMO_GATE_RAW, demoGate } from "../lib/demo";
+import { DEMO_GATE_RAW, DEMO_MARKET, demoGate } from "../lib/demo";
 
 const verdict = (over: Record<string, unknown>) => ({
   poolId: "aero-usdc-weth-5",
@@ -133,10 +133,10 @@ test("verdictsFor sorts best lpNet first; findVerdict matches pool × setting ×
   assert.equal(findVerdict(v, { poolId: "aero-usdc-weth-5", setting: "working", collateral: "WETH" }), undefined);
 });
 
-test("demo gate = the yield model's own output: NOTHING beats the borrow on both models at 4.5174% (information since A3, not a block); cbZEC pool refused below the borrow (its gauge is voted since 2026-09-12) or for no σ; cbZEC collateral disabled", () => {
+test("demo gate = the yield model's own output: NOTHING beats the borrow on both models at the snapshot's borrow (information since A3, not a block); cbZEC pool unpriced for no σ at the sheltered width and refused as implausible at the two tighter ones (its stake collapsed on 2026-09-13); cbZEC collateral disabled", () => {
   const g = demoGate();
   assert.equal(g.source, "demo");
-  assert.equal(g.borrowAprPct, 4.5174);
+  assert.equal(g.borrowAprPct, DEMO_MARKET.usdcBorrowAprPct, "the gate and the market snapshot are one read");
   assert.equal(g.engineFeeBps, 1500);
   assert.equal(DEMO_GATE_RAW.qualifying.length, 0);
   assert.equal(g.verdicts.filter((v) => v.qualifies).length, 0);
@@ -145,20 +145,22 @@ test("demo gate = the yield model's own output: NOTHING beats the borrow on both
   const cbzec = g.verdicts.find((v) => v.poolId === "aero-cbzec-usdc" && v.collateral === "cbBTC");
   assert.ok(cbzec, "cbZEC pool is tracked");
   assert.equal(cbzec!.qualifies, false);
-  // 2026-09-12: the cbZEC/USDC gauge carries an emissions vote (≈ 617 AERO/day), so the sheltered
-  // cell is refused for emissions BELOW the borrow, not for having none; the working cell for no σ.
-  assert.equal(cbzec!.reason, "emissions_below_borrow");
-  assert.equal(g.verdicts.find((v) => v.poolId === "aero-cbzec-usdc" && v.setting === "working" && v.collateral === "cbBTC")!.reason, "no_volatility_input");
+  // 2026-09-13: the cbZEC/USDC gauge still pays ≈ 617 AERO/day but the pool's staked liquidity fell
+  // from 1.48e13 to 4.8e10 (the position went out of range), so the marginal reading is 326 % at the
+  // sheltered width — above the borrow, unpriced for no σ — and 1,031 % / 5,241 % at the two tighter
+  // widths, above the 1,000 % plausibility ceiling: refused as implausible before anything is priced.
+  assert.equal(cbzec!.reason, "no_volatility_input");
+  assert.equal(g.verdicts.find((v) => v.poolId === "aero-cbzec-usdc" && v.setting === "working" && v.collateral === "cbBTC")!.reason, "emissions_implausible");
   assert.ok(g.verdicts.filter((v) => v.collateral === "cbZEC").every((v) => v.reason === "collateral_disabled"));
-  // The best cell in the doc (2026-09-12): cbBTC/USDC sheltered, lpNet −10.92, break-even 4.56×
+  // The best cell in the doc (2026-09-13): cbBTC/USDC sheltered, lpNet −3.75, break-even 1.72×
   const best = g.verdicts.find((v) => v.poolId === "aero-cbbtc-usdc" && v.setting === "sheltered" && v.collateral === "cbBTC")!;
-  assert.equal(best.lpNetPct, -10.92);
-  assert.equal(best.breakEvenEmissionsMultiple, 4.56);
+  assert.equal(best.lpNetPct, -3.75);
+  assert.equal(best.breakEvenEmissionsMultiple, 1.72);
   // Re-pinned to MODEL-NUMBERS-v2: the sim now rounds the gross APR to 2 dp
   // exactly as sources/gauges.ts does, so the sim and the served gate agree to
   // the last digit instead of the 0.01 pt double-rounding gap they used to
   // carry (audit wave 1 lens D INFO-1).
-  assert.equal(best.userNet.find((u) => u.ltvBps === 4000)?.userNetPct, -6.16);
+  assert.equal(best.userNet.find((u) => u.ltvBps === 4000)?.userNetPct, -3.3);
 });
 
 // W3-LOW-3 (wave 3): a direct-venue pool is offered only where the deployment has the direct venue.

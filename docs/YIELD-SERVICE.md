@@ -113,7 +113,7 @@ is a recording of the gate rather than a second implementation of it; `test/mode
 replays the same raw words through the TypeScript source + gate and fails
 if any served cell drifts from the generated numbers by > 0.01 pt, or if
 `samples/model-inputs.json` drifts from what `@zyo/shared` exports.
-**Verdict at the 2026-09-12 live borrow (4.5174 %): nothing clears, at any
+**Verdict at the 2026-09-13 live borrow (4.5143 %): nothing clears, at any
 borrow rate** — see `samples/MODEL-NUMBERS.md` and `docs/RISKS.md` §14.
 `npm run model` takes every input from the sample file named in
 `package.json` (`scripts/run-model.mjs`: as-of, borrow, supply, LT); nothing

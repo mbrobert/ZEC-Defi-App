@@ -1029,7 +1029,7 @@ button:focus-visible,[tabindex]:focus-visible,a:focus-visible,input:focus-visibl
       <button class="tk-b" data-tk="ff:30">Fast-forward 30 days</button>
       <button class="tk-b warnb" data-tk="rate:9">Borrow rate → 9%</button>
       <button class="tk-b ok" data-tk="rate:reset">Borrow rate → the read</button>
-      <button class="tk-b warnb" data-tk="mult:5">WHAT-IF emissions ×5 (opens the menu)</button>
+      <button class="tk-b warnb" data-tk="mult:2">WHAT-IF emissions ×2 (opens the menu)</button>
       <button class="tk-b ok" data-tk="mult:1">What-if off — today's numbers</button>
     </div>
     <h4>Failure simulations (Base)</h4>
@@ -1059,7 +1059,7 @@ button:focus-visible,[tabindex]:focus-visible,a:focus-visible,input:focus-visibl
       <button class="tk-b warnb" data-tk="grant:revoke">Revoke the keeper permission</button>
       <button class="tk-b ok" data-tk="grant:renew">Renew the keeper permission</button>
       <button class="tk-b warnb" data-tk="grant:expire">Run the grant down to its expiry</button>
-      <button class="tk-b badb" data-tk="mult:8.67">WHAT-IF ×8.67 — the band where the two models disagree (at this page's chain-read borrow)</button>
+      <button class="tk-b badb" data-tk="mult:23.1">WHAT-IF ×23.1 — the band where the two models disagree (at this page's chain-read borrow)</button>
     </div>
     <h4>Try every path</h4>
     <ul class="tk-list">
@@ -1083,7 +1083,7 @@ button:focus-visible,[tabindex]:focus-visible,a:focus-visible,input:focus-visibl
 /* ── OIL_SHARED — mirrors packages/shared (@zyo/shared) byte-for-byte on
    every value it exports; prototype/index.html carries the identical block
    and test/verify-toggle.mjs diffs both against the built package. Source:
-   docs/VERIFIED-BASE-FACTS.md (top ledger re-read 2026-09-12 at block 51,226,072). shared carries
+   docs/VERIFIED-BASE-FACTS.md (top ledger re-read 2026-09-13 at block 51,241,497). shared carries
    NO liquidation thresholds / rates — those live in OIL_CHAIN_READ below. ── */
 const OIL_SHARED = Object.freeze({
   CHAIN_ID: 8453,
@@ -1158,30 +1158,30 @@ const OIL_SHARED = Object.freeze({
 
 /* ── OIL_CHAIN_READ — the live reads the product parameterises on (never
    constants in production: PoolDataProvider / feeds / gauges at call time).
-   Values are the 2026-09-12 re-read at block 51,226,072 (19:31:31 UTC) in
+   Values are the 2026-09-13 re-read at block 51,241,497 (04:05:41 UTC) in
    docs/VERIFIED-BASE-FACTS.md — the block the yield sample behind OIL_MODEL
    was taken at, so the page's chain read and its model are one read
-   (scripts/refresh-demo-snapshot.mjs; raw words docs/research/ledger-read-51226072.json). ── */
+   (scripts/refresh-demo-snapshot.mjs; raw words docs/research/ledger-read-51241497.json). ── */
 const OIL_CHAIN_READ = Object.freeze({
-  readAt: "2026-09-12T19:31:31Z",
-  readBlock: 51226072,
+  readAt: "2026-09-13T04:05:41Z",
+  readBlock: 51241497,
   aaveReserves: {
     /* `isPaused` is Aave's GUARDIAN PAUSE — a separate getPaused(asset) read
        (selector 0xb55d9904), not a field of the config tuple. A paused reserve
        still quotes a rate and still reads active, but every supply and borrow
-       reverts on chain; false on all three at the 2026-09-12 read. Rates are
+       reverts on chain; false on all three at the 2026-09-13 read. Rates are
        the ray words truncated at 1e-4 % (the yield service's rayToPct), so the
        page, the model and the ledger carry the same digits. */
-    cbBTC: { ltvBps: 7300, liquidationThresholdBps: 7800, liquidationBonusBps: 750, supplyAprPct: 0.0115, borrowAprPct: 0.6716, isPaused: false },
-    WETH:  { ltvBps: 8000, liquidationThresholdBps: 8300, liquidationBonusBps: 500, supplyAprPct: 1.7422, borrowAprPct: 2.3861, isPaused: false },
-    USDC:  { ltvBps: 7500, liquidationThresholdBps: 7800, liquidationBonusBps: 500, supplyAprPct: 3.5169, borrowAprPct: 4.5174, isPaused: false },
+    cbBTC: { ltvBps: 7300, liquidationThresholdBps: 7800, liquidationBonusBps: 750, supplyAprPct: 0.0117, borrowAprPct: 0.6742, isPaused: false },
+    WETH:  { ltvBps: 8000, liquidationThresholdBps: 8300, liquidationBonusBps: 500, supplyAprPct: 1.7638, borrowAprPct: 2.4008, isPaused: false },
+    USDC:  { ltvBps: 7500, liquidationThresholdBps: 7800, liquidationBonusBps: 500, supplyAprPct: 3.5122, borrowAprPct: 4.5143, isPaused: false },
     cbZEC: null,
   },
-  feeds: { cbBTC: 77140.83, WETH: 2520.38, USDC: 1.00, BTC: 77165.17 },
-  /* Pyth ZEC/USD as posted (publishTime 1788550194): 691,297 s old at block 51,226,072. */
-  pythZecUsd: { price: 1035.20, ageS: 691297, stale: true },
-  /* slot0 tick −24,205 → 100 × 1.0001^24,205 USDC per cbZEC; the gauge's rewardRate (wei/s) and periodFinish (unix s). */
-  cbzecUsdcPool: { priceUsdc: 1125.01, gaugeRewardRate: 7140520125989201, gaugePeriodFinish: 1789603200 },
+  feeds: { cbBTC: 77173.3, WETH: 2520.58, USDC: 1.00, BTC: 77186.69 },
+  /* Pyth ZEC/USD as posted (publishTime 1788550194): 722,147 s old at block 51,241,497. */
+  pythZecUsd: { price: 1035.20, ageS: 722147, stale: true },
+  /* slot0 tick −24,298 → 100 × 1.0001^24,298 USDC per cbZEC; the gauge's rewardRate (wei/s) and periodFinish (unix s). */
+  cbzecUsdcPool: { priceUsdc: 1135.52, gaugeRewardRate: 7140520125989201, gaugePeriodFinish: 1789603200 },
   /* The Snuggle engine's own performance fee on LP earnings (verified on the deployed vault in the pre-pivot tree). A venue fee, not an Oilskin fee. */
   snuggleEngineFeeBps: 1500,
 });
@@ -1262,9 +1262,9 @@ const OIL_CONTRACTS = Object.freeze({
 });
 
 /* ── OIL_MODEL — pinned to /tmp/build/MODEL-NUMBERS.md (regenerated
-   2026-09-13T02:43:16+00:00 by services/yield/scripts/lp-sim.py; what
-   /v1/gate serves). Gauge words sampled 2026-09-12T19:31:30.077Z block 51226072,
-   AERO $0.5634; σ trailing-realised as of 2026-08-31 (only 3 pools have a
+   2026-09-13T04:16:03+00:00 by services/yield/scripts/lp-sim.py; what
+   /v1/gate serves). Gauge words sampled 2026-09-13T04:05:41.000Z block 51241497,
+   AERO $0.5662; σ trailing-realised as of 2026-08-31 (only 3 pools have a
    calibrated σ — the rest are shown UNPRICED, no_volatility_input; since 2026-09-12
    the gate is information and forecast() below prices every cell it can).
    `emissions[widthBps]` = gross emissions APR at that TOTAL tick span; other
@@ -1277,27 +1277,27 @@ const OIL_CONTRACTS = Object.freeze({
    and the suites assert — no number on this page is read from them.
    GENERATED by prototype/scripts/gen-oil-model.mjs from samples/lp-model-*.json — do not edit by hand. ── */
 const OIL_MODEL = Object.freeze({
-  source: "MODEL-NUMBERS.md generated 2026-09-13T02:43:16+00:00 (services/yield/scripts/lp-sim.py; closed form + Monte-Carlo calibration, 6000 paths, as of 2026-09-12T19:31:31Z)",
-  sampledAt: "2026-09-12T19:31:30.077Z", sampleBlock: 51226072, aeroUsd: 0.5634, borrowPctAtGeneration: 4.5174,
+  source: "MODEL-NUMBERS.md generated 2026-09-13T04:16:03+00:00 (services/yield/scripts/lp-sim.py; closed form + Monte-Carlo calibration, 6000 paths, as of 2026-09-13T04:05:41Z)",
+  sampledAt: "2026-09-13T04:05:41.000Z", sampleBlock: 51241497, aeroUsd: 0.5662, borrowPctAtGeneration: 4.5143,
   /* The Aave supply rates the user-net rows were generated with (the chain-read block above carries
      the dated ledger read; the suites add the difference back when they reproduce a row). */
-  supplyPctAtGeneration: { cbBTC: 0.0115, WETH: 1.7422 },
+  supplyPctAtGeneration: { cbBTC: 0.0117, WETH: 1.7638 },
   keep: { engine: 0.765, direct: 0.90 },
   /* The model's own bounds (services/yield/src/gate.ts). Bounds, never clamps. */
   bounds: { maxEmissionsAprPct: 1000, maxAbsNetPct: 2000, minStakedSamples: 3 },
   pools: [
-    { id:"aero-cbbtc-usdc",  name:"cbBTC/USDC", tag:"BLUE CHIP", pairClass:"UNCORRELATED", entryAsset:"USDC",  c:["usdc","cbbtc"], eid:"0xb1830be2f9077713501ee7b52c92f6c8307ea8ceb16309d1f7fb1ad2643837e6", poolAddress:"0x4e962bb3889bf030368f56810a9c96b83cb3e778", sigma: 0.40, feeBps: 4.48, epochActive: true, emissions: { 4500: 6.15, 1500: 19.41, 300: 98.69 }, note:"the BTC workhorse — closest to clearing" },
-    { id:"aero-usdc-weth-5", name:"WETH/USDC",  tag:"BLUE CHIP", pairClass:"UNCORRELATED", entryAsset:"USDC",  c:["weth","usdc"],  eid:"0x0ea72f44ccaf524e3fda5e4a6682fda7a79e42dc2858ee27be311e9337aa72a8", poolAddress:"0xb2cc224c1c9fee385f8ad6a55b4d94e92359dc59", sigma: 0.55, feeBps: 5.94, epochActive: true, emissions: { 4500: 3.93, 1500: 12.42, 300: 63.13 }, note:"the flagship — deepest ETH flow on Base" },
-    { id:"aero-weth-cbbtc",  name:"WETH/cbBTC", tag:"BLUE CHIP", pairClass:"CORRELATED",   entryAsset:"cbBTC", c:["weth","cbbtc"], eid:"0xc97cb5ca633aa7364b3c5789cb0b59b6de362ec48a09b5e4c8e805cedd99c35f", poolAddress:"0x70acdf2ad0bf2402c957154f944c19ef4e1cbae1", sigma: 0.33, feeBps: 25.05, epochActive: true, emissions: { 2356: 4.33, 784: 13.32, 150: 70.21 }, note:"correlated majors — gentle IL, thin emissions" },
-    { id:"aero-weth-link",   name:"WETH/LINK",  tag:"BLUE CHIP", pairClass:"UNCORRELATED", entryAsset:"WETH",  c:["weth","link"],  eid:"0x477c2374e9cc1a6d42b8ad7a59ffbc2769932d7f659162824276c0b396f7ab24", poolAddress:"0x72be417afb0abea66913141c605d313bb389b59c", sigma: null, feeBps: 25, epochActive: true, emissions: { 4500: 26.39, 1500: 83.35, 300: 423.69 }, note:"ETH against LINK — no σ calibrated, no forecast" },
+    { id:"aero-cbbtc-usdc",  name:"cbBTC/USDC", tag:"BLUE CHIP", pairClass:"UNCORRELATED", entryAsset:"USDC",  c:["usdc","cbbtc"], eid:"0xb1830be2f9077713501ee7b52c92f6c8307ea8ceb16309d1f7fb1ad2643837e6", poolAddress:"0x4e962bb3889bf030368f56810a9c96b83cb3e778", sigma: 0.40, feeBps: 4, epochActive: true, emissions: { 4500: 16.31, 1500: 51.52, 300: 261.89 }, note:"the BTC workhorse — closest to clearing" },
+    { id:"aero-usdc-weth-5", name:"WETH/USDC",  tag:"BLUE CHIP", pairClass:"UNCORRELATED", entryAsset:"USDC",  c:["weth","usdc"],  eid:"0x0ea72f44ccaf524e3fda5e4a6682fda7a79e42dc2858ee27be311e9337aa72a8", poolAddress:"0xb2cc224c1c9fee385f8ad6a55b4d94e92359dc59", sigma: 0.55, feeBps: 5.35, epochActive: true, emissions: { 4500: 15.10, 1500: 47.70, 300: 242.46 }, note:"the flagship — deepest ETH flow on Base" },
+    { id:"aero-weth-cbbtc",  name:"WETH/cbBTC", tag:"BLUE CHIP", pairClass:"CORRELATED",   entryAsset:"cbBTC", c:["weth","cbbtc"], eid:"0xc97cb5ca633aa7364b3c5789cb0b59b6de362ec48a09b5e4c8e805cedd99c35f", poolAddress:"0x70acdf2ad0bf2402c957154f944c19ef4e1cbae1", sigma: 0.33, feeBps: 25, epochActive: true, emissions: { 2356: 1.33, 784: 4.08, 150: 21.51 }, note:"correlated majors — gentle IL, thin emissions" },
+    { id:"aero-weth-link",   name:"WETH/LINK",  tag:"BLUE CHIP", pairClass:"UNCORRELATED", entryAsset:"WETH",  c:["weth","link"],  eid:"0x477c2374e9cc1a6d42b8ad7a59ffbc2769932d7f659162824276c0b396f7ab24", poolAddress:"0x72be417afb0abea66913141c605d313bb389b59c", sigma: null, feeBps: 25, epochActive: true, emissions: { 4500: 25.79, 1500: 81.44, 300: 413.98 }, note:"ETH against LINK — no σ calibrated, no forecast" },
     { id:"aero-usdt-usdc",   name:"USDT/USDC",  tag:"STABLE",    pairClass:"CORRELATED",   entryAsset:"USDC",  c:["usdt","usdc"],  eid:"0x0ff8167e00d9a34d07034a4a6a8a6dec2ef8caffca0a5178ec940f7fb76babd7", poolAddress:"0xa41bc0affba7fd420d186b84899d7ab2ac57fcd1", sigma: null, feeBps: 0.09, epochActive: true, emissions: { 2356: 0.00, 784: 0.00, 150: 0.01 }, note:"parking tier — near-zero IL, near-zero emissions" },
     { id:"cbeth-weth",       name:"cbETH/WETH", tag:"STABLE",    pairClass:"CORRELATED",   entryAsset:"WETH",  c:["cbeth","weth"], eid:"0xcfdea513927b5d64e00e0096e4263b6b67f4e209017f1dde6f9f82856805d419", poolAddress:"0x47ca96ea59c13f72745928887f84c9f52c3d7348", sigma: null, feeBps: 0.65, epochActive: true, emissions: { 2356: 0.00, 784: 0.01, 150: 0.05 }, note:"correlated LST pair — near-zero IL, near-zero emissions" },
     { id:"aero-aero-weth",   name:"AERO/WETH",  tag:"VOLATILE",  pairClass:"UNCORRELATED", entryAsset:"WETH",  c:["weth","aero"],  eid:"0x6d9490cf9c55426c33c1259073a54bcd6ac78bc43d62796ac62154188ee4c1d1", poolAddress:"0x82321f3beb69f503380d6b233857d5c43562e2d0", sigma: null, feeBps: 30, epochActive: false, emissions: { 4500: 0.00, 1500: 0.00, 300: 0.00 },
-      /* The gauge's epoch had LAPSED at the as-of instant (periodFinish 1779926400 < 2026-09-12T19:31:31Z), so the model publishes 0. The reading the sample actually carried is kept verbatim, keyed by the half-width it was measured at, because it is the real example of a marginal in-range APR that the plausibility ceiling exists to refuse. */
-      sampledAprByHalfWidth: { 0.2523: 9858.66, 0.0779: 31135.54, 0.0151: 158263.82 },
+      /* The gauge's epoch had LAPSED at the as-of instant (periodFinish 1779926400 < 2026-09-13T04:05:41Z), so the model publishes 0. The reading the sample actually carried is kept verbatim, keyed by the half-width it was measured at, because it is the real example of a marginal in-range APR that the plausibility ceiling exists to refuse. */
+      sampledAprByHalfWidth: { 0.2523: 9853.79, 0.0779: 31120.18, 0.0151: 158185.73 },
       note:"the venue's own token — the gauge epoch had lapsed at the sample" },
-    { id:"aero-aero-cbbtc",  name:"AERO/cbBTC", tag:"VOLATILE",  pairClass:"UNCORRELATED", entryAsset:"cbBTC", c:["aero","cbbtc"], eid:"0xa893d6d3bc3a29d7424223766ebfb8aed8d3b1ec5329d3ae1d7624b0e96d9bfc", poolAddress:"0xdfe5f275020def30993f042174fc2d335678b626", sigma: null, feeBps: 7.5, epochActive: true, emissions: { 4500: 11.67, 1500: 36.85, 300: 187.32 }, note:"AERO against BTC — no σ calibrated, no forecast" },
-    { id:"aero-cbzec-usdc",  name:"cbZEC/USDC", tag:"cbZEC",     pairClass:"UNCORRELATED", entryAsset:"USDC",  c:["cbzec","usdc"], eid:null, poolAddress:"0x0Fc47C17AF86078d809358db1b4db2DeBC988566", sigma: null, feeBps: 20, epochActive: true, emissions: { 4500: 1.06, 1500: 3.34, 300: 16.99 }, note:"gauge epoch active at the 2026-09-12 sample — no σ calibrated, no forecast", tracked:true, direct:true },
+    { id:"aero-aero-cbbtc",  name:"AERO/cbBTC", tag:"VOLATILE",  pairClass:"UNCORRELATED", entryAsset:"cbBTC", c:["aero","cbbtc"], eid:"0xa893d6d3bc3a29d7424223766ebfb8aed8d3b1ec5329d3ae1d7624b0e96d9bfc", poolAddress:"0xdfe5f275020def30993f042174fc2d335678b626", sigma: null, feeBps: 7.5, epochActive: true, emissions: { 4500: 11.70, 1500: 36.94, 300: 187.79 }, note:"AERO against BTC — no σ calibrated, no forecast" },
+    { id:"aero-cbzec-usdc",  name:"cbZEC/USDC", tag:"cbZEC",     pairClass:"UNCORRELATED", entryAsset:"USDC",  c:["cbzec","usdc"], eid:null, poolAddress:"0x0Fc47C17AF86078d809358db1b4db2DeBC988566", sigma: null, feeBps: 20, epochActive: true, emissions: { 4500: 326.50, 1500: 1031.14, 300: 5241.34 }, note:"gauge epoch active at the 2026-09-12 sample — no σ calibrated, no forecast", tracked:true, direct:true },
   ],
   /* The Monte-Carlo calibration of each priced cell (services/yield/samples/mc-calibration.json).
      mcLpNet = netEmissions × inRangeEmissionsFactor + mcDragPct — affine in the
@@ -1306,17 +1306,17 @@ const OIL_MODEL = Object.freeze({
      including the boundary the gate decides at.
      [poolId, widthBps, sigma, feeBps, inRangeEmissionsFactor, mcDragPct, timeInRange, rebalancesPerYear] */
   mc: {
-    generatedAt: "2026-09-13T02:43:16+00:00", asOf: "2026-09-12T19:31:31+00:00", paths: 6000, seed: 7, sigmaTolerance: 1e-9,
+    generatedAt: "2026-09-13T04:16:03+00:00", asOf: "2026-09-13T04:05:41+00:00", paths: 6000, seed: 7, sigmaTolerance: 1e-9,
     cells: [
-      ["aero-cbbtc-usdc", 4500, 0.40, 4.48, 0.9277392577614707, -15.258266066552903, 0.9831953196347031, 1.6863333333333332],
-      ["aero-cbbtc-usdc", 1500, 0.40, 4.48, 0.7543099533081237, -40.311656374046954, 0.9604234969558599, 17.794166666666666],
-      ["aero-cbbtc-usdc", 300, 0.40, 4.48, 0.3171195691181603, -92.6691877978977, 0.8923115106544901, 387.97116666666665],
-      ["aero-usdc-weth-5", 4500, 0.55, 5.94, 0.853685467705847, -26.934221455598895, 0.9695052891933029, 3.0843333333333334],
-      ["aero-usdc-weth-5", 1500, 0.55, 5.94, 0.6075975047207078, -61.36549090961824, 0.9341483447488584, 29.647],
-      ["aero-usdc-weth-5", 300, 0.55, 5.94, 0.17614540797320258, -99.06701952490421, 0.8321174467275495, 604.7615],
-      ["aero-weth-cbbtc", 2356, 0.33, 25.05, 0.8654656831270542, -20.107737747281256, 0.9566429223744292, 4.397166666666666],
-      ["aero-weth-cbbtc", 784, 0.33, 25.05, 0.6653705045947049, -49.753973091055585, 0.9168503044140031, 37.42516666666667],
-      ["aero-weth-cbbtc", 150, 0.33, 25.05, 0.18720316358995068, -98.4191537178157, 0.7872646118721461, 766.0711666666666],
+      ["aero-cbbtc-usdc", 4500, 0.40, 4, 0.9277549744443725, -15.25504203197648, 0.9831953196347031, 1.6863333333333332],
+      ["aero-cbbtc-usdc", 1500, 0.40, 4, 0.7544525894962629, -40.28662378633546, 0.9604234969558599, 17.794166666666666],
+      ["aero-cbbtc-usdc", 300, 0.40, 4, 0.31801515345526016, -92.60086505787346, 0.8923115106544901, 387.97116666666665],
+      ["aero-usdc-weth-5", 4500, 0.55, 5.35, 0.8537181781354641, -26.92798786248412, 0.9695052891933029, 3.0843333333333334],
+      ["aero-usdc-weth-5", 1500, 0.55, 5.35, 0.6078153974318277, -61.33236351104125, 0.9341483447488584, 29.647],
+      ["aero-usdc-weth-5", 300, 0.55, 5.35, 0.17678584641673906, -99.05029573668759, 0.8321174467275495, 604.7615],
+      ["aero-weth-cbbtc", 2356, 0.33, 25, 0.8654699594196645, -20.1068861816147, 0.9566429223744292, 4.397166666666666],
+      ["aero-weth-cbbtc", 784, 0.33, 25, 0.6653976755590358, -49.749318693118084, 0.9168503044140031, 37.42516666666667],
+      ["aero-weth-cbbtc", 150, 0.33, 25, 0.1872837334281003, -98.41612812062993, 0.7872646118721461, 766.0711666666666],
     ],
   },
   /* [poolId, widthBps, lpNetPct|null, reason] — the served gate row at each
@@ -1324,31 +1324,31 @@ const OIL_MODEL = Object.freeze({
      cell, exactly as /v1/gate leaves it; forecast() prices those cells anyway.
      "ok" would mean it beats the borrow on both forms. */
   served: [
-    ["aero-cbbtc-usdc", 4500, -10.92, "net_below_borrow"], ["aero-cbbtc-usdc", 1500, -29.14, "net_below_borrow"], ["aero-cbbtc-usdc", 300, -66.56, "net_below_borrow"],
-    ["aero-usdc-weth-5", 4500, null, "emissions_below_borrow"], ["aero-usdc-weth-5", 1500, -56.74, "net_below_borrow"], ["aero-usdc-weth-5", 300, -89.79, "net_below_borrow"],
-    ["aero-weth-cbbtc", 2356, null, "emissions_below_borrow"], ["aero-weth-cbbtc", 784, -42.35, "net_below_borrow"], ["aero-weth-cbbtc", 150, -82.90, "net_below_borrow"],
+    ["aero-cbbtc-usdc", 4500, -3.75, "net_below_borrow"], ["aero-cbbtc-usdc", 1500, -10.01, "net_below_borrow"], ["aero-cbbtc-usdc", 300, -22.86, "net_below_borrow"],
+    ["aero-usdc-weth-5", 4500, -16.95, "net_below_borrow"], ["aero-usdc-weth-5", 1500, -39.59, "net_below_borrow"], ["aero-usdc-weth-5", 300, -62.66, "net_below_borrow"],
+    ["aero-weth-cbbtc", 2356, null, "emissions_below_borrow"], ["aero-weth-cbbtc", 784, null, "emissions_below_borrow"], ["aero-weth-cbbtc", 150, -92.91, "net_below_borrow"],
     ["aero-weth-link", 4500, null, "no_volatility_input"], ["aero-weth-link", 1500, null, "no_volatility_input"], ["aero-weth-link", 300, null, "no_volatility_input"],
     ["aero-usdt-usdc", 2356, null, "emissions_below_borrow"], ["aero-usdt-usdc", 784, null, "emissions_below_borrow"], ["aero-usdt-usdc", 150, null, "emissions_below_borrow"],
     ["cbeth-weth", 2356, null, "emissions_below_borrow"], ["cbeth-weth", 784, null, "emissions_below_borrow"], ["cbeth-weth", 150, null, "emissions_below_borrow"],
     ["aero-aero-weth", 4500, null, "no_emissions"], ["aero-aero-weth", 1500, null, "no_emissions"], ["aero-aero-weth", 300, null, "no_emissions"],
     ["aero-aero-cbbtc", 4500, null, "no_volatility_input"], ["aero-aero-cbbtc", 1500, null, "no_volatility_input"], ["aero-aero-cbbtc", 300, null, "no_volatility_input"],
-    ["aero-cbzec-usdc", 4500, null, "emissions_below_borrow"], ["aero-cbzec-usdc", 1500, null, "emissions_below_borrow"], ["aero-cbzec-usdc", 300, null, "no_volatility_input"],
+    ["aero-cbzec-usdc", 4500, null, "no_volatility_input"], ["aero-cbzec-usdc", 1500, null, "emissions_implausible"], ["aero-cbzec-usdc", 300, null, "emissions_implausible"],
   ],
   /* [poolId, widthBps, collateral, ltvPct, userNetPct] — a sample of the served
      user-net rows; a slot whose cell the gate stops at before pricing has no row. */
   userNetPinned: [
-    ["aero-usdc-weth-5", 300, "cbBTC", 62.4, -58.84], ["aero-cbbtc-usdc", 4500, "cbBTC", 30, -4.62], ["aero-cbbtc-usdc", 4500, "WETH", 30, -2.89],
-    ["aero-cbbtc-usdc", 1500, "WETH", 40, -11.72], ["aero-cbbtc-usdc", 300, "cbBTC", 62.4, -44.34], ["aero-weth-cbbtc", 784, "WETH", 66.4, -29.38],
-    ["aero-weth-cbbtc", 150, "cbBTC", 62.4, -54.54],
+    ["aero-usdc-weth-5", 4500, "cbBTC", 30, -6.43], ["aero-usdc-weth-5", 4500, "WETH", 66.4, -12.49], ["aero-usdc-weth-5", 300, "cbBTC", 62.4, -41.90],
+    ["aero-cbbtc-usdc", 4500, "cbBTC", 30, -2.47], ["aero-cbbtc-usdc", 4500, "WETH", 30, -0.72], ["aero-cbbtc-usdc", 1500, "WETH", 40, -4.05],
+    ["aero-cbbtc-usdc", 300, "cbBTC", 62.4, -17.07], ["aero-weth-cbbtc", 150, "cbBTC", 62.4, -60.78],
   ],
   /* The boundary the guard exists for: at each cell's own published break-even
      multiple the closed form lands exactly on the borrow rate. This is what the
      Monte-Carlo-calibrated form says the same position is worth there.
      [poolId, widthBps, grossAtBoundaryPct, closedLpNetPct, mcLpNetPct] */
   boundary: [
-    ["aero-cbbtc-usdc", 4500, 28.04, 4.52, 4.64], ["aero-cbbtc-usdc", 1500, 75.90, 4.52, 3.49], ["aero-cbbtc-usdc", 300, 364.15, 4.52, -4.33],
-    ["aero-usdc-weth-5", 1500, 138.46, 4.52, 2.99], ["aero-usdc-weth-5", 300, 686.43, 4.52, -6.57],
-    ["aero-weth-cbbtc", 784, 98.03, 4.52, 0.15], ["aero-weth-cbbtc", 150, 495.62, 4.52, -27.44],
+    ["aero-cbbtc-usdc", 4500, 28.04, 4.51, 4.64], ["aero-cbbtc-usdc", 1500, 75.90, 4.51, 3.52], ["aero-cbbtc-usdc", 300, 364.14, 4.51, -4.01],
+    ["aero-usdc-weth-5", 4500, 47.77, 4.51, 4.27], ["aero-usdc-weth-5", 1500, 138.46, 4.51, 3.05], ["aero-usdc-weth-5", 300, 686.40, 4.51, -6.22],
+    ["aero-weth-cbbtc", 150, 495.61, 4.51, -27.41],
   ],
 });
 
