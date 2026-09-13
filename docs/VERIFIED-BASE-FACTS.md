@@ -932,3 +932,22 @@ out of range; the depth there is a few ticks wide. (Since 2026-09-13 the top sec
 demo banner's date), `prototype/index.html` and `prototype/simple.html` `OIL_CHAIN_READ` (byte-equal), and the tests
 that had typed the old digits (`web/test/wizard.test.ts`, `model-numbers.test.ts`, `e2e/demo-flow.spec.ts`,
 `prototype/test/verify-*.mjs`), which now derive them from the snapshot object instead.
+
+## Addendum 15 — CCTP V2 on Base, 2026-09-13: where the facts live, and the fork run that used them
+
+Circle's Cross-Chain Transfer Protocol (CCTP) V2 contracts on Base are recorded in `docs/VERIFIED-SOLANA-FACTS.md`
+because the loop they serve is the Solana module's (BUILD-PLAN D6): **Addendum 1** (2026-09-12 20:10 UTC, block
+51,227,239) for the three proxies, the fee API and the domain ids, **Addendum 3** (2026-09-13 03:11–03:16 UTC,
+blocks 51,239,874 / 51,239,965) for the implementations behind the proxies, the verified ABIs, the message
+byte layout and the Solana side. `script/Deploy.s.sol::BaseAddresses` mirrors four of them — TokenMessengerV2
+`0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d`, MessageTransmitterV2 `0x81D40F21F12A8F0E3252Bccb954D722d4c464B64`,
+domain 6 (Base), domain 5 (Solana) — pinned by `test/Deploy.t.sol`.
+
+**Fork run, block 51,222,568 (the suite's pin), `mainnet.base.org`, 2026-09-13:** `test/fork/BaseFork.t.sol`
+`test_fork_cctpV2_theAccountsBurnLegBurnsNativeUsdcToASolanaRecipient` — the messenger's
+`localMessageTransmitter()` is the recorded transmitter, whose `localDomain()` is 6 and `version()` 1;
+`messageBodyVersion()` 1; `remoteTokenMessengers(5)` is Solana's TokenMessengerMinterV2 as bytes32; an
+`OilskinAccount`'s approve → `depositForBurn(1,000 USDC, 5, recipient, USDC, 0, maxFee 2 USDC, 1000)` → approve-zero
+burned 1,000 native USDC (FiatToken `totalSupply()` fell by exactly 1,000,000,000 base units) and emitted Circle's
+`DepositForBurn` with our recipient and domain. Note for the next runner: `base-rpc.publicnode.com` does not
+serve state at that block (the whole fork suite's `setUp` reverts there); `mainnet.base.org` does.

@@ -29,6 +29,8 @@ import {MockCLPool} from "./mocks/MockCLPool.sol";
 import {MockSnuggleVault} from "./mocks/MockSnuggleVault.sol";
 import {MockAerodromeSwapRouter} from "./mocks/MockAerodromeSwapRouter.sol";
 import {MockCLGauge, MockSlipstreamNpm, MockVoter} from "./mocks/MockSlipstream.sol";
+import {MockMessageTransmitterV2, MockTokenMessengerV2} from "./mocks/MockCctpV2.sol";
+import {ITokenMessengerV2} from "../src/interfaces/ICctpV2.sol";
 import {SlipstreamLpVenue} from "../src/venues/SlipstreamLpVenue.sol";
 import {SlipstreamPoolSwapAdapter} from "../src/swap/SlipstreamPoolSwapAdapter.sol";
 import {ISwapAdapter} from "../src/interfaces/ISwapAdapter.sol";
@@ -49,6 +51,16 @@ abstract contract Fixture is Test {
 
     // infra
     MockPermit2 permit2;
+    /// @dev Circle's CCTP V2 doubles: the transmitter at Base's domain 6, the messenger over the mock
+    ///      USDC with Solana (domain 5) as a known destination — the bytes32 of Solana's
+    ///      TokenMessengerMinterV2 as Base's messenger records it (VERIFIED-SOLANA-FACTS Addendum 3).
+    MockMessageTransmitterV2 cctpTransmitter;
+    MockTokenMessengerV2 cctpMessenger;
+    address cctpFeeRecipient;
+    uint32 constant CCTP_DOMAIN_BASE = 6;
+    uint32 constant CCTP_DOMAIN_SOLANA = 5;
+    bytes32 constant SOLANA_TOKEN_MESSENGER_B32 = 0xa65fc81d0fefa8860cb3b83f089b0224be8a6687b7ae49f594c0b9b4d7e93893;
+    bytes32 constant SOLANA_USDC_MINT_B32 = 0xc6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61;
     MockAave aave;
     MockMorpho morpho;
     MockIrm morphoIrm;
@@ -217,6 +229,11 @@ abstract contract Fixture is Test {
             treasury,
             PERF_BPS
         );
+        cctpFeeRecipient = makeAddr("circle-fee-recipient");
+        cctpTransmitter = new MockMessageTransmitterV2(CCTP_DOMAIN_BASE, 1);
+        cctpMessenger = new MockTokenMessengerV2(usdc, cctpTransmitter, 1, cctpFeeRecipient, 10_000_000e6);
+        cctpTransmitter.setMessenger(cctpMessenger);
+        cctpMessenger.addRemoteTokenMessenger(CCTP_DOMAIN_SOLANA, SOLANA_TOKEN_MESSENGER_B32);
         router = new StrategyRouter(
             registry,
             lpVenue,
@@ -224,7 +241,9 @@ abstract contract Fixture is Test {
             IPermit2(address(permit2)),
             address(usdc),
             ILpVenue(address(directVenue)),
-            ISwapAdapter(address(poolSwapAdapter))
+            ISwapAdapter(address(poolSwapAdapter)),
+            ITokenMessengerV2(address(cctpMessenger)),
+            CCTP_DOMAIN_SOLANA
         );
     }
 

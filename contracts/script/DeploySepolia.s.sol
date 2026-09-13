@@ -206,6 +206,10 @@ contract DeploySepolia is Deploy {
         c.pythMaxAge = vm.envOr("PYTH_MAX_AGE", uint256(60));
         c.pythMaxDeviationBps = vm.envOr("PYTH_MAX_DEVIATION_BPS", uint256(300));
         c.pythTwapWindow = uint32(vm.envOr("PYTH_TWAP_WINDOW", uint256(1800)));
+        // Circle's CCTP V2 exists on Base Sepolia, but its addresses there are not in VERIFIED-BASE-FACTS
+        // (not probed): the loop is off on this deployment and the router refuses `closeLpAndBurn` by name.
+        c.cctpTokenMessenger = address(0);
+        c.cctpDomainSolana = 0;
         // `guardSepolia` is the guard here; the mainnet opt-ins stay off.
         c.confirmBaseMainnet = false;
         c.allowAnyChain = false;

@@ -4,7 +4,8 @@ pragma solidity ^0.8.24;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Peripheral} from "../account/Peripheral.sol";
-import {IOilskinAccount} from "../interfaces/IOilskinAccount.sol";
+import {Call, IOilskinAccount} from "../interfaces/IOilskinAccount.sol";
+import {ITokenMessengerV2} from "../interfaces/ICctpV2.sol";
 import {ICollateralVenue} from "../interfaces/ICollateralVenue.sol";
 import {LoanDust} from "../libraries/LoanDust.sol";
 import {ILpVenue, LpOpenParams, PriceBand} from "../interfaces/ILpVenue.sol";
@@ -50,6 +51,13 @@ contract StrategyRouter is Peripheral {
     IPermit2 public immutable PERMIT2;
     /// @notice The debt asset (USDC on Base).
     address public immutable USDC;
+    /// @notice Circle's CCTP V2 TokenMessengerV2 on this chain (`docs/VERIFIED-SOLANA-FACTS.md` Addenda 1
+    ///         and 3) and Solana's CCTP domain (5) — the rail `closeLpAndBurn` sends USDC home on
+    ///         (BUILD-PLAN D6 / A5). `address(0)` on a deployment without the cross-chain loop (Base
+    ///         Sepolia, whose CCTP addresses are not in the facts file): the burn then refuses
+    ///         `CrossChainDisabled` by name.
+    ITokenMessengerV2 public immutable CCTP_MESSENGER;
+    uint32 public immutable SOLANA_DOMAIN;
 
     struct Permit2Pull {
         uint256 nonce;
@@ -111,6 +119,51 @@ contract StrategyRouter is Peripheral {
         uint256 deadline;
     }
 
+    /// @notice The LP-only shape (BUILD-PLAN D6 / A5): USDC the account ALREADY holds — arrived by
+    ///         CCTP from the user's own Solana account, or any idle USDC — into one Aerodrome position.
+    ///         No collateral, no borrow and no health factor on this chain: the debt, if there is one,
+    ///         is the Solana obligation's, and the keeper's cross-chain class runs its ladder.
+    struct LpOnlyParams {
+        /// @dev USDC to deploy. Must be > 0 and at most the account's balance.
+        uint256 usdcAmount;
+        bytes32 poolId;
+        uint24 rangeWidthBps;
+        uint64 rebalanceDelay;
+        bool autoCompound;
+        PriceBand band;
+        uint256 deadline;
+    }
+
+    /// @notice The protective mirror for a cross-chain position: close ids, swap the non-USDC leg,
+    ///         burn USDC through CCTP to the account's RECORDED Solana recipient (never a parameter).
+    struct BurnParams {
+        /// @dev LP ids to close (all in one pool). May be empty (burn idle USDC only).
+        uint256[] positionIds;
+        PriceBand band;
+        /// @dev Quote for swapping the non-USDC pool token proceeds to USDC; as in `unwind`.
+        SwapQuote swap;
+        /// @dev USDC to burn. type(uint256).max = everything the account holds after the close.
+        uint256 burnAmount;
+        /// @dev Circle's fee bound at delivery, USDC units; must be below the amount burned. The caller
+        ///      reads Circle's fee API at send time — the router carries no fee number of its own.
+        uint256 maxFee;
+        /// @dev 1000 = Fast Transfer (seconds, fee-bearing), 2000 = Standard (source-chain finality).
+        uint32 minFinalityThreshold;
+        uint256 deadline;
+    }
+
+    event LpOnlyOpened(address indexed account, uint256 usdcAmount, bytes32 indexed poolId, uint256 positionId);
+    event SolanaRecipientSet(address indexed account, bytes32 recipient);
+    event BurnedToSolana(
+        address indexed account,
+        uint256 amount,
+        bytes32 indexed recipient,
+        uint256 maxFee,
+        uint32 minFinalityThreshold,
+        uint256 closed,
+        uint256 failedCount,
+        uint256 usdcFromLp
+    );
     event LeveragedLpOpened(
         address indexed account,
         address indexed collateralAsset,
@@ -169,6 +222,11 @@ contract StrategyRouter is Peripheral {
     error AssetDisabled(address asset, string note);
     error VenueDisabled(address venue);
     error ZeroBorrow();
+    error ZeroAmount();
+    error UsdcShort(uint256 asked, uint256 held);
+    error CrossChainDisabled();
+    error NoSolanaRecipient(address account);
+    error MaxFeeNotBelowAmount(uint256 maxFee, uint256 amount);
     error PoolWithoutUsdc(bytes32 poolId);
     /// @notice Neither LP venue serves `poolId`.
     error UnknownPool(bytes32 poolId);
@@ -196,7 +254,9 @@ contract StrategyRouter is Peripheral {
         IPermit2 permit2,
         address usdc,
         ILpVenue lpVenueDirect,
-        ISwapAdapter swapAdapterDirect
+        ISwapAdapter swapAdapterDirect,
+        ITokenMessengerV2 cctpMessenger,
+        uint32 solanaDomain
     ) {
         if (
             address(registry) == address(0) || address(lpVenue) == address(0)
@@ -212,6 +272,10 @@ contract StrategyRouter is Peripheral {
         USDC = usdc;
         LP_VENUE_DIRECT = lpVenueDirect;
         SWAP_DIRECT = swapAdapterDirect;
+        // A messenger without a destination domain could burn to Ethereum (domain 0) by default.
+        if (address(cctpMessenger) != address(0) && solanaDomain == 0) revert ZeroAddress();
+        CCTP_MESSENGER = cctpMessenger;
+        SOLANA_DOMAIN = solanaDomain;
     }
 
     // ------------------------------------------------------------------ open
@@ -320,7 +384,7 @@ contract StrategyRouter is Peripheral {
         uint256 closed;
         uint256 failedCount;
         if (p.positionIds.length != 0) {
-            (usdcFromLp, closed, failedCount) = _closeAndSettle(p);
+            (usdcFromLp, closed, failedCount) = _closeAndSettle(p.positionIds, p.band, p.swap, p.deadline);
         }
 
         if (p.repayAmount != 0) repaid = _repayAcross(venues, account, p.repayAmount);
@@ -359,6 +423,109 @@ contract StrategyRouter is Peripheral {
     ///         registry floor's ladder and says so). Read by the keeper and the dashboard.
     mapping(address account => uint256 healthFactorWad) public entryHfWad;
 
+    /// @notice The account's USDC TOKEN ACCOUNT on Solana as CCTP's `mintRecipient` (bytes32), written by
+    ///         the owner through the account (`setSolanaRecipient`); `closeLpAndBurn` burns only to it.
+    ///         Zero = none: a burn reverts `NoSolanaRecipient`. Whoever holds the key that triggers a
+    ///         burn — the owner, or a keeper inside a grant — cannot point it anywhere else
+    ///         (`SOLANA-ARCHITECTURE.md` §14.5; the Solana program records the Base account the same way).
+    mapping(address account => bytes32 recipient) public solanaRecipient;
+
+    // ------------------------------------------------------ cross-chain (BUILD-PLAN D6 / A5)
+
+    /// @notice Record (or clear, with zero) the calling account's Solana USDC token account.
+    /// @dev Called BY the account with a plain `exec` (no callback needed). Only the owner can make the
+    ///      account call this unless a grant names this selector, which no product flow issues: a
+    ///      keeper grant for `closeLpAndBurn` alone cannot move the destination.
+    function setSolanaRecipient(bytes32 recipient) external {
+        solanaRecipient[msg.sender] = recipient;
+        emit SolanaRecipientSet(msg.sender, recipient);
+    }
+
+    /// @notice USDC the account already holds → lpVenue.open, as the account. Nothing is supplied or
+    ///         borrowed on this chain and `entryHfWad` is untouched.
+    /// @dev Invariant: the pool contains USDC; the account holds at least `usdcAmount`; the id is
+    ///      minted to the account; the router's balance of every token involved is unchanged.
+    function openLpOnly(LpOnlyParams calldata p) external returns (uint256 positionId) {
+        if (p.deadline < block.timestamp) revert Expired(p.deadline);
+        if (p.usdcAmount == 0) revert ZeroAmount();
+        (ILpVenue lp, address t0, address t1) = _lpVenueForPool(p.poolId);
+        if (t0 != USDC && t1 != USDC) revert PoolWithoutUsdc(p.poolId);
+
+        address account = msg.sender;
+        uint256 held = IERC20(USDC).balanceOf(account);
+        if (held < p.usdcAmount) revert UsdcShort(p.usdcAmount, held);
+        uint256 beforeUsdc = _balance(USDC);
+        uint256 beforeT0 = _balance(t0);
+        uint256 beforeT1 = _balance(t1);
+
+        LpOpenParams memory lpParams = LpOpenParams({
+            poolId: p.poolId,
+            amount0: t0 == USDC ? p.usdcAmount : 0,
+            amount1: t1 == USDC ? p.usdcAmount : 0,
+            rangeWidthBps: p.rangeWidthBps,
+            rebalanceDelay: p.rebalanceDelay,
+            autoCompound: p.autoCompound,
+            band: p.band,
+            deadline: p.deadline
+        });
+        positionId = abi.decode(_nested(address(lp), abi.encodeCall(ILpVenue.open, (lpParams))), (uint256));
+
+        _assertUnchanged(USDC, beforeUsdc);
+        _assertUnchanged(t0, beforeT0);
+        _assertUnchanged(t1, beforeT1);
+        emit LpOnlyOpened(account, p.usdcAmount, p.poolId, positionId);
+    }
+
+    /// @notice lpVenue.closeMany → swap the non-USDC leg to USDC → approve TokenMessengerV2 for exactly
+    ///         the burn amount → `depositForBurn` to the account's recorded Solana recipient → approve
+    ///         zero, all as the account. The keeper's rung action for a cross-chain position (rungs 3–4,
+    ///         and rung 2 when the Solana-side reserve is short) and the owner's way home.
+    /// @dev Invariant: the deployment has a messenger and the account a recorded recipient; the close
+    ///      and the swap follow `unwind`'s rules exactly (an un-closable id is skipped, the swap is
+    ///      bounded by the quote and the band, a dust leg is kept and reported); `burnAmount = max`
+    ///      burns the account's whole USDC balance after the close and a fixed amount reverts
+    ///      `UsdcShort` when the account holds less; `maxFee` is below the amount; the approval is
+    ///      exact and reset, so a keeper grant's USDC budget bounds what leaves; the router's balance
+    ///      of every token touched is unchanged.
+    function closeLpAndBurn(BurnParams calldata p) external returns (uint256 usdcFromLp, uint256 burned) {
+        if (p.deadline < block.timestamp) revert Expired(p.deadline);
+        if (address(CCTP_MESSENGER) == address(0)) revert CrossChainDisabled();
+        address account = msg.sender;
+        bytes32 recipient = solanaRecipient[account];
+        if (recipient == bytes32(0)) revert NoSolanaRecipient(account);
+
+        uint256 beforeUsdc = _balance(USDC);
+        uint256 closed;
+        uint256 failedCount;
+        if (p.positionIds.length != 0) {
+            (usdcFromLp, closed, failedCount) = _closeAndSettle(p.positionIds, p.band, p.swap, p.deadline);
+        }
+
+        uint256 held = IERC20(USDC).balanceOf(account);
+        burned = p.burnAmount == type(uint256).max ? held : p.burnAmount;
+        if (burned == 0) revert ZeroAmount();
+        if (held < burned) revert UsdcShort(burned, held);
+        if (p.maxFee >= burned) revert MaxFeeNotBelowAmount(p.maxFee, burned);
+
+        _approveCallReset(
+            USDC,
+            address(CCTP_MESSENGER),
+            burned,
+            Call({
+                target: address(CCTP_MESSENGER),
+                value: 0,
+                data: abi.encodeCall(
+                    ITokenMessengerV2.depositForBurn,
+                    (burned, SOLANA_DOMAIN, recipient, USDC, bytes32(0), p.maxFee, p.minFinalityThreshold)
+                ),
+                callback: false
+            })
+        );
+
+        _assertUnchanged(USDC, beforeUsdc);
+        emit BurnedToSolana(account, burned, recipient, p.maxFee, p.minFinalityThreshold, closed, failedCount, usdcFromLp);
+    }
+
     // -------------------------------------------------------------- internal
 
     function _supplyAndBorrow(
@@ -392,7 +559,7 @@ contract StrategyRouter is Peripheral {
 
     /// @dev Close the ids, swap any non-USDC proceeds, and report what closed. Separated so the
     ///      pool tokens' balance snapshots live in one frame.
-    function _closeAndSettle(UnwindParams calldata p)
+    function _closeAndSettle(uint256[] calldata ids, PriceBand calldata band, SwapQuote calldata swap, uint256 deadline)
         internal
         returns (uint256 usdcFromLp, uint256 closed, uint256 failedCount)
     {
@@ -401,20 +568,20 @@ contract StrategyRouter is Peripheral {
         // uses, so the tokens the router swaps are always the tokens the venue paid out.
         // The venue is the one that says the account owns that id (`ownedPool`): a position staked
         // in a Slipstream gauge is the gauge's on the NFT's books and the account's on the gauge's.
-        (ILpVenue lp, ISwapAdapter adapter, bytes32 poolId) = _lpVenueForIds(p.positionIds, msg.sender);
-        if (poolId == bytes32(0)) return (0, 0, p.positionIds.length);
+        (ILpVenue lp, ISwapAdapter adapter, bytes32 poolId) = _lpVenueForIds(ids, msg.sender);
+        if (poolId == bytes32(0)) return (0, 0, ids.length);
 
         (address t0, address t1,) = lp.poolTokens(poolId);
         uint256 beforeT0 = _balance(t0);
         uint256 beforeT1 = _balance(t1);
 
         (uint256 out0, uint256 out1,, uint256[] memory failed) = abi.decode(
-            _nested(address(lp), abi.encodeCall(ILpVenue.closeMany, (p.positionIds, p.band))),
+            _nested(address(lp), abi.encodeCall(ILpVenue.closeMany, (ids, band))),
             (uint256, uint256, uint256, uint256[])
         );
         failedCount = failed.length;
-        closed = p.positionIds.length - failedCount;
-        usdcFromLp = _toUsdc(adapter, t0, out0, p, true) + _toUsdc(adapter, t1, out1, p, false);
+        closed = ids.length - failedCount;
+        usdcFromLp = _toUsdc(adapter, t0, out0, swap, band, deadline, true) + _toUsdc(adapter, t1, out1, swap, band, deadline, false);
 
         _assertUnchanged(t0, beforeT0);
         _assertUnchanged(t1, beforeT1);
@@ -440,20 +607,25 @@ contract StrategyRouter is Peripheral {
         );
     }
 
-    function _toUsdc(ISwapAdapter adapter, address token, uint256 amount, UnwindParams calldata p, bool tokenIsToken0)
-        internal
-        returns (uint256)
-    {
+    function _toUsdc(
+        ISwapAdapter adapter,
+        address token,
+        uint256 amount,
+        SwapQuote calldata swap,
+        PriceBand calldata band,
+        uint256 deadline,
+        bool tokenIsToken0
+    ) internal returns (uint256) {
         if (amount == 0) return 0;
         if (token == USDC) return amount;
-        _requireQuoteInBand(tokenIsToken0, p.swap, p.band);
+        _requireQuoteInBand(tokenIsToken0, swap, band);
         // The adapter's own floor for THIS leg, computed by the code that enforces it. A quote with
         // no numbers is still the adapter's `ZeroQuote` (it reverts here, as it did inside `swap`);
         // a real quote whose floor for a tiny leg rounds to zero USDC means the swap could not be
         // protected — the adapter would refuse it by name and the whole unwind, the keeper's
         // protective one included, would revert for a fee worth less than one USDC unit. The leg
         // is left in the account instead, reported, and the unwind carries on (NI-HIGH-1).
-        if (adapter.minOutFor(amount, p.swap.quotedIn, p.swap.quotedOut, p.swap.maxSlippageBps) == 0) {
+        if (adapter.minOutFor(amount, swap.quotedIn, swap.quotedOut, swap.maxSlippageBps) == 0) {
             emit DustLegKept(msg.sender, token, amount);
             return 0;
         }
@@ -466,11 +638,11 @@ contract StrategyRouter is Peripheral {
                         token,
                         USDC,
                         amount,
-                        p.swap.quotedIn,
-                        p.swap.quotedOut,
-                        p.swap.maxSlippageBps,
-                        p.deadline,
-                        p.swap.routeData
+                        swap.quotedIn,
+                        swap.quotedOut,
+                        swap.maxSlippageBps,
+                        deadline,
+                        swap.routeData
                     )
                 )
             ),

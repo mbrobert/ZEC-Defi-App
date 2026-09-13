@@ -55,8 +55,8 @@ is the short version; encode from the JSON, never from prose.
 
 See `README.md` ("Run every suite") for the commands and `docs/TESTING.md`
 for what each suite proves. Summary for this tree, all counted by running them
-on 2026-09-12 (the counts `docs/TESTING.md` records, evening tree): contracts **388** pass / 0 fail /
-11 fork tests skipped without `FORK_URL` (**11 / 11** pass against Base at block 51,222,568, plus
+on 2026-09-12 (the counts `docs/TESTING.md` records, evening tree): contracts **401** pass / 0 fail /
+12 fork tests skipped without `FORK_URL` (**12 / 12** pass against Base at block 51,222,568 — 2026-09-13 A5.1, plus
 `scripts/check-cbzec-b20.sh`); keeper **269** tests / 52 suites + ABI seam **113/113** + Solana IDL seam
 **77/77**; yield **167**; web **180** unit (179 + 1 skipped) and **14 / 0 / 6** Playwright scenarios; shared
 **85**; Solana seam **7** (program unit **8**, localnet **26**, toolchain needed — `solana/SETUP.md`);

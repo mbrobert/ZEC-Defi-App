@@ -9,6 +9,7 @@ import {SnuggleLpVenue} from "../src/venues/SnuggleLpVenue.sol";
 import {CollateralRegistry} from "../src/registry/CollateralRegistry.sol";
 import {AerodromeSwapAdapter} from "../src/swap/AerodromeSwapAdapter.sol";
 import {StrategyRouter} from "../src/router/StrategyRouter.sol";
+import {IMessageTransmitterV2, ITokenMessengerV2} from "../src/interfaces/ICctpV2.sol";
 import {PythOracleAdapter} from "../src/oracle/PythOracleAdapter.sol";
 import {IPoolAddressesProvider} from "../src/interfaces/IAaveV3.sol";
 import {IMorphoBlue} from "../src/interfaces/IMorphoBlue.sol";
@@ -78,6 +79,14 @@ library BaseAddresses {
     address internal constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
     /// @dev MaxFi / Snuggle engine proxy (AUDIT-FINDINGS-2026-09-03 Part 1, re-verified 2026-09-03).
     address internal constant SNUGGLE_ENGINE = 0x7D27CDfBFcC878F7E7349e216d44204BFd2AFd55;
+    /// @dev Circle's CCTP V2 on Base (VERIFIED-SOLANA-FACTS Addendum 1, block 51,227,239, 2026-09-12; the
+    ///      implementations behind the proxies, the ABI and the domains in Addendum 3, blocks 51,239,874–965,
+    ///      2026-09-13): the messenger the router burns through and its transmitter (`localDomain()` 6),
+    ///      plus Solana's domain — the destination of every `closeLpAndBurn`.
+    address internal constant CCTP_TOKEN_MESSENGER_V2 = 0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d;
+    address internal constant CCTP_MESSAGE_TRANSMITTER_V2 = 0x81D40F21F12A8F0E3252Bccb954D722d4c464B64;
+    uint32 internal constant CCTP_DOMAIN_BASE = 6;
+    uint32 internal constant CCTP_DOMAIN_SOLANA = 5;
 }
 
 /// @title Deploy — the v1 surface on Base.
@@ -89,6 +98,8 @@ library BaseAddresses {
 ///   AERODROME_SWAP_ROUTER    Slipstream SwapRouter — PROBED, not in VERIFIED-BASE-FACTS (required)
 ///   PERFORMANCE_BPS          default 1000  (packages/shared FEES.performanceBps; capped on chain)
 ///   ENTRY_HF_FLOOR_WAD       default 1.25e18 (packages/shared ENTRY_HF_FLOOR, pinned 2026-09-12)
+///   CCTP_TOKEN_MESSENGER_V2  default BaseAddresses (Circle's messenger; 0 turns closeLpAndBurn off)
+///   CCTP_DOMAIN_SOLANA       default 5 (Solana's CCTP domain, VERIFIED-SOLANA-FACTS Addendum 1)
 ///   REGISTRY_TIMELOCK_DELAY  default 172800 (2 days) — the IMMUTABLE delay on replacing an
 ///                            asset's venue. Bounded [1 hours, 30 days] by the registry.
 ///   MORPHO_MARKET_IDS        comma-separated bytes32 market ids for MorphoBlueVenue (default: the
@@ -144,6 +155,10 @@ contract Deploy is Script {
         uint256 pythMaxAge;
         uint256 pythMaxDeviationBps;
         uint32 pythTwapWindow;
+        /// @dev Circle's TokenMessengerV2 for `StrategyRouter.closeLpAndBurn`; zero = the cross-chain loop
+        ///      is off on this deployment (the router refuses the burn by name). And Solana's CCTP domain.
+        address cctpTokenMessenger;
+        uint32 cctpDomainSolana;
         /// @dev CONFIRM_BASE_MAINNET — the explicit opt-in the guard requires on chain id 8453.
         bool confirmBaseMainnet;
         /// @dev ALLOW_ANY_CHAIN — run on a non-Base chain with every address given by env (tests).
@@ -173,6 +188,10 @@ contract Deploy is Script {
     ///         in VERIFIED-BASE-FACTS: re-read before deploying the direct venue.
     error SlipstreamDrift(string what, address expected, address actual);
     error UnexpectedToken(string what);
+    /// @notice The CCTP messenger no longer names the transmitter recorded in VERIFIED-SOLANA-FACTS, or the
+    ///         transmitter's domain / the Solana route is not what was recorded: re-read before deploying.
+    error CctpDrift(string what, address expected, address actual);
+    error CctpDomainDrift(string what, uint32 domain);
     /// @notice On mainnet the fee destination must not be the broadcasting key (audit wave 2, S-LOW-1).
     error TreasuryIsBroadcaster(address treasury);
     /// @notice On mainnet the registry owner must be a contract (a Safe), never an EOA (audit wave 2, S-LOW-1).
@@ -227,6 +246,8 @@ contract Deploy is Script {
         c.pythMaxAge = vm.envOr("PYTH_MAX_AGE", uint256(60));
         c.pythMaxDeviationBps = vm.envOr("PYTH_MAX_DEVIATION_BPS", uint256(300));
         c.pythTwapWindow = uint32(vm.envOr("PYTH_TWAP_WINDOW", uint256(1800)));
+        c.cctpTokenMessenger = vm.envOr("CCTP_TOKEN_MESSENGER_V2", BaseAddresses.CCTP_TOKEN_MESSENGER_V2);
+        c.cctpDomainSolana = uint32(vm.envOr("CCTP_DOMAIN_SOLANA", uint256(BaseAddresses.CCTP_DOMAIN_SOLANA)));
         c.confirmBaseMainnet = vm.envOr("CONFIRM_BASE_MAINNET", false);
         c.allowAnyChain = vm.envOr("ALLOW_ANY_CHAIN", false);
     }
@@ -305,6 +326,23 @@ contract Deploy is Script {
                 revert SlipstreamDrift("pool.factory", BaseAddresses.AERODROME_CL_FACTORY_2, pool.factory());
             }
         }
+        // CCTP, last (an Aave or Slipstream drift is named first): optional — zero = the loop is off — and
+        // when named it must hold code; on Base it must still be the deployment the facts file records
+        // and know the Solana route.
+        if (c.cctpTokenMessenger != address(0)) {
+            _requireCode("CCTP TokenMessengerV2", c.cctpTokenMessenger);
+            if (isBase) {
+                address t = ITokenMessengerV2(c.cctpTokenMessenger).localMessageTransmitter();
+                if (t != BaseAddresses.CCTP_MESSAGE_TRANSMITTER_V2) {
+                    revert CctpDrift("messenger.localMessageTransmitter", BaseAddresses.CCTP_MESSAGE_TRANSMITTER_V2, t);
+                }
+                uint32 dom = IMessageTransmitterV2(t).localDomain();
+                if (dom != BaseAddresses.CCTP_DOMAIN_BASE) revert CctpDomainDrift("transmitter.localDomain", dom);
+                if (ITokenMessengerV2(c.cctpTokenMessenger).remoteTokenMessengers(c.cctpDomainSolana) == bytes32(0)) {
+                    revert CctpDomainDrift("messenger.remoteTokenMessengers", c.cctpDomainSolana);
+                }
+            }
+        }
     }
 
     // ---------------------------------------------------------------- deploy
@@ -348,7 +386,17 @@ contract Deploy is Script {
             direct = ILpVenue(address(d.directLpVenue));
             directSwap = ISwapAdapter(address(d.poolSwapAdapter));
         }
-        d.router = new StrategyRouter(d.registry, d.lpVenue, d.swapAdapter, IPermit2(c.permit2), c.usdc, direct, directSwap);
+        d.router = new StrategyRouter(
+            d.registry,
+            d.lpVenue,
+            d.swapAdapter,
+            IPermit2(c.permit2),
+            c.usdc,
+            direct,
+            directSwap,
+            ITokenMessengerV2(c.cctpTokenMessenger),
+            c.cctpDomainSolana
+        );
         if (c.deployPythAdapter) {
             d.pythAdapter = new PythOracleAdapter(
                 IPyth(c.pyth),

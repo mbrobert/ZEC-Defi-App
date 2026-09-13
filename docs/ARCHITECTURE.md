@@ -44,7 +44,7 @@ flowchart LR
     subgraph Base["Base (chain id 8453) — Oilskin contracts"]
         F[OilskinAccountFactory<br/>CREATE2 · accountOf · createAccountAndExec idempotent]
         A[OilskinAccount<br/>owner = wallet · exec plain / execWithCallback<br/>grant / revoke · execAsKeeper]
-        R[StrategyRouter<br/>stateless · openLeveragedLp · openBorrowOnly · unwind · sweep]
+        R[StrategyRouter<br/>openLeveragedLp · openBorrowOnly · unwind · sweep<br/>openLpOnly · closeLpAndBurn (CCTP V2, D6)]
         REG[CollateralRegistry<br/>Ownable2Step · venue timelock<br/>maxOfferedLtvBps derived]
         AV[AaveV3Venue<br/>entry floor · registry gate]
         LV[SnuggleLpVenue<br/>fee chokepoint · width bounds · price band]
@@ -339,6 +339,27 @@ actually sticks to the router still reverts.
   `BorrowOnlyOpened`. It exists so no product flow ever has a reason to
   hand-build a supply/borrow batch, which is how a first-time user used to open
   at HF 1.07 against an advertised 1.55.
+- `openLpOnly(LpOnlyParams)` — **2026-09-13, BUILD-PLAN D6 / A5.1**: USDC the
+  account already holds — minted into it by Circle's CCTP V2 from the user's own
+  Solana account (the mint needs no signature from the account; anyone delivers
+  the attested message), or any idle USDC — into one Aerodrome position, single-
+  sided, same band / width / delay. No supply, no borrow, `entryHfWad` untouched:
+  the health factor, if the position has one, is the Solana obligation's
+  (`SOLANA-ARCHITECTURE.md` §14). `ZeroAmount`, `UsdcShort(asked, held)`,
+  `PoolWithoutUsdc`, `UnknownPool`, `Expired`.
+- `setSolanaRecipient(bytes32)` — the owner records, through a plain `exec`,
+  the account's USDC token account on Solana as CCTP's `mintRecipient`; zero
+  clears it. A keeper grant for `closeLpAndBurn` cannot move it (no grant
+  names this selector), so a burn can only ever go home.
+- `closeLpAndBurn(BurnParams)` — `unwind`'s close-and-settle leg (the same
+  `ownedPool` rule, band, quote floor and dust-leg rule), then approve Circle's
+  TokenMessengerV2 for exactly the amount → `depositForBurn` to the recorded
+  recipient on Solana's domain → approve zero, all as the account. Native USDC
+  is burned here and minted there. The keeper's rung action for a cross-chain
+  position (rungs 3–4, and rung 2 when the Solana-side reserve is short), under
+  a grant whose USDC budget the approve is charged against; the owner's way
+  home. `CrossChainDisabled` on a deployment built without a messenger (Base
+  Sepolia), `NoSolanaRecipient`, `MaxFeeNotBelowAmount`, `UsdcShort`, `ZeroAmount`.
 - `unwind(UnwindParams)`: works on **disabled assets** (exits are never gated
   on the asset flag) but not through a **disabled venue** (`VenueDisabled` — a
   venue that reports itself off is not code to delegate an account to; the

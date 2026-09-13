@@ -9,6 +9,7 @@ import {ICollateralVenue} from "../src/interfaces/ICollateralVenue.sol";
 import {ILpVenue, PriceBand} from "../src/interfaces/ILpVenue.sol";
 import {ISwapAdapter} from "../src/interfaces/ISwapAdapter.sol";
 import {StrategyRouter} from "../src/router/StrategyRouter.sol";
+import {ITokenMessengerV2} from "../src/interfaces/ICctpV2.sol";
 import {AerodromeSwapAdapter} from "../src/swap/AerodromeSwapAdapter.sol";
 import {MockPermit2} from "./mocks/MockPermit2.sol";
 import {MockAerodromeSwapRouter} from "./mocks/MockAerodromeSwapRouter.sol";
@@ -527,14 +528,14 @@ contract StrategyRouterTest is Fixture {
 
     function test_routerConstructorRejectsZero() public {
         vm.expectRevert(StrategyRouter.ZeroAddress.selector);
-        new StrategyRouter(registry, lpVenue, swapAdapter, permit2, address(0), ILpVenue(address(0)), ISwapAdapter(address(0)));
+        new StrategyRouter(registry, lpVenue, swapAdapter, permit2, address(0), ILpVenue(address(0)), ISwapAdapter(address(0)), ITokenMessengerV2(address(0)), 0);
         // The direct venue and its adapter come together or not at all.
         vm.expectRevert(StrategyRouter.ZeroAddress.selector);
-        new StrategyRouter(registry, lpVenue, swapAdapter, permit2, address(usdc), ILpVenue(address(directVenue)), ISwapAdapter(address(0)));
+        new StrategyRouter(registry, lpVenue, swapAdapter, permit2, address(usdc), ILpVenue(address(directVenue)), ISwapAdapter(address(0)), ITokenMessengerV2(address(0)), 0);
         vm.expectRevert(StrategyRouter.ZeroAddress.selector);
-        new StrategyRouter(registry, lpVenue, swapAdapter, permit2, address(usdc), ILpVenue(address(0)), ISwapAdapter(address(poolSwapAdapter)));
+        new StrategyRouter(registry, lpVenue, swapAdapter, permit2, address(usdc), ILpVenue(address(0)), ISwapAdapter(address(poolSwapAdapter)), ITokenMessengerV2(address(0)), 0);
         // Without them the router serves the engine venue only.
-        StrategyRouter bare = new StrategyRouter(registry, lpVenue, swapAdapter, permit2, address(usdc), ILpVenue(address(0)), ISwapAdapter(address(0)));
+        StrategyRouter bare = new StrategyRouter(registry, lpVenue, swapAdapter, permit2, address(usdc), ILpVenue(address(0)), ISwapAdapter(address(0)), ITokenMessengerV2(address(0)), 0);
         assertEq(address(bare.LP_VENUE_DIRECT()), address(0));
     }
 

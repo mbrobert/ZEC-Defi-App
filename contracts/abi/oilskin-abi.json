@@ -7657,6 +7657,11 @@
     "StrategyRouter": {
       "name": "StrategyRouter",
       "functions": {
+        "CCTP_MESSENGER()": {
+          "selector": "0x3ee4e060",
+          "stateMutability": "view",
+          "outputs": "address"
+        },
         "LP_VENUE()": {
           "selector": "0xbe14899f",
           "stateMutability": "view",
@@ -7677,6 +7682,11 @@
           "stateMutability": "view",
           "outputs": "address"
         },
+        "SOLANA_DOMAIN()": {
+          "selector": "0x4191ea87",
+          "stateMutability": "view",
+          "outputs": "uint32"
+        },
         "SWAP()": {
           "selector": "0x04d84108",
           "stateMutability": "view",
@@ -7692,6 +7702,11 @@
           "stateMutability": "view",
           "outputs": "address"
         },
+        "closeLpAndBurn((uint256[],(uint160,uint160),(uint256,uint256,uint16,bytes),uint256,uint256,uint32,uint256))": {
+          "selector": "0xc01c93d7",
+          "stateMutability": "nonpayable",
+          "outputs": "uint256,uint256"
+        },
         "entryHfWad(address)": {
           "selector": "0xd4889f0d",
           "stateMutability": "view",
@@ -7706,6 +7721,21 @@
           "selector": "0x3c2639d6",
           "stateMutability": "nonpayable",
           "outputs": "uint256,uint256"
+        },
+        "openLpOnly((uint256,bytes32,uint24,uint64,bool,(uint160,uint160),uint256))": {
+          "selector": "0x7d24b87e",
+          "stateMutability": "nonpayable",
+          "outputs": "uint256"
+        },
+        "setSolanaRecipient(bytes32)": {
+          "selector": "0xf182211c",
+          "stateMutability": "nonpayable",
+          "outputs": ""
+        },
+        "solanaRecipient(address)": {
+          "selector": "0x1986f661",
+          "stateMutability": "view",
+          "outputs": "bytes32"
         },
         "sweep(address[])": {
           "selector": "0x780469bb",
@@ -7724,6 +7754,19 @@
           "indexed": [
             true,
             true,
+            false,
+            false,
+            false
+          ]
+        },
+        "BurnedToSolana(address,uint256,bytes32,uint256,uint32,uint256,uint256,uint256)": {
+          "topic0": "0x87cda9b4eb695905af05021ae2f1040629a918ebcba48c58f20cf2d7c9b49275",
+          "indexed": [
+            true,
+            false,
+            true,
+            false,
+            false,
             false,
             false,
             false
@@ -7769,6 +7812,22 @@
             false
           ]
         },
+        "LpOnlyOpened(address,uint256,bytes32,uint256)": {
+          "topic0": "0x1a6874c04bb8aec0b89e1447835856c781395dae76b7da104d375e913be82629",
+          "indexed": [
+            true,
+            false,
+            true,
+            false
+          ]
+        },
+        "SolanaRecipientSet(address,bytes32)": {
+          "topic0": "0xf088ad1a8925c9f8781f8cd578a6e9acbd8581e8d9da86ec491339cd17a136fc",
+          "indexed": [
+            true,
+            false
+          ]
+        },
         "Swept(address,address,address,uint256)": {
           "topic0": "0xddb9e887767e767a0e6a62c15b95f9f09e40e04427f78be916fdf478da1dbc23",
           "indexed": [
@@ -7808,6 +7867,9 @@
         "CollateralShort(uint256,uint256)": {
           "selector": "0xb73f0d17"
         },
+        "CrossChainDisabled()": {
+          "selector": "0x8ecd0542"
+        },
         "EntryHfTooLow(uint256,uint256)": {
           "selector": "0xd40fd174"
         },
@@ -7816,6 +7878,12 @@
         },
         "Expired(uint256)": {
           "selector": "0xf80dbaea"
+        },
+        "MaxFeeNotBelowAmount(uint256,uint256)": {
+          "selector": "0x78b7d035"
+        },
+        "NoSolanaRecipient(address)": {
+          "selector": "0x6c99c2d5"
         },
         "PoolWithoutUsdc(bytes32)": {
           "selector": "0x3a20909e"
@@ -7829,11 +7897,17 @@
         "UnknownPool(bytes32)": {
           "selector": "0x180b8555"
         },
+        "UsdcShort(uint256,uint256)": {
+          "selector": "0xfa82ac0c"
+        },
         "VenueDisabled(address)": {
           "selector": "0x251897fd"
         },
         "ZeroAddress()": {
           "selector": "0xd92e233d"
+        },
+        "ZeroAmount()": {
+          "selector": "0x1f2a2005"
         },
         "ZeroBorrow()": {
           "selector": "0x774257f7"
@@ -7877,9 +7951,32 @@
               "name": "swapAdapterDirect",
               "type": "address",
               "internalType": "contract ISwapAdapter"
+            },
+            {
+              "name": "cctpMessenger",
+              "type": "address",
+              "internalType": "contract ITokenMessengerV2"
+            },
+            {
+              "name": "solanaDomain",
+              "type": "uint32",
+              "internalType": "uint32"
             }
           ],
           "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "CCTP_MESSENGER",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "address",
+              "internalType": "contract ITokenMessengerV2"
+            }
+          ],
+          "stateMutability": "view"
         },
         {
           "type": "function",
@@ -7935,6 +8032,19 @@
         },
         {
           "type": "function",
+          "name": "SOLANA_DOMAIN",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint32",
+              "internalType": "uint32"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
           "name": "SWAP",
           "inputs": [],
           "outputs": [
@@ -7971,6 +8081,101 @@
             }
           ],
           "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "closeLpAndBurn",
+          "inputs": [
+            {
+              "name": "p",
+              "type": "tuple",
+              "internalType": "struct StrategyRouter.BurnParams",
+              "components": [
+                {
+                  "name": "positionIds",
+                  "type": "uint256[]",
+                  "internalType": "uint256[]"
+                },
+                {
+                  "name": "band",
+                  "type": "tuple",
+                  "internalType": "struct PriceBand",
+                  "components": [
+                    {
+                      "name": "minSqrtPriceX96",
+                      "type": "uint160",
+                      "internalType": "uint160"
+                    },
+                    {
+                      "name": "maxSqrtPriceX96",
+                      "type": "uint160",
+                      "internalType": "uint160"
+                    }
+                  ]
+                },
+                {
+                  "name": "swap",
+                  "type": "tuple",
+                  "internalType": "struct StrategyRouter.SwapQuote",
+                  "components": [
+                    {
+                      "name": "quotedIn",
+                      "type": "uint256",
+                      "internalType": "uint256"
+                    },
+                    {
+                      "name": "quotedOut",
+                      "type": "uint256",
+                      "internalType": "uint256"
+                    },
+                    {
+                      "name": "maxSlippageBps",
+                      "type": "uint16",
+                      "internalType": "uint16"
+                    },
+                    {
+                      "name": "routeData",
+                      "type": "bytes",
+                      "internalType": "bytes"
+                    }
+                  ]
+                },
+                {
+                  "name": "burnAmount",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                },
+                {
+                  "name": "maxFee",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                },
+                {
+                  "name": "minFinalityThreshold",
+                  "type": "uint32",
+                  "internalType": "uint32"
+                },
+                {
+                  "name": "deadline",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                }
+              ]
+            }
+          ],
+          "outputs": [
+            {
+              "name": "usdcFromLp",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "burned",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "nonpayable"
         },
         {
           "type": "function",
@@ -8161,6 +8366,106 @@
         },
         {
           "type": "function",
+          "name": "openLpOnly",
+          "inputs": [
+            {
+              "name": "p",
+              "type": "tuple",
+              "internalType": "struct StrategyRouter.LpOnlyParams",
+              "components": [
+                {
+                  "name": "usdcAmount",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                },
+                {
+                  "name": "poolId",
+                  "type": "bytes32",
+                  "internalType": "bytes32"
+                },
+                {
+                  "name": "rangeWidthBps",
+                  "type": "uint24",
+                  "internalType": "uint24"
+                },
+                {
+                  "name": "rebalanceDelay",
+                  "type": "uint64",
+                  "internalType": "uint64"
+                },
+                {
+                  "name": "autoCompound",
+                  "type": "bool",
+                  "internalType": "bool"
+                },
+                {
+                  "name": "band",
+                  "type": "tuple",
+                  "internalType": "struct PriceBand",
+                  "components": [
+                    {
+                      "name": "minSqrtPriceX96",
+                      "type": "uint160",
+                      "internalType": "uint160"
+                    },
+                    {
+                      "name": "maxSqrtPriceX96",
+                      "type": "uint160",
+                      "internalType": "uint160"
+                    }
+                  ]
+                },
+                {
+                  "name": "deadline",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                }
+              ]
+            }
+          ],
+          "outputs": [
+            {
+              "name": "positionId",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "setSolanaRecipient",
+          "inputs": [
+            {
+              "name": "recipient",
+              "type": "bytes32",
+              "internalType": "bytes32"
+            }
+          ],
+          "outputs": [],
+          "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "solanaRecipient",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "recipient",
+              "type": "bytes32",
+              "internalType": "bytes32"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
           "name": "sweep",
           "inputs": [
             {
@@ -8307,6 +8612,61 @@
             },
             {
               "name": "healthFactor",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "event",
+          "name": "BurnedToSolana",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            },
+            {
+              "name": "recipient",
+              "type": "bytes32",
+              "indexed": true,
+              "internalType": "bytes32"
+            },
+            {
+              "name": "maxFee",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            },
+            {
+              "name": "minFinalityThreshold",
+              "type": "uint32",
+              "indexed": false,
+              "internalType": "uint32"
+            },
+            {
+              "name": "closed",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            },
+            {
+              "name": "failedCount",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            },
+            {
+              "name": "usdcFromLp",
               "type": "uint256",
               "indexed": false,
               "internalType": "uint256"
@@ -8464,6 +8824,56 @@
         },
         {
           "type": "event",
+          "name": "LpOnlyOpened",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "usdcAmount",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            },
+            {
+              "name": "poolId",
+              "type": "bytes32",
+              "indexed": true,
+              "internalType": "bytes32"
+            },
+            {
+              "name": "positionId",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "event",
+          "name": "SolanaRecipientSet",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "recipient",
+              "type": "bytes32",
+              "indexed": false,
+              "internalType": "bytes32"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "event",
           "name": "Swept",
           "inputs": [
             {
@@ -8599,6 +9009,11 @@
         },
         {
           "type": "error",
+          "name": "CrossChainDisabled",
+          "inputs": []
+        },
+        {
+          "type": "error",
           "name": "EntryHfTooLow",
           "inputs": [
             {
@@ -8637,6 +9052,33 @@
               "name": "deadline",
               "type": "uint256",
               "internalType": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "MaxFeeNotBelowAmount",
+          "inputs": [
+            {
+              "name": "maxFee",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "NoSolanaRecipient",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "internalType": "address"
             }
           ]
         },
@@ -8706,6 +9148,22 @@
         },
         {
           "type": "error",
+          "name": "UsdcShort",
+          "inputs": [
+            {
+              "name": "asked",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "held",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
           "name": "VenueDisabled",
           "inputs": [
             {
@@ -8718,6 +9176,11 @@
         {
           "type": "error",
           "name": "ZeroAddress",
+          "inputs": []
+        },
+        {
+          "type": "error",
+          "name": "ZeroAmount",
           "inputs": []
         },
         {

@@ -31,7 +31,10 @@ built in full — never a "lite" notify-only variant — and launched together:
   crosses to the user's own Base account by Circle's CCTP V2 (Cross-Chain
   Transfer Protocol; mintRecipient = the user's `OilskinAccount`) and goes
   into Aerodrome; a Solana-side USDC reserve keeps the repay rung atomic on
-  Solana. Not built yet (BUILD-PLAN A5, B3's burn, Stream C).
+  Solana. The Base half is built (2026-09-13, A5.1: `StrategyRouter.openLpOnly`,
+  `setSolanaRecipient`, `closeLpAndBurn`; design `SOLANA-ARCHITECTURE.md` §14);
+  the Solana burn and reserve (B3), the keeper's cross-chain class (A5.2) and
+  Stream C are not.
 
 The yield model is a **forecast, not a gate** (D4, D5): every curated pool is
 depositable in both modes after the user sees the forecast and acknowledges

@@ -53,6 +53,24 @@ liquidity provision; EIP = Ethereum Improvement Proposal.
   regenerations older); the hour-after pool observation moved into Addendum 14, which the top now cites.
   Levers unchanged (×12.2 inside ×12.16–×12.25; ×8.67 inside ×7.06–×10.23).
 
+## 2026-09-13 — A5.1: the cross-chain receiving side on Base — `openLpOnly`, `setSolanaRecipient`, `closeLpAndBurn`
+
+- **`StrategyRouter`** (BUILD-PLAN D6 / A5; design `SOLANA-ARCHITECTURE.md` §14): `openLpOnly` puts USDC the
+  account already holds — minted into it by Circle's CCTP V2 from the user's Solana account, with no signature
+  from the account — into one Aerodrome position with no supply, no borrow and no entry-HF record;
+  `setSolanaRecipient` lets the owner record the account's USDC token account on Solana as the one place a
+  burn may go; `closeLpAndBurn` runs `unwind`'s close-and-settle leg then approve-exact → `depositForBurn`
+  → approve-zero on Circle's TokenMessengerV2, so a keeper grant's USDC budget bounds what leaves and no key
+  can redirect it. Two immutables (`CCTP_MESSENGER`, `SOLANA_DOMAIN`; zero = the loop is off, as on Base
+  Sepolia), three events, five errors; `_closeAndSettle` / `_toUsdc` take the leg's inputs instead of
+  `UnwindParams` (semantics unchanged; the NI-HIGH-1 dust-leg rule stands).
+- **`interfaces/ICctpV2.sol`** transcribed from the verified implementations (Addendum 3); `Deploy.s.sol`
+  carries the messenger, transmitter and domains from the facts file, guards them last (`CctpDrift`,
+  `CctpDomainDrift`), and `DeploySepolia` turns the loop off. **`test/mocks/MockCctpV2.sol`**: the transmitter
+  and messenger doubles building and parsing the V2 message byte for byte (a real burn on the mock USDC).
+- Suites: contracts 388 → **401** / 0 / 12 skipped (34 suites); fork **12 / 12** at block 51,222,568 (one real
+  `depositForBurn` from an account, native USDC burned); ABI 426 → **440**; keeper seam 113 / 113.
+
 ## 2026-09-13 — Shared: the integer ladder twin, the cross-chain reserve rule, the CCTP V2 constants
 
 - **`packages/shared/src/health.ts`**: `ladderBpsFor(entryHfBps)` / `hysteresisBpsFor` — `ladderFor` in

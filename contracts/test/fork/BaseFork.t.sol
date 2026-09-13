@@ -24,6 +24,8 @@ import {ISwapAdapter} from "../../src/interfaces/ISwapAdapter.sol";
 import {ISlipstreamGauge, ISlipstreamNpm, ISlipstreamPool, ISlipstreamVoter} from "../../src/interfaces/ISlipstream.sol";
 import {SlipstreamLpVenue} from "../../src/venues/SlipstreamLpVenue.sol";
 import {SlipstreamPoolSwapAdapter} from "../../src/swap/SlipstreamPoolSwapAdapter.sol";
+import {Call} from "../../src/interfaces/IOilskinAccount.sol";
+import {IMessageTransmitterV2, ITokenMessengerV2} from "../../src/interfaces/ICctpV2.sol";
 
 /// @title BaseFork — the tests that can only be true against the chain (Part 6 lesson 2: "verify
 ///        the external contract against the chain, not against your own mock").
@@ -733,5 +735,57 @@ contract BaseForkTest is Test {
         assertTrue(ISlipstreamVoter(BaseAddresses.AERODROME_VOTER).isAlive(address(gauge)), "alive at the read");
         console2.log("cbZEC/USDC gauge rewardRate / periodFinish", gauge.rewardRate(), gauge.periodFinish());
         assertEq(venue.positionsOf(address(acct)).length, 0, "a fresh account holds nothing there");
+    }
+
+    // -------------------------------------------------------------- CCTP V2 (BUILD-PLAN D6 / A5)
+
+    /// @notice The burn leg of `StrategyRouter.closeLpAndBurn` against Circle's REAL TokenMessengerV2, as
+    ///         the account executes it (approve exact → depositForBurn → approve zero): native USDC is
+    ///         burned (the supply falls), Circle's own `DepositForBurn` names our recipient and Solana's
+    ///         domain, and the messenger still names the transmitter and the Solana route the facts file
+    ///         records (VERIFIED-SOLANA-FACTS Addenda 1 and 3). No router is built here — the fork setUp
+    ///         has no swap adapter — so this is the leg, not the entry point; the entry point is
+    ///         `StrategyRouterCrossChain.t.sol` against the doubles.
+    function test_fork_cctpV2_theAccountsBurnLegBurnsNativeUsdcToASolanaRecipient() public onlyForked {
+        ITokenMessengerV2 m = ITokenMessengerV2(BaseAddresses.CCTP_TOKEN_MESSENGER_V2);
+        IMessageTransmitterV2 t = IMessageTransmitterV2(BaseAddresses.CCTP_MESSAGE_TRANSMITTER_V2);
+        assertEq(m.localMessageTransmitter(), address(t), "the messenger names the recorded transmitter");
+        assertEq(t.localDomain(), BaseAddresses.CCTP_DOMAIN_BASE);
+        assertEq(t.version(), 1);
+        assertEq(m.messageBodyVersion(), 1);
+        assertEq(
+            m.remoteTokenMessengers(BaseAddresses.CCTP_DOMAIN_SOLANA),
+            0xa65fc81d0fefa8860cb3b83f089b0224be8a6687b7ae49f594c0b9b4d7e93893,
+            "domain 5 is Solana's TokenMessengerMinterV2, base58-decoded"
+        );
+        assertFalse(m.isDenylisted(address(acct)));
+        assertFalse(t.paused());
+
+        uint256 amount = 1_000e6;
+        uint256 maxFee = 2e6; // 20 bp, above the 1.3 bp Fast minimum recorded 2026-09-12
+        bytes32 recipient = 0x2222222222222222222222222222222222222222222222222222222222222222;
+        deal(BaseAddresses.USDC, address(acct), amount);
+        uint256 supply = IERC20(BaseAddresses.USDC).totalSupply();
+
+        Call[] memory calls = new Call[](3);
+        calls[0] = Call({target: BaseAddresses.USDC, value: 0, data: abi.encodeCall(IERC20.approve, (address(m), amount)), callback: false});
+        calls[1] = Call({
+            target: address(m),
+            value: 0,
+            data: abi.encodeCall(
+                ITokenMessengerV2.depositForBurn,
+                (amount, BaseAddresses.CCTP_DOMAIN_SOLANA, recipient, BaseAddresses.USDC, bytes32(0), maxFee, 1000)
+            ),
+            callback: false
+        });
+        calls[2] = Call({target: BaseAddresses.USDC, value: 0, data: abi.encodeCall(IERC20.approve, (address(m), 0)), callback: false});
+        vm.expectEmit(true, true, true, false, address(m));
+        emit ITokenMessengerV2.DepositForBurn(BaseAddresses.USDC, amount, address(acct), recipient, 5, bytes32(0), bytes32(0), maxFee, 1000, "");
+        vm.prank(alice);
+        acct.execBatch(calls);
+
+        assertEq(IERC20(BaseAddresses.USDC).balanceOf(address(acct)), 0, "the USDC left the account");
+        assertEq(IERC20(BaseAddresses.USDC).totalSupply(), supply - amount, "burned, not moved: the supply fell by the amount");
+        assertEq(IERC20(BaseAddresses.USDC).allowance(address(acct), address(m)), 0, "approval reset");
     }
 }

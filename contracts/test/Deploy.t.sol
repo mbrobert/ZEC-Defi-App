@@ -41,6 +41,8 @@ contract DeployTest is Fixture {
         c.performanceBps = 1000;
         c.entryHfFloorWad = 1.25e18;
         c.registryTimelockDelay = REGISTRY_TIMELOCK;
+        c.cctpTokenMessenger = address(cctpMessenger);
+        c.cctpDomainSolana = CCTP_DOMAIN_SOLANA;
         // The fixture chain is 31337: opt in by default; the mainnet tests set what they need.
         c.allowAnyChain = true;
         c.confirmBaseMainnet = false;
@@ -58,6 +60,11 @@ contract DeployTest is Fixture {
         assertEq(BaseAddresses.PERMIT2, 0x000000000022D473030F116dDEE9F6B43aC78BA3);
         assertEq(BaseAddresses.SNUGGLE_ENGINE, 0x7D27CDfBFcC878F7E7349e216d44204BFd2AFd55);
         assertEq(BaseAddresses.AERODROME_CBZEC_USDC_POOL, 0x0Fc47C17AF86078d809358db1b4db2DeBC988566);
+        // VERIFIED-SOLANA-FACTS Addenda 1 and 3 (CCTP V2 on Base, the domains)
+        assertEq(BaseAddresses.CCTP_TOKEN_MESSENGER_V2, 0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d);
+        assertEq(BaseAddresses.CCTP_MESSAGE_TRANSMITTER_V2, 0x81D40F21F12A8F0E3252Bccb954D722d4c464B64);
+        assertEq(BaseAddresses.CCTP_DOMAIN_BASE, 6);
+        assertEq(BaseAddresses.CCTP_DOMAIN_SOLANA, 5);
     }
 
     function test_guardRefusesUnknownChainWithoutOptIn() public {
@@ -183,6 +190,8 @@ contract DeployTest is Fixture {
         assertEq(address(d.router.LP_VENUE()), address(d.lpVenue));
         assertEq(address(d.router.SWAP()), address(d.swapAdapter));
         assertEq(d.router.USDC(), address(usdc));
+        assertEq(address(d.router.CCTP_MESSENGER()), address(cctpMessenger), "the CCTP messenger, for closeLpAndBurn");
+        assertEq(d.router.SOLANA_DOMAIN(), 5);
         assertEq(address(d.pythAdapter), address(0), "v1.1 adapter not deployed by default");
         // 2026-09-11: the direct Slipstream venue over the cbZEC/USDC pool, bound to the pool's own
         // manager and gauge, its adapter bound to the same pool, both handed to the router.
@@ -196,6 +205,23 @@ contract DeployTest is Fixture {
         assertEq(d.directLpVenue.REWARD_TOKEN(), address(aero));
         assertEq(d.directLpVenue.treasury(), treasury);
         assertEq(d.directLpVenue.performanceBps(), 1000);
+    }
+
+    function test_deployWithoutCctpTurnsTheCrossChainLoopOff() public {
+        Deploy.Config memory c = _config();
+        c.cctpTokenMessenger = address(0);
+        c.cctpDomainSolana = 0;
+        script.guard(c);
+        Deploy.Deployed memory d = script.deploy(c);
+        assertEq(address(d.router.CCTP_MESSENGER()), address(0));
+        assertEq(d.router.SOLANA_DOMAIN(), 0);
+    }
+
+    function test_guardRequiresCodeAtANamedCctpMessenger() public {
+        Deploy.Config memory c = _config();
+        c.cctpTokenMessenger = makeAddrView("no-code-messenger");
+        vm.expectRevert(abi.encodeWithSelector(Deploy.NoCode.selector, "CCTP TokenMessengerV2", c.cctpTokenMessenger));
+        script.guard(c);
     }
 
     function test_deployWithoutTheDirectVenueLeavesTheRouterOnTheEngineOnly() public {
