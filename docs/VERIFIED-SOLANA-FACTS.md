@@ -502,3 +502,68 @@ mint rather than clone Circle's authority.
    the wallet that signed.
 2. `feeExecuted` against `maxFee` at delivery — still open (Stream C, devnet ↔ Sepolia).
 3. The multisig signers — still open.
+
+## Addendum 4 (2026-09-13 14:41–14:45 UTC) · CCTP V2 — the RECEIVE side on Solana and Circle's attestation service
+
+Addendum 3 settled the burn. This one settles what happens to the message afterwards, for Stream C: the
+accounts `receive_message` needs on Solana, and the shape of Circle's attestation answer read against a real
+transfer. CCTP = Circle's Cross-Chain Transfer Protocol; PDA = program-derived address; ATA = associated token
+account.
+
+### The receive-side accounts (seeds from Circle's source; derived and read, `finalized`, slot **446,728,203**)
+
+`MessageTransmitterV2.receive_message(message, attestation)` takes: `payer` (signer, mut), `caller` (signer),
+`authority_pda`, `message_transmitter`, `used_nonce` (**init** — `["used_nonce", the message's 32-byte nonce]`),
+`receiver` (executable, not the transmitter itself), `system_program`, the Anchor `#[event_cpi]` pair, then the
+receiver's own accounts as **remaining accounts**. It verifies the attestation, records the nonce, and CPIs into
+the receiver — `handle_receive_finalized_message` when `finalityThresholdExecuted ≥ 2000`, the *unfinalized*
+handler below it.
+
+| Account | Seeds (program) | Address | Read |
+|---|---|---|---|
+| `authority_pda` | `["message_transmitter_authority", TokenMessengerMinterV2]` (MessageTransmitterV2), bump 255 | `DsAdX23SVpTPYhKP2ua1mx8gTPqLyzx7a43cyxYjS2up` | no account — a signing PDA (expected) |
+| `token_pair` (Base USDC) | `["token_pair", "6", Base USDC as bytes32]` (TMM), bump 251 | `3udrkuozTYGBVMyMdxmXWVTUrnpmSh7kEZiq67A8jTws` | 77 bytes; `remote_domain` **6**, `remote_token` `0x…833589fc…2913`, `local_token` = the USDC local token of Addendum 3 |
+| `custody_token_account` | `["custody", USDC mint]` (TMM), bump 255 | `6xTBTqJMBr5m7BKqVxmW2x11DfqUwtD3TJsqpxELx72L` | an SPL **token account** (165 bytes) holding **50,130,046.985279 USDC** |
+| `fee_recipient_token_account` | ATA(`token_messenger.fee_recipient`, USDC) | `6zNSMmZGMhNyqZMHkx2L63DLuqh5qoqBhaQJPJD7Fvt3` | exists, 165 bytes, balance 0 at the read |
+| MessageTransmitterV2 `__event_authority` | `["__event_authority"]` | `2PcXTomVAbX5Es1NUZUkxwuCm8tvV4NmRk3fmQWFCWoV` | signing PDA |
+| TokenMessengerMinterV2 `__event_authority` | `["__event_authority"]` | `6TCCnJ9R1m1RXFzyoH7GYH2J6NJDtZaUvfipPuLWxHNd` | signing PDA |
+
+**`token_messenger` decoded** (the 177-byte account of Addendum 3): `message_body_version` **1**,
+`authority_bump` **254**, `min_fee` **0**, `denylister` `7dT4WrwkfZXrgP7dxt6oDpiL3fNEGRwciY8o2pCTrYkm`, `owner`
+`4GiscJFQXMibpSXDRK8YFpX5SGXLVjWGJBCB9Ls7FZEs`, `fee_recipient` `4BPnUzFDibVcWQ5zzixGodRUHwqDxHYpUPdPYus3Bn56`,
+`min_fee_controller` `5UzrTqTFDELUqbB2UNVhtTJCKarivMrkQxJoDeJ48yyv`.
+
+**What the custody account settles.** CCTP does **not** mint USDC on Solana on delivery — it pays out of a
+custody token account it already holds, so the 2-of-4 mint multisig of Addendum 3 is irrelevant to a receive.
+A localnet delivery therefore needs the custody account cloned and funded, not a mint authority.
+
+**`message_transmitter` attesters** (same account, decoded): `signature_threshold` **2**, enabled attesters
+`0x725b06f73ff761ef5390e39315e2bfbf60d33f96` and `0x52ed4cbff8dce6a19748043f3240ec03c834bcef` — 20-byte
+Ethereum addresses stored right-aligned in a 32-byte field. Circle's program recovers each signature with
+`secp256k1_recover` over the message hash and requires the recovered signers to be **strictly ascending**.
+
+### Circle's attestation service, read against a real transfer (2026-09-13 14:45 UTC)
+
+`GET https://iris-api.circle.com/v2/messages/{sourceDomain}?transactionHash=…` (or `?nonce=…`); the sandbox is
+`https://iris-api-sandbox.circle.com`. Read for Base burn
+`0xa9cb69894a97d99530c1274e8d8c7e7b148fc1b0e8b57a7ba267f5ed4ac32737` (block 51,260,534), recorded verbatim in
+`docs/research/cctp-attestation-a9cb6989.json`.
+
+Answer: `{ messages: [ { attestation, message, eventNonce, cctpVersion, status, decodedMessage, delayReason } ],
+sourceTxHash }`. On that transfer: `status` **"complete"**, `cctpVersion` **2**, the attestation **130 bytes =
+2 × 65** (the threshold), the message **464 bytes** (148 header + 228 body + 88 of hook data), `maxFee` 1,557
+and **`feeExecuted` 1,298** — the first live observation that the executed fee lands below the burn's bound
+(Addendum 3's open item 2). Numeric fields come back as **strings**.
+
+**The finding that shapes the code: `decodedMessage` is null-filled for a non-EVM destination.** That transfer
+went to domain 27, and Circle returned `recipient`, `destinationCaller` and `decodedMessageBody.mintRecipient`
+as **`null`** while the raw `message` carried them perfectly. A Solana-bound burn (domain 5) is non-EVM the same
+way. So the keeper decodes the raw bytes with `packages/shared` `decodeCctpBurnMessageV2` and matches nonce,
+recipient, amount and domain itself (`parseAttestationResponse`); Circle's decoded fields are never trusted. Our
+decoder reproduces Circle's own numbers on that message exactly — nonce, both domains, amount and fee all agree.
+
+### Not verified by this addendum
+
+1. A delivery actually executed (no Solana-bound Oilskin burn exists yet); the localnet spec mocks the
+   transmitter because an attestation needs Circle's attester keys.
+2. Circle's Fast Transfer wall-clock time (Addendum 1's open item stands).

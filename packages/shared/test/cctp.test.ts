@@ -1,4 +1,5 @@
-import { test } from "node:test";
+import {
+  test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
@@ -16,6 +17,13 @@ import {
   isChecksumAddress,
   keccak256Hex,
   type CctpBurnMessageV2,
+  CCTP_V2_SOLANA_RECEIVE,
+  CCTP_ATTESTATION_SIGNATURE_BYTES,
+  CCTP_SIGNATURE_THRESHOLD,
+  CCTP_IRIS,
+  attestationPathByTx,
+  attestationPathByNonce,
+  parseAttestationResponse,
 } from "../dist/index.js";
 
 const facts = readFileSync(new URL("../../../docs/VERIFIED-SOLANA-FACTS.md", import.meta.url), "utf8");
@@ -117,4 +125,99 @@ test("a V2 burn message encodes at the documented offsets (148 + 228 bytes) and 
   const v2 = new Uint8Array(bytes);
   v2[3] = 2;
   assert.throws(() => decodeCctpBurnMessageV2(v2), /not the pinned V2/);
+});
+
+// --------------------------------------------------------------------- the receive side (Addendum 4)
+
+const recorded = JSON.parse(readFileSync(new URL("../../../docs/research/cctp-attestation-a9cb6989.json", import.meta.url), "utf8")) as {
+  messages: { message: `0x${string}`; attestation: `0x${string}`; eventNonce: `0x${string}`; status: string; decodedMessage: Record<string, unknown> }[];
+};
+const recordedMsg = recorded.messages[0]!;
+const recordedDecoded = decodeCctpBurnMessageV2(Uint8Array.from(Buffer.from(recordedMsg.message.slice(2), "hex")));
+const toHex = (b: Uint8Array) => ("0x" + Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("")) as `0x${string}`;
+/** The burn that recorded response belongs to, as the keeper would have recorded it at send time. */
+const recordedExpectation = {
+  nonce: recordedMsg.eventNonce,
+  mintRecipient: toHex(recordedDecoded.body.mintRecipient),
+  amount: recordedDecoded.body.amount,
+  destinationDomain: recordedDecoded.destinationDomain,
+};
+
+test("every receive-side address is in VERIFIED-SOLANA-FACTS.md (Addendum 4), and the constants are Circle's", () => {
+  for (const p of Object.values(CCTP_V2_SOLANA_RECEIVE.pdas)) assert.ok(facts.includes(p), `${p} not in the facts file`);
+  assert.equal(CCTP_V2_SOLANA_RECEIVE.seeds.usedNonce, "used_nonce");
+  assert.equal(CCTP_V2_SOLANA_RECEIVE.seeds.messageTransmitterAuthority, "message_transmitter_authority");
+  assert.equal(CCTP_V2_SOLANA_RECEIVE.finalizedThreshold, CCTP_FINALITY.standard, "Circle's finalized boundary is the standard threshold");
+  assert.equal(CCTP_V2_SOLANA_RECEIVE.messageBodyVersion, 1);
+  assert.equal(CCTP_V2_SOLANA_RECEIVE.authorityBump, 254);
+  assert.equal(CCTP_ATTESTATION_SIGNATURE_BYTES, 65);
+  assert.equal(CCTP_SIGNATURE_THRESHOLD, 2);
+  assert.deepEqual(CCTP_V2_SOLANA_RECEIVE.receiveMessageParams, ["message:bytes", "attestation:bytes"]);
+});
+
+test("the attestation paths are Circle's, and a malformed hash or domain is refused rather than sent", () => {
+  const tx = "0xA9CB69894A97D99530C1274E8D8C7E7B148FC1B0E8B57A7BA267F5ED4AC32737";
+  assert.equal(attestationPathByTx(CCTP_DOMAINS.base, tx), `/v2/messages/6?transactionHash=${tx.toLowerCase()}`);
+  assert.equal(attestationPathByNonce(CCTP_DOMAINS.base, recordedMsg.eventNonce), `/v2/messages/6?nonce=${recordedMsg.eventNonce}`);
+  assert.equal(CCTP_IRIS.mainnet, "https://iris-api.circle.com");
+  assert.equal(CCTP_IRIS.testnet, "https://iris-api-sandbox.circle.com");
+  assert.throws(() => attestationPathByTx(6, "0x1234"), RangeError);
+  assert.throws(() => attestationPathByTx(-1, tx), RangeError);
+  assert.throws(() => attestationPathByNonce(6, "nope"), RangeError);
+});
+
+test("parseAttestationResponse on the RECORDED Circle answer: complete, decoded from the raw bytes, and the delivered amount is the burn less the fee Circle executed", () => {
+  const out = parseAttestationResponse(recorded, recordedExpectation);
+  assert.equal(out.kind, "complete", out.kind === "mismatch" ? out.why : out.kind);
+  if (out.kind !== "complete") return;
+  assert.equal(out.messageHex, recordedMsg.message);
+  assert.equal(out.attestationHex, recordedMsg.attestation);
+  assert.equal((out.attestationHex.length - 2) / 2, CCTP_ATTESTATION_SIGNATURE_BYTES * CCTP_SIGNATURE_THRESHOLD, "two whole signatures");
+  assert.equal(out.message.body.amount, 9_990_734n);
+  assert.equal(out.feeExecuted, 1_298n);
+  assert.equal(out.deliveredAmount, 9_990_734n - 1_298n, "what actually lands: the burn less Circle's executed fee");
+  assert.ok(out.feeExecuted < out.message.body.maxFee, "the executed fee stays under the bound the burn set");
+  // The fact that forces the raw decode: Circle null-fills the decoded fields for a non-EVM destination.
+  const body = recordedMsg.decodedMessage.decodedMessageBody as Record<string, unknown>;
+  assert.equal(body.mintRecipient, null, "Circle decodes no mint recipient for a non-EVM destination");
+  assert.equal(recordedMsg.decodedMessage.recipient, null);
+  assert.notEqual(toHex(out.message.body.mintRecipient), "0x" + "00".repeat(32), "…but the raw bytes carry it");
+});
+
+test("parseAttestationResponse refuses anything that is not the burn we made, and says which field disagreed", () => {
+  const cases: [string, Record<string, unknown>, RegExp][] = [
+    ["another recipient", { mintRecipient: ("0x" + "11".repeat(32)) as `0x${string}` }, /mint recipient/],
+    ["another amount", { amount: 1n }, /amount/],
+    ["another domain", { destinationDomain: 5 }, /destination domain/],
+  ];
+  for (const [label, over, why] of cases) {
+    const out = parseAttestationResponse(recorded, { ...recordedExpectation, ...over } as never);
+    assert.equal(out.kind, "mismatch", label);
+    if (out.kind === "mismatch") assert.match(out.why, why, label);
+  }
+  // A nonce we never burned is not ours at all: not-found, so the keeper keeps waiting rather than delivering.
+  assert.equal(parseAttestationResponse(recorded, { ...recordedExpectation, nonce: ("0x" + "aa".repeat(32)) as `0x${string}` }).kind, "not-found");
+  // Bytes that are not a V2 burn message.
+  const junk = { messages: [{ ...recordedMsg, message: "0xdeadbeef" }] };
+  const j = parseAttestationResponse(junk, recordedExpectation);
+  assert.equal(j.kind, "mismatch");
+  if (j.kind === "mismatch") assert.match(j.why, /not a CCTP V2 burn message/);
+  // A half-length attestation is refused, never split.
+  const half = { messages: [{ ...recordedMsg, attestation: recordedMsg.attestation.slice(0, 100) as `0x${string}` }] };
+  assert.equal(parseAttestationResponse(half, recordedExpectation).kind, "mismatch");
+});
+
+test("parseAttestationResponse: pending and not-found are distinguished, so a keeper waits instead of failing", () => {
+  assert.equal(parseAttestationResponse({ messages: [] }, recordedExpectation).kind, "not-found");
+  assert.equal(parseAttestationResponse({}, recordedExpectation).kind, "not-found");
+  assert.equal(parseAttestationResponse(null, recordedExpectation).kind, "not-found");
+  const pending = { messages: [{ ...recordedMsg, attestation: "0x", status: "pending_confirmations", delayReason: null }] };
+  const p = parseAttestationResponse(pending, recordedExpectation);
+  assert.equal(p.kind, "pending");
+  if (p.kind === "pending") assert.equal(p.status, "pending_confirmations");
+  // Attested bytes but a status that is not complete: still pending, never delivered early.
+  const notYet = { messages: [{ ...recordedMsg, status: "pending_confirmations", delayReason: "waiting for finality" }] };
+  const n = parseAttestationResponse(notYet, recordedExpectation);
+  assert.equal(n.kind, "pending");
+  if (n.kind === "pending") assert.equal(n.delayReason, "waiting for finality");
 });
