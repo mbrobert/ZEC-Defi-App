@@ -59,7 +59,10 @@ chain, never a constant).
 
 Aave's own sources: cbBTC → `0x3a932b286715abc4a86a4acaf68a6cdd89e0d446`, WETH → `0x9da00d23465282005db222a441a663ee7b9dfcc8`,
 USDC → `0xf52d010c7d4ecbfda92c2509900593ce34535d86` (these are Aave's adapters, not the raw feeds).
-**There is no Chainlink ZEC/USD feed on Base.**
+~~**There is no Chainlink ZEC/USD feed on Base.**~~ **Superseded 2026-09-13 (Addendum 16): a
+Chainlink `ZEC / USD` proxy IS live on Base at `0x69e5BC4988a9AF30Ec827C5609c0D41028446ec0` — 18
+decimals (not 8), a `DualAggregator 1.0.0` behind it, same owner as the four feeds above. It prices
+ZEC, not cbZEC.**
 
 ## Pyth on Base (verified)
 
@@ -951,3 +954,59 @@ domain 6 (Base), domain 5 (Solana) — pinned by `test/Deploy.t.sol`.
 burned 1,000 native USDC (FiatToken `totalSupply()` fell by exactly 1,000,000,000 base units) and emitted Circle's
 `DepositForBurn` with our recipient and domain. Note for the next runner: `base-rpc.publicnode.com` does not
 serve state at that block (the whole fork suite's `setUp` reverts there); `mainnet.base.org` does.
+
+## Addendum 16 — a Chainlink ZEC/USD feed EXISTS on Base, read live 2026-09-13 at block 51,260,504 (14:39:15 UTC)
+
+**This supersedes "There is no Chainlink ZEC/USD feed on Base" in the Chainlink section above and every
+claim built on it** (`BASE-PIVOT-2026-09.md` §3b, `CBZEC-2026-09.md`, `docs/research/*`,
+`packages/shared/src/base.ts` `CHAINLINK_ZEC_USD = null`). The founder supplied the proxy address on
+2026-09-13; every line below was read read-only with `cast call` against `https://mainnet.base.org`.
+No code depends on it yet — this addendum is the prerequisite, not the change.
+
+| | Value |
+|---|---|
+| **Proxy (the address to integrate)** | `0x69e5BC4988a9AF30Ec827C5609c0D41028446ec0` |
+| `description()` | **"ZEC / USD"** — ZEC, **not** cbZEC (see the peg note below) |
+| `decimals()` | **18** — every other Chainlink feed on Base in this file is **8** |
+| `version()` | 6 |
+| `phaseId()` | 1 |
+| Underlying `aggregator()` | `0xb00e68fb3754EE8CC7B5F61348a2f09d53fB2e0e` (23,186 B) |
+| Aggregator `typeAndVersion()` | **"DualAggregator 1.0.0"** — not the classic `AccessControlledOffchainAggregator` |
+| Aggregator `minAnswer()` / `maxAnswer()` | 1 / 95,780,971,304,118,053,647,396,689,196,894,323,976,171,195,136,475,135 (≈9.578e52) — **effectively unbounded; the aggregator provides no usable circuit breaker** |
+| `owner()` (proxy and aggregator) | `0xf0Db7318A51a21C413CaDd4AbDC1E8a500fE5B1b` |
+| Live `latestRoundData()` | roundId 18446744073709552619 (phase 1, round 1003), answer **1,097,340,468,259,499,400,000** = **$1,097.3405** at 18 dp, `updatedAt` 1,789,310,019 → **336 s old** at the tip read (block 51,260,504, ts 1,789,310,355) |
+
+**Provenance.** `owner()` on this proxy is the SAME address that owns all four Chainlink feeds this
+file already verified (BTC/USD, ETH/USD, USDC/USD, cbBTC/USD — each re-read 2026-09-13 and each
+`decimals() == 8`). The answer also matches the market price of ZEC at read time (~$1,096–1,102 from
+two independent token trackers). That is the evidence it is genuinely Chainlink's, not a look-alike.
+
+**Measured update cadence (rounds 996 → 1003, read one by one).** Gaps between `updatedAt`, newest first:
+**1,350 s · 1,052 s · 1,110 s · 270 s · 270 s · 242 s · 3,090 s**. Prices across that window ran
+$1,077.35 → $1,102.97, about a 2.4 % range, so the short gaps are deviation-driven and the long ones are
+the quiet-market floor. **Largest gap observed: 3,090 s (51.5 min).** The heartbeat and deviation
+threshold are NOT published by any getter on this contract and have NOT been read from a primary
+source — do not type one. The keeper's own rule (`buildFeedPolicies`, slice J: `max(ceil(max gap × 2),
+300 s)`) gives **6,180 s** from the measurement above, and that is the only defensible bound until
+Chainlink publishes the feed's parameters.
+
+**Three things that must be true of any integration.**
+
+1. **18 decimals, not 8.** Every existing consumer here assumes 8 (`packages/shared/src/base.ts`
+   `CHAINLINK_FEEDS` entries carry `decimals: 8`; the web's base-unit helpers; the Aave oracle path).
+   The keeper's valuation already reads `decimals` from the feed and calls `normaliseTo8` on it, so it
+   is safe by construction, but anything that assumes 8 is off by 10^10. This is the Moonwell cbETH
+   failure class recorded in `docs/research/CAPITAL-AND-VENUES-2026-09.md` ($1.78 M of bad debt from an
+   integrator using the wrong price basis).
+2. **It prices ZEC, not cbZEC.** The wrapper peg and the B20 `multiplier()` are separate risks, exactly
+   as they were under Pyth. The existing `PythOracleAdapter` design — price source plus an Aerodrome
+   cbZEC/USDC TWAP cross-check plus a max-age bound, failing closed — carries over unchanged; only the
+   price source would swap. `RISKS.md` §5 and `BASE-PIVOT-2026-09.md` §3b state the requirement.
+3. **No circuit breaker from the aggregator.** `minAnswer`/`maxAnswer` are effectively unbounded, so the
+   TWAP breaker and the staleness bound are the only protections. Do not rely on the feed to bound itself.
+
+**Not yet known** (do not invent): the official heartbeat and deviation threshold; whether Chainlink lists
+this feed in its public reference directory (the Base directory JSON did **not** contain any ZEC entry
+when fetched on 2026-09-13, and a Blockscout contract search on Base surfaced only tokens); whether a
+cbZEC/USD feed, as opposed to this ZEC/USD one, exists or is planned.
+

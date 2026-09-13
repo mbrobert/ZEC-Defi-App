@@ -3,6 +3,31 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-13 — A Chainlink ZEC/USD feed exists on Base: read live, recorded, and every "no such feed" claim superseded
+
+- The founder supplied the proxy on 2026-09-13; read read-only at block 51,260,504 (14:39:15 UTC) and
+  recorded as `VERIFIED-BASE-FACTS.md` **Addendum 16**. `0x69e5BC4988a9AF30Ec827C5609c0D41028446ec0`,
+  `description()` "ZEC / USD", **`decimals()` 18** (every other Chainlink feed in that file is 8),
+  `version()` 6, aggregator `0xb00e68fb…2e0e` reporting **`DualAggregator 1.0.0`**, live answer
+  **$1,097.3405** 336 s old at the tip. Provenance: `owner()` is the same address that owns the four
+  Base feeds the file already verified, and the answer matches two independent market trackers.
+- **Measured, not assumed:** update gaps across rounds 996 → 1003 were 3,090 / 242 / 270 / 270 / 1,110 /
+  1,052 / 1,350 s. The heartbeat and deviation threshold are published by no getter on the contract and
+  were not read from a primary source, so none is typed anywhere; the keeper's own
+  `buildFeedPolicies` rule over the measured maximum gives 6,180 s as the only defensible bound.
+- **Nothing depends on it yet.** The addendum is the rule-3 prerequisite, not the integration. Three
+  constraints are recorded for whoever builds it: 18 decimals (an 8-decimal assumption is off by 10^10 —
+  the Moonwell cbETH failure class), the feed prices **ZEC and not cbZEC** so the peg cross-check and
+  max-age bound of the existing `PythOracleAdapter` design carry over unchanged, and the aggregator's
+  min/max answer are effectively unbounded so it offers no circuit breaker of its own.
+- Superseded in the same commit (rule 6): the flat claim in `VERIFIED-BASE-FACTS.md`'s Chainlink section,
+  `BASE-PIVOT-2026-09.md` §3b and its summary line, `CBZEC-2026-09.md` (where a Chainlink feed is
+  condition (1) of the written adoption test, **now met**), and `docs/research/VENUES-2026-09.md` (where
+  it is the precondition for Aave listing cbZEC). `packages/shared/src/base.ts` still carries
+  `CHAINLINK_ZEC_USD = null` on purpose — changing it is the integration, which is a product decision
+  (D3) and not this commit. Suites re-run because they parse the facts file: shared **93**, web **197**,
+  yield **172**, agent **286**, prototypes **130 · 116 · 62 · 6**, all green.
+
 ## 2026-09-13 — Slice L closed out: Actions runs again, the nightly is green on the runner, the fork job waits on the secret's VALUE
 
 - The founder raised the Actions spending limit and created `BASE_RPC_URL` (14:22:24 UTC). Jobs start again: the

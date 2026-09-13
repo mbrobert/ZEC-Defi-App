@@ -39,7 +39,8 @@ cbZEC on 2 Sep, in three transparent t-addresses, with no attestation firm and n
 **Its state today (as of 2–4 Sep):** total supply ~604 tokens; one real venue, the Aerodrome Slipstream
 cbZEC/USDC pool at `0x0Fc47C17AF86078d809358db1b4db2DeBC988566` (0.2% fee, ~$0.68M liquidity, ~$635K
 day-one volume); a $51K Uniswap v4 pool; a cluster of counterfeit "ZEC" memecoins sharing the `0xb2000…`
-address prefix. **No gauge, no emissions, no lending market, no Chainlink ZEC/USD feed on Base** (as of this plan; the gauge exists and carries one epoch's vote since 2026-09-10 — `CBZEC-PATH-2026-09.md`). Pyth has a
+address prefix. **No gauge, no emissions, no lending market, no Chainlink ZEC/USD feed on Base** (as of this plan; a
+ZEC/USD feed went live by 2026-09-13, `VERIFIED-BASE-FACTS.md` Addendum 16; the gauge exists and carries one epoch's vote since 2026-09-10 — `CBZEC-PATH-2026-09.md`). Pyth has a
 live `Crypto.ZEC/USD` pull feed (id `be9b59d1…bb24`).
 
 ---
@@ -152,8 +153,11 @@ matures. Everything about our router, monitoring and UI is identical either way.
 
 ### 3b. The price feed
 
-No Chainlink ZEC/USD feed on Base. Chainlink lists a ZEC/USD CEX-price *Data Stream*, which is a different
-product (pull-based, paid). **Pyth has a live ZEC/USD pull feed today.** A Morpho market takes any contract
+~~No Chainlink ZEC/USD feed on Base. Chainlink lists a ZEC/USD CEX-price *Data Stream*, which is a different
+product (pull-based, paid).~~ **Superseded 2026-09-13 (`VERIFIED-BASE-FACTS.md` Addendum 16): a push
+`ZEC / USD` proxy is live on Base (`0x69e5…6ec0`, 18 decimals, `DualAggregator 1.0.0`). The two hard
+requirements below — staleness bound and peg circuit breaker — stand unchanged, because the feed still
+prices ZEC and not cbZEC, and its aggregator's min/max answer are effectively unbounded.** **Pyth has a live ZEC/USD pull feed today.** A Morpho market takes any contract
 implementing `IOracle.price()`, so a **Pyth-backed oracle adapter** is a ~100-line contract plus a keeper that
 posts price updates. That is "reasonable", as the founder asked.
 
