@@ -11,6 +11,8 @@ import {
   type WalletClient,
 } from "viem";
 import {
+  cctpMessengerAbi,
+  cctpTransmitterAbi,
   clPoolAbi,
   erc20BalanceAbi,
   directLpVenueAbi,
@@ -21,7 +23,7 @@ import {
   swapAdapterAbi,
   GRANT_SELECTORS,
 } from "../abi/oilskin.js";
-import { describeLpEnumerationFault, isLoanDust } from "@zyo/shared";
+import { decodeCctpBurnMessageV2, describeLpEnumerationFault, isLoanDust } from "@zyo/shared";
 import type { LadderRung } from "../engine/ladder.js";
 import { WAD, type Valuation } from "../engine/valuation.js";
 import type { Logger } from "../log.js";
@@ -32,9 +34,9 @@ import { withDeadline } from "../services/deadline.js";
 import type { VenueReader } from "../services/venues.js";
 import type { DispatchRecord, VenueBook } from "../store/keeperStore.js";
 import type { Address } from "../types/evm.js";
-import { planAction, type KeeperCall, type PlannedPosition, type PoolInfo } from "./policy.js";
+import { planAction, planBurn, type KeeperCall, type PlannedPosition, type PoolInfo } from "./policy.js";
 import { quoteForPool, NO_SWAP, type SwapQuote } from "./quote.js";
-import type { DispatchIntent, DispatchResult, Dispatcher, OkValuation } from "./types.js";
+import type { BridgeInfo, BurnIntent, BurnResult, DispatchIntent, DispatchResult, Dispatcher, OkValuation } from "./types.js";
 
 /**
  * The only component that signs anything. Every dispatch:
@@ -297,6 +299,87 @@ export interface GrantState {
   valueSpent: bigint;
 }
 
+export interface BurnSummary {
+  /** `BurnedToSolana` events for the account in the receipt. */
+  events: number;
+  burned: bigint;
+  closed: bigint;
+  failed: bigint;
+  usdcFromLp: bigint;
+  /** The recipient the router burned to (bytes32 hex), from the router's event. */
+  recipient: `0x${string}` | null;
+  /** Circle's own `DepositForBurn` for the account as depositor: amount and mint recipient. */
+  cctp: { amount: bigint; mintRecipient: `0x${string}`; destinationDomain: number } | null;
+  /** The V2 message the transmitter emitted (hex) and its header nonce (bytes32 hex), decoded with shared's codec. */
+  message: { hex: `0x${string}`; nonce: `0x${string}`; amount: bigint; mintRecipient: `0x${string}` } | null;
+}
+
+/**
+ * What a burn receipt says, from three events: the router's `BurnedToSolana` (ours), Circle's
+ * `DepositForBurn` (the messenger's) and the transmitter's `MessageSent` (the bytes Circle attests). A
+ * receipt is CONFIRMED as a burn only when all three agree on the amount and the recipient (the router's
+ * word alone is our own contract's; the messenger's is the burn; the message is what the Solana side delivers).
+ */
+export function summarizeBurns(
+  logs: readonly { address: `0x${string}`; data: `0x${string}`; topics: readonly `0x${string}`[] }[],
+  account: Address
+): BurnSummary {
+  const out: BurnSummary = { events: 0, burned: 0n, closed: 0n, failed: 0n, usdcFromLp: 0n, recipient: null, cctp: null, message: null };
+  type Burned = { account?: string; amount?: bigint; recipient?: `0x${string}`; closed?: bigint; failedCount?: bigint; usdcFromLp?: bigint };
+  let ours: { args: Burned }[] = [];
+  try {
+    ours = parseEventLogs({ abi: strategyRouterAbi, logs: logs as never, eventName: "BurnedToSolana" }) as unknown as { args: Burned }[];
+  } catch {
+    ours = [];
+  }
+  for (const log of ours) {
+    const a = log.args;
+    if (!a.account || a.account.toLowerCase() !== account.toLowerCase()) continue;
+    out.events += 1;
+    out.burned += a.amount ?? 0n;
+    out.closed += a.closed ?? 0n;
+    out.failed += a.failedCount ?? 0n;
+    out.usdcFromLp += a.usdcFromLp ?? 0n;
+    out.recipient = a.recipient ?? out.recipient;
+  }
+  type Deposit = { depositor?: string; amount?: bigint; mintRecipient?: `0x${string}`; destinationDomain?: number };
+  let deposits: { args: Deposit }[] = [];
+  try {
+    deposits = parseEventLogs({ abi: cctpMessengerAbi, logs: logs as never, eventName: "DepositForBurn" }) as unknown as { args: Deposit }[];
+  } catch {
+    deposits = [];
+  }
+  for (const log of deposits) {
+    const a = log.args;
+    if (!a.depositor || a.depositor.toLowerCase() !== account.toLowerCase() || !a.mintRecipient) continue;
+    const prev = out.cctp;
+    out.cctp = { amount: (prev?.amount ?? 0n) + (a.amount ?? 0n), mintRecipient: a.mintRecipient, destinationDomain: a.destinationDomain ?? 0 };
+  }
+  type Sent = { message?: `0x${string}` };
+  let sent: { args: Sent }[] = [];
+  try {
+    sent = parseEventLogs({ abi: cctpTransmitterAbi, logs: logs as never, eventName: "MessageSent" }) as unknown as { args: Sent }[];
+  } catch {
+    sent = [];
+  }
+  for (const log of sent) {
+    const h = log.args.message;
+    if (!h) continue;
+    try {
+      const bytes = Uint8Array.from(Buffer.from(h.slice(2), "hex"));
+      const m = decodeCctpBurnMessageV2(bytes);
+      const toHex = (b: Uint8Array) => ("0x" + Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("")) as `0x${string}`;
+      const mintRecipient = toHex(m.body.mintRecipient);
+      // the message for OUR burn is the one whose recipient the router named
+      if (out.recipient && mintRecipient.toLowerCase() !== out.recipient.toLowerCase()) continue;
+      out.message = { hex: h, nonce: toHex(m.nonce), amount: m.body.amount, mintRecipient };
+    } catch {
+      // not a burn message (another CCTP message in the same block's receipt), skip
+    }
+  }
+  return out;
+}
+
 /**
  * USDC that must reach the debt to lift the health factor to `targetHf`.
  * Derived from the live valuation only: HF = Σ(collateral × LT) / debt, so the
@@ -547,6 +630,156 @@ export class KeeperDispatcher implements Dispatcher {
     }
     log.info("sent", { txHash });
     return { status: "SENT", txHash };
+  }
+
+  // ------------------------------------------------------------------ the cross-chain burn (D6 / A5.2)
+
+  /**
+   * `StrategyRouter.closeLpAndBurn` for a paired account, on the Solana side's word (the intent carries the
+   * need; there is no Base debt to value): the grant for THAT selector read whole, the account's recorded
+   * Solana recipient checked against what the Solana Account expects (a mismatch is a half-link, refused
+   * permanently), the LP state priced as for an unwind, one burn per pool, simulated, persisted, sent. The
+   * receipt is judged by `confirmBurn`.
+   */
+  async dispatchBurn(intent: BurnIntent, signal?: AbortSignal): Promise<BurnResult> {
+    const { record } = intent;
+    const log = this.d.log.child({ account: record.account, key: record.key, action: record.action });
+    const account = record.account;
+    const selector = GRANT_SELECTORS["StrategyRouter.closeLpAndBurn"];
+
+    // 1. The destination is the router's record, and it must be the Solana Account's token account.
+    let recipient: `0x${string}`;
+    try {
+      recipient = (await this.call("solanaRecipient", signal, () =>
+        this.d.client.readContract({ address: this.d.router, abi: strategyRouterAbi, functionName: "solanaRecipient", args: [account] })
+      )) as `0x${string}`;
+    } catch (e) {
+      return { status: "REFUSED", reason: `cannot read the account's Solana recipient: ${errMsg(e)}` };
+    }
+    if (recipient.toLowerCase() !== intent.expectedRecipient.toLowerCase()) {
+      return {
+        status: "REFUSED",
+        permanent: true,
+        reason: `the router records ${recipient} as this account's Solana recipient, the Solana Account expects ${intent.expectedRecipient} — not a linked pair; the owner must set the recipient`,
+      };
+    }
+
+    // 2. The grant for the burn selector.
+    let grant: GrantState;
+    try {
+      grant = await this.readGrant(account, this.d.router, selector, signal);
+    } catch (e) {
+      return { status: "REFUSED", reason: `cannot read grant for ${this.d.router} ${selector}: ${errMsg(e)}` };
+    }
+    intent.onGrantRead?.({ target: this.d.router, selector, active: grant.active, allowCallback: grant.allowCallback, expiry: grant.expiry });
+    if (!grant.active) return { status: "REFUSED", permanent: true, reason: `no active grant for keeper on ${this.d.router} selector ${selector} (closeLpAndBurn) — the owner must grant the cross-chain protection` };
+    if (!grant.allowCallback) return { status: "REFUSED", permanent: true, reason: `grant for ${this.d.router} ${selector} has allowCallback=false — a mis-issued grant` };
+    const nowS = await this.chainNowS(signal);
+
+    // 3. Price the Base leg.
+    let positions: PlannedPosition[];
+    let pools: Map<Hex, PoolInfo>;
+    let idleUsdc: bigint;
+    try {
+      const state = await this.readLpState(account, signal);
+      positions = state.positions;
+      pools = state.pools;
+      idleUsdc = state.idleUsdc;
+    } catch (e) {
+      return { status: "REFUSED", reason: `cannot read LP state (fail closed): ${errMsg(e)}` };
+    }
+    const bandToleranceBps = this.bandToleranceFor(record.attempts);
+    if (positions.length > 0) await this.probeValues(account, intent.collateralAssetForProbe, positions, pools, nowS, bandToleranceBps, signal, log, "burn");
+
+    // 4. Plan.
+    const plan = planBurn({
+      account,
+      action: record.action,
+      router: this.d.router,
+      positions,
+      pools,
+      idleUsdc,
+      usdcNeeded: intent.usdcNeeded,
+      maxFeeBps: intent.maxFeeBps,
+      minFinalityThreshold: intent.minFinalityThreshold,
+      bandToleranceBps,
+      nowS,
+      txDeadlineS: this.d.config.txDeadlineS,
+    });
+    if (plan.kind === "NOTHING") return { status: "REFUSED", reason: plan.reason };
+    if (plan.kind === "REFUSE") return { status: "REFUSED", reason: plan.reason };
+    const outside = plan.grantsNeeded.filter((g) => g.target !== this.d.router || g.selector !== selector);
+    if (outside.length) return { status: "REFUSED", permanent: true, reason: `plan needs a grant outside the signed one: ${outside.map((g) => `${g.target}:${g.selector}`).join(", ")}` };
+
+    // 5. Simulate, persist, send — the same three steps as an unwind.
+    const calls = plan.calls.map((c: KeeperCall) => ({ target: c.target, value: c.value, data: c.data, callback: c.callback }));
+    try {
+      await this.call("simulate execAsKeeper", signal, () => this.d.client.simulateContract({ address: account, abi: keeperExecAbi, functionName: "execAsKeeper", args: [calls], account: this.d.keeper }));
+    } catch (e) {
+      const rv = revertName(e);
+      if (rv && GRANT_ERRORS.has(rv.name)) return { status: "REFUSED", reason: `simulation reverted ${rv.name}(${rv.args.join(",")})` };
+      if (rv && CONFIG_ERRORS.has(rv.name)) return { status: "REFUSED", permanent: true, reason: `simulation reverted ${rv.name}(${rv.args.join(",")}) — mis-issued grant` };
+      if (rv && (rv.name === "CrossChainDisabled" || rv.name === "NoSolanaRecipient")) return { status: "REFUSED", permanent: true, reason: `simulation reverted ${rv.name}: the deployment or the account cannot burn` };
+      return { status: "FAILED", error: `simulation failed: ${rv ? `${rv.name}(${rv.args.join(",")})` : errMsg(e)}` };
+    }
+    let nonce: number | undefined;
+    try {
+      nonce = await this.call("getTransactionCount", signal, () => this.d.client.getTransactionCount({ address: this.d.keeper, blockTag: "pending" }));
+    } catch {
+      nonce = undefined;
+    }
+    if (intent.persistBeforeSend) {
+      try {
+        await intent.persistBeforeSend({ nonce, closeIds: plan.closeIds });
+      } catch (e) {
+        return { status: "REFUSED", reason: `could not persist pre-send state (fail closed): ${errMsg(e)}` };
+      }
+    }
+    log.warn("sending execAsKeeper (closeLpAndBurn)", { closeIds: plan.closeIds.map(String), calls: calls.length, usdcNeeded: intent.usdcNeeded?.toString() ?? null, expectedProceedsUsdc: plan.expectedProceedsUsdc?.toString() ?? null, recipient, nonce });
+    let txHash: Hex;
+    try {
+      txHash = await this.call("sendTransaction", signal, () =>
+        this.d.wallet.writeContract({ address: account, abi: keeperExecAbi, functionName: "execAsKeeper", args: [calls], account: this.d.wallet.account, chain: this.d.wallet.chain })
+      );
+    } catch (e) {
+      const rv = revertName(e);
+      if (rv && GRANT_ERRORS.has(rv.name)) return { status: "REFUSED", reason: `send reverted ${rv.name}` };
+      return { status: "FAILED", error: `send failed: ${errMsg(e)}` };
+    }
+    log.info("sent", { txHash });
+    return { status: "SENT", txHash, bridge: { chain: "base", stage: "burn-sent", burnTxHash: txHash, amountUsdc: "0", recipient } };
+  }
+
+  /**
+   * A burn receipt is CONFIRMED only when our router, Circle's messenger and the transmitter's message agree
+   * on the amount and the recipient; anything else is FAILED by name. The bridge info returned carries what
+   * Stream C needs to fetch the attestation and deliver on Solana.
+   */
+  async confirmBurn(record: DispatchRecord, signal?: AbortSignal): Promise<BurnResult> {
+    // A Solana record carries the Base hash in `bridge.burnTxHash` (its `txHash` is Solana-shaped); a Base record in `txHash`.
+    const hash = (record.bridge?.burnTxHash ?? record.txHash) as Hex | undefined;
+    if (!hash) return { status: "FAILED", error: "confirmBurn called without a Base transaction hash" };
+    let receipt;
+    try {
+      receipt = await this.call("getTransactionReceipt", signal, () =>
+        this.d.client.getTransactionReceipt({ hash }).catch((e: unknown) => {
+          if (e instanceof BaseError && /not be found|not found/i.test(e.shortMessage)) return null;
+          throw e;
+        })
+      );
+    } catch (e) {
+      return { status: "FAILED", error: `receipt read failed: ${errMsg(e)}` };
+    }
+    if (!receipt) return { status: "SENT", txHash: hash };
+    if (receipt.status !== "success") return { status: "FAILED", error: "burn transaction reverted on chain" };
+    const s = summarizeBurns(receipt.logs, record.account);
+    if (s.events === 0 || s.burned === 0n) return { status: "FAILED", error: "receipt succeeded but carries no BurnedToSolana for this account with a positive amount — not a burn" };
+    if (!s.cctp || s.cctp.amount !== s.burned) return { status: "FAILED", error: `Circle's DepositForBurn (${s.cctp?.amount ?? "none"}) does not match the router's burn (${s.burned})` };
+    if (!s.recipient || s.cctp.mintRecipient.toLowerCase() !== s.recipient.toLowerCase()) return { status: "FAILED", error: "the messenger's mint recipient is not the router's recorded recipient" };
+    if (!s.message || s.message.amount !== s.burned) return { status: "FAILED", error: "no MessageSent carrying this burn's amount to the recorded recipient" };
+    const bridge: BridgeInfo = { chain: "base", stage: "burn-confirmed", burnTxHash: hash, amountUsdc: s.burned.toString(), nonce: s.message.nonce, messageHex: s.message.hex, recipient: s.recipient };
+    const note = `burned ${s.burned} USDC to Solana (${s.closed} ids closed, ${s.failed} skipped, ${s.usdcFromLp} from the LP); Circle nonce ${s.message.nonce} — delivery on Solana is the next leg`;
+    return { status: "CONFIRMED", txHash: hash, note, bridge };
   }
 
   async confirm(record: DispatchRecord, signal?: AbortSignal): Promise<DispatchResult> {
@@ -885,7 +1118,9 @@ export class KeeperDispatcher implements Dispatcher {
     nowS: bigint,
     bandToleranceBps: number,
     signal: AbortSignal | undefined,
-    log: Logger
+    log: Logger,
+    /** "unwind" (the default) or "burn": the probe rides the selector the account's grant covers (A5.2). */
+    via: "unwind" | "burn" = "unwind"
   ): Promise<void> {
     const budget = Math.max(0, this.d.config.maxValueProbes);
     let probed = 0;
@@ -894,20 +1129,36 @@ export class KeeperDispatcher implements Dispatcher {
       if (probed >= budget) break;
       const info = pools.get(p.poolId);
       if (!info || info.sqrtPriceX96 <= 0n) continue;
-      const single = planAction({
-        account,
-        action: "emergency-unwind", // "this id, whole" — the probe closes exactly one id
-        collateralAsset,
-        router: this.d.router,
-        positions: [{ ...p, valueUsdc: null }],
-        pools,
-        idleUsdc: 0n,
-        usdcNeeded: null,
-        bandToleranceBps,
-        nowS,
-        txDeadlineS: this.d.config.txDeadlineS,
-        repay: false, // measure the close, nothing else
-      });
+      const single =
+        via === "burn"
+          ? planBurn({
+              account,
+              action: "burn-emergency", // "this id, whole" — the probe closes exactly one id and burns its proceeds (a simulation burns nothing)
+              router: this.d.router,
+              positions: [{ ...p, valueUsdc: null }],
+              pools,
+              idleUsdc: 0n,
+              usdcNeeded: null,
+              maxFeeBps: 0,
+              minFinalityThreshold: 1000,
+              bandToleranceBps,
+              nowS,
+              txDeadlineS: this.d.config.txDeadlineS,
+            })
+          : planAction({
+              account,
+              action: "emergency-unwind", // "this id, whole" — the probe closes exactly one id
+              collateralAsset,
+              router: this.d.router,
+              positions: [{ ...p, valueUsdc: null }],
+              pools,
+              idleUsdc: 0n,
+              usdcNeeded: null,
+              bandToleranceBps,
+              nowS,
+              txDeadlineS: this.d.config.txDeadlineS,
+              repay: false, // measure the close, nothing else
+            });
       if (single.kind !== "CALLS") continue;
       probed += 1;
       try {
@@ -921,7 +1172,7 @@ export class KeeperDispatcher implements Dispatcher {
           })
         );
         const results = sim.result as readonly Hex[];
-        const [usdcFromLp] = decodeFunctionResult({ abi: strategyRouterAbi, functionName: "unwind", data: results[0] }) as readonly bigint[];
+        const [usdcFromLp] = decodeFunctionResult({ abi: strategyRouterAbi, functionName: via === "burn" ? "closeLpAndBurn" : "unwind", data: results[0] }) as readonly bigint[];
         p.valueUsdc = usdcFromLp;
       } catch (e) {
         failed += 1;

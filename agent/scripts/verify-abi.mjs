@@ -133,7 +133,7 @@ compare("MorphoBlueVenue", collateralVenueAbi, loadArtifact("MorphoBlueVenue"));
 
 // Grant selectors: the keeper refuses to act unless grantOf(keeper, target, selector) is active
 // for exactly these; a drift here would make every dispatch REFUSED (or worse, check the wrong grant).
-const grantSources = { "StrategyRouter.unwind": [strategyRouterAbi, "unwind"] };
+const grantSources = { "StrategyRouter.unwind": [strategyRouterAbi, "unwind"], "StrategyRouter.closeLpAndBurn": [strategyRouterAbi, "closeLpAndBurn"] };
 for (const [name, sel] of Object.entries(GRANT_SELECTORS ?? {})) {
   checks += 1;
   const [abi, fn] = grantSources[name];
@@ -146,13 +146,16 @@ for (const [name, sel] of Object.entries(GRANT_SELECTORS ?? {})) {
   // …and the artifact agrees with our fragment (compare() above already checked the signature).
 }
 
-// The keeper makes exactly ONE kind of root call, and the grant the user signs must name it.
-// More than one entry here means the keeper plans a call outside the single signed Permission —
-// which is audit C-HIGH-1 (every protective rung REFUSED) coming back.
+// The keeper makes exactly the root calls the user signs a Permission for, and nothing else: `unwind`
+// (every single-chain rung) and, since BUILD-PLAN D6 / A5.2 (2026-09-13), `closeLpAndBurn` (the cross-chain
+// rung of a paired account, under its OWN grant). A third entry here means the keeper plans a call outside
+// the signed Permissions — audit C-HIGH-1 (every protective rung REFUSED) coming back. Each plan still uses
+// exactly one selector and the dispatcher checks it against the one grant it read (`grantsNeeded`).
 checks += 1;
-if (Object.keys(GRANT_SELECTORS ?? {}).length !== 1 || !GRANT_SELECTORS["StrategyRouter.unwind"]) {
+const grantKeys = Object.keys(GRANT_SELECTORS ?? {}).sort();
+if (JSON.stringify(grantKeys) !== JSON.stringify(["StrategyRouter.closeLpAndBurn", "StrategyRouter.unwind"])) {
   failures += 1;
-  console.log(`verify-abi: FAIL GRANT_SELECTORS must be exactly {StrategyRouter.unwind}, got ${JSON.stringify(Object.keys(GRANT_SELECTORS ?? {}))}`);
+  console.log(`verify-abi: FAIL GRANT_SELECTORS must be exactly {StrategyRouter.unwind, StrategyRouter.closeLpAndBurn}, got ${JSON.stringify(grantKeys)}`);
 }
 checks += 1;
 if (KEEPER_GRANT_SHAPE?.selector !== GRANT_SELECTORS["StrategyRouter.unwind"] || KEEPER_GRANT_SHAPE?.allowCallback !== true) {

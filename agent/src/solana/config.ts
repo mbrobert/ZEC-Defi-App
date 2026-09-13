@@ -43,6 +43,14 @@ export interface SolanaKeeperConfig {
   maxDispatchAttempts: number;
   notifyWebhookUrl?: string;
   logLevel: "debug" | "info" | "warn" | "error";
+  /**
+   * The Base side of a cross-chain pair (D6 / A5.2): a Base RPC and the router whose `solanaRecipient` says
+   * whether a Base account names this Solana Account back. Both or neither; absent = pairs are never read.
+   */
+  baseRpcUrl?: string;
+  baseRouterAddress?: `0x${string}`;
+  /** How long a Base burn may be in flight before the single-chain path takes a rung over (s). */
+  bridgeStallS: number;
 }
 
 export const SOLANA_CONFIG_DEFAULTS = {
@@ -63,6 +71,7 @@ export const SOLANA_CONFIG_DEFAULTS = {
   unknownEscalationStreak: 3,
   maxDispatchAttempts: 5,
   logLevel: "info" as const,
+  bridgeStallS: 1800,
 } as const;
 
 function num(env: NodeJS.ProcessEnv, name: string, dflt: number, opts: { min?: number; max?: number; integer?: boolean } = {}): number {
@@ -137,6 +146,20 @@ export function loadSolanaConfig(env: NodeJS.ProcessEnv = process.env): SolanaKe
 
   const notifyWebhookUrl = readRaw(env, "NOTIFY_WEBHOOK_URL");
 
+  const baseRpcUrl = readRaw(env, "BASE_RPC_URL");
+  const baseRouterRaw = readRaw(env, "BASE_ROUTER_ADDRESS");
+  if ((baseRpcUrl === undefined) !== (baseRouterRaw === undefined)) throw new ConfigError("BASE_ROUTER_ADDRESS", "and BASE_RPC_URL come together (the Base side of a cross-chain pair) or not at all");
+  if (baseRpcUrl !== undefined) {
+    let u: URL;
+    try {
+      u = new URL(baseRpcUrl);
+    } catch {
+      throw new ConfigError("BASE_RPC_URL", "is not a valid URL");
+    }
+    if (u.protocol !== "http:" && u.protocol !== "https:") throw new ConfigError("BASE_RPC_URL", "must be http(s)");
+  }
+  if (baseRouterRaw !== undefined && !/^0x[0-9a-fA-F]{40}$/.test(baseRouterRaw)) throw new ConfigError("BASE_ROUTER_ADDRESS", "is not an EVM address");
+
   return {
     rpcUrl,
     programId,
@@ -161,6 +184,9 @@ export function loadSolanaConfig(env: NodeJS.ProcessEnv = process.env): SolanaKe
     maxDispatchAttempts: num(env, "MAX_DISPATCH_ATTEMPTS", SOLANA_CONFIG_DEFAULTS.maxDispatchAttempts, { min: 1, integer: true }),
     notifyWebhookUrl,
     logLevel: logLevelRaw as SolanaKeeperConfig["logLevel"],
+    baseRpcUrl,
+    baseRouterAddress: baseRouterRaw as `0x${string}` | undefined,
+    bridgeStallS: num(env, "BRIDGE_STALL_S", SOLANA_CONFIG_DEFAULTS.bridgeStallS, { min: 60, integer: true }),
   };
 }
 
@@ -178,5 +204,6 @@ export function describeSolanaConfig(c: SolanaKeeperConfig): Record<string, unkn
     saleDiscountBps: c.saleDiscountBps,
     healthPollMs: c.healthPollMs,
     store: c.storePath,
+    basePair: c.baseRpcUrl ? { router: c.baseRouterAddress, bridgeStallS: c.bridgeStallS } : "not read (no BASE_RPC_URL)",
   };
 }

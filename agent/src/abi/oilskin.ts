@@ -197,6 +197,59 @@ export const strategyRouterAbi = [
   },
   { type: "function", name: "USDC", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
   /**
+   * The cross-chain mirror (BUILD-PLAN D6 / A5.1, 2026-09-13): close ids, swap the non-USDC leg and burn
+   * USDC through Circle's CCTP V2 to the account's RECORDED Solana recipient — the keeper's rung action for a
+   * position whose debt lives on Solana. `burnAmount = max` burns everything the close produced plus the
+   * idle balance; `maxFee` bounds Circle's fee at delivery; 1000 = Fast Transfer.
+   */
+  {
+    type: "function",
+    name: "closeLpAndBurn",
+    stateMutability: "nonpayable",
+    inputs: [
+      {
+        name: "p",
+        type: "tuple",
+        components: [
+          { name: "positionIds", type: "uint256[]" },
+          { name: "band", ...priceBandStruct },
+          { name: "swap", ...swapQuoteStruct },
+          { name: "burnAmount", type: "uint256" },
+          { name: "maxFee", type: "uint256" },
+          { name: "minFinalityThreshold", type: "uint32" },
+          { name: "deadline", type: "uint256" },
+        ],
+      },
+    ],
+    outputs: [
+      { name: "usdcFromLp", type: "uint256" },
+      { name: "burned", type: "uint256" },
+    ],
+  },
+  /** The account's USDC token account on Solana as CCTP's mintRecipient (bytes32); zero = none recorded. */
+  { type: "function", name: "solanaRecipient", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ name: "recipient", type: "bytes32" }] },
+  /** Circle's TokenMessengerV2 on this chain; the zero address = the loop is off on this deployment. */
+  { type: "function", name: "CCTP_MESSENGER", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
+  {
+    type: "event",
+    name: "BurnedToSolana",
+    inputs: [
+      { name: "account", type: "address", indexed: true },
+      { name: "amount", type: "uint256", indexed: false },
+      { name: "recipient", type: "bytes32", indexed: true },
+      { name: "maxFee", type: "uint256", indexed: false },
+      { name: "minFinalityThreshold", type: "uint32", indexed: false },
+      { name: "closed", type: "uint256", indexed: false },
+      { name: "failedCount", type: "uint256", indexed: false },
+      { name: "usdcFromLp", type: "uint256", indexed: false },
+    ],
+  },
+  { type: "error", name: "ZeroAmount", inputs: [] },
+  { type: "error", name: "UsdcShort", inputs: [{ name: "asked", type: "uint256" }, { name: "held", type: "uint256" }] },
+  { type: "error", name: "CrossChainDisabled", inputs: [] },
+  { type: "error", name: "NoSolanaRecipient", inputs: [{ name: "account", type: "address" }] },
+  { type: "error", name: "MaxFeeNotBelowAmount", inputs: [{ name: "maxFee", type: "uint256" }, { name: "amount", type: "uint256" }] },
+  /**
    * The entry health factor recorded at the account's last open (WAD; 0 = none recorded). The
    * keeper derives the account's ladder from it with shared `ladderFor` (BUILD-PLAN-2026-09-12
    * D7, step A4); an account without a record runs the registry floor's ladder, and says so.
@@ -578,7 +631,39 @@ export const GRANT_SELECTORS = {
   "StrategyRouter.unwind": toFunctionSelector(
     "unwind((address,uint256[],(uint160,uint160),(uint256,uint256,uint16,bytes),uint256,uint256,uint256))"
   ),
+  /** The cross-chain rung action's grant (D6 / A5.1): the same target, its own selector, a USDC budget. */
+  "StrategyRouter.closeLpAndBurn": toFunctionSelector(
+    "closeLpAndBurn((uint256[],(uint160,uint160),(uint256,uint256,uint16,bytes),uint256,uint256,uint32,uint256))"
+  ),
 } as const;
+
+/**
+ * Circle's CCTP V2 events the keeper reads off a burn receipt (`docs/VERIFIED-SOLANA-FACTS.md` Addendum 3,
+ * transcribed from the verified implementations; NOT in the ABI bundle, which covers our own contracts —
+ * test/burn.test.ts pins each topic to shared's keccak of the recorded signature instead).
+ */
+export const cctpMessengerAbi = [
+  {
+    type: "event",
+    name: "DepositForBurn",
+    inputs: [
+      { name: "burnToken", type: "address", indexed: true },
+      { name: "amount", type: "uint256", indexed: false },
+      { name: "depositor", type: "address", indexed: true },
+      { name: "mintRecipient", type: "bytes32", indexed: false },
+      { name: "destinationDomain", type: "uint32", indexed: false },
+      { name: "destinationTokenMessenger", type: "bytes32", indexed: false },
+      { name: "destinationCaller", type: "bytes32", indexed: false },
+      { name: "maxFee", type: "uint256", indexed: false },
+      { name: "minFinalityThreshold", type: "uint32", indexed: true },
+      { name: "hookData", type: "bytes", indexed: false },
+    ],
+  },
+] as const;
+
+export const cctpTransmitterAbi = [
+  { type: "event", name: "MessageSent", inputs: [{ name: "message", type: "bytes", indexed: false }] },
+] as const;
 
 /**
  * The grant the web must sign for the keeper, in full. `allowCallback` MUST be

@@ -190,6 +190,10 @@ describe("FIX C-1: the keeper's plan fits inside the one grant the user signs", 
     // …and the shape the web must sign carries the peripheral opt-in.
     assert.equal(KEEPER_GRANT_SHAPE.allowCallback, true);
     assert.equal(KEEPER_GRANT_SHAPE.selector, GRANT_SELECTORS["StrategyRouter.unwind"]);
-    assert.equal(Object.keys(GRANT_SELECTORS).length, 1);
+    // Exactly the root calls the product issues grants for: `unwind` for every single-chain rung and, since
+    // BUILD-PLAN D6 / A5.2 (2026-09-13), `closeLpAndBurn` for a paired account's cross-chain rung under its OWN
+    // grant. A third entry would be a plan outside the signed Permissions — C-HIGH-1 coming back.
+    assert.deepEqual(Object.keys(GRANT_SELECTORS).sort(), ["StrategyRouter.closeLpAndBurn", "StrategyRouter.unwind"]);
+    assert.notEqual(GRANT_SELECTORS["StrategyRouter.closeLpAndBurn"], GRANT_SELECTORS["StrategyRouter.unwind"]);
   });
 });

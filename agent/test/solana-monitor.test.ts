@@ -430,3 +430,55 @@ describe("Solana monitor: observe-only", () => {
     await r.close();
   });
 });
+
+describe("the cross-chain pair on the Solana monitor (D6 / A5.2)", () => {
+  const BASE_HASH = "0x" + "ab".repeat(32);
+  const linked = { baseAccount: "0x1646587E543bC2f63137bAa86F8598E1274aED78" as const, recipientOnBase: ("0x" + "22".repeat(32)) as `0x${string}`, expectedRecipient: ("0x" + "22".repeat(32)) as `0x${string}`, status: "linked" as const };
+
+  it("a rung answered on Base: the record keeps the Base hash and the bridge stage; the pair the dispatcher read lands on the account; the next firing carries the burn's age so the dispatcher can wait", async () => {
+    const r = await rig();
+    const id = r.world.add(10n * ONE_ZEC, debtForHf(10n * ONE_ZEC, 1000, 1.63), 0n);
+    await r.tick();
+    r.world.zecUsd = priceAt(between(R.derisk, R.emergency));
+    r.fake.script.push((intent) => {
+      intent.onPairRead?.(linked);
+      assert.equal(intent.inFlightAgeS, null, "nothing in flight before the first burn");
+      return { status: "CONFIRMED", signature: BASE_HASH, note: "burned 1000000000 USDC to Solana", bridge: { chain: "base", stage: "burn-confirmed", burnTxHash: BASE_HASH, amountUsdc: "1000000000", recipient: linked.expectedRecipient } };
+    });
+    const t = await r.tick();
+    const mine = t.outcomes.find((o) => o.account === id)!;
+    assert.equal(mine.fired, "derisk", JSON.stringify(mine));
+    assert.equal(mine.dispatch?.status, "CONFIRMED");
+    const s = JSON.parse(await readFile(r.path, "utf8"));
+    const d = s.dispatches.find((x: { account: string }) => x.account === id);
+    assert.equal(d.txHash, undefined, "a Base hash is not a Solana signature: it lives on the bridge record");
+    assert.deepEqual(d.bridge, { chain: "base", stage: "burn-confirmed", burnTxHash: BASE_HASH, amountUsdc: "1000000000", recipient: linked.expectedRecipient });
+    const a = s.accounts.find((x: { account: string }) => x.account === id);
+    assert.equal(a.crossChain.status, "linked");
+    assert.equal(a.crossChain.baseAccount, linked.baseAccount);
+    // the position has not moved (delivery is Stream C's): the rung re-arms and fires again; the intent now says a burn is in flight
+    r.fake.script.push((intent) => {
+      assert.ok(typeof intent.inFlightAgeS === "number" && intent.inFlightAgeS >= 0, `in flight: ${intent.inFlightAgeS}`);
+      return { status: "REFUSED", reason: "a Base burn is in flight — waiting for delivery" };
+    });
+    const t2 = await r.tick();
+    const again = t2.outcomes.find((o) => o.account === id)!;
+    assert.equal(again.fired, "derisk");
+    assert.equal(again.dispatch?.status, "REFUSED");
+    await r.close();
+  });
+
+  it("the store refuses a malformed bridge or pair record", async () => {
+    const r = await rig();
+    const id = r.world.add(10n * ONE_ZEC, debtForHf(10n * ONE_ZEC, 1000, 1.63), 0n);
+    await r.tick();
+    await assert.rejects(
+      r.store.mutate((s) => {
+        const a = s.accounts.find((x) => x.account === id)!;
+        (a as { crossChain?: unknown }).crossChain = { baseAccount: 1, recipientOnBase: null, status: "sideways", checkedAt: "now" };
+      }),
+      /crossChain malformed/
+    );
+    await r.close();
+  });
+});

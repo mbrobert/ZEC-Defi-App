@@ -11,7 +11,8 @@ import {
   type Hex,
 } from "viem";
 import { AAVE_V3, COLLATERAL_ASSETS, COLLATERAL_SYMBOLS } from "@zyo/shared";
-import { aaveVenueAbi, clPoolAbi, collateralRegistryAbi, collateralVenueAbi, directLpVenueAbi, erc20BalanceAbi, lpVenueAbi, oilskinAccountAbi, strategyRouterAbi, swapAdapterAbi } from "../src/abi/oilskin.js";
+import { cctpMessengerAbi, cctpTransmitterAbi, aaveVenueAbi, clPoolAbi, collateralRegistryAbi, collateralVenueAbi, directLpVenueAbi, erc20BalanceAbi, lpVenueAbi, oilskinAccountAbi, strategyRouterAbi, swapAdapterAbi } from "../src/abi/oilskin.js";
+import { CCTP_DOMAINS, encodeCctpBurnMessageV2, evmAddressToBytes32 } from "@zyo/shared";
 import type { Address } from "../src/types/evm.js";
 import { MAX_UINT256 } from "../src/types/evm.js";
 import type { MockChain, MockLog } from "./mockChain.js";
@@ -104,6 +105,14 @@ export class MockOilskin {
   tokenDecimals = new Map<string, number>([[OTHER_TOKEN.toLowerCase(), 8]]);
   tickSpacing = new Map<string, number>([[POOL_ADDR.toLowerCase(), 200]]);
   usdcBalances = new Map<string, bigint>();
+  /**
+   * The cross-chain mirror (D6 / A5.1–A5.2): `router.solanaRecipient(account)` per account (bytes32), the
+   * messenger and transmitter addresses the burn's three events come from, and a counter for the nonce.
+   */
+  solanaRecipients = new Map<string, `0x${string}`>();
+  cctpMessenger = getAddress("0x0000000000000000000000000000000000000cc1") as Address;
+  cctpTransmitter = getAddress("0x0000000000000000000000000000000000000cc2") as Address;
+  cctpNonce = 0n;
   /** Per-id payout when it closes. */
   closeYield = new Map<bigint, CloseYield>();
   defaultCloseYield: CloseYield = { usdc: 1_000_000_000n, other: 0n };
@@ -333,6 +342,12 @@ export class MockOilskin {
         return encodeFunctionResult({ abi: strategyRouterAbi, functionName, result: this.opts.lpVenueDirect ?? ("0x" + "00".repeat(20)) as Address });
       }
       if (functionName === "REGISTRY") return encodeFunctionResult({ abi: strategyRouterAbi, functionName, result: this.registry });
+      if (functionName === "CCTP_MESSENGER") return encodeFunctionResult({ abi: strategyRouterAbi, functionName, result: this.cctpMessenger });
+      if (functionName === "solanaRecipient") {
+        const { args } = decodeFunctionData({ abi: strategyRouterAbi, data });
+        const [acct] = args as unknown as [Address];
+        return encodeFunctionResult({ abi: strategyRouterAbi, functionName, result: this.solanaRecipients.get(acct.toLowerCase()) ?? (("0x" + "00".repeat(32)) as `0x${string}`) });
+      }
       throw revert("mock router: not callable directly");
     });
     if (this.opts.lpVenueDirect) {
@@ -597,7 +612,8 @@ export class MockOilskin {
       throw revert(`mock: unknown root target ${target}`);
     }
     const { functionName, args } = decodeFunctionData({ abi: strategyRouterAbi, data });
-    if (functionName !== "unwind") throw revert("mock router: only unwind");
+    if (functionName === "closeLpAndBurn") return this.runBurn(account, args as never);
+    if (functionName !== "unwind") throw revert("mock router: only unwind or closeLpAndBurn");
     const [p] = args as unknown as [
       {
         collateralAsset: Address;
@@ -670,6 +686,76 @@ export class MockOilskin {
     );
     this.pendingLogs.push({ address: this.opts.router, topics, data: eventData, blockNumber: this.chain.blockNumber, logIndex: this.pendingLogs.length });
     return encodeFunctionResult({ abi: strategyRouterAbi, functionName, result: [usdcFromLp, repaid, 0n, hf] });
+  }
+
+  /**
+   * `StrategyRouter.closeLpAndBurn` as the receipt shows it (D6 / A5.1): the close-and-settle leg, then the
+   * router's refusals by name, then the USDC leaves the account (burned) and three events fire — the router's
+   * `BurnedToSolana`, the messenger's `DepositForBurn` and the transmitter's `MessageSent` carrying the V2
+   * message shared's codec builds — exactly what `confirmBurn` must find agreeing.
+   */
+  private runBurn(
+    account: Address,
+    args: [{ positionIds: readonly bigint[]; band: { minSqrtPriceX96: bigint; maxSqrtPriceX96: bigint }; swap: { quotedIn: bigint; quotedOut: bigint; maxSlippageBps: number; routeData: Hex }; burnAmount: bigint; maxFee: bigint; minFinalityThreshold: number; deadline: bigint }]
+  ): Hex {
+    const acct = account.toLowerCase();
+    const [p] = args;
+    if (p.deadline < this.chain.nowS) throw revertWith(encodeErrorResult({ abi: strategyRouterAbi, errorName: "Expired", args: [p.deadline] }));
+    const recipient = this.solanaRecipients.get(acct);
+    if (!recipient || /^0x0{64}$/.test(recipient)) throw revertWith(encodeErrorResult({ abi: strategyRouterAbi, errorName: "NoSolanaRecipient", args: [account] }));
+    let usdcFromLp = 0n;
+    let closed = 0;
+    let failed = 0;
+    if (p.positionIds.length !== 0) {
+      const settled = this.closeAndSettle(acct, p);
+      usdcFromLp = settled.proceeds;
+      closed = settled.closed;
+      failed = settled.failed;
+    }
+    const held = this.usdcBalances.get(acct) ?? 0n;
+    const MAX = (1n << 256n) - 1n;
+    const burned = p.burnAmount === MAX ? held : p.burnAmount;
+    if (burned === 0n) throw revertWith(encodeErrorResult({ abi: strategyRouterAbi, errorName: "ZeroAmount", args: [] }));
+    if (held < burned) throw revertWith(encodeErrorResult({ abi: strategyRouterAbi, errorName: "UsdcShort", args: [burned, held] }));
+    if (p.maxFee >= burned) throw revertWith(encodeErrorResult({ abi: strategyRouterAbi, errorName: "MaxFeeNotBelowAmount", args: [p.maxFee, burned] }));
+    this.usdcBalances.set(acct, held - burned);
+    this.cctpNonce += 1n;
+    const nonce = new Uint8Array(32);
+    nonce[31] = Number(this.cctpNonce & 0xffn);
+    const b32 = (h: `0x${string}`) => Uint8Array.from(Buffer.from(h.slice(2), "hex"));
+    const message = encodeCctpBurnMessageV2({
+      version: 1,
+      sourceDomain: CCTP_DOMAINS.base,
+      destinationDomain: CCTP_DOMAINS.solana,
+      nonce,
+      sender: evmAddressToBytes32(this.cctpMessenger),
+      recipient: new Uint8Array(32).fill(0xa6),
+      destinationCaller: new Uint8Array(32),
+      minFinalityThreshold: p.minFinalityThreshold,
+      finalityThresholdExecuted: 0,
+      body: { version: 1, burnToken: evmAddressToBytes32(this.usdc), mintRecipient: b32(recipient), amount: burned, messageSender: evmAddressToBytes32(account), maxFee: p.maxFee, feeExecuted: 0n, expirationBlock: this.chain.blockNumber + 7200n, hookData: new Uint8Array(0) },
+    });
+    const messageHex = ("0x" + Buffer.from(message).toString("hex")) as Hex;
+    const push = (address: Address, topics: Hex[], data: Hex) => this.pendingLogs.push({ address, topics, data, blockNumber: this.chain.blockNumber, logIndex: this.pendingLogs.length });
+    push(
+      this.cctpTransmitter,
+      encodeEventTopics({ abi: cctpTransmitterAbi, eventName: "MessageSent" }) as Hex[],
+      encodeAbiParameters([{ type: "bytes" }], [messageHex])
+    );
+    push(
+      this.cctpMessenger,
+      encodeEventTopics({ abi: cctpMessengerAbi, eventName: "DepositForBurn", args: { burnToken: this.usdc, depositor: account, minFinalityThreshold: p.minFinalityThreshold } }) as Hex[],
+      encodeAbiParameters(
+        [{ type: "uint256" }, { type: "bytes32" }, { type: "uint32" }, { type: "bytes32" }, { type: "bytes32" }, { type: "uint256" }, { type: "bytes" }],
+        [burned, recipient, CCTP_DOMAINS.solana, ("0x" + "a6".repeat(32)) as Hex, ("0x" + "00".repeat(32)) as Hex, p.maxFee, "0x"]
+      )
+    );
+    push(
+      this.opts.router,
+      encodeEventTopics({ abi: strategyRouterAbi, eventName: "BurnedToSolana", args: { account, recipient } }) as Hex[],
+      encodeAbiParameters([{ type: "uint256" }, { type: "uint256" }, { type: "uint32" }, { type: "uint256" }, { type: "uint256" }, { type: "uint256" }], [burned, p.maxFee, p.minFinalityThreshold, BigInt(closed), BigInt(failed), usdcFromLp])
+    );
+    return encodeFunctionResult({ abi: strategyRouterAbi, functionName: "closeLpAndBurn", result: [usdcFromLp, burned] });
   }
 
   /** The router's `_closeAndSettle`: venue close (per-id try/catch) then swap the non-USDC leg. */

@@ -88,6 +88,22 @@ liquidity provision; EIP = Ethereum Improvement Proposal.
   regenerations older); the hour-after pool observation moved into Addendum 14, which the top now cites.
   Levers unchanged (×12.2 inside ×12.16–×12.25; ×8.67 inside ×7.06–×10.23).
 
+## 2026-09-13 — A5.2: the keeper's cross-chain pair — the Base burn as a keeper action, up to the attestation
+
+- **Base keeper** (`agent/src/dispatch`): `planBurn` / `grossForFee` (one `closeLpAndBurn` per pool, the need
+  grossed up for Circle's fee, the rung's fraction as a cap), `KeeperDispatcher.dispatchBurn` (the recipient the
+  router records must be the Solana Account's USDC token account; the burn selector's own grant; ids priced by
+  simulating the burn) and `confirmBurn` (our event, Circle's and the transmitter's message must agree; the
+  message and nonce kept on the record for the delivery). The keeper's router ABI gains the burn surface;
+  `cctpMessengerAbi` / `cctpTransmitterAbi` are pinned to shared's keccak of the verified signatures.
+- **Solana keeper** (`agent/src/solana`): `pair.ts` — the mutual-link rule and the bridge decision; the
+  dispatcher routes a linked pair's rungs 3–4 through an injected `BaseBurner`, waits while a burn is in flight
+  and falls back to the sale past the stall window; the monitor records `crossChain` on the account and
+  `bridge` on the dispatch. Config: `BASE_RPC_URL`, `BASE_ROUTER_ADDRESS`, `BRIDGE_STALL_S`.
+- Seam: GRANT_SELECTORS carries the second root call; the guard is now "exactly these two". Keeper 271 → **286**,
+  seam 113 → **123**. `CONTRACT-ABI.md`: the second grant a cross-chain account issues, and rule 8's sum.
+- Not built (Stream C): the two-key process, the attestation poll, the Solana delivery and the repay after it.
+
 ## 2026-09-13 — B3.1: the Solana side of the loop — entry record, per-position ladder on chain, the reserve, `deposit_for_burn`
 
 - **Program** (`SOLANA-ARCHITECTURE.md` §14 as built): `UserAccount.entry_hf_bps` written by `borrow` and

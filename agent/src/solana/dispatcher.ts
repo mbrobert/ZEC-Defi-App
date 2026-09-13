@@ -19,8 +19,11 @@ import type { DispatchRecord } from "../store/keeperStore.js";
 import type { Logger } from "../log.js";
 import { eventNow, type Notifier } from "../notify/notifier.js";
 import { AbortedError, withDeadline } from "../services/deadline.js";
+import type { BridgeInfo, BurnResult } from "../dispatch/types.js";
+import type { Address } from "../types/evm.js";
 import { PK, accountPda, anchorErrorName, ata, grantPda, grantRemaining, ixKeeperProtect, ixSplTransfer, obligationPda } from "./layouts.js";
-import { planProtect, type ProtectPlan, type RungTarget } from "./policy.js";
+import { bridgeDecision, unreadPair, type PairReader, type PairView } from "./pair.js";
+import { planProtect, usdcNeededFor, type ProtectPlan, type RungTarget } from "./policy.js";
 import type { SolanaReader } from "./reader.js";
 import { evaluateSolana, type SolanaValuation, type SolanaValuationParams } from "./valuation.js";
 
@@ -29,8 +32,9 @@ export type SolanaDispatchRecord = DispatchRecord<string, string>;
 export type SolanaDispatchResult =
   | { status: "NOTIFIED" }
   | { status: "LOGGED_ONLY"; reason: string }
-  | { status: "SENT"; signature: string }
-  | { status: "CONFIRMED"; signature: string; note?: string }
+  /** `bridge` is set when the rung was answered on Base (a burn home, A5.2); `signature` is then the Base hash. */
+  | { status: "SENT"; signature: string; bridge?: BridgeInfo }
+  | { status: "CONFIRMED"; signature: string; note?: string; bridge?: BridgeInfo }
   | { status: "REFUSED"; reason: string; permanent?: boolean }
   | { status: "SUPERSEDED"; reason: string }
   | { status: "FAILED"; error: string };
@@ -48,6 +52,20 @@ export interface SolanaDispatchIntent {
   /** Persist the signature BEFORE the broadcast (the twin of the persisted nonce). Rejecting fails closed. */
   persistBeforeSend?: (info: { signature: string; plan: ProtectPlan }) => Promise<void>;
   onGrantRead?: (g: SolanaGrantSnapshot) => void;
+  /** The pair as read this dispatch, for the account record (A5.2). */
+  onPairRead?: (p: PairView) => void;
+  /** Age (s) of the youngest Base burn still in flight for this account, or null (the monitor reads the store). */
+  inFlightAgeS?: number | null;
+}
+
+/**
+ * The Base side of a paired account's rung (SOLANA-ARCHITECTURE §14.6–14.7): closes the Base leg and burns
+ * USDC home. Injected — a process holding a Base key wires `KeeperDispatcher.dispatchBurn`; Stream C's
+ * two-key process is where that happens in production. Absent = the single-chain path for every rung.
+ */
+export interface BaseBurner {
+  dispatch(input: { record: SolanaDispatchRecord; baseAccount: Address; expectedRecipient: `0x${string}`; usdcNeeded: bigint; action: "burn-derisk" | "burn-emergency" }, signal?: AbortSignal): Promise<BurnResult>;
+  confirm(record: SolanaDispatchRecord, signal?: AbortSignal): Promise<BurnResult>;
 }
 
 export interface SolanaDispatcher {
@@ -78,6 +96,12 @@ export interface KeeperSolanaDispatcherDeps {
   log: Logger;
   notifier?: Notifier;
   now?: () => Date;
+  /** Reads the Base half of the pair (`solanaRecipient` on the router); null = never read, every account "unknown"/"unlinked". */
+  pair?: PairReader | null;
+  /** The Base burner for linked pairs at rungs 3–4; null = the single-chain path. */
+  baseBurner?: BaseBurner | null;
+  /** How long a Base burn may be in flight before the single-chain path takes over (s). */
+  bridgeStallS?: number;
   commitment?: Commitment;
 }
 
@@ -119,7 +143,22 @@ export class KeeperSolanaDispatcher implements SolanaDispatcher {
     intent.onGrantRead?.({ live: rem.live, expiry: Number(grant.expiryTs), repayLeft: rem.repayLeft, sellLeft: rem.sellLeft, allowedRungs: grant.allowedRungs });
     if (!rem.live) return { status: "REFUSED", permanent: true, reason: "grant is not live (expired, revoked, or an older epoch)" };
 
-    // 3. Size it.
+    // 3. The pair, and which way this rung goes (A5.2, §14.7): rung 2 always on Solana; rungs 3–4 over the
+    //    bridge for a linked pair with a burner and no burn already in flight; otherwise the single-chain path.
+    const pair = this.d.pair ? await this.d.pair.read(account, view, signal) : unreadPair(account, view);
+    intent.onPairRead?.(pair);
+    const decision = bridgeDecision({ action: record.action, status: pair.status, burnerAvailable: !!this.d.baseBurner, inFlightAgeS: intent.inFlightAgeS ?? null, stallS: this.d.bridgeStallS ?? 1800 });
+    log.info("route", { route: decision.route, reason: decision.reason, pair: pair.status, baseAccount: pair.baseAccount });
+    if (decision.route === "wait") return { status: "REFUSED", reason: decision.reason };
+    if (decision.route === "bridge" && pair.baseAccount) {
+      const target = rung.disarmHf * (1 + this.d.planMarginBps / 10_000);
+      const usdcNeeded = usdcNeededFor(valuation, target);
+      if (usdcNeeded === 0n) return { status: "SUPERSEDED", reason: "nothing is needed to reach the disarm level" };
+      const r = await this.d.baseBurner!.dispatch({ record, baseAccount: pair.baseAccount, expectedRecipient: pair.expectedRecipient, usdcNeeded, action: record.action === "emergency-unwind" ? "burn-emergency" : "burn-derisk" }, signal);
+      return this.mapBurn(r);
+    }
+
+    // 4. Size the Solana action.
     const keeperUsdcBalance = await this.d.reader.tokenBalance(this.d.keeper.publicKey, PK.usdcMint, signal);
     const keeperUsdc = keeperUsdcBalance < this.d.keeperMaxSaleUsdc ? keeperUsdcBalance : this.d.keeperMaxSaleUsdc;
     const plan = planProtect({
@@ -181,14 +220,39 @@ export class KeeperSolanaDispatcher implements SolanaDispatcher {
     return { status: "CONFIRMED", signature, note };
   }
 
+  /** A Base result in the Solana record's terms: the Base hash rides in `signature`, the bridge info beside it. */
+  private mapBurn(r: BurnResult): SolanaDispatchResult {
+    switch (r.status) {
+      case "SENT":
+        return { status: "SENT", signature: r.txHash, bridge: r.bridge };
+      case "CONFIRMED":
+        return { status: "CONFIRMED", signature: r.txHash, note: r.note, bridge: r.bridge };
+      case "REFUSED":
+        return { status: "REFUSED", reason: `Base burn: ${r.reason}`, permanent: r.permanent };
+      case "FAILED":
+        return { status: "FAILED", error: `Base burn: ${r.error}` };
+      case "SUPERSEDED":
+        return { status: "SUPERSEDED", reason: `Base burn: ${r.reason}` };
+      case "NOTIFIED":
+        return { status: "NOTIFIED" };
+      case "LOGGED_ONLY":
+        return { status: "LOGGED_ONLY", reason: r.reason };
+    }
+  }
+
   async confirm(record: SolanaDispatchRecord, signal?: AbortSignal): Promise<SolanaDispatchResult> {
-    if (!record.txHash) return { status: "FAILED", error: "no signature on the record" };
-    const st = await withDeadline("getSignatureStatuses", this.d.confirmTimeoutMs, signal, () => this.d.connection.getSignatureStatuses([record.txHash!], { searchTransactionHistory: true }));
+    if (!record.txHash && !record.bridge) return { status: "FAILED", error: "no signature on the record" };
+    if (record.bridge) {
+      if (!this.d.baseBurner) return { status: "FAILED", error: "a Base burn record with no Base burner to confirm it" };
+      return this.mapBurn(await this.d.baseBurner.confirm(record, signal));
+    }
+    const signature = record.txHash!;
+    const st = await withDeadline("getSignatureStatuses", this.d.confirmTimeoutMs, signal, () => this.d.connection.getSignatureStatuses([signature], { searchTransactionHistory: true }));
     const v = st.value[0];
     if (!v) return { status: "FAILED", error: "signature not found (blockhash likely expired); re-evaluate and re-send" };
     if (v.err) return { status: "FAILED", error: `transaction failed on chain: ${JSON.stringify(v.err)}` };
-    if (v.confirmationStatus === "confirmed" || v.confirmationStatus === "finalized") return { status: "CONFIRMED", signature: record.txHash };
-    return { status: "SENT", signature: record.txHash };
+    if (v.confirmationStatus === "confirmed" || v.confirmationStatus === "finalized") return { status: "CONFIRMED", signature };
+    return { status: "SENT", signature };
   }
 
   /** Pull the ZEC a sale delegated to the keeper into the keeper's own token account. Best-effort. */

@@ -15,7 +15,9 @@ import { sleep } from "../services/deadline.js";
 import { BASE58_ID_CODEC, KeeperStore } from "../store/keeperStore.js";
 import { ProgressWatchdog } from "../watchdog.js";
 import { describeSolanaConfig, loadSolanaConfig, type SolanaKeeperConfig } from "./config.js";
-import { KeeperSolanaDispatcher, SolanaObserveOnlyDispatcher, type SolanaDispatcher } from "./dispatcher.js";
+import { createPublicClient, http } from "viem";
+import { KeeperSolanaDispatcher, SolanaObserveOnlyDispatcher, type BaseBurner, type SolanaDispatcher } from "./dispatcher.js";
+import { BasePairReader, type PairReader } from "./pair.js";
 import { SolanaMonitor, type SolanaTickReport } from "./monitor.js";
 import { OILSKIN_ERRORS } from "./layouts.js";
 import { jupiterPriceSource, SolanaReader, type IndependentPriceSource } from "./reader.js";
@@ -33,6 +35,13 @@ export interface SolanaRunOptions {
   notifier?: Notifier;
   fetchImpl?: typeof fetch;
   onEscalate?: (e: { account: string; reasons: string[]; streak: number }) => void;
+  /** Test hook: the pair reader (the production one reads the Base router over BASE_RPC_URL). */
+  pair?: PairReader | null;
+  /**
+   * The Base burner for linked pairs at rungs 3–4 (A5.2). Nothing in this process builds one: it needs a Base
+   * signing key beside the Solana one, and that two-key process is Stream C's. Absent = single-chain rungs.
+   */
+  baseBurner?: BaseBurner | null;
 }
 
 export const SOLANA_KEEPER_DEFAULTS = {
@@ -109,6 +118,15 @@ export async function runSolanaKeeper(env: NodeJS.ProcessEnv, opts: SolanaRunOpt
   if (opts.notifyChannel) channels.push(opts.notifyChannel);
   const notifier: Notifier = opts.notifier ?? new MultiNotifier(log, channels, config.notifyDeadlineMs);
 
+  // The Base side of the pair, read-only: which accounts are linked (§14.7). Never signs anything.
+  let pair: PairReader | null = opts.pair ?? null;
+  if (pair === null && opts.pair === undefined && config.baseRpcUrl && config.baseRouterAddress) {
+    pair = new BasePairReader(createPublicClient({ transport: http(config.baseRpcUrl) }), config.baseRouterAddress, { deadlineMs: config.rpcDeadlineMs });
+    log.info("cross-chain pairs read from Base", { router: config.baseRouterAddress });
+  }
+  const baseBurner = opts.baseBurner ?? null;
+  if (!baseBurner) log.info("no Base burner: rungs 3–4 of a linked pair take the single-chain path (Stream C wires the two-key process)");
+
   let keeperPubkey: PublicKey | null = null;
   let dispatcher: SolanaDispatcher;
   if (opts.makeDispatcher) {
@@ -132,6 +150,9 @@ export async function runSolanaKeeper(env: NodeJS.ProcessEnv, opts: SolanaRunOpt
       idlErrors: OILSKIN_ERRORS,
       log,
       notifier,
+      pair,
+      baseBurner,
+      bridgeStallS: config.bridgeStallS,
     });
   } else {
     log.warn("OBSERVE-ONLY: no KEEPER_SOLANA_KEYPAIR — rungs are recorded and warnings delivered, every on-chain action is REFUSED by name");

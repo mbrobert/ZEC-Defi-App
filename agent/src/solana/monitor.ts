@@ -23,6 +23,7 @@ import { AbortedError, DeadlineError, withDeadline } from "../services/deadline.
 import { DuplicateIdError, isFatalStoreError, KeeperStore, type AccountRecord, type DispatchRecord } from "../store/keeperStore.js";
 import type { TickHandle } from "../watchdog.js";
 import type { SolanaDispatcher, SolanaDispatchResult } from "./dispatcher.js";
+import type { PairView } from "./pair.js";
 import type { DiscoveredSolanaAccount, SolanaReader } from "./reader.js";
 import { evaluateSolana, type SolanaValuation, type SolanaValuationParams } from "./valuation.js";
 
@@ -389,6 +390,10 @@ export class SolanaMonitor {
             onGrantRead: (g) => {
               void this.bookkeep(rec.account, { grant: { target: rec.account, selector: `rungs:${g.allowedRungs.toString(2)}`, active: g.live, allowCallback: true, expiry: g.expiry, checkedAt: this.now().toISOString() } }, l);
             },
+            onPairRead: (p) => {
+              void this.bookkeep(rec.account, { crossChain: this.pairRecord(p) }, l);
+            },
+            inFlightAgeS: this.bridgeInFlightAgeS(rec.account),
           },
           handle.signal
         )
@@ -436,6 +441,27 @@ export class SolanaMonitor {
     return { ladder: { fired }, refires, rearmedIds };
   }
 
+  /** The account record's view of the pair (A5.2). */
+  private pairRecord(p: PairView): NonNullable<Rec["crossChain"]> {
+    return { baseAccount: p.baseAccount, recipientOnBase: p.recipientOnBase, status: p.status, checkedAt: this.now().toISOString() };
+  }
+
+  /**
+   * Age in seconds of the youngest Base burn still in flight for the account — a dispatch with `bridge` whose
+   * stage is not "delivered" and whose status is SENT or CONFIRMED — or null. The dispatcher waits on it
+   * inside the stall window and falls back to the single-chain path past it (`bridgeDecision`).
+   */
+  private bridgeInFlightAgeS(account: string): number | null {
+    const nowMs = this.now().getTime();
+    let youngest: number | null = null;
+    for (const d of this.d.store.listDispatches({ account })) {
+      if (!d.bridge || d.bridge.stage === "delivered" || (d.status !== "SENT" && d.status !== "CONFIRMED")) continue;
+      const age = Math.max(0, Math.floor((nowMs - Date.parse(d.updatedAt)) / 1000));
+      if (youngest === null || age < youngest) youngest = age;
+    }
+    return youngest;
+  }
+
   private preSend(rec: Disp): (info: { signature: string }) => Promise<void> {
     return async ({ signature }) => {
       await this.d.store.mutate((s) => {
@@ -464,7 +490,11 @@ export class SolanaMonitor {
     const nowIso = this.now().toISOString();
     const attempts = rec.attempts + 1;
     const sig = "signature" in result ? result.signature : undefined;
-    const patch: Partial<Disp> = { attempts, updatedAt: nowIso, txHash: sig ?? rec.txHash };
+    // A Base burn's hash is not a Solana signature: it lives in `bridge.burnTxHash` (the store checks `txHash`
+    // against the Solana codec), and the dispatcher confirms a bridge record from there.
+    const bridged = "bridge" in result && result.bridge ? result.bridge : undefined;
+    const patch: Partial<Disp> = { attempts, updatedAt: nowIso, txHash: bridged ? rec.txHash : (sig ?? rec.txHash) };
+    if (bridged) patch.bridge = bridged;
     let escalation: string | null = null;
     switch (result.status) {
       case "NOTIFIED":

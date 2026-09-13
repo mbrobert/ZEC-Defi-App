@@ -120,8 +120,9 @@ Rules the account enforces (tested, invariant-checked):
 7. Budgets are computed from **calldata amounts**, never from balance snapshots, so a rebasing token
    (cbZEC) cannot fool them, and the account never reads a balance across an external call.
 8. **Budgets are per grant, not per account.** Two grants that both list USDC give the keeper 2× the
-   per-day USDC. The shipped product issues exactly ONE grant per account; if you ever issue a
-   second listing the same token, the user's per-day figure is the sum and the prompt must say so.
+   per-day USDC. A single-chain account issues exactly ONE grant; a cross-chain account (D6, 2026-09-13)
+   issues TWO — `unwind` and `closeLpAndBurn`, both listing USDC — so its per-day USDC figure is the sum
+   of the two lines and the prompt must say so.
 
 **The v1 "protection" grant — one grant, and it must allow the callback:**
 
@@ -142,8 +143,24 @@ its own price** (a cbBTC user in the WETH/USDC pool needs a WETH line in wei; wa
 `unwind` always pays the **account** (never the keeper); `withdrawAmount` is HF-gated and lands in
 the account; and the swap quote must imply a pool price inside the close's price band
 (`QuoteOutsideBand`, wave-2 G-MED-1), so a compromised keeper key can at worst churn within
-budgets and within the band it committed to. Do **not** grant `openLeveragedLp`, `openBorrowOnly`, `borrow`, `sweep`,
-`closeMany` or raw token selectors to a keeper — the keeper's whole surface is one `unwind` per pool.
+budgets and within the band it committed to. Do **not** grant `openLeveragedLp`, `openBorrowOnly`, `openLpOnly`, `setSolanaRecipient`, `borrow`, `sweep`,
+`closeMany` or raw token selectors to a keeper — the keeper's surface is one `unwind` per pool and, on a cross-chain account, one `closeLpAndBurn` per pool.
+
+**The cross-chain "protection" grant (BUILD-PLAN D6 / A5.2, 2026-09-13) — a SECOND grant, for a paired account only:**
+
+```
+target      = StrategyRouter
+selector    = closeLpAndBurn((uint256[],(uint160,uint160),(uint256,uint256,uint16,bytes),uint256,uint256,uint32,uint256))
+            = 0xc01c93d7
+tokenLimits = [ {USDC, ≥ the LP's USDC value + idle},   // the approve to Circle's TokenMessengerV2 for the burn
+                {pool token, …}, {AERO, …} ]            // swap approval + fee transfer, as for unwind
+period = 86400, expiry ≤ 30 d ahead, maxValuePerPeriod = 0, allowCallback = TRUE
+```
+The destination is not the keeper's to choose: the router burns only to `solanaRecipient(account)`, which the
+OWNER set with a plain `exec` and no grant ever names (the seam refuses a third selector). The USDC line
+bounds what can leave Base per period; it lands in the user's own Solana Account, nowhere else. The keeper
+plans this call only for a rung 3–4 of an account whose Solana half names this account back (a *linked*
+pair, `agent/src/solana/pair.ts`) and never while a burn is already in flight.
 
 ### Health factor floor (what the chain enforces, what the UI may claim)
 

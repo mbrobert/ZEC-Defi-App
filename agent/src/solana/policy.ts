@@ -54,6 +54,18 @@ function hfAfter(collateralZec: number, priceUsd: number, ltBps: number, debtUsd
   return debtUsdc <= 0 ? Number.POSITIVE_INFINITY : (collateralZec * priceUsd * ltBps) / 10_000 / debtUsdc;
 }
 
+/**
+ * USDC (base units) that must reach the debt to lift HF to `targetHf` with no collateral change:
+ * D − C·P·LT ÷ T, rounded up; 0 when the position is already there. The same arithmetic `planProtect` sizes a
+ * repay with; exported so the bridge route (a Base burn for a paired account, A5.2) asks for the same amount.
+ */
+export function usdcNeededFor(v: Extract<SolanaValuation, { kind: "OK" }>, targetHf: number): bigint {
+  const C = Number(v.collateralZec) / ZEC_UNIT;
+  const D = Number(v.debtUsdc) / USDC_UNIT;
+  const need = Math.max(0, D - (C * v.zecUsd * (v.liquidationThresholdBps / 10_000)) / targetHf);
+  return BigInt(Math.ceil(need * USDC_UNIT));
+}
+
 export function planProtect(i: PlanInput): ProtectPlan {
   const v = i.valuation;
   if (!i.grant.live) return { kind: "refused", reason: "no live grant for this keeper", permanent: true };

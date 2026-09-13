@@ -243,6 +243,110 @@ export function selectIds(
   return { ids: chosen, sizing: "value", expectedProceedsUsdc: acc };
 }
 
+/** The burn's fraction of LP value per rung: the same shares as the single-chain rungs (BUILD-PLAN D6 / A5.2). */
+export const BURN_FRACTION: Readonly<Record<string, readonly [number, number]>> = Object.freeze({
+  "burn-derisk": [2, 3],
+  "burn-emergency": [1, 1],
+});
+
+export interface BurnPlanInput {
+  account: Address;
+  /** "burn-derisk" | "burn-emergency". */
+  action: string;
+  router: Address;
+  positions: PlannedPosition[];
+  pools: Map<Hex, PoolInfo>;
+  idleUsdc: bigint;
+  /** USDC (base units) that must ARRIVE on Solana; null = the fraction alone sizes the closes. */
+  usdcNeeded: bigint | null;
+  /** Bound on Circle's fee, bps of the amount burned (their Fast minimum Base → Solana: 1.3 bp, 2026-09-12). */
+  maxFeeBps: number;
+  /** 1000 = Fast Transfer, 2000 = Standard. */
+  minFinalityThreshold: number;
+  bandToleranceBps: number;
+  nowS: bigint;
+  txDeadlineS: number;
+}
+
+/** `needed` grossed up for a fee of `maxFeeBps` taken at delivery: the burn that still delivers `needed`. */
+export function grossForFee(needed: bigint, maxFeeBps: number): bigint {
+  if (needed <= 0n) return 0n;
+  const den = BPS - BigInt(Math.max(0, Math.floor(maxFeeBps)));
+  if (den <= 0n) throw new RangeError("maxFeeBps must be below 10000");
+  return (needed * BPS + den - 1n) / den;
+}
+
+/**
+ * The cross-chain rung action for a paired account (SOLANA-ARCHITECTURE §14.6–14.7): close enough LP VALUE
+ * on Base to deliver `usdcNeeded` to the Solana debt after Circle's fee — capped at the rung's fraction — and
+ * burn everything the close produced plus the idle balance through `StrategyRouter.closeLpAndBurn`, one call
+ * per pool. The destination is never a parameter: the router burns only to the recipient the OWNER recorded.
+ * `maxFee` is a bound on Circle's fee sized from the expected proceeds, one unit up, so a smaller-than-expected
+ * close still passes the router's `maxFee < amount` check unless it collapsed by 1 − maxFeeBps.
+ */
+export function planBurn(input: BurnPlanInput): Plan {
+  const fraction = BURN_FRACTION[input.action];
+  if (!fraction) return { kind: "REFUSE", reason: `unknown burn action ${input.action}` };
+  const grossNeeded = input.usdcNeeded === null ? null : grossForFee(input.usdcNeeded, input.maxFeeBps);
+  let selection: Selection;
+  try {
+    // selectIds keys the fraction by action name: map the burn's onto the single-chain names it mirrors.
+    selection = selectIds(input.positions, input.action === "burn-emergency" ? "emergency-unwind" : "derisk", grossNeeded, input.idleUsdc);
+  } catch (e) {
+    return { kind: "REFUSE", reason: (e as Error).message };
+  }
+  if (selection.ids.length === 0 && input.idleUsdc === 0n) {
+    return { kind: "NOTHING", reason: "no LP value to close and no idle USDC to burn — only the owner can add USDC on Base" };
+  }
+  const byPool = new Map<Hex, bigint[]>();
+  const poolValue = new Map<Hex, bigint>();
+  for (const p of selection.ids) {
+    const arr = byPool.get(p.poolId) ?? [];
+    arr.push(p.id);
+    byPool.set(p.poolId, arr);
+    poolValue.set(p.poolId, (poolValue.get(p.poolId) ?? 0n) + (p.valueUsdc ?? 0n));
+  }
+  const pools = [...byPool.keys()].sort((a, b) => {
+    const av = poolValue.get(a) ?? 0n;
+    const bv = poolValue.get(b) ?? 0n;
+    return bv > av ? 1 : bv < av ? -1 : 0;
+  });
+  const deadline = input.nowS + BigInt(input.txDeadlineS);
+  const expectedTotal = (selection.expectedProceedsUsdc ?? 0n) + input.idleUsdc;
+  const maxFee = (expectedTotal * BigInt(Math.max(0, Math.floor(input.maxFeeBps))) + BPS - 1n) / BPS + 1n;
+  const burnCall = (positionIds: bigint[], band: { minSqrtPriceX96: bigint; maxSqrtPriceX96: bigint }, swap: SwapQuote): KeeperCall => ({
+    target: input.router,
+    value: 0n,
+    callback: false,
+    data: encodeFunctionData({
+      abi: strategyRouterAbi,
+      functionName: "closeLpAndBurn",
+      args: [{ positionIds, band, swap, burnAmount: MAX_UINT256, maxFee, minFinalityThreshold: input.minFinalityThreshold, deadline }],
+    }),
+  });
+  const calls: KeeperCall[] = [];
+  const closeIds: bigint[] = [];
+  for (const poolId of pools) {
+    const info = input.pools.get(poolId);
+    if (info === undefined || info.sqrtPriceX96 <= 0n) return { kind: "REFUSE", reason: `pool ${poolId} sqrtPrice unreadable or zero — refusing to close without a price band` };
+    let band;
+    try {
+      band = bandFor(info.sqrtPriceX96, input.bandToleranceBps);
+    } catch (e) {
+      return { kind: "REFUSE", reason: `cannot build price band for ${poolId}: ${(e as Error).message}` };
+    }
+    if (info.needsSwap && (info.swap.quotedIn === 0n || info.swap.quotedOut === 0n)) {
+      return { kind: "REFUSE", reason: `pool ${poolId} needs a swap quote and none could be built — refusing to swap unpriced` };
+    }
+    const ids = byPool.get(poolId)!;
+    closeIds.push(...ids);
+    calls.push(burnCall(ids, band, info.needsSwap ? info.swap : NO_SWAP));
+  }
+  if (calls.length === 0) calls.push(burnCall([], { minSqrtPriceX96: 1n, maxSqrtPriceX96: 2n }, NO_SWAP));
+  const selector = calls[0].data.slice(0, 10) as Hex;
+  return { kind: "CALLS", calls, closeIds, grantsNeeded: [{ target: input.router, selector }], expectedProceedsUsdc: selection.expectedProceedsUsdc, sizing: selection.sizing };
+}
+
 export function planAction(input: PlanInput): Plan {
   if (!(input.action in CLOSE_FRACTION)) return { kind: "REFUSE", reason: `unknown keeper action ${input.action}` };
 

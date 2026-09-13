@@ -122,6 +122,17 @@ export interface AccountRecord<Id extends string = Address> {
    */
   entryHf?: number | null;
   /**
+   * The cross-chain pair this account is half of (BUILD-PLAN D6 / A5.2; SOLANA-ARCHITECTURE §14.7): for a
+   * Solana Account, the Base account it recorded and whether that account records this one back
+   * (`linked`), one side only (`half-linked-*`), or neither. Absent = never read (no Base RPC configured).
+   */
+  crossChain?: {
+    baseAccount: string | null;
+    recipientOnBase: string | null;
+    status: "linked" | "half-linked-solana" | "half-linked-base" | "unlinked" | "unknown";
+    checkedAt: string;
+  };
+  /**
    * Durable per-account notification history (see notify/ownerNotifier.ts). Capped PER KIND,
    * oldest of that kind dropped first — one emergency episode's dispatch and escalation entries
    * used to push the `warn` entry out of a single shared ring (audit wave 2, N-LOW-1).
@@ -224,6 +235,20 @@ export interface DispatchRecord<Id extends string = Address, Tx extends string =
   disarmHf?: number;
   /** Times this record wedged a tick. Quarantined at the cap. */
   stalls?: number;
+  /**
+   * A cross-chain action's other-chain leg (BUILD-PLAN D6 / A5.2): for a Solana record whose rung was
+   * answered by a Base burn, the Base transaction, the amount and the stage the bridge reached;
+   * `txHash` on such a record is that Base hash. Absent on every single-chain record.
+   */
+  bridge?: {
+    chain: "base";
+    stage: "burn-sent" | "burn-confirmed" | "attested" | "delivered";
+    burnTxHash: string;
+    amountUsdc: string;
+    nonce?: string;
+    messageHex?: string;
+    recipient?: string;
+  };
 }
 
 /** One venue's book for the account at dispatch time; bigints as decimal strings (JSON). */
@@ -366,6 +391,13 @@ export function validateState<Id extends string = Address, Tx extends string = H
     if (a.entryHf !== undefined && a.entryHf !== null && !(typeof a.entryHf === "number" && Number.isFinite(a.entryHf) && a.entryHf > 0)) {
       throw new StoreError(`account ${id}: entryHf malformed`);
     }
+    if (a.crossChain !== undefined) {
+      const c = a.crossChain as Record<string, unknown>;
+      const statuses = ["linked", "half-linked-solana", "half-linked-base", "unlinked", "unknown"];
+      if (!c || typeof c !== "object" || !statuses.includes(String(c.status)) || typeof c.checkedAt !== "string" || (c.baseAccount !== null && typeof c.baseAccount !== "string") || (c.recipientOnBase !== null && typeof c.recipientOnBase !== "string")) {
+        throw new StoreError(`account ${id}: crossChain malformed`);
+      }
+    }
   }
   const keys = new Set<string>();
   for (const d of doc.dispatches as unknown[]) {
@@ -383,6 +415,13 @@ export function validateState<Id extends string = Address, Tx extends string = H
     if (!isNonNegInt(d.attempts)) throw new StoreError(`dispatch ${d.key}: attempts malformed`);
     if (d.disarmHf !== undefined && !(typeof d.disarmHf === "number" && Number.isFinite(d.disarmHf) && d.disarmHf > 0)) {
       throw new StoreError(`dispatch ${d.key}: disarmHf malformed`);
+    }
+    if (d.bridge !== undefined) {
+      const b = d.bridge as Record<string, unknown>;
+      const stages = ["burn-sent", "burn-confirmed", "attested", "delivered"];
+      if (!b || typeof b !== "object" || b.chain !== "base" || !stages.includes(String(b.stage)) || typeof b.burnTxHash !== "string" || !/^\d+$/.test(String(b.amountUsdc))) {
+        throw new StoreError(`dispatch ${d.key}: bridge malformed`);
+      }
     }
     if (d.txHash !== undefined && !(typeof d.txHash === "string" && codec.isTxHash(d.txHash))) {
       throw new StoreError(`dispatch ${d.key}: txHash malformed`);
