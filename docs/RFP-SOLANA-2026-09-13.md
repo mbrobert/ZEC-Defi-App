@@ -9,15 +9,19 @@ ATA = associated token account; CCTP = Circle's Cross-Chain Transfer Protocol; C
 ## 1 · What you would audit, and at which commit
 
 **Repository:** `mbrobert/ZEC-Defi-App` (private; read access provided on NDA).
-**Measured at:** `e1d57a49fde396a1c56d186af7ebc2bf90e521b3`, 2026-09-13.
+**Measured at:** `18c86843d7d08b533ebee0591200d51b8b720991`, 2026-09-13 (re-measured; the first cut of this package was
+`e1d57a49fde396a1c56d186af7ebc2bf90e521b3` the same day. What moved: the owner instructions `withdraw`,
+`repay` and `close_position` now re-record the position's entry health factor and `keeper_protect` does not
+(decision D9), and `health.rs` caps the acting rungs above an entry of 2.00 (D10) — both are
+`AUDIT-2026-09-13.md` Part 3, and both are trust-boundary changes worth your attention.)
 **Audit target:** the freeze commit, **tagged `beta-audit-1`**, expected **2026-12-11**. This package is an
 inquiry against today's tree so scope and price can be agreed before the freeze.
 
 | Area | Size | Notes |
 |---|---|---|
-| `solana/programs/oilskin/src` | **2,592 lines** Rust, Anchor 1.2.0 | 141 of those lines are generated from `packages/shared` and pinned by seam tests — read them, but they are not hand-written |
+| `solana/programs/oilskin/src` | **2,644 lines** Rust, Anchor 1.2.0 | 144 of those lines are generated from `packages/shared` and pinned by seam tests — read them, but they are not hand-written |
 | `solana/tests` | 4 localnet specs | 36 passing against a validator with Kamino's ZCASH market and Circle's CCTP V2 programs cloned from mainnet |
-| `agent/src/solana` | part of 10,993 lines TypeScript | The keeper's Solana path: in scope for *what the delegation permits*, not as application code |
+| `agent/src/solana` | part of 11,070 lines TypeScript | The keeper's Solana path: in scope for *what the delegation permits*, not as application code |
 
 The program is **not deployed**. Its upgrade authority will be handed to a Squads v4 multisig at deploy
 (`docs/SOLANA-DEPLOY.md`); until then the deployer key holds it and our copy says so.
@@ -114,7 +118,7 @@ product, and the yield service refuses a borrow the pool cannot fund rather than
 
 - Every suite is green at the hash in §1: the program's host unit tests **12**; the seam tests **14** (the
   generated ladder and address constants must equal `packages/shared`, which is itself pinned to the facts
-  document); localnet **36 passing / 0 failing**; the keeper **311** with an IDL seam of **77** checks pinning
+  document); localnet **36 passing / 0 failing**; the keeper **316** with an IDL seam of **77** checks pinning
   its hand-written encoders to the committed IDL.
 - `solana/SETUP.md` and `solana/scripts/localnet.sh` build the world from clean: the validator clones Kamino,
   Scope, the ZEC mint and Circle's two CCTP programs from mainnet, with Scope replaced by a local mock so

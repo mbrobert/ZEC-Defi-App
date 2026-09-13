@@ -3,6 +3,25 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-13 — Audit inquiries are out; both RFP packages re-measured at the current tree, and H1 reconciled
+
+- **The founder sent the audit inquiries on 2026-09-13.** That was §0 of the roadmap — the one item with no
+  slack — so the clock that decides the year is running. Kickoff windows from here: mid-October at the fast
+  end, mid-December at the slow end. `ROADMAP.md` H1 ticked, with the date.
+- **Both RFP packages re-measured at `18c8684`**, not `e1d57a4` as first cut. Firms will price from these, so
+  the numbers have to be the tree's: EVM **6,446 lines of Solidity across 32 files** (was 6,213 / 30),
+  tests 15,598 lines across **39 suites**, keeper 11,070 lines; Solana **2,644 lines of Rust**, 144 of them
+  generated from shared. Suite counts refreshed: contracts **433 / 0 / 13**, fork **13 / 13**, ABI seam
+  **444**, shared 99, keeper 316, yield 178, web 199, localnet 36, Rust 12, IDL seam 77.
+- **Each package now carries a delta note** rather than leaving a firm to diff two hashes: the new
+  `ChainlinkOracleAdapter` (audit as code — it is deployed by no script and its `maxAge` is deliberately
+  unchosen), and the two trust-boundary changes D9 and D10 with pointers to `AUDIT-2026-09-13.md` Part 3.
+- **H1's reconciliation re-verified at `18c8684`** in `BUILD-PLAN` §4: **A4 moves from in-progress to done**
+  (its two open §2b questions are now D9 and D10, fixed on both chains); A8 records the day's three internal
+  passes and names **A3 — the forecast service — as the only step still owed one**; A5 and Stream C unchanged,
+  still on the founder's two-key process and the address lookup table. §6's grep list returns **zero on live
+  files**.
+
 ## 2026-09-13 — D9: an owner action re-records the entry health factor, and the keeper's never does
 
 **The defect (LADDER-1, Medium, `AUDIT-2026-09-13.md` Part 3).** The ladder derives from the health factor

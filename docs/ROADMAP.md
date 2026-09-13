@@ -55,13 +55,22 @@ under pressure.
 
 *Theme: start the audit clock, and put the thing on a testnet.*
 
-- [ ] Audit inquiries sent: **4 EVM firms and 4 Solana firms** from the
-      shortlist, same six questions to each, freeze date stated (founder)
+- [x] **Audit inquiries sent** — founder, **2026-09-13**. This was the one item
+      with no slack (§0); the clock is running. Kickoff windows from here:
+      mid-October at the fast end, mid-December at the slow end.
 - [ ] Base Sepolia deployed; `docs/DEPLOYMENTS.md` table filled; the 3 skipped
       Sepolia e2e tests **run and pass** (founder deploys, Claude Code verifies)
-- [ ] Uncommitted Solana keeper work committed; `git status` clean
-- [ ] Reconciliation posted: every BUILD-PLAN step marked done(hash) /
-      in-progress / not-started, and BUILD-PLAN §6's grep list returns zero
+      — **the only H1 item left**, and the prerequisites are in
+      `docs/DEPLOY-SEPOLIA.md` (its §5.2 numbers were wrong until 2026-09-13:
+      they carried the superseded 1.55 floor and the deleted 50 % cap)
+- [x] Uncommitted Solana keeper work committed; `git status` clean — nothing
+      outstanding but the untracked `docs/handoff/` bundle, which is the
+      founder's to keep or remove
+- [x] **Reconciliation posted** — first at `57d1670`, re-verified against `git log`
+      at **2026-09-13 / `18c8684`** in `BUILD-PLAN` §4 and its preamble (the plan
+      of record carries it; a separate file would only rot beside it). §6's grep
+      list now returns **zero on live files** — the last one was a comment in
+      `lp-sim.py` (`87a6f72`)
 - [ ] Beta scope agreed in writing — the "in" list and the "not in beta" list,
       drafted in `docs/BETA-SCOPE-2026-09-13.md`, signed off by the founder
 
