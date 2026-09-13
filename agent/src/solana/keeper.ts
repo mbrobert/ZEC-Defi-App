@@ -158,6 +158,7 @@ export async function runSolanaKeeper(env: NodeJS.ProcessEnv, opts: SolanaRunOpt
       pair,
       baseBurner,
       attestation,
+      cctpLookupTable: config.cctpLookupTable ?? null,
       bridgeStallS: config.bridgeStallS,
     });
   } else {

@@ -51,6 +51,25 @@ The deployer key is the upgrade authority the moment the deploy lands. `mock_sco
 mainnet (it exists only so the localnet can stamp Scope prices — `Anchor.toml` does not list it under
 `[programs.mainnet]`; keep it that way).
 
+## 2b. The address lookup table both cross-chain transactions need (2026-09-13)
+
+`deposit_for_burn` and `receive_message` each carry more accounts than a legacy transaction holds — the
+delivery measured **1,264 bytes against the 1,232 limit** on localnet — so both ride v0 transactions with an
+address lookup table. One table, created once, covering Kamino's context and Circle's accounts.
+
+```bash
+# the authority may be the deployer key; the table is public data and holds no funds
+solana address-lookup-table create --authority <KEY>
+solana address-lookup-table extend <TABLE> --addresses <up to ~12 per call, repeated>
+```
+
+The addresses are the ones `docs/VERIFIED-SOLANA-FACTS.md` Addenda 3 and 4 record (the two CCTP programs, the
+token messenger, minter, local token, the domain-6 remote messenger, the transmitter, the token pair, the
+custody account, Circle's fee token account) plus Kamino's market context. Record the table in
+`DEPLOYMENTS.md` and set it for the keeper as `CCTP_LOOKUP_TABLE`; **without it the keeper refuses a delivery
+by name** rather than sending a transaction that cannot land. A table extension takes a slot or two to become
+usable — extend, then wait, then use.
+
 ## 3. Verify what landed (read-only; anyone can run it)
 
 ```bash

@@ -19,13 +19,17 @@ import { AddressLookupTableProgram, ComputeBudgetProgram, Keypair, LAMPORTS_PER_
 import { ASSOCIATED_TOKEN_PROGRAM_ID, TOKEN_PROGRAM_ID, createAssociatedTokenAccountIdempotentInstruction, createMintToInstruction, getAccount, getMint, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { expect } from "chai";
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import {
   CCTP_DOMAINS,
   CCTP_V2_SOLANA,
+  CCTP_V2_SOLANA_RECEIVE,
   KAMINO_ZCASH_MARKET,
   SOLANA_PROGRAMS,
   SOLANA_TOKENS,
   bytes32ToEvmAddress,
+  encodeCctpBurnMessageV2,
   decodeCctpBurnMessageV2,
   evmAddressToBytes32,
   ladderBpsFor,
@@ -308,5 +312,101 @@ describe("cross-chain (localnet): the entry record, the Base link, deposit_for_b
     expect(await errCode(protect(1))).to.equal("RungUnderstated");
     await stamp();
     expect(await errCode(protect(3))).to.equal("RungNotCrossed");
+  });
+
+  // ---------------------------------------------------------------------------------------------------------
+  // The RECEIVE side (Stream C). A real delivery needs Circle's attesters, which no localnet has — so what is
+  // proved here is everything up to the signature: that the instruction the keeper builds resolves against
+  // Circle's own cloned programs and accounts and reaches attestation verification, failing there and nowhere
+  // earlier. An account list that were wrong would fail first, and differently.
+  // ---------------------------------------------------------------------------------------------------------
+  describe("delivery (localnet): the keeper's receive_message reaches Circle's signature check", () => {
+    const importEsmHere = new Function("u", "return import(u)") as (u: string) => Promise<any>;
+    const deliveryModule = () => importEsmHere(pathToFileURL(resolve(__dirname, "../../agent/dist/src/solana/delivery.js")).href);
+
+    it("the receive-side world is cloned: both programs, the transmitter's state, the token pair, the custody account and the fee account", async () => {
+      for (const [name, key] of Object.entries(CCTP_V2_SOLANA_RECEIVE.pdas)) {
+        if (name === "messageTransmitterAuthority" || name.endsWith("EventAuthority") || name === "feeRecipient") continue;
+        const info = await conn.getAccountInfo(pk(key));
+        expect(info, `${name} (${key}) must be cloned for a delivery`).to.not.equal(null);
+      }
+      const pair = await conn.getAccountInfo(pk(CCTP_V2_SOLANA_RECEIVE.pdas.tokenPairBaseUsdc));
+      expect(pair!.data.readUInt32LE(8), "the token pair is Base's domain").to.equal(CCTP_DOMAINS.base);
+      const custody = await conn.getAccountInfo(pk(CCTP_V2_SOLANA_RECEIVE.pdas.custodyUsdc));
+      expect(custody!.owner.equals(TOKEN_PROGRAM_ID), "custody is a token account, not a mint authority").to.equal(true);
+      expect(Number(custody!.data.readBigUInt64LE(64)), "and it is funded on mainnet, so a delivery has something to pay out").to.be.greaterThan(0);
+    });
+
+    it("a delivery built by the keeper is refused by Circle for its ATTESTATION — not for its accounts, its discriminator or its layout", async () => {
+      const { ixReceiveMessage } = await deliveryModule();
+      const nonce = Uint8Array.from(Buffer.alloc(32, 0x5a));
+      const message = encodeCctpBurnMessageV2({
+        version: 1,
+        sourceDomain: CCTP_DOMAINS.base,
+        destinationDomain: CCTP_DOMAINS.solana,
+        nonce,
+        sender: evmAddressToBytes32("0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d"),
+        recipient: Uint8Array.from(Buffer.alloc(32, 0xa6)),
+        destinationCaller: new Uint8Array(32),
+        minFinalityThreshold: 1000,
+        finalityThresholdExecuted: 1000,
+        body: {
+          version: 1,
+          burnToken: evmAddressToBytes32("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"),
+          mintRecipient: accountUsdc.toBytes(),
+          amount: 1_000_000n,
+          messageSender: evmAddressToBytes32(BASE_ACCOUNT),
+          maxFee: 100n,
+          feeExecuted: 0n,
+          expirationBlock: 51_000_000n,
+          hookData: new Uint8Array(0),
+        },
+      });
+      // 130 bytes of nonsense: the right SHAPE (2 x 65) so nothing refuses it before Circle's own check.
+      const attestation = Uint8Array.from(Buffer.alloc(130, 0x11));
+      const ix = ixReceiveMessage(
+        { payer: owner.publicKey, caller: owner.publicKey, recipientTokenAccount: accountUsdc, feeRecipientTokenAccount: pk(CCTP_V2_SOLANA_RECEIVE.pdas.feeRecipientUsdcAta) },
+        message,
+        attestation
+      );
+      // The delivery does not fit a legacy transaction — 21 accounts plus Circle's message and signatures came
+      // to 1,264 bytes against the 1,232 limit when this test was written — so it rides a v0 transaction with a
+      // lookup table, exactly as the keeper does (and as the deploy runbook must create one for).
+      const slot = await conn.getSlot("finalized");
+      const [createIx, tableAddress] = AddressLookupTableProgram.createLookupTable({ authority: owner.publicKey, payer: owner.publicKey, recentSlot: slot });
+      await provider.sendAndConfirm(new Transaction().add(createIx), [owner]);
+      const addresses = [...new Map(ix.keys.map((k: any) => [k.pubkey.toBase58(), k.pubkey])).values()] as PublicKey[];
+      for (let i = 0; i < addresses.length; i += 12) {
+        await provider.sendAndConfirm(
+          new Transaction().add(AddressLookupTableProgram.extendLookupTable({ lookupTable: tableAddress, authority: owner.publicKey, payer: owner.publicKey, addresses: addresses.slice(i, i + 12) })),
+          [owner]
+        );
+      }
+      let table: AddressLookupTableAccount | undefined;
+      for (let i = 0; i < 40 && !table; i++) {
+        const res = await conn.getAddressLookupTable(tableAddress, { commitment: "confirmed" });
+        if (res.value && res.value.state.addresses.length === addresses.length) table = res.value;
+        else await new Promise((r) => setTimeout(r, 500));
+      }
+      expect(table, "the lookup table came back with every address").to.not.equal(undefined);
+      await new Promise((r) => setTimeout(r, 1500));
+      const msg = new TransactionMessage({
+        payerKey: owner.publicKey,
+        recentBlockhash: (await conn.getLatestBlockhash("confirmed")).blockhash,
+        instructions: [ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }), ix],
+      }).compileToV0Message([table!]);
+      const tx = new VersionedTransaction(msg);
+      tx.sign([owner]);
+      // Simulated, not sent: what is being read is how FAR the instruction gets inside Circle's program.
+      const sim = await conn.simulateTransaction(tx, { commitment: "confirmed" });
+      expect(sim.value.err, "a fabricated attestation must never be accepted").to.not.equal(null);
+      const text = (sim.value.logs ?? []).join("\n");
+      // It reached Circle's program and died on the signatures, which is only possible if every account
+      // resolved, the discriminator matched and the Borsh params parsed.
+      expect(text, `logs:\n${text}`).to.match(/CCTPV2Sm4AdWt5296sk4P66VBZ7bEhcARwFaaS9YPbeC invoke/);
+      expect(text).to.match(/Invalid signature|InvalidSignature|attester|Signature|signature/i);
+      // and NOT on the shapes that would mean our instruction was built wrong
+      expect(text).to.not.match(/InstructionFallbackNotFound|AccountNotInitialized|ConstraintSeeds|ConstraintExecutable|DeclaredProgramIdMismatch/);
+    });
   });
 });

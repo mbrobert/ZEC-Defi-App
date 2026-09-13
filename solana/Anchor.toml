@@ -117,3 +117,14 @@ address = "BwmDYtQ7jFj8ddaTmKa7fz9hyuK9n58mvc8G7DYNcKjM"
 
 [[test.validator.clone]]
 address = "W1k5ijkaSTo5iA5zChNpfzcy796fLhkBxfmJuR8W8HU"
+
+# The receive side (Addendum 4): the token pair Base USDC maps through, the custody token account a delivery is
+# paid out of, and Circle's fee recipient token account.
+[[test.validator.clone]]
+address = "3udrkuozTYGBVMyMdxmXWVTUrnpmSh7kEZiq67A8jTws"
+
+[[test.validator.clone]]
+address = "6xTBTqJMBr5m7BKqVxmW2x11DfqUwtD3TJsqpxELx72L"
+
+[[test.validator.clone]]
+address = "6zNSMmZGMhNyqZMHkx2L63DLuqh5qoqBhaQJPJD7Fvt3"

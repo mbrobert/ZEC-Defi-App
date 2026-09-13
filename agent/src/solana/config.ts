@@ -53,6 +53,8 @@ export interface SolanaKeeperConfig {
   bridgeStallS: number;
   /** Circle's attestation service: mainnet by default, the sandbox on devnet ↔ Sepolia. */
   attestationBaseUrl: string;
+  /** The address lookup table a CCTP delivery rides (created at deploy); absent = deliveries are refused by name. */
+  cctpLookupTable?: PublicKey;
 }
 
 export const SOLANA_CONFIG_DEFAULTS = {
@@ -199,6 +201,7 @@ export function loadSolanaConfig(env: NodeJS.ProcessEnv = process.env): SolanaKe
     baseRouterAddress: baseRouterRaw as `0x${string}` | undefined,
     bridgeStallS: num(env, "BRIDGE_STALL_S", SOLANA_CONFIG_DEFAULTS.bridgeStallS, { min: 60, integer: true }),
     attestationBaseUrl: attestationUrl,
+    cctpLookupTable: pubkey(env, "CCTP_LOOKUP_TABLE"),
   };
 }
 
@@ -218,5 +221,6 @@ export function describeSolanaConfig(c: SolanaKeeperConfig): Record<string, unkn
     store: c.storePath,
     basePair: c.baseRpcUrl ? { router: c.baseRouterAddress, bridgeStallS: c.bridgeStallS } : "not read (no BASE_RPC_URL)",
     attestation: c.attestationBaseUrl,
+    cctpLookupTable: c.cctpLookupTable?.toBase58() ?? "none (deliveries refused by name)",
   };
 }

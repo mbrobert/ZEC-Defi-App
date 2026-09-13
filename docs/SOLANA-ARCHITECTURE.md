@@ -638,9 +638,13 @@ up for Circle's fee (`planBurn`, `grossForFee`), the receipt CONFIRMED only when
 `DepositForBurn` and the transmitter's `MessageSent` agree — and the message bytes plus its nonce kept on the
 record (`bridge`) for the delivery. The Solana dispatcher takes a `BaseBurner` and routes a linked pair's rung
 3–4 through it; the monitor writes the pair on the account and the bridge stage on the record, and hands the
-next firing the burn's age. **Not built:** the burner's production wiring (a process holding a Base key beside
-the Solana key — Stream C's two-key process), Circle's attestation poll, the Solana `receive_message` delivery and
-the repay that follows; until then a linked pair's rungs 3–4 take the single-chain path (the keeper-funded sale).
+next firing the burn's age. **Built 2026-09-13 (Stream C):** Circle's attestation poll (`attestation.ts`), the `receive_message` delivery
+(`delivery.ts`), and the stage machine that drives a rung from burn to delivery one stage per tick; the repay
+that follows needs no cross-chain code, because a delivery moves no health factor and the next firing finds the
+USDC in the account. The operator's view — the five steps, every failure and what a person must do — is
+`docs/CROSSCHAIN-RUNBOOK-2026-09-13.md`. **Still not built:** the burner's production wiring (a process holding
+a Base key beside the Solana key) and the address lookup table both cross-chain transactions need, which is a
+deploy artefact; until both exist a linked pair's rungs 3–4 take the single-chain path (the keeper-funded sale).
 
 ### 14.8 What localnet proves
 

@@ -178,6 +178,18 @@ describe("the bridge stage machine", () => {
     assert.equal(out.bridge?.deliveredAmountUsdc, (AMOUNT - 400n).toString(), "what lands is the burn less Circle's fee");
   });
 
+  it("attested: without a lookup table the delivery is REFUSED by name — never sent and rejected for its size", async () => {
+    // receive_message carries 21 accounts plus Circle's message and signatures: 1,264 bytes as a legacy
+    // transaction against the 1,232 limit, measured on localnet 2026-09-13. The table is a deploy artefact.
+    const r = rig({ usedNonce: false });
+    const out = await r.d.confirm(record("attested", { messageHex: MESSAGE_HEX, attestationHex: ATTESTATION_HEX }));
+    assert.equal(out.status, "REFUSED");
+    if (out.status !== "REFUSED") return;
+    assert.equal(out.permanent, true, "no retry will make a transaction smaller");
+    assert.match(out.reason, /address lookup table/);
+    assert.match(out.reason, /CCTP_LOOKUP_TABLE/);
+  });
+
   it("attested: a record with no message or attestation is a fault, not a wait", async () => {
     const r = rig();
     const out = await r.d.confirm(record("attested"));

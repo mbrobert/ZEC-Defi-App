@@ -14,7 +14,7 @@
  *      best-effort, never a reason to call the protection failed: the delegation is the keeper's to pull later.
  * Without a keeper key the observe-only dispatcher delivers `notify` rungs and REFUSES every action by name.
  */
-import { ComputeBudgetProgram, Connection, Keypair, PublicKey, Transaction, sendAndConfirmRawTransaction, type Commitment } from "@solana/web3.js";
+import { ComputeBudgetProgram, Connection, Keypair, PublicKey, Transaction, TransactionMessage, VersionedTransaction, sendAndConfirmRawTransaction, type AddressLookupTableAccount, type Commitment } from "@solana/web3.js";
 import { CCTP_DOMAINS } from "@zyo/shared";
 import type { DispatchRecord } from "../store/keeperStore.js";
 import type { Logger } from "../log.js";
@@ -105,6 +105,13 @@ export interface KeeperSolanaDispatcherDeps {
   baseBurner?: BaseBurner | null;
   /** Circle's attestation service; null = a burn can be sent and confirmed but never delivered (it waits). */
   attestation?: CircleAttestationClient | null;
+  /**
+   * The address lookup table a delivery rides. `receive_message` carries 21 accounts plus Circle's message and
+   * signatures — **1,264 bytes as a legacy transaction against the 1,232 limit**, measured on localnet
+   * 2026-09-13 — so it must be a v0 transaction. The table is created once at deploy (`SOLANA-DEPLOY.md`);
+   * without one the delivery is refused by name rather than sent and rejected for its size.
+   */
+  cctpLookupTable?: PublicKey | null;
   /** How long a Base burn may be in flight before the single-chain path takes over (s). */
   bridgeStallS?: number;
   commitment?: Commitment;
@@ -334,12 +341,24 @@ export class KeeperSolanaDispatcher implements SolanaDispatcher {
     } catch (e) {
       return { status: "FAILED", error: `the attested message cannot be delivered to this account: ${errMsg(e)}` };
     }
-    const tx = new Transaction().add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 })).add(ix);
+    const table = await this.lookupTable(signal);
+    if (!table) {
+      return {
+        status: "REFUSED",
+        permanent: true,
+        reason:
+          "the delivery needs an address lookup table: receive_message carries 21 accounts plus Circle's message and signatures, which is over the legacy transaction limit. Create the table at deploy (docs/SOLANA-DEPLOY.md) and set CCTP_LOOKUP_TABLE.",
+      };
+    }
     const { blockhash, lastValidBlockHeight } = await withDeadline("getLatestBlockhash", this.d.confirmTimeoutMs, signal, () => this.d.connection.getLatestBlockhash(this.d.commitment ?? "confirmed"));
-    tx.recentBlockhash = blockhash;
-    tx.feePayer = this.d.keeper.publicKey;
-    tx.sign(this.d.keeper);
-    const signature = tx.signatures[0]?.signature ? bs58(tx.signatures[0].signature) : null;
+    const v0 = new TransactionMessage({
+      payerKey: this.d.keeper.publicKey,
+      recentBlockhash: blockhash,
+      instructions: [ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }), ix],
+    }).compileToV0Message([table]);
+    const tx = new VersionedTransaction(v0);
+    tx.sign([this.d.keeper]);
+    const signature = tx.signatures[0] ? bs58(Buffer.from(tx.signatures[0])) : null;
     if (!signature) return { status: "FAILED", error: "could not sign the delivery" };
 
     const sim = await withDeadline("simulateTransaction(delivery)", this.d.confirmTimeoutMs, signal, () => this.d.connection.simulateTransaction(tx));
@@ -354,7 +373,7 @@ export class KeeperSolanaDispatcher implements SolanaDispatcher {
 
     try {
       await withDeadline("sendAndConfirm(delivery)", this.d.confirmTimeoutMs, signal, () =>
-        sendAndConfirmRawTransaction(this.d.connection, tx.serialize(), { signature, blockhash, lastValidBlockHeight }, { commitment: this.d.commitment ?? "confirmed", skipPreflight: true })
+        sendAndConfirmRawTransaction(this.d.connection, Buffer.from(tx.serialize()), { signature, blockhash, lastValidBlockHeight }, { commitment: this.d.commitment ?? "confirmed", skipPreflight: true })
       );
     } catch (e) {
       if (e instanceof AbortedError) throw e;
@@ -368,6 +387,20 @@ export class KeeperSolanaDispatcher implements SolanaDispatcher {
       note: `delivered ${b.deliveredAmountUsdc ?? b.amountUsdc} USDC to the Account (${signature}); the repay is the next rung firing`,
       bridge: { ...b, stage: "delivered", deliveryTx: signature },
     };
+  }
+
+  /** The lookup table the delivery rides, fetched once and cached; null when none is configured or it is gone. */
+  private table: AddressLookupTableAccount | null = null;
+  private async lookupTable(signal?: AbortSignal): Promise<AddressLookupTableAccount | null> {
+    if (this.table) return this.table;
+    if (!this.d.cctpLookupTable) return null;
+    const res = await withDeadline("getAddressLookupTable", this.d.confirmTimeoutMs, signal, () => this.d.connection.getAddressLookupTable(this.d.cctpLookupTable!, { commitment: this.d.commitment ?? "confirmed" }));
+    if (!res.value) {
+      this.d.log.error("CCTP_LOOKUP_TABLE names no table on this cluster — deliveries cannot be sent", { table: this.d.cctpLookupTable.toBase58() });
+      return null;
+    }
+    this.table = res.value;
+    return this.table;
   }
 
   /** Circle's fee recipient token account, read from `token_messenger` on chain once and cached. */

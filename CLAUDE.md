@@ -35,7 +35,11 @@ built in full — never a "lite" notify-only variant — and launched together:
   `setSolanaRecipient`, `closeLpAndBurn`; design `SOLANA-ARCHITECTURE.md` §14);
   the Solana burn and reserve are built too (2026-09-13, B3.1: `set_base_account`,
   `deposit_for_burn`, the entry-HF record and the per-position ladder on chain);
-  the keeper's cross-chain class (A5.2) and Stream C are not.
+  the keeper's cross-chain class (A5.2) and Stream C's glue (Circle's attestation,
+  the Solana delivery, the resumable stage machine, the runbook) are built too
+  (2026-09-13). What is left is the founder's: a process holding a Base key beside
+  the Solana one, the address lookup table both cross-chain transactions need, and
+  a run end to end on devnet ↔ Sepolia. Nothing has crossed a chain for real yet.
 
 The yield model is a **forecast, not a gate** (D4, D5): every curated pool is
 depositable in both modes after the user sees the forecast and acknowledges
@@ -55,6 +59,7 @@ rules, the forecast math, the copy rules, the one website. Nothing is
 deployed yet. Start with `docs/BUILD-PLAN-2026-09-12.md`, then `README.md`,
 `SETUP.md`, `docs/DIRECTION-2026-09-11.md`, `docs/CROSSCHAIN-LOOP-2026-09-12.md`,
 `docs/VERIFIED-BASE-FACTS.md`, `docs/VERIFIED-SOLANA-FACTS.md`,
+`docs/CROSSCHAIN-RUNBOOK-2026-09-13.md`,
 `docs/AUDIT-2026-09-06.md`, `docs/TESTING.md`.
 
 ## Hard rules (never break these)

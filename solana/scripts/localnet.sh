@@ -67,6 +67,8 @@ ACCOUNTS=(
   AawthJCGRmggpfv9MMWV6Jmo9cue4gL9wUZgRBShg58W E1bQJ8eMMn3zmeSewW3HQ8zmJr7KR75JonbwAtWx2bux   # CCTP token_messenger, token_minter
   CRBBbuLCyrkQy4dCTHxqstSmDQv4ajBeUVb9qUdMVaP1 BwmDYtQ7jFj8ddaTmKa7fz9hyuK9n58mvc8G7DYNcKjM   # CCTP local_token[USDC], remote_token_messenger[6 = Base]
   W1k5ijkaSTo5iA5zChNpfzcy796fLhkBxfmJuR8W8HU   # CCTP message_transmitter (domain 5)
+  3udrkuozTYGBVMyMdxmXWVTUrnpmSh7kEZiq67A8jTws 6xTBTqJMBr5m7BKqVxmW2x11DfqUwtD3TJsqpxELx72L   # CCTP token_pair[6, Base USDC], custody[USDC] — the receive side (Addendum 4)
+  6zNSMmZGMhNyqZMHkx2L63DLuqh5qoqBhaQJPJD7Fvt3   # CCTP fee recipient USDC token account
 )
 
 ARGS=(--reset --url "$RPC" --ledger "$LEDGER" --bind-address 127.0.0.1 --rpc-port "$RPC_PORT" --faucet-port "$FAUCET_PORT" --gossip-port "$GOSSIP_PORT" --dynamic-port-range "${PORT_RANGE:-8000-10000}" --warp-slot "$WARP_SLOT")

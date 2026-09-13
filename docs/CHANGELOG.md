@@ -151,6 +151,32 @@ liquidity provision; EIP = Ethereum Improvement Proposal.
   regenerations older); the hour-after pool observation moved into Addendum 14, which the top now cites.
   Levers unchanged (×12.2 inside ×12.16–×12.25; ×8.67 inside ×7.06–×10.23).
 
+## 2026-09-13 — Stream C: the cross-chain glue — Circle's attestation, the Solana delivery, and the runbook
+
+The five-step rung is now a **resumable stage machine** (`docs/CROSSCHAIN-RUNBOOK-2026-09-13.md`): each stage is
+recorded before it is taken, the monitor re-enters a SENT record every tick, and a crash between any two stages
+loses nothing. Anything that is not a disagreement is a wait — a pending attestation, an unindexed burn and a
+service outage all leave the rung open; only a message that is not the burn we made, or a reverted transaction,
+ends one.
+
+- **`packages/shared`**: the receive-side accounts and seeds, Circle's attestation paths, and
+  `parseAttestationResponse` — which decodes the raw message bytes with our own codec, because Circle
+  **null-fills its decoded fields for a non-EVM destination** (observed live, recorded in
+  `docs/research/`). Nonce, recipient, amount and domain must all agree or nothing is delivered.
+- **`agent/src/solana/attestation.ts`**: transport only, with a request the deadline genuinely cancels.
+  **`delivery.ts`**: `receive_message` built from Circle's own seeds, with the recipient read back out of the
+  message bytes — the keeper is a relayer on that step and the USDC can only go where the burn already said.
+- **The dispatcher** drives burn-sent → burn-confirmed → attested → delivered and then stops: step 5 is the
+  ordinary Solana repay, reached because `bridgeDecision` now routes on whether the account's idle USDC covers
+  the need. That one rule is what ends the sequence instead of burning a second time.
+- **Found by the validator, now enforced:** a delivery is 1,264 bytes as a legacy transaction (limit 1,232), so
+  it rides a v0 transaction with an address lookup table; without one the keeper refuses by name. The table
+  joins the deploy runbook.
+- **`VERIFIED-SOLANA-FACTS.md` Addendum 4**: every receive account derived and read, the token messenger
+  decoded, the 2-of-2 attesters, and the fact that CCTP pays a delivery out of a **custody token account**
+  rather than minting — so Solana's 2-of-4 USDC mint multisig is irrelevant to a receive.
+- Shared 93 → **98**; keeper 299 → **310**; localnet 34 → **36**.
+
 ## 2026-09-13 — A5.2: the keeper's cross-chain pair — the Base burn as a keeper action, up to the attestation
 
 - **Base keeper** (`agent/src/dispatch`): `planBurn` / `grossForFee` (one `closeLpAndBurn` per pool, the need
