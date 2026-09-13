@@ -62,8 +62,8 @@ under pressure.
 - [ ] Uncommitted Solana keeper work committed; `git status` clean
 - [ ] Reconciliation posted: every BUILD-PLAN step marked done(hash) /
       in-progress / not-started, and BUILD-PLAN §6's grep list returns zero
-- [ ] Beta scope agreed in writing — the "in" list and the "not in beta" list
-      below, signed off by the founder
+- [ ] Beta scope agreed in writing — the "in" list and the "not in beta" list,
+      drafted in `docs/BETA-SCOPE-2026-09-13.md`, signed off by the founder
 
 **Backstop:** if inquiries are not out by 2026-09-18, the end-of-year goal is
 already at risk and the roadmap is re-cut that day, not in December.
