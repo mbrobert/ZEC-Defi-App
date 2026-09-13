@@ -1039,3 +1039,117 @@ this feed in its public reference directory (the Base directory JSON did **not**
 when fetched on 2026-09-13, and a Blockscout contract search on Base surfaced only tokens); whether a
 cbZEC/USD feed, as opposed to this ZEC/USD one, exists or is planned.
 
+**Partly answered the same day — see Addendum 17.** A full-history read (1,000 rounds, 10.61 days)
+measures the **deviation threshold at 0.5 %** and shows the feed publishes on deviation *only*: not one
+heartbeat publication appears anywhere in that window, so the **heartbeat is longer than 17,920 s and
+remains unmeasurable from history**. The eight-round sample above is superseded as a cadence estimate —
+its 3,090 s "largest gap" was one draw from an unbounded quantity — while every other fact in this
+addendum stands. The official heartbeat is still not known, and no max-age is pinned anywhere.
+
+
+---
+
+## Addendum 17 — what the Base Chainlink feeds' own history says about staleness (2026-09-13)
+
+Read read-only on 2026-09-13 with `scripts/feed-cadence.mjs` (one `latestRoundData` plus one
+`getRoundData` per round, batched, against `https://base-rpc.publicnode.com`; the script refuses to
+report a distribution if any round in the range failed to read, because a gap measured across a
+missing round is a fiction). Addendum 16 left one question open — the ZEC/USD feed's max-age — and
+answering it properly meant reading whole histories rather than the eight rounds sampled there.
+**Nothing here is taken from a document; every number is a `getRoundData` answer.**
+
+A Chainlink feed publishes on **two** triggers: a **deviation threshold** (the price moved by more
+than X % since the last on-chain answer) and a **heartbeat** (this long has passed regardless).
+Only the heartbeat is a liveness bound. Neither is exposed by a getter on these contracts.
+
+| Feed | Rounds read | Span | Median gap | p99 gap | Largest gap | Heartbeat visible? |
+|---|---|---|---|---|---|---|
+| **ZEC / USD** `0x69e5…6ec0` | 1,000 (10–1009) | 10.61 days | 480 s | 5,408 s | **17,920 s (4.98 h)** | **No — none at all** |
+| **ETH / USD** `0x7104…Bb70` | 600 (2270–2869) | 3.79 days | 360 s | 1,232 s | 1,232 s | **Yes — 1,232 s** |
+| **cbBTC / USD** `0x07DA…f9D` | 600 (14115–14714) | 7.79 days | 1,230 s | 1,232 s | 1,236 s | **Yes — ~1,232 s** |
+
+**How a heartbeat is told from a deviation publication:** by the price move that *ended* the gap. A
+long gap closed by a near-zero move is the heartbeat firing; one closed by a threshold-sized move is
+deviation-driven. ETH/USD has 459 publications of 599 under a 0.2 % move, cbBTC/USD 460 of 599, and
+the longest gaps on both are the quiet ones — a clean heartbeat at **1,232 s (20 min 32 s)**.
+
+### ZEC / USD publishes on deviation only, at 0.5 %, and has never shown a heartbeat
+
+Of 999 consecutive publications, **999 moved the price by at least 0.333 %, and 998 by at least
+0.50 %**. The single exception (round 38→39, +0.3332 % over 390 s) is what a threshold measured
+continuously off-chain looks like when the price spikes past it and retraces before the round is
+written. There is **no** near-zero-move publication anywhere in 10.61 days. Every one of the ten
+longest gaps — up to 4.98 hours — ends on a move of about ±0.5 %.
+
+Two things follow, and the second is the one that matters:
+
+1. **The deviation threshold is 0.5 %.** Measured, not declared.
+2. **The heartbeat was never reached, so it is strictly longer than 17,920 s — and its actual value
+   cannot be obtained from this history at all.** The largest observed gap is a **lower bound** on
+   the heartbeat, never an estimate of it. Addendum 16's largest-gap figure (3,090 s from eight
+   rounds) and the 8,228 s round age seen at fork block 51,222,568 were both samples of the same
+   unbounded quantity; this 17,920 s figure is a third, and a longer quiet market would produce a
+   fourth.
+
+### What this means for `ChainlinkOracleAdapter.maxAge` — still a decision, not a measurement
+
+`maxAge` is an **immutable constructor parameter**; it cannot be changed after deployment, and the
+contract cannot be deployed without it. Three ways to get a number, and **only the founder may pick
+one** (rule 4 — this is a risk decision, not an engineering one):
+
+1. **Chainlink's published heartbeat for this feed**, if it can be obtained. It is not in the Base
+   reference-data directory (checked again 2026-09-13: still no ZEC entry) and not on any getter.
+   The feed's `owner()` is the same address that owns the four Chainlink feeds this file already
+   verifies, so an inquiry has somewhere to go.
+2. **A longer measurement.** Re-run `scripts/feed-cadence.mjs` over a genuinely quiet market. The
+   script says explicitly when no heartbeat publication appears in the sample, so it cannot
+   accidentally hand back a volatility figure dressed as a cadence.
+3. **A deliberate risk bound**, chosen and written down as such: how stale a ZEC price may be before
+   `price()` should fail closed and freeze the cbZEC market, argued from the liquidation math rather
+   than from the feed's behaviour. Note which way the error cuts: **too tight and `price()` reverts
+   in a quiet market, freezing borrows and liquidations on a healthy market; too loose and a
+   genuinely stalled feed is trusted.** The Aerodrome cbZEC/USDC TWAP cross-check bounds the second
+   failure but not the first.
+
+**No number is written anywhere in the tree.** `ChainlinkOracleAdapter` is deployed by no script and
+referenced by no deployment; cbZEC stays registered-disabled (D3), so nothing is blocked by the gap
+except the adapter's own deployment.
+
+### The keeper's staleness probe was measuring the wrong thing (finding FEED-MED-1)
+
+The keeper derives each feed's bound as `max(largest gap in the last 6 rounds) × 2`
+(`agent/src/engine/feeds.ts`). Six rounds sampled while a market is moving contain **only**
+deviation-driven gaps, so the bound lands under the feed's own heartbeat and every heartbeat
+publication then reads stale. Replaying the rule over the histories above, at every possible
+start-up point:
+
+| Feed | Probe | Bound below the feed's heartbeat | Share of wall clock reading STALE (median / p90) |
+|---|---|---|---|
+| ETH / USD | 6 rounds | **34.7 %** of start-ups | 0.00 % / **59.04 %** |
+| ETH / USD | 24 h window, cap 120 | 1.7 % | 0.00 % / **0.00 %** |
+| cbBTC / USD | 6 rounds | 1.8 % | 0.00 % / 0.00 % |
+| cbBTC / USD | 24 h window, cap 120 | 0.0 % | 0.00 % / 0.00 % |
+| ZEC / USD | 6 rounds | 98.0 % (of its largest real gap) | **15.10 %** / **49.86 %** |
+| ZEC / USD | 24 h window, cap 120 | — | 1.28 % / 4.48 % |
+
+cbBTC/USD is nearly immune only because its median gap (1,230 s) is already its heartbeat — the
+asset moves enough to publish on deviation at almost exactly the heartbeat's pace. ETH/USD, whose
+median gap is 360 s, is not. The fix and its regression test are in `docs/AUDIT-2026-09-13.md`
+Part 2; ETH/USD is a **wired, live** feed, so this was a real defect, not a forward-looking one.
+
+### The bounds the fixed keeper actually derives on Base, run live
+
+`CHAIN_ID=8453 node scripts/sepolia-feed-policy.mjs` — the keeper's own `buildFeedPolicies`, against
+the live aggregators at **block 51,264,996 (2026-09-13T17:08:59Z)**, window 86,400 s, cap 120,
+slack ×2, floor 300 s, fallback 10,800 s:
+
+| symbol | max gap (s) | window covered (s) | rounds read | bound enforced (s) | source | round age at read | stale now |
+|---|---|---|---|---|---|---|---|
+| cbBTC | 1,232 | 86,748 | 72 | **2,464** | probe | 1,178 s | no |
+| WETH | 1,232 | 86,628 | 101 | **2,464** | probe | 62 s | no |
+| USDC | 86,418 | 86,418 | 2 | **172,836** | probe | 16,038 s | no |
+
+Every row is a full `probe` — none fell to `probe-short` — and the whole startup costs **175
+`getRoundData` reads** across the three feeds. Both movers now bound at 2,464 s (twice the measured
+1,232 s heartbeat) rather than at twice whatever the last five minutes happened to look like, and the
+pegged feed keeps its 172,836 s, which is what C-HIGH-2 was about.

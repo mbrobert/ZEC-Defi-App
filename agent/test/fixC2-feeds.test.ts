@@ -56,7 +56,7 @@ after(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-const PROBE = { fallbackMaxAgeS: 3 * 3600, minMaxAgeS: 300, slack: 2, rounds: 6 };
+const PROBE = { fallbackMaxAgeS: 3 * 3600, minMaxAgeS: 300, slack: 2, rounds: 120, minWindowS: 24 * 3600 };
 
 function env(storePath: string, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
   return {

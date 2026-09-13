@@ -15,8 +15,10 @@
  *
  * Needs `npm run build -w @zyo/shared -w @zyo/agent` (it imports both dists). The rule, as the
  * keeper applies it: bound = max(ceil(max observed gap × FEED_HEARTBEAT_SLACK), FEED_MIN_MAX_AGE_S),
- * over FEED_HEARTBEAT_ROUNDS rounds; PRICE_MAX_AGE_S is the fallback for a feed that cannot be
- * walked; PRICE_MAX_AGE_S_<SYMBOL> overrides. Defaults are the keeper's `CONFIG_DEFAULTS`.
+ * over as many rounds as it takes to span FEED_HEARTBEAT_WINDOW_S, capped at FEED_HEARTBEAT_ROUNDS;
+ * a walk that never spans the window is reported `probe-short` and takes the fallback instead
+ * (finding FEED-MED-1). PRICE_MAX_AGE_S is the fallback for a feed that cannot be walked;
+ * PRICE_MAX_AGE_S_<SYMBOL> overrides. Defaults are the keeper's `CONFIG_DEFAULTS`.
  */
 import { createPublicClient, http } from "viem";
 import { chainTable, resolveTokens } from "@zyo/shared";
@@ -42,6 +44,7 @@ const opts = {
   minMaxAgeS: num("FEED_MIN_MAX_AGE_S", CONFIG_DEFAULTS.feedMinMaxAgeS),
   slack: num("FEED_HEARTBEAT_SLACK", CONFIG_DEFAULTS.feedHeartbeatSlack),
   rounds: num("FEED_HEARTBEAT_ROUNDS", CONFIG_DEFAULTS.feedHeartbeatRounds),
+  minWindowS: num("FEED_HEARTBEAT_WINDOW_S", CONFIG_DEFAULTS.feedHeartbeatWindowS),
   overrides: Object.fromEntries(
     Object.keys(process.env)
       .filter((k) => /^PRICE_MAX_AGE_S_[A-Z0-9]+$/.test(k))
@@ -61,17 +64,24 @@ const rows = await buildFeedPolicies(reader, specs, head.timestamp, opts);
 
 console.log(
   `feed policies the keeper derives on ${chain.name} (${chainId}) at block ${head.number} ` +
-    `(${new Date(Number(head.timestamp) * 1000).toISOString()}) — rounds ${opts.rounds}, slack ×${opts.slack}, ` +
+    `(${new Date(Number(head.timestamp) * 1000).toISOString()}) — window ${opts.minWindowS} s, round cap ${opts.rounds}, slack ×${opts.slack}, ` +
     `floor ${opts.minMaxAgeS} s, fallback ${opts.fallbackMaxAgeS} s`
 );
 if (!chain.tokens.cbZEC && (!process.env.CBZEC_ADDRESS || !process.env.AERO_ADDRESS)) {
   console.log("(cbZEC / AERO doubles not given — placeholders used; they play no part in the feed bounds)");
 }
-console.log("| symbol | feed | gaps observed, newest first (s) | max gap (s) | bound enforced (s) | source | round age at read (s) | stale now |");
-console.log("|---|---|---|---|---|---|---|---|");
+console.log("| symbol | feed | max gap (s) | window covered (s) | rounds read | bound enforced (s) | source | round age at read (s) | stale now |");
+console.log("|---|---|---|---|---|---|---|---|---|");
 for (const r of rows) {
   console.log(
-    `| ${r.symbol} | ${r.feed ?? "—"} | ${r.observedGapsS.join(", ") || "—"} | ${r.observedHeartbeatS ?? "—"} | ${r.maxAgeS} | ${r.source} | ${r.ageS ?? "—"} | ${r.staleNow ? "YES" : "no"} |`
+    `| ${r.symbol} | ${r.feed ?? "—"} | ${r.observedHeartbeatS ?? "—"} | ${r.windowCoveredS ?? "—"} | ${r.windowRounds} | ${r.maxAgeS} | ${r.source} | ${r.ageS ?? "—"} | ${r.staleNow ? "YES" : "no"} |`
+  );
+}
+const short = rows.filter((r) => r.source === "probe-short");
+if (short.length) {
+  console.log(
+    `\nNOTE: ${short.map((r) => r.symbol).join(", ")} could not be walked far enough to span the window, so the ` +
+      "heartbeat was never observed and the fallback applies. Set PRICE_MAX_AGE_S_<SYMBOL> deliberately, or raise the cap."
   );
 }
 const stale = rows.filter((r) => r.staleNow);

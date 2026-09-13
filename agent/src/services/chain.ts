@@ -220,14 +220,36 @@ export class AaveReader {
    * feed's real cadence, and it is what the per-feed staleness bound is built
    * from (engine/feeds.ts). A proxy that reverts on a historical round (phase
    * boundary, unsupported) simply yields fewer samples — never an error.
+   *
+   * The walk stops on whichever comes first: the sampled window covers
+   * `minWindowS` of wall clock, or `maxRounds` rounds have been read. A
+   * `minWindowS` of 0 asks for no window at all and reads `maxRounds` rounds
+   * flat — the behaviour before FEED-MED-1, kept so the defect stays testable
+   * and an operator can ask for it deliberately. The
+   * window is what matters — a round COUNT is not a measurement of cadence.
+   * A Chainlink feed publishes on two triggers, a deviation threshold and a
+   * heartbeat, and a short count sampled during an active market sees only
+   * deviation-driven gaps. The heartbeat — the only real liveness bound — is
+   * visible only in a window long enough to contain a quiet stretch. Measured
+   * on Base 2026-09-13 (`docs/VERIFIED-BASE-FACTS.md` Addendum 17): ETH/USD
+   * needed up to 169 rounds before a heartbeat-length gap appeared.
    */
-  async readRoundHistory(spec: ReserveSpec, feed: Address, rounds: number, signal?: AbortSignal): Promise<RoundRead[]> {
+  async readRoundHistory(
+    spec: ReserveSpec,
+    feed: Address,
+    opts: { maxRounds: number; minWindowS: number },
+    signal?: AbortSignal
+  ): Promise<RoundRead[]> {
     const out: RoundRead[] = [];
     const latest = await this.call(`latestRoundData(${spec.symbol})`, signal, () =>
       this.client.readContract({ address: feed, abi: chainlinkAggregatorAbi, functionName: "latestRoundData" })
     );
     out.push({ roundId: latest[0], updatedAt: latest[3] });
-    for (let i = 1; i < rounds; i++) {
+    const newest = latest[3];
+    for (let i = 1; i < opts.maxRounds; i++) {
+      const oldest = out[out.length - 1].updatedAt;
+      // `updatedAt` 0 would make this window meaningless; such a round ends the walk below.
+      if (opts.minWindowS > 0 && oldest > 0n && newest > oldest && newest - oldest >= BigInt(opts.minWindowS)) break;
       const id = out[out.length - 1].roundId - 1n;
       if (id <= 0n) break;
       try {

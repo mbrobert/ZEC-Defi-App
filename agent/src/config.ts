@@ -76,8 +76,17 @@ export interface KeeperConfig {
   feedHeartbeatSlack: number;
   /** Floor under a probed staleness bound (a fast feed must not get a hair trigger). */
   feedMinMaxAgeS: number;
-  /** Historical rounds walked back per feed when measuring that gap. */
+  /** Cap on historical rounds walked back per feed when measuring that gap. */
   feedHeartbeatRounds: number;
+  /**
+   * Wall-clock seconds the round sample must span before the walk stops. A
+   * round COUNT is not a measure of cadence: sampled during an active market,
+   * a short count sees only deviation-driven gaps and never the heartbeat, and
+   * the bound then lands under the feed's own heartbeat (finding FEED-MED-1,
+   * `docs/VERIFIED-BASE-FACTS.md` Addendum 17). 0 asks for no window and reads
+   * `feedHeartbeatRounds` rounds flat — the behaviour before that finding.
+   */
+  feedHeartbeatWindowS: number;
   /**
    * What to do when the resolved policy would make EVERY account UNKNOWN.
    * `fatal` (default) refuses to start; `warn` is an explicit operator override.
@@ -221,7 +230,12 @@ export const CONFIG_DEFAULTS = {
   clockDriftMaxS: 120,
   feedHeartbeatSlack: 2,
   feedMinMaxAgeS: 300,
-  feedHeartbeatRounds: 6,
+  // 24 h of rounds, capped at 120 calls per feed: measured against the real
+  // published history of ETH/USD, cbBTC/USD and ZEC/USD on Base, this is the
+  // smallest pair that takes the 90th-percentile stale-time to 0.00 % on both
+  // wired feeds (Addendum 17). A larger cap buys nothing.
+  feedHeartbeatRounds: 120,
+  feedHeartbeatWindowS: 24 * 3600,
   notifyDeadlineMs: 10_000,
   storeKeepTerminalPerAccount: 50,
   storeLockStaleMs: 5 * 60_000,
@@ -352,7 +366,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): KeeperConfig {
     priceMaxAgeOverridesS: readPriceMaxAgeOverrides(env),
     feedHeartbeatSlack: num(env, "FEED_HEARTBEAT_SLACK", CONFIG_DEFAULTS.feedHeartbeatSlack, { min: 1, max: 100 }),
     feedMinMaxAgeS: num(env, "FEED_MIN_MAX_AGE_S", CONFIG_DEFAULTS.feedMinMaxAgeS, { min: 1, integer: true }),
-    feedHeartbeatRounds: num(env, "FEED_HEARTBEAT_ROUNDS", CONFIG_DEFAULTS.feedHeartbeatRounds, { min: 2, max: 50, integer: true }),
+    feedHeartbeatRounds: num(env, "FEED_HEARTBEAT_ROUNDS", CONFIG_DEFAULTS.feedHeartbeatRounds, { min: 2, max: 500, integer: true }),
+    feedHeartbeatWindowS: num(env, "FEED_HEARTBEAT_WINDOW_S", CONFIG_DEFAULTS.feedHeartbeatWindowS, { min: 0, integer: true }),
     feedSelfCheck: oneOf(env, "FEED_SELFCHECK", ["fatal", "warn"] as const, "fatal"),
     bandMaxToleranceBps: num(env, "BAND_MAX_TOLERANCE_BPS", CONFIG_DEFAULTS.bandMaxToleranceBps, { min: 1, max: 5_000, integer: true }),
     // The adapter reverts SlippageTooHigh above 500 bps; refuse it here instead.
@@ -411,6 +426,7 @@ export function describeConfig(c: KeeperConfig): Record<string, unknown> {
     feedHeartbeatSlack: c.feedHeartbeatSlack,
     feedMinMaxAgeS: c.feedMinMaxAgeS,
     feedHeartbeatRounds: c.feedHeartbeatRounds,
+    feedHeartbeatWindowS: c.feedHeartbeatWindowS,
     feedSelfCheck: c.feedSelfCheck,
     oracleDeviationBps: c.oracleDeviationBps,
     hfToleranceBps: c.hfToleranceBps,

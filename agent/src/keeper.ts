@@ -172,6 +172,7 @@ export async function runKeeper(env: NodeJS.ProcessEnv, opts: RunOptions = {}): 
       minMaxAgeS: config.feedMinMaxAgeS,
       slack: config.feedHeartbeatSlack,
       rounds: config.feedHeartbeatRounds,
+      minWindowS: config.feedHeartbeatWindowS,
       overrides: config.priceMaxAgeOverridesS,
     }
   );

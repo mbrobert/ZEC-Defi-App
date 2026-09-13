@@ -3,6 +3,43 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-13 — The feeds' own history, read whole: a 0.5 % deviation threshold, no ZEC heartbeat at all, and a keeper probe that was measuring volatility
+
+- **The question Addendum 16 left open was `ChainlinkOracleAdapter`'s immutable `maxAge`.** Answering it
+  properly meant reading whole histories rather than eight rounds: **1,000 rounds of ZEC/USD (10.61 days),
+  600 each of ETH/USD and cbBTC/USD**, read read-only from Base and recorded as **`VERIFIED-BASE-FACTS.md`
+  Addendum 17**.
+- **ZEC/USD publishes on deviation only, at 0.5 %.** Of 999 consecutive publications, 998 moved the price by
+  at least 0.50 % and all 999 by at least 0.333 %; **not one heartbeat publication appears anywhere in
+  10.61 days.** So the heartbeat is longer than the largest gap seen (**17,920 s**) and **cannot be measured
+  from history at all** — the largest gap is a lower bound, never an estimate. Addendum 16's 3,090 s figure
+  is superseded as a cadence estimate; everything else in it stands. **No max-age is written anywhere**:
+  Addendum 17 sets out the three honest ways to get one and leaves the choice to the founder (rule 4).
+- **ETH/USD and cbBTC/USD do show a heartbeat: 1,232 s**, told from the near-zero price move that ends each
+  of their longest gaps.
+- **Finding FEED-MED-1 (Medium), `AUDIT-2026-09-13.md` Part 2.** The keeper derived each feed's staleness
+  bound from `max(gap over the last 6 rounds) × 2`. Six rounds sampled in an active market contain only
+  deviation-driven gaps, so the bound lands **under the feed's own heartbeat** — and when the market calms,
+  every heartbeat publication reads stale, the account goes UNKNOWN and the ladder stops. That is C-HIGH-2's
+  failure by a different route. Replayed over the real history: **34.7 % of possible start-up points on
+  ETH/USD — a wired, live feed — derive a bound below its heartbeat, and at p90 the feed reads stale 59.0 %
+  of wall-clock time.** cbBTC/USD escaped only because its median gap already is its heartbeat, which is why
+  the fixtures never caught it.
+- **Fix: the probe samples a WINDOW OF TIME with a cap on calls.** `readRoundHistory` walks back until the
+  sample spans `FEED_HEARTBEAT_WINDOW_S` (**24 h**) or `FEED_HEARTBEAT_ROUNDS` (**120**, was 6). `FeedPolicy`
+  carries `windowCoveredS` / `windowRounds`, both logged; a walk that could not cover the window is marked
+  **`probe-short`** and takes the fallback rather than a tight bound it did not earn. p90 stale time falls
+  **59.04 % → 0.00 %** on ETH/USD and **49.86 % → 4.48 %** on ZEC/USD. The defaults are the smallest pair
+  that reaches 0.00 % on both wired feeds — chosen from the measurement, not picked.
+- **`scripts/feed-cadence.mjs`** (new, read-only): reads any Chainlink proxy's own history and reports the
+  gap distribution, which gaps were heartbeat publications and which were deviation-driven, and a replay of
+  the keeper's rule at every start-up point. It **refuses to print a distribution if any round failed to
+  read** — a gap measured across a missing round is a fiction — and says so explicitly when a sample contains
+  no heartbeat at all, so it cannot hand back a volatility figure dressed as a cadence. Run it before
+  choosing any max-age.
+- Measured: agent **316 tests / 61 suites** (+5, `fixFEED1-heartbeat-window.test.ts`), ABI seam 123/123,
+  IDL seam 77/77. No other suite touched.
+
 ## 2026-09-13 — cbZEC is priced from Chainlink ZEC/USD, exclusively: `ChainlinkOracleAdapter`, and the 18-decimal hazard pinned by a test
 
 - Founder's decision, 2026-09-13: "use chainlink zec/usd for now exclusively until a cbZEC/USD source is

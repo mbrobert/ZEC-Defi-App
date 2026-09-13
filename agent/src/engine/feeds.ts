@@ -24,6 +24,22 @@ import type { Logger } from "../log.js";
  * Nothing here is typed from a document: a heartbeat is measured, not
  * declared. When a feed cannot be walked (a proxy that reverts on historical
  * rounds, a phase boundary), the fallback applies and the row says so.
+ *
+ * WHAT CHANGED 2026-09-13 (finding FEED-MED-1). The walk-back was six rounds.
+ * A Chainlink feed publishes on two triggers — a deviation threshold and a
+ * heartbeat — and six rounds sampled during an active market contain only
+ * deviation-driven gaps, which are far shorter than the heartbeat. The bound
+ * then lands BELOW the feed's own heartbeat, and the moment the market calms
+ * every heartbeat publication reads stale: the accounts go UNKNOWN and the
+ * ladder stops, which is C-HIGH-2 again by a different route. Measured over
+ * the feeds' real published history (`docs/VERIFIED-BASE-FACTS.md`
+ * Addendum 17): with six rounds, 34.7 % of possible start-up points on
+ * ETH/USD derive a bound under that feed's 1,232 s heartbeat, and at the 90th
+ * percentile the feed would read stale for 59 % of wall-clock time. So the
+ * sample is now a WINDOW of time (`minWindowS`, 24 h by default) with a call
+ * cap (`rounds`), and the row carries the window it actually covered. A walk
+ * that could not cover the window has not necessarily seen a heartbeat, so
+ * its bound is widened to the fallback and the row says `probe-short`.
  */
 
 export interface FeedPolicy {
@@ -35,7 +51,11 @@ export interface FeedPolicy {
   observedGapsS: number[];
   /** The staleness bound that will be enforced for this feed. */
   maxAgeS: number;
-  source: "probe" | "override" | "fallback" | "no-feed";
+  source: "probe" | "probe-short" | "override" | "fallback" | "no-feed";
+  /** Wall-clock seconds spanned by the sampled rounds (newest − oldest). */
+  windowCoveredS: number | null;
+  /** How many rounds the walk actually read. */
+  windowRounds: number;
   /** Round age at the probe, in seconds. */
   ageS: number | null;
   /** True when the round is already older than the bound that will be enforced. */
@@ -49,8 +69,13 @@ export interface FeedPolicyOptions {
   minMaxAgeS: number;
   /** Multiplier applied to the largest observed gap. */
   slack: number;
-  /** How many historical rounds to walk back (gaps = rounds − 1). */
+  /** Cap on historical rounds walked back, per feed (gaps = rounds − 1). */
   rounds: number;
+  /**
+   * Wall-clock seconds the sample must span before the walk stops early. This,
+   * not the round cap, is what makes the sample contain a heartbeat gap.
+   */
+  minWindowS: number;
   /** Per-symbol operator overrides (PRICE_MAX_AGE_S_<SYMBOL>). */
   overrides?: Readonly<Record<string, number>>;
 }
@@ -102,6 +127,8 @@ export async function buildFeedPolicies(
         observedGapsS: [],
         maxAgeS: override ?? opts.fallbackMaxAgeS,
         source: "no-feed",
+        windowCoveredS: null,
+        windowRounds: 0,
         ageS: null,
         staleNow: false,
       });
@@ -109,11 +136,17 @@ export async function buildFeedPolicies(
     }
     let rounds: RoundRead[] = [];
     try {
-      rounds = await reader.readRoundHistory(spec, spec.feed, opts.rounds, signal);
+      rounds = await reader.readRoundHistory(spec, spec.feed, { maxRounds: opts.rounds, minWindowS: opts.minWindowS }, signal);
     } catch {
       rounds = [];
     }
     const latest = rounds[0];
+    const oldest = rounds[rounds.length - 1];
+    const windowCoveredS = latest && oldest && latest.updatedAt > oldest.updatedAt ? Number(latest.updatedAt - oldest.updatedAt) : null;
+    // A walk that never spanned the asked-for window may have seen only the
+    // feed's deviation-driven gaps, never its heartbeat — so its largest gap
+    // is not a cadence measurement and must not become a tight bound.
+    const short = windowCoveredS === null || windowCoveredS < opts.minWindowS;
     const gaps = gapsFrom(rounds);
     const observed = gaps.length ? Math.max(...gaps) : null;
     const probed = observed === null ? null : Math.ceil(observed * opts.slack);
@@ -121,7 +154,8 @@ export async function buildFeedPolicies(
     // constant for the assets that move (a 20-minute-heartbeat cbBTC feed gets
     // ~40 minutes, not 3 hours) and LOOSER for the pegged one that publishes
     // daily. `minMaxAgeS` only stops a very fast feed getting a hair trigger.
-    const maxAgeS = override ?? (probed === null ? opts.fallbackMaxAgeS : Math.max(probed, opts.minMaxAgeS));
+    const probedBound = probed === null ? null : short ? Math.max(probed, opts.fallbackMaxAgeS) : Math.max(probed, opts.minMaxAgeS);
+    const maxAgeS = override ?? (probedBound === null ? opts.fallbackMaxAgeS : probedBound);
     const ageS = latest ? Number(nowS - latest.updatedAt) : null;
     out.push({
       symbol: spec.symbol,
@@ -129,7 +163,9 @@ export async function buildFeedPolicies(
       observedHeartbeatS: observed,
       observedGapsS: gaps,
       maxAgeS,
-      source: override !== undefined ? "override" : probed === null ? "fallback" : "probe",
+      source: override !== undefined ? "override" : probed === null ? "fallback" : short ? "probe-short" : "probe",
+      windowCoveredS,
+      windowRounds: rounds.length,
       ageS,
       staleNow: ageS !== null && ageS > maxAgeS,
     });
@@ -179,6 +215,8 @@ export function logFeedPolicies(log: Logger, rows: readonly FeedPolicy[]): void 
       source: r.source,
       observedHeartbeatS: r.observedHeartbeatS,
       observedGapsS: r.observedGapsS.slice(0, 6),
+      windowCoveredS: r.windowCoveredS,
+      windowRounds: r.windowRounds,
       ageS: r.ageS,
       staleNow: r.staleNow,
     });

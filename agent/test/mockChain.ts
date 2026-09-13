@@ -36,6 +36,13 @@ export interface MockReserve {
   chainlink: { roundId: bigint; answer: bigint; updatedAt: bigint; answeredInRound: bigint; decimals: number } | null;
   /** Seconds between this feed's published rounds (drives getRoundData history). */
   heartbeatS?: bigint;
+  /**
+   * Gaps before each round walking BACK from the latest, newest first: index 0
+   * is `latest − (latest − 1)`. Beyond the array, `heartbeatS` applies. This is
+   * how a real Chainlink feed behaves — short deviation-driven gaps in an
+   * active market, then heartbeat-length ones when it calms (FEED-MED-1).
+   */
+  gapScheduleS?: bigint[];
   /** Historical rounds are unavailable on this proxy (probe falls back). */
   noRoundHistory?: boolean;
 }
@@ -347,9 +354,14 @@ export class MockChain {
           const [want] = args as [bigint];
           if (want <= 0n || want > c.roundId) throw rpcError(3, "execution reverted: No data present");
           // A feed publishes on its heartbeat: round n was published
-          // `heartbeat × (latest − n)` seconds before the latest one.
+          // `heartbeat × (latest − n)` seconds before the latest one — unless a
+          // gap schedule says otherwise for the most recent rounds.
           const beat = r.heartbeatS ?? 3600n;
-          const updatedAt = c.updatedAt - beat * (c.roundId - want);
+          const back = Number(c.roundId - want);
+          const sched = r.gapScheduleS;
+          let elapsed = 0n;
+          for (let k = 0; k < back; k++) elapsed += sched && k < sched.length ? sched[k] : beat;
+          const updatedAt = c.updatedAt - elapsed;
           return encodeFunctionResult({
             abi: chainlinkAggregatorAbi,
             functionName,
