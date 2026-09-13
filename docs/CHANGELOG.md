@@ -151,6 +151,24 @@ liquidity provision; EIP = Ethereum Improvement Proposal.
   regenerations older); the hour-after pool observation moved into Addendum 14, which the top now cites.
   Levers unchanged (×12.2 inside ×12.16–×12.25; ×8.67 inside ×7.06–×10.23).
 
+## 2026-09-13 — The two audit packages, at a measured hash
+
+`docs/RFP-EVM-2026-09-13.md` and `docs/RFP-SOLANA-2026-09-13.md` (BUILD-PLAN A9 and B7). Each follows the
+shortlist's six-item shape: the scope measured from the tree rather than estimated (6,213 lines of Solidity in
+30 files; 2,592 lines of Rust, 141 of them generated and seam-pinned), what to read and in what order, the
+trust model in one page, the invariants already asserted **and the six we want attacked**, the launch
+parameters, and the six questions asked identically of every firm so quotes compare.
+
+Two things both packages do deliberately. They name `e1d57a4` as the hash the scope was measured at while
+stating that the audit target is the freeze tag `beta-audit-1` expected 2026-12-11 — an inquiry can go out
+before a freeze, and the calendar is the binding constraint. And they leave the launch parameters blank:
+deposit cap, allowlist size and day-one funds at risk are the founder's numbers, they size both the audit and
+any bounty, and neither package should be sent with them invented.
+
+The Solana package also states what has not been proven — nothing has crossed a chain for real; the burn is
+proven against Circle's cloned program and the delivery only up to its signature check, which is as far as a
+localnet can go without Circle's attester keys.
+
 ## 2026-09-13 — Internal audit of the Solana module and the cross-chain code: two fixes, six observations
 
 `docs/AUDIT-2026-09-13.md` — the first adversarial read of everything built today (A5.1, B3.1, A5.2, Stream C)

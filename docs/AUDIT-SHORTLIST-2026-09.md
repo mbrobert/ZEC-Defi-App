@@ -74,6 +74,12 @@ quotes are in.
 
 ## 5 · The RFP package (identical for both, plus a chain-specific appendix)
 
+**Written 2026-09-13:** `docs/RFP-EVM-2026-09-13.md` and `docs/RFP-SOLANA-2026-09-13.md`, both measured at
+`e1d57a4`. Each carries the six items below and asks the same six questions, so quotes compare. Both leave
+§5 (deposit cap, allowlist size, funds at risk) blank: those are the founder's numbers and neither package
+should be sent with them invented. Send both with "code freeze expected 2026-12-11" stated.
+
+
 1. Fixed commit hash and a tag; the tree builds and every suite is green at it.
 2. `docs/AUDIT-SCOPE.md` (updated to the new tree), `docs/BUILD-PLAN-2026-09-12.md`,
    `docs/CROSSCHAIN-LOOP-2026-09-12.md`, `docs/RISKS.md`, the relevant
