@@ -28,6 +28,18 @@ liquidity provision; EIP = Ethereum Improvement Proposal.
   (D3) and not this commit. Suites re-run because they parse the facts file: shared **93**, web **197**,
   yield **172**, agent **286**, prototypes **130 · 116 · 62 · 6**, all green.
 
+## 2026-09-13 — The fork job's second blocker: the RPC secret points at a pruned node, not an archive node
+
+- With the URL fixed (secret updated 14:34:46 UTC) the job gets past `invalid rpc url` — it reads the chain tip
+  (51,260,573) — and fails inside `setUp()` with `state at block #51222569 is pruned`, one backend also answering
+  `HTTP 410 … This endpoint has been discontinued` from a Lava gateway. The endpoint serves the tip, not the
+  state at `FORK_BLOCK`. Moving the pin forward is not a fix: a pruned node holds ~128 blocks.
+- Probed read-only at exactly that block: `https://mainnet.base.org` and `https://base.drpc.org` serve it;
+  `https://1rpc.io/base` returns the CI error character for character; publicnode returns 403 (archive needs a
+  token). The whole job then ran locally against `mainnet.base.org` **cold** (`--no-storage-caching`, the state
+  CI is in): **12 / 12 in 85.6 s**, plus `check-cbzec-b20.sh` OK at the same block. The suite, the block and the
+  workflow are all sound; the secret's value is the one open item. `docs/TESTING.md` carries the table.
+
 ## 2026-09-13 — Slice L closed out: Actions runs again, the nightly is green on the runner, the fork job waits on the secret's VALUE
 
 - The founder raised the Actions spending limit and created `BASE_RPC_URL` (14:22:24 UTC). Jobs start again: the
