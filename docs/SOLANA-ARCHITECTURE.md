@@ -466,7 +466,139 @@ The original questions, kept for the record:
 
 ## 13 · Not in this design
 
-The LP leg on Solana (Orca / Meteora / Raydium — not modelled, not gated); moving USDC between chains (CCTP —
-a different product); the "lite" notify-only variant (rejected); Kamino Multiply (Kamino's own loop product —
+The LP leg on Solana (Orca / Meteora / Raydium — not modelled, not gated); the "lite" notify-only variant (rejected); Kamino Multiply (Kamino's own loop product —
 Oilskin's difference is the ladder, not the primitive); elevation groups (none active on this market);
 Kamino obligation orders (disabled on this market).
+
+## 14 · D6 addendum (2026-09-13) — the loop's Solana side: entry-HF record, per-position ladder, the reserve, `deposit_for_burn`
+
+BUILD-PLAN D6 puts the cross-chain loop in v1 and §13 above had listed moving USDC between chains as another
+product; this section is the design that replaces that line. The loan still never crosses a chain: the debt
+stays on Kamino, only USDC moves — out to the user's Base `OilskinAccount` by Circle's CCTP V2 (Cross-Chain
+Transfer Protocol) in the deploy direction, back to the Account's USDC token account in the protective
+direction. Facts every number here rests on: `VERIFIED-SOLANA-FACTS.md` Addenda 1 and 3. Base's half is
+`StrategyRouter.openLpOnly` / `setSolanaRecipient` / `closeLpAndBurn` (BUILD-PLAN A5); the keeper's class is
+§14.7; the two-chain runbook is Stream C.
+
+### 14.1 The account learns two things
+
+| Field (carved out of `UserAccount._reserved`, 64 → 24 bytes; the layout length does not change) | Written by | Zero means |
+|---|---|---|
+| `entry_hf_bps: u64` | `borrow`, as the refreshed health factor right after the borrow — the twin of `StrategyRouter.entryHfWad` (A4). A dust borrow (HF sentinel) leaves it as it was. | no record: the floor's ladder runs and the keeper says so (`ladderForRecorded`'s rule) |
+| `base_account: [u8; 32]` | the owner, `set_base_account` — the user's Base `OilskinAccount` left-padded to 32 bytes, the only `mint_recipient` a burn may name | not linked: `deposit_for_burn` refuses `NoBaseAccount` |
+
+Accounts created before this build read both as zero (the reserved bytes were zero) and behave as they did:
+floor ladder, no burns. The keeper's decoder (`agent/src/solana/layouts.ts`) reads the two fields at offsets 90
+and 98; the IDL seam pins it.
+
+### 14.2 The ladder per position — D7 parity on chain
+
+`keeper_protect` judged every account against the generated floor ladder (1.23 / 1.16 / 1.09 / 1.05), which is
+wrong for the positions this market actually admits: Kamino's 40 % cap means entry HF ≥ 1.625, whose ladder is
+1.57 / 1.40 / 1.23 / 1.06 with hysteresis 0.06 (`ladderFor` in `packages/shared`). A keeper acting at the
+derived rungs would have been refused `RungNotCrossed`. The program now derives the ladder from
+`entry_hf_bps` with the same rule, in integers:
+
+```
+raw_i   = 1_000_000 + (e_bps − 10_000) × k_i          (units of 0.01 bp; k = 91 / 64 / 36 / 9, generated)
+rung_i  = round_to_100bps(raw_i)                      ((raw + 5_000) / 10_000 × 100)
+rung_3  = max(rung_3, EMERGENCY_HF_MIN_BPS)            (10 500)
+rung_i  = max(rung_i, rung_{i+1} + 100)  for i = 2, 1, 0   (strictly descending, as shared)
+hyst    = round_to_100bps(max(200 × 100, 500 × 100 × (e_bps − 10_000) / 5_500))
+disarm_i = rung_i + hyst
+```
+
+`solana/scripts/gen-ladder.mjs` emits the constants (`LADDER_RUNG_FACTORS_PCT`, `EMERGENCY_HF_MIN_BPS`,
+`HF_HYSTERESIS_MIN_BPS`, `HF_HYSTERESIS_SCALE_BPS`, `HF_HYSTERESIS_SPAN_BPS`) beside the floor ladder, and the
+seam test walks every entry HF from 1.25 to 3.00 in steps of 0.01 asserting the integer rule equals shared's
+`ladderFor` rung for rung. `entry_hf_bps == 0` → the floor ladder (`LADDER`), as before.
+
+### 14.3 The reserve
+
+The USDC that makes rung 2 atomic on Solana (`CROSSCHAIN-LOOP-2026-09-12.md` §3, item 1): with no collateral
+change, lifting HF from the repay rung to its disarm level needs
+
+```
+R(D, e) = ceil( D × (disarm₂ − rung₂) / disarm₂ )        D = the refreshed debt, e = entry_hf_bps
+```
+
+— 4.1 % of the debt at entry 1.625 (1.40 → 1.46). Shared exports the same rule as `reserveFractionFor(entryHf)`
+and `reserveUsdcFor(debtUsdc, entryHf)`; the seam test compares. Where it binds:
+
+- `deposit_for_burn` refuses `ReserveShort` when the Account's USDC after the burn would be under R computed on
+  the obligation refreshed in the same instruction. With no (non-dust) debt there is no reserve.
+- `transfer_out` is **not** gated. The wallet is the same owner on the same chain and the always-exit rule of §3
+  stands; moving the reserve to the wallet is the owner's choice, as withdrawing idle USDC is on Base. The
+  keeper's valuation reports the shortfall (`reserveShortUsdc`) and the dashboard says that rung 2 is
+  cross-chain until it is refunded (a plain SPL transfer of USDC into the Account's token account; no
+  instruction needed).
+- Rung 2 spends the reserve (`keeper_protect`, repay-only from idle USDC — the instruction built in S3, unchanged).
+  It is not replenished automatically; the notifier tells the owner. While it is short, rung 2 is either the
+  five-step cross-chain action (§14.6) or the keeper-funded sale the grant already allows (§3).
+- The reserve earns nothing (Kamino's supply side is not used for it); the honest cost is in
+  `CROSSCHAIN-LOOP-2026-09-12.md` §3.
+
+### 14.4 `deposit_for_burn` (owner-only; the deploy direction)
+
+Accounts: `Borrow`'s set (owner, account, obligation, `account_usdc`, the Kamino context) plus CCTP's
+(Addendum 3: `sender_authority_pda`, `denylist_account`, `message_transmitter`, `token_messenger`,
+`remote_token_messenger` for domain 6, `token_minter`, `local_token`, the USDC mint, the two CCTP programs, the
+messenger's event authority) and `message_sent_event_data`, a fresh keypair the client generates and the owner
+pays rent for. Steps, in order:
+
+1. `base_account ≠ 0` else `NoBaseAccount`; `amount > 0`.
+2. Refresh reserves and the obligation (the debt now), compute R; require `account_usdc.amount − amount ≥ R`
+   else `ReserveShort` (skipped when the debt is dust or there is no obligation).
+3. CPI TokenMessengerMinterV2 `deposit_for_burn` with `{ amount, destination_domain: 6, mint_recipient:
+   base_account, destination_caller: default, max_fee, min_finality_threshold }`, the Account PDA signing as
+   `owner` by `invoke_signed`. `max_fee` and the threshold are the caller's (the web reads Circle's fee API at
+   send time — 1 bp Fast today, Addendum 1); the program carries no fee number.
+4. Emit `BurnedToBase { account, amount, base_account, max_fee, min_finality_threshold, reserve_required,
+   usdc_after }`.
+
+The CCTP program ids, PDAs and domain ids come from `packages/shared` (`solana.ts` `CCTP_V2`, `chains.ts`
+`CCTP_DOMAINS`) through `generated/addresses.rs`, pinned by the addresses seam to Addendum 3.
+
+### 14.5 What the Base side records, mirrored
+
+`StrategyRouter.setSolanaRecipient(bytes32)` — the Account's USDC **token account** on Solana (CCTP's Solana
+`mintRecipient` is a token account, Addendum 3), written by the owner through the account; `closeLpAndBurn`
+always burns to it and reverts `NoSolanaRecipient` without one. So neither chain's burn can be pointed anywhere
+but the user's own account on the other chain, whoever holds the key that triggers it.
+
+### 14.6 Who signs what
+
+| Direction | Step | Chain | Signer |
+|---|---|---|---|
+| Deploy (Solana → Base) | `deposit_for_burn` | Solana | the user's wallet (owner) |
+| | Circle attests (Fast ≈ seconds; Standard = Solana finality) | — | — |
+| | `MessageTransmitterV2.receiveMessage(message, attestation)` — mints to the user's `OilskinAccount` | Base | anyone (the web, a relayer, the user); the account signs nothing |
+| | `StrategyRouter.openLpOnly` — the arrived USDC into Aerodrome | Base | the user's Base wallet (v1) |
+| Protect (Base → Solana; rungs 3–4, and rung 2 when the reserve is short) | `StrategyRouter.closeLpAndBurn` — close ids, swap to USDC, burn to `solanaRecipient` | Base | the keeper's Base key under a grant (target router, that selector, a USDC budget) |
+| | Circle attests | — | — |
+| | `receive_message` — mints to the Account's USDC token account | Solana | anyone (the keeper's Solana key) |
+| | `keeper_protect(rung, repay, 0)` | Solana | the keeper's Solana key under its grant |
+
+**Open for the founder (product, not code):** whether the keeper may ALSO perform the deploy-direction
+`openLpOnly` automatically. The account's grant bounds tokens and selectors, not a pool or a range, so an
+"automatic deploy" grant would let the keeper choose the pool; v1 leaves that signature with the user.
+
+### 14.7 The keeper's cross-chain position class (A5, `agent/`)
+
+A pair is a Solana Account whose `base_account` names a Base account whose `solanaRecipient` is that Account's
+USDC token account — mutual, or not a pair (a half-link is reported as such and each chain's single-chain ladder
+runs on whatever debt it has). For a pair: the health factor is Solana's (the debt lives there), the ladder is
+`ladderFor(entry_hf_bps)`, rung 2 dispatches the Solana repay from the reserve, rungs 3–4 dispatch the Base
+`closeLpAndBurn` sized to the repay need plus Circle's fee, then wait for the attestation, deliver on Solana and
+repay — a dispatch record that carries the five steps and resumes from any of them (Stream C writes the runbook
+for each failing). Valuation adds the Base leg's USDC value for the dashboard and `reserveShortUsdc`.
+
+### 14.8 What localnet proves
+
+The two CCTP V2 programs and the five state accounts of Addendum 3 are cloned beside Kamino
+(`scripts/localnet.sh`, `Anchor.toml`). The spec opens a position, links a Base account, burns from the Account's
+USDC token account and reads the `MessageSent` event account: header domain 5 → 6, body `mintRecipient` =
+`base_account`, `amount`, and the USDC supply reduced by `amount`; then proves the refusals by name
+(`NoBaseAccount`, `ReserveShort`, not the owner). Nothing is attested on localnet (there is no Circle); the Base
+leg runs the same message bytes through the Foundry mock. The receive path on Solana is Stream C's, with a
+mocked transmitter (Circle's mint authority is a 2-of-4 multisig, Addendum 3).

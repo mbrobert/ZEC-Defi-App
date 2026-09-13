@@ -368,3 +368,123 @@ NONE — the program is immutable.** Read 2026-09-13 02:42 UTC. What it settles:
 be changed under a vault that holds our upgrade authority. Not read here: the multisig and vault PDA seeds;
 the hand-over script (`solana/scripts/authority.mjs`) checks a vault by its owner program on chain, not by
 re-deriving seeds.
+
+## Addendum 3 (2026-09-13 03:11–03:16 UTC) · CCTP V2 — the instruction surface on both chains, for the burn code
+
+Addendum 1 probed that the CCTP V2 contracts and programs exist and know each other. Before `deposit_for_burn`
+(Solana, BUILD-PLAN B3) and `closeLpAndBurn` (Base, A5) could be written, this read settled the exact call shapes,
+the accounts each side needs, and the message format the Base mock must reproduce. Every value below was read
+here; nothing is typed from memory. CCTP = Circle's Cross-Chain Transfer Protocol; PDA = program-derived
+address; ABI = application binary interface.
+
+### Base — the implementations behind the proxies (`cast` against `base-rpc.publicnode.com`, block **51,239,874**, 03:11:36 UTC; Blockscout verified-source names)
+
+| Proxy (Addendum 1) | Implementation (EIP-1967 slot `0x3608…bbc`, read live) | Verified name | Code |
+|---|---|---|---|
+| TokenMessengerV2 `0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d` | `0x555E272506C06e7E559d57418563742AFE363ec8` | `TokenMessengerV2` (proxy: `AdminUpgradableProxy`) | 14,890 bytes |
+| MessageTransmitterV2 `0x81D40F21F12A8F0E3252Bccb954D722d4c464B64` | `0x7Db629f6Acc20Be49a0A7565c21CC178E9Ac21e3` | `MessageTransmitterV2` (proxy: `AdminUpgradableProxy`) | 16,882 bytes |
+
+**TokenMessengerV2 ABI (verified source, Blockscout `get_contract_abi` on the implementation).** The two entry
+points the router can call, with selectors computed by `cast sig`:
+
+| Function | Selector |
+|---|---|
+| `depositForBurn(uint256 amount, uint32 destinationDomain, bytes32 mintRecipient, address burnToken, bytes32 destinationCaller, uint256 maxFee, uint32 minFinalityThreshold)` | `0x8e0250ee` |
+| `depositForBurnWithHook(…same seven…, bytes hookData)` | `0x779b432d` |
+
+Event: `DepositForBurn(address indexed burnToken, uint256 amount, address indexed depositor, bytes32 mintRecipient,
+uint32 destinationDomain, bytes32 destinationTokenMessenger, bytes32 destinationCaller, uint256 maxFee,
+uint32 indexed minFinalityThreshold, bytes hookData)`. Views that matter: `messageBodyVersion()` → **1**;
+`remoteTokenMessengers(5)` → `0xa65fc81d0fefa8860cb3b83f089b0224be8a6687b7ae49f594c0b9b4d7e93893`, which is
+exactly the Solana TokenMessengerMinterV2 program id `CCTPV2vPZJS2u2BBsUoscuikbYjnpFmbFsvVuJdgUMQe` base58-decoded
+(so a Base burn addressed to domain 5 is delivered to that program); `isDenylisted(address)` exists — **Circle
+holds a denylist on the messenger** (`isDenylisted(0x0)` → false; a denylisted account cannot burn, and the
+keeper's simulation would surface that revert); `feeRecipient()` → `0xBEA3621Ef88850E062cF4baCCaD72877E2c3e4Eb`;
+`localMinter()` → `0xfd78…D002` (Addendum 1).
+
+**MessageTransmitterV2 ABI.** `receiveMessage(bytes message, bytes attestation) returns (bool success)`,
+selector `0x57ecfd28` — anyone may call it; the mint lands at the message's `mintRecipient`, so the receiving
+Base account signs nothing. `sendMessage(uint32,bytes32,bytes32,uint32,bytes)` (what the messenger calls).
+Events `MessageSent(bytes message)` and `MessageReceived(address indexed caller, uint32 sourceDomain, bytes32
+indexed nonce, bytes32 sender, uint32 indexed finalityThresholdExecuted, bytes messageBody)`; `usedNonces(bytes32)`.
+State at block **51,239,965** (03:14:37 UTC): `paused()` false; `signatureThreshold()` **2**;
+`getNumEnabledAttesters()` **2**; `maxMessageBodySize()` 8,192; `localDomain()` 6; `version()` 1.
+
+**TokenMinterV2 `0xfd78EE919681417d192449715b2594ab58f5D002`:** `getLocalToken(5, Solana USDC mint as bytes32
+0xc6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61)` → **`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`**,
+Base's native USDC — the chain's own statement that the Solana → Base route mints the token every Base pool uses
+(the correction in `CROSSCHAIN-LOOP-2026-09-12.md` §1, now verified rather than argued). `burnLimitsPerMessage(USDC)`
+10,000,000 USDC, unchanged.
+
+### The V2 message format (Circle's technical guide, `developers.circle.com/cctp/technical-guide`, read 2026-09-13)
+
+The Base mock (`contracts/test/mocks/MockCctpV2.sol`) reproduces this byte for byte; the keeper's Stream C
+reads the same fields off `MessageSent`. Header, 148 bytes: `version u32 @0` (1) · `sourceDomain u32 @4` ·
+`destinationDomain u32 @8` · `nonce bytes32 @12` · `sender bytes32 @44` · `recipient bytes32 @76` ·
+`destinationCaller bytes32 @108` (zero = anyone may deliver) · `minFinalityThreshold u32 @140` ·
+`finalityThresholdExecuted u32 @144` · `messageBody @148`. BurnMessageV2 body, 228 bytes + hook data:
+`version u32 @0` (1) · `burnToken bytes32 @4` · `mintRecipient bytes32 @36` · `amount uint256 @68` ·
+`messageSender bytes32 @100` · `maxFee uint256 @132` · `feeExecuted uint256 @164` · `expirationBlock uint256 @196`
+· `hookData @228`. Finality thresholds: **1000 = Fast Transfer**, **2000 = Standard** (source-chain finality).
+Address encoding as `bytes32`: an EVM address is left-padded with 12 zero bytes; a Solana `mintRecipient` is the
+**token account** (the recipient's USDC associated token account), not the wallet or PDA that owns it.
+
+### Solana — TokenMessengerMinterV2's `deposit_for_burn` (Circle's source, `github.com/circlefin/solana-cctp-contracts` master, `programs/v2/token-messenger-minter-v2/src/token_messenger_v2/instructions/deposit_for_burn.rs`, read 2026-09-13)
+
+`DepositForBurnParams { amount: u64, destination_domain: u32, mint_recipient: Pubkey, destination_caller: Pubkey,
+max_fee: u64, min_finality_threshold: u32 }` (`Pubkey::default()` as `destination_caller` = anyone may deliver).
+Accounts, in order: `owner` (**signer; the burn token account's owner — `has_one = owner`**, so the burn
+authority is the token account's owner and nothing else: for Oilskin that is the Account PDA, signing by
+`invoke_signed`), `event_rent_payer` (signer, mut), `sender_authority_pda` (`["sender_authority"]`),
+`burn_token_account` (mut), `denylist_account` (`["denylist_account", owner]` — absent unless Circle denylisted
+that owner), `message_transmitter` (mut), `token_messenger`, `remote_token_messenger` (its `domain` must equal
+`destination_domain`), `token_minter`, `local_token` (mut, `["local_token", mint]`), `burn_token_mint` (mut — a
+real burn, the supply falls), `message_sent_event_data` (**signer, mut — a fresh keypair per burn; the message
+bytes are written into it, rent from `event_rent_payer`**), `message_transmitter_program`,
+`token_messenger_minter_program`, `token_program`, `system_program`, then the Anchor `#[event_cpi]` pair
+(`event_authority` `["__event_authority"]` of the messenger program, and the program itself). The instruction
+CPIs `message_transmitter_v2::send_message` with `event_rent_payer`, `sender_authority_pda`,
+`message_transmitter`, `message_sent_event_data`, the sender program and `system_program`.
+
+**The PDAs, derived with those seeds and read at slot 446,596,935 (03:11:53 UTC) and 446,597,419 (03:14:24 UTC),
+`api.mainnet-beta.solana.com`, `finalized`:**
+
+| Account | Seeds (program) | Address | Read |
+|---|---|---|---|
+| `token_messenger` | `["token_messenger"]` (TokenMessengerMinterV2) | `AawthJCGRmggpfv9MMWV6Jmo9cue4gL9wUZgRBShg58W` | exists, owner the messenger program, 177 bytes |
+| `token_minter` | `["token_minter"]` | `E1bQJ8eMMn3zmeSewW3HQ8zmJr7KR75JonbwAtWx2bux` | exists, 74 bytes |
+| `local_token` (USDC) | `["local_token", USDC mint]` | `CRBBbuLCyrkQy4dCTHxqstSmDQv4ajBeUVb9qUdMVaP1` | exists, 130 bytes; `mint` = `EPjF…Dt1v`; **`burn_limit_per_message` 10,000,000 USDC** (the same cap as Base's); `messages_sent` 393,207, `messages_received` 272,705 at the slot |
+| `remote_token_messenger` (Base) | `["remote_token_messenger", "6"]` | `BwmDYtQ7jFj8ddaTmKa7fz9hyuK9n58mvc8G7DYNcKjM` | exists, 44 bytes; `domain` **6**, `token_messenger` = Base's `0x28b5…cf5d` left-padded — the two sides name each other |
+| `sender_authority` | `["sender_authority"]` | `45hzrGLQ2EGo1Ln7QpXjDwb589GDQ9H2aEXXw6ds6BFE` | no account (a signing PDA; expected) |
+| `denylist_account` (probe) | `["denylist_account", zero pubkey]` | `CJPnLYncUgWDCwAeNvM5oGzP96NBjmHerSc9Zzhaa571` | absent — the state of every owner Circle has not denylisted |
+| `message_transmitter` | `["message_transmitter"]` (MessageTransmitterV2) | `W1k5ijkaSTo5iA5zChNpfzcy796fLhkBxfmJuR8W8HU` | exists, 225 bytes; `paused` 0, `local_domain` **5**, `version` 1, `signature_threshold` 2, 2 attesters, `max_message_body_size` 8,192 — the same attestation policy as Base's transmitter |
+
+Custody token account named by `local_token`: `6xTBTqJMBr5m7BKqVxmW2x11DfqUwtD3TJsqpxELx72L` (not used by a burn).
+
+**USDC's mint authority on Solana (slot 446,597,739):** `BJE5MMbqXjVwjAF7oxwPYXnTXDyspzZyt4vwenNw5ruG` is an SPL
+Token **multisig, 2 of 4** (signers `42XHrxUX5skic589HER817BWiJ5xvhJurrFVKjYCPwnb`,
+`BwdZnHHaC7Ho7xAAirLqWVLa9m7iWMkUN7PiZknActzy`, `Cf4s35LcAf9YC7wpdXTSxFg3i3GrvSYMavCVVefw3jd`,
+`HvhFE75zWkXvL7gAyjvatQcNrPA99ttFEz78kAgPF31v`); freeze authority `7dGbd2QZcCKcTndnHcTL8q7SMVXAkp688NTQYwrRCrar`.
+None of the four is the V1 (`DBD8hAwLDRQkTsu6EqviaYNGKPnsAMmQonxf7AH8ZcFY`) or V2 (`E1bQ…2bux`) `token_minter`
+PDA, so **how CCTP mints USDC on Solana is not settled by this read** — it does not matter for the burn (a burn
+needs only the token account's owner), it matters for Stream C's receive path on localnet, which will mock the
+mint rather than clone Circle's authority.
+
+### What this settles for the build
+
+1. The Base router's burn is one `approve(USDC → TokenMessengerV2, amount)` and one `depositForBurn(amount, 5,
+   recipientTokenAccount, USDC, 0, maxFee, threshold)` executed AS the account; the mint on the other side needs
+   no signature from the recipient. Both are bounded by the keeper grant's USDC budget.
+2. The Solana program's burn is one CPI with the Account PDA as `owner`; the client supplies a fresh
+   `message_sent_event_data` keypair and pays its rent; `mint_recipient` is the Base `OilskinAccount` left-padded.
+3. `maxFee` / `max_fee` and the finality threshold are inputs the caller reads from Circle's API at send time
+   (Addendum 1: Fast 1 bp Solana→Base, 1.3 bp Base→Solana, Standard 0); the contracts and the program carry no
+   fee number of their own.
+
+### Not verified by this addendum (probe before code depends on it)
+
+1. The Anchor discriminator of `deposit_for_burn` (`sha256("global:deposit_for_burn")[..8]`) and the
+   `#[event_cpi]` account pair — pinned by the localnet run against the cloned program, not by this read.
+2. `feeExecuted` at delivery against `maxFee` — the keeper's Stream C measures one real transfer on devnet ↔
+   Sepolia (Addendum 1's open item 1 stands).
+3. The four multisig signers' identities.

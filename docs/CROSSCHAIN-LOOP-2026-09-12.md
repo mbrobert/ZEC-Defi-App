@@ -107,14 +107,24 @@ two disclosures: the OmniBridge bridge and the Circle dependency.
   earlier triggers, the lower LTV and both disclosures — offered only when the
   Base gate actually clears. Not the Simple path.
 
-## 6 · What I would do next if this goes ahead
+## 6 · What is decided and being built (D6, revised 2026-09-13)
 
-1. Add a `venueBorrowAprPct` input to the gate so a Base LP cell can be priced
-   against Kamino's rate for cross-chain positions (small).
-2. Write the reserve-buffer math into `packages/shared` as a per-venue-class
-   parameter set (cross-chain class: warn 1.55 / repay 1.45 / derisk 1.30 /
-   emergency 1.10, LTV cap 30 %, reserve = rung-2 requirement) and let the
-   Monte Carlo price the yield cost of the reserve.
-3. Read Circle's Fast Transfer allowance and fee for the Solana→Base route from
-   their API and record them in `docs/VERIFIED-SOLANA-FACTS.md` before any code
-   depends on "8 seconds".
+The design is `docs/SOLANA-ARCHITECTURE.md` §14 and the Base half is BUILD-PLAN A5; this list is what
+changed against the proposal above.
+
+1. **The ladder is per position, not per class.** D7 (2026-09-12) derives the rungs from the entry HF the
+   user chose, on both chains; a cross-chain position at Kamino's 40 % cap enters at HF 1.625 and runs
+   1.57 / 1.40 / 1.23 / 1.06 (hysteresis 0.06) — earlier than any Base position, without a second table.
+   The "warn 1.55 / repay 1.45 / derisk 1.30 / emergency 1.10, LTV cap 30 %" class proposed here is superseded.
+2. **The reserve is the rung-2 requirement**, computed on chain from the entry HF and the live debt
+   (`R = D × (disarm₂ − rung₂) / disarm₂`, 4.1 % of the debt at entry 1.625), enforced by `deposit_for_burn`
+   — a burn that would leave the Account under it is refused — and reported by the keeper when the owner
+   moves it. Shared carries the same rule (`reserveFractionFor`, `reserveUsdcFor`).
+3. **Circle's fee, allowance and both domain ids are recorded** (`VERIFIED-SOLANA-FACTS.md` Addendum 1) and
+   the exact call shapes, PDAs and message format on both chains (Addendum 3); the "~8 s" is still to be
+   measured on devnet ↔ Sepolia (Stream C).
+4. **Neither burn can be mis-addressed:** the Solana Account records the user's Base account and the Base
+   router records the Account's Solana USDC token account; each side's burn goes only there.
+5. Still open, as before: a `venueBorrowAprPct` input so a Base LP cell is priced against Kamino's rate
+   (the forecast, `services/yield`), and whether the keeper may run the deploy-direction `openLpOnly`
+   automatically (§14.6 — the founder's call).

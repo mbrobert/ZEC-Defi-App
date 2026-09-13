@@ -3,6 +3,29 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-13 — D6 design before code: the cross-chain loop's Solana side and the CCTP V2 call shapes
+
+- **`docs/SOLANA-ARCHITECTURE.md` §14** (§13 no longer lists moving USDC between chains as another product):
+  the Account records `entry_hf_bps` and `base_account` (carved from the reserved bytes, layout length unchanged);
+  the program derives the ladder from the entry HF with the integer twin of shared `ladderFor` — D7 parity, since
+  the floor's ladder refuses the keeper at the rungs a 1.625 entry actually needs; the reserve is the rung-2
+  requirement `R = D × (disarm₂ − rung₂) / disarm₂`, enforced by `deposit_for_burn` and reported (not enforced)
+  on `transfer_out`; `deposit_for_burn` as one CPI with the Account PDA as the burn authority, mint recipient =
+  the recorded Base account; the mirror on Base (`setSolanaRecipient`, `closeLpAndBurn`); who signs each of the
+  five steps in both directions; the keeper's pair rule (mutual links or no pair); what localnet can prove. One
+  product question left to the founder: an automatic keeper-run `openLpOnly`.
+- **`docs/VERIFIED-SOLANA-FACTS.md` Addendum 3** (read 2026-09-13 03:11–03:16 UTC, Base block 51,239,874 /
+  51,239,965, Solana slots 446,596,935–446,597,739): the implementations behind both Base proxies and their
+  verified ABIs — `depositForBurn(uint256,uint32,bytes32,address,bytes32,uint256,uint32)` `0x8e0250ee`,
+  `receiveMessage(bytes,bytes)` `0x57ecfd28`, the `DepositForBurn` / `MessageSent` / `MessageReceived` events, a
+  Circle denylist on the messenger, attesters 2-of-2; `TokenMinterV2.getLocalToken(5, Solana USDC)` = Base's native
+  USDC; the V2 message and burn-body byte layout; Circle's `deposit_for_burn` account list and params on Solana
+  (the burn authority is the token account's owner — the Account PDA), every PDA derived and read (token
+  messenger, minter, local token with its 10 M burn cap, the domain-6 remote messenger naming Base's, the
+  transmitter at domain 5); USDC's Solana mint authority is a 2-of-4 multisig whose signers are not CCTP's PDAs.
+- `CROSSCHAIN-LOOP-2026-09-12.md` §6 rewritten as what is decided; BUILD-PLAN A5 → in progress, B3's burn →
+  designed.
+
 ## 2026-09-13 — CI builds the Solana program with the real toolchain; the Squads hand-over is a read-only check
 
 - **`solana-program` CI job**: Rust 1.98.1, Agave 4.2.2, anchor-cli 1.2.0 (crates.io); proves the generated
