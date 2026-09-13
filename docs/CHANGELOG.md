@@ -34,8 +34,13 @@ it only RAISES the health factor, leaving the ladder tighter than it needs to be
 direction. The owner's raw `account.exec` to the protocol still bypasses the router and so the re-record;
 that is the documented exit hatch and is recorded as a known limit, not closed.
 
-- Also removed: a dead `LADDER` import in `keeper_protect.rs`, unused since `1bdbe63` moved it to
-  `ladder_for_recorded` — the Rust build is warning-free again.
+- Also: a `LADDER` import in `keeper_protect.rs` that had been unused in the parent module since
+  `1bdbe63` moved it to `ladder_for_recorded`. **Removing it outright broke the build** — the test
+  module picks it up through `use super::*` — and the three CI runs after `f3ab935` failed on
+  `solana-program`'s `anchor build`, which compiles the test target to emit the IDL. It is now
+  imported inside `mod tests`, where it is actually used: `cargo test` 12 / 12, `anchor build`
+  exit 0 with no unused-import warning, committed IDL unchanged. Every other CI job was green
+  throughout, including all three contracts groups, the ABI seam and static analysis.
 - Measured: contracts **433 passed / 0 failed / 13 skipped** (39 suites, +7 — `EntryHfRerecord.t.sol`),
   ABI seam **123/123 strict** and the bundle regenerated for `keeperActor` (260 functions), agent 316,
   web 199, shared 99, Rust 12, Solana seam 14.

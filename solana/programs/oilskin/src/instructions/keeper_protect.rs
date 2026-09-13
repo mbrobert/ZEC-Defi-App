@@ -201,6 +201,10 @@ pub fn handler(ctx: Context<KeeperProtect>, rung_id: u8, repay_usdc: u64, sell_z
 #[cfg(test)]
 mod tests {
     use super::*;
+    // The floor's generated ladder is a TEST fixture here — `expected_rung` takes the ladder as an
+    // argument and the instruction passes the position's own (`ladder_for_recorded`). Imported in
+    // this module rather than the parent, where it has been unused since 1bdbe63.
+    use crate::generated::ladder::LADDER;
 
     #[test]
     fn the_most_severe_allowed_crossed_rung_is_expected() {
