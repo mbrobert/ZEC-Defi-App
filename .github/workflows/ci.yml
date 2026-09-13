@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Slice L (2026-09-13): dispatchable by hand, so a run can be re-taken without a commit — the
+  # `fork` job's verification was blocked for two days first by the missing `BASE_RPC_URL` secret
+  # and then by a queued run that predated it (secrets are read when the job starts, and that one
+  # started three minutes before the secret was created).
+  workflow_dispatch:
 
 # Slice I (2026-09-12): CI that proves what it claims. Every area has its own job; a job never runs
 # a suite without the inputs that suite needs (the keeper's ABI seam is STRICT here, so it can no

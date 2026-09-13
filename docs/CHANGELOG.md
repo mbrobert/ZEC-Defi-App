@@ -3,6 +3,22 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-13 — Slice L closed out: Actions runs again, the nightly is green on the runner, the fork job waits on the secret's VALUE
+
+- The founder raised the Actions spending limit and created `BASE_RPC_URL` (14:22:24 UTC). Jobs start again: the
+  run queued on `300550c` finished **twelve of thirteen jobs green**, `static-analysis` included.
+- **The nightly is proven on the runner**: its 08:17 UTC cron died in 5 s on the billing block; dispatched by hand
+  at 14:24 it is **success in 4 min 02 s, 10 / 10 invariants at 1500 × 120** plus `test_handlerPathsAreLive`
+  (artifact `invariant-call-summary-34762589751`). No `--threads 1` was needed.
+- **The fork job is still NOT VERIFIED** — but the reason moved from "no secret" to "the secret's value is not a
+  URL": `vm.createSelectFork: invalid rpc url`, with Foundry falling back to resolving the value as a path under
+  `contracts/` and `cast block-number` failing too, which together say the value carries no `https://` scheme.
+  Nobody read the secret to learn that. The founder updates it and re-runs the job.
+- `ci.yml` gains `workflow_dispatch` so a run can be re-taken without a commit (both workflows dry-parsed with
+  PyYAML 6.0.3 plus the structural checks: runners, steps, one of `uses`/`run` each, pinned actions, resolvable
+  `needs`, known expression contexts, five-field crons). A job reads secrets when it STARTS, so a run queued
+  before a secret exists never sees it — that cost one attempt today and is written down in `docs/TESTING.md`.
+
 ## 2026-09-13 — Slice L: the fork job and the nightly's first cron run, as found (nothing to verify yet)
 
 - The `BASE_RPC_URL` repository secret still does not exist (checked 02:42 and 04:47 UTC): the `fork` job stays
