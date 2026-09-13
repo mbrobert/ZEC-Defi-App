@@ -3,6 +3,18 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-12 — Keeper valuation: CI's one red on `51273f5` was a property test's premise (HF poisons replace, they do not add); the evaluator was right
+
+- The `agent` job on `51273f5` failed "UNKNOWN is sticky" once (fast-check seed `-1022574623`, path
+  `52:2:3:2:2:2`) and passed on the next push with the same code — a real counterexample the random
+  search had not drawn before. Replayed deterministically: a one-unit USDC residual with no collateral
+  is NO_DEBT (slice C), `hfMax` makes it UNKNOWN (G4), and `hfZero` rewrites the same field back to the
+  shape Aave reports for that account, which is NO_DEBT again — a replacement, not an added poison.
+  Test-only fix in `agent/test/valuation.test.ts`: a HF poison after an earlier HF poison must only keep
+  UNKNOWN from becoming OK; every other poison keeps UNKNOWN sticky; a poison that could not apply is not
+  one. Fixed property 1 / 1 at the CI seed, five unseeded runs green, agent **269 / 269**, `verify-abi`
+  113 / 113, IDL seam 77 / 77 (`AUDIT-2026-09-12.md`, "Keeper valuation").
+
 ## 2026-09-12 (later) — A4.3: the risk slider in both prototypes (BUILD-PLAN D7 §2b)
 
 - Both builds' pinned block gains, byte-equal and diffed against the built package: the six new shared keys

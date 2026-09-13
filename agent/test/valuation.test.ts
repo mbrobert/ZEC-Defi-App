@@ -427,14 +427,27 @@ describe("valuation — properties over adversarial account states", () => {
   });
 
   it("UNKNOWN is sticky: adding poison never turns UNKNOWN into OK or NO_DEBT", () => {
+    // The three HF poisons REWRITE healthFactorWad rather than add to it, so a second one replaces the
+    // first instead of poisoning further. CI caught the case on 2026-09-12 (fast-check seed
+    // -1022574623, path 52:2:3:2:2:2): a one-unit USDC residual with no collateral is NO_DEBT
+    // (slice C), hfMax makes it UNKNOWN (G4: dust debt but pool HF MAX_UINT256), and hfZero then
+    // puts the snapshot back into exactly the consistent shape Aave reports for that account (HF 0,
+    // no collateral), which is NO_DEBT again — the evaluator judges the snapshot in front of it,
+    // never a history. A replacing HF poison therefore only has to keep UNKNOWN from becoming OK;
+    // every other poison, and the first HF poison, must keep UNKNOWN as UNKNOWN.
     fc.assert(
       fc.property(arbRows, fc.array(arbPoison, { minLength: 1, maxLength: 4 }), (rows, poisons) => {
         const s = consistent(rows);
         let wasUnknown = evaluateSnapshot(s, PARAMS).kind === "UNKNOWN";
+        let hfPoisoned = false;
         for (const p of poisons) {
-          applyPoison(s, p, 1);
+          const rewritesHf = p.t === "hfMax" || p.t === "hfZero" || p.t === "hfScale";
+          const replaces = rewritesHf && hfPoisoned;
+          if (!applyPoison(s, p, 1)) continue; // could not apply (no target row): not a poison
+          if (rewritesHf) hfPoisoned = true;
           const k = evaluateSnapshot(s, PARAMS).kind;
-          if (wasUnknown) assert.equal(k, "UNKNOWN");
+          if (wasUnknown && !replaces) assert.equal(k, "UNKNOWN");
+          if (wasUnknown && replaces) assert.notEqual(k, "OK");
           wasUnknown = k === "UNKNOWN";
         }
       }),
