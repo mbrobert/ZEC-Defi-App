@@ -50,6 +50,35 @@ the same failure rule 7 names for `TESTING.md`, in the file that states the rule
   that bundle is already in the repo at its real path and its own `CLAUDE-CODE-HANDOFF.md` says it is not
   committed. Ignored, not deleted — removing it is the founder's call, and it is one line to undo.
 
+## 2026-09-14 — D12/D13 decided, and Stream D opened against chain reads rather than a plan
+
+The founder took the trade and the venue: **perps is in beta, `MorphoBlueVenue` comes out of beta scope to
+pay for the audit surface (D12), and Hyperliquid is the venue (D13).**
+
+**What the verification pass proved**, at `https://rpc.hyperliquid.xyz/evm` on 2026-09-14T22:53:44Z:
+
+- The **ZEC perp asset index is 214** of 234 — the index *is* the asset id a limit order takes.
+- The mark and oracle **read precompiles agree with the API to the last digit**: `0x…0806` → 11,691,000 →
+  **1,169.1000** against `markPx` 1169.1, and `0x…0807` → 11,692,826 → **1,169.2826** against `oraclePx`
+  1169.2826. That fixes the price scaling as **10^(6 − szDecimals)** by agreement rather than assumption.
+- `position(address, uint16)`, `spotBalance(address, uint64)` and `withdrawable(address)` answer without
+  reverting, so their shapes are confirmed; `0x…0802` reverts on the input shapes tried.
+- **Three facts are still taken from a document, and are marked as such**: the limit-order action bytes, the
+  `position` struct's fields, and the margin table behind `marginTableId: 52`. The order encoder is not to be
+  written until they are proven on testnet — the documented order scaling (10^8) disagrees with the
+  precompiles' price scaling (10^4 for ZEC), which is exactly the sort of gap that becomes a silent bug.
+
+**Stream D is in the build plan** — D0 done, D0b to D7 not started, in the order the Solana module proved:
+facts, design, program, keeper, web, audit. Its one step with no precedent is **D1**: every rung the keeper
+knows is a borrow against collateral, and a short against a spot holding fails the other way. Between this
+file's two price reads **ZEC moved +9.9 % in 23 hours**, on a venue whose maximum leverage is 10× — the
+liquidation distance of the short, not the funding, is what the keeper will have to watch.
+
+**Morpho out of beta, precisely.** `MorphoBlueVenue` duplicates Aave's role for the same two assets, the
+registry pointer was always staying Aave at launch, D3 keeps cbZEC off it, and it is disabled on Sepolia
+because no market exists there. The code stays in the repo with its tests; it leaves the **frozen, audited
+scope**, which is the part that costs money.
+
 ## 2026-09-14 — D11: the cross-chain loop is in beta; perps priced against the chain rather than guessed
 
 Founder, 2026-09-14: *"These things need to be included in beta: cross chain loop, perps too. how feasible is

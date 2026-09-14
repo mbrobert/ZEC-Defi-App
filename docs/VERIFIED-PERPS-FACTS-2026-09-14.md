@@ -87,10 +87,43 @@ That last row is the important one: a per-user account contract on HyperEVM woul
 exactly as `OilskinAccount` owns its Aave position on Base and the Solana PDA owns its Kamino obligation.
 **The pattern generalises; it does not have to be fought.**
 
-**Not yet chain-verified, and it must be before code depends on it:** the action encoding for a limit order
-(id 1) byte for byte, the read precompiles for a position's size and margin, the ZEC asset index on
-HyperCore, and the margin table behind `marginTableId: 52`. `0x2222…2222` also carries code, which is
-consistent with the documented read-precompile range, but nothing was decoded from it.
+### The read precompiles, verified against the API at the same moment
+
+Probed at `https://rpc.hyperliquid.xyz/evm`, **2026-09-14T22:53:44Z**. The **ZEC perp asset index is 214**
+(its position in the `meta` universe of 234 perps — the index *is* the asset id a limit order takes).
+
+| Precompile | Signature that answers | ZEC (index 214) raw | Decoded | The API at the same second |
+|---|---|---|---|---|
+| `0x…0806` | `(uint32 perp)` | 11,691,000 | **1,169.1000** | `markPx` **1169.1** ✔ |
+| `0x…0807` | `(uint32 perp)` | 11,692,826 | **1,169.2826** | `oraclePx` **1169.2826** ✔ |
+| `0x…0800` | `position(address, uint16 perp)` | six words of zero for an address with no position | — | shape confirmed; it does not revert |
+| `0x…0801` | `spotBalance(address, uint64 token)` | three words | — | shape confirmed |
+| `0x…0803` | `withdrawable(address)` | one word | — | shape confirmed |
+
+**Price scaling: `10^(6 − szDecimals)`**, so 10^4 for ZEC — confirmed by the two exact matches above, not
+assumed. `0x…0802` reverts `PrecompileError` on the input shapes tried; its signature is not yet known.
+
+### The limit-order action, from the documentation (NOT yet byte-verified)
+
+Version byte `0x01`, then the action id as three big-endian bytes `0x000001`, then
+`abi.encode(uint32 asset, bool isBuy, uint64 limitPx, uint64 sz, bool reduceOnly, uint8 encodedTif,
+uint128 cloid)` — `limitPx` and `sz` scaled by 10^8, `encodedTif` 1 = Alo / 2 = Gtc / 3 = Ioc, `cloid` 0 for
+none. **This is the one load-bearing fact still taken from a document rather than from chain**, and the two
+scalings disagree in a way worth noticing: the *prices the precompiles return* are scaled by 10^4 for ZEC,
+while the *price a limit order carries* is documented as 10^8. Do not write an order encoder until that has
+been proven against a real order on testnet.
+
+**Still to verify before code depends on it:** the `position` struct's field order and types (six words read,
+none decoded — needs Hyperliquid's own `L1Read.sol`), the margin table behind `marginTableId: 52`, and the
+limit-order bytes above. `0x2222…2222` also carries code, consistent with the documented precompile range,
+but nothing was decoded from it.
+
+### One number that is not a fact but is a warning
+
+Between the two reads in this file — **2026-09-13T23:52Z at $1,063.80** and **2026-09-14T22:53Z at
+$1,169.10** — ZEC moved **+9.9 % in 23 hours**. That is the move the short leg of a delta-neutral position
+has to survive on 10× maximum leverage, and it is why the liquidation distance of the short, not the funding,
+is the thing the keeper will have to watch.
 
 ## 5 · Getting USDC there is the rail we already built
 

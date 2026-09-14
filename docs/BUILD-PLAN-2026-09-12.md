@@ -60,6 +60,12 @@ Transfer Protocol; PDA = program-derived address; DYOR = do your own research.
 | D8 | **Launch parameters** (2026-09-13): deposit cap **$25,000** per user, allowlist **25** addresses, day-one funds at risk **$250,000** — the total being the binding ceiling, deliberately under the $625,000 the cap and the allowlist would otherwise permit. | Sizes both audit quotes and any bug bounty; stated in `RFP-EVM-2026-09-13.md` and `RFP-SOLANA-2026-09-13.md` §5. On Solana the $250,000 implies at most $100,000 borrowed at Kamino's 40 % cap, about 28 % of that market's available USDC. |
 | D7 | **Users choose their own risk on a continuous health-factor slider** (revised 2026-09-12, replaces fixed tiers). Drag the HF and the borrow amount works backwards; type a borrow amount and the HF bar reflects it. "Sheltered" (1.55) and "Expert" (1.30) survive only as quick-click marks on the slider. Kamino's own 40 % LTV cap binds on Solana regardless. | One on-chain floor = the slider's minimum (registry parameter; **1.25, pinned 2026-09-12**; the 50 % product cap removed the same day — the venue's own max LTV is the only other ceiling); ladder rungs derived from the entry HF the user chose (§2b); forecast updates live with the slider. |
 
+| D9 | **The entry-HF record follows the owner** (2026-09-14): any owner action through the router that moves debt or collateral re-records it, in both directions; the keeper's protective actions never do. | `StrategyRouter._rerecordEntryHf`, `OilskinAccount.keeperActor()`, the Solana twins; `AUDIT-2026-09-13.md` Part 3 LADDER-1 |
+| D10 | **The acting rungs stop deriving above an entry HF of 2.00** (2026-09-14). `warn` keeps deriving — it only notifies. | `MAX_LADDER_ENTRY_HF` in shared and the Solana program; LADDER-2 |
+| D11 | **The cross-chain loop is IN BETA** (2026-09-14), closing `ROADMAP.md` §3's scope valve early. | Fallback decided with it: if devnet ↔ Sepolia has not passed by 2026-11-13, it ships **disabled behind a flag**, not later |
+| D12 | **Perps is IN BETA, and `MorphoBlueVenue` comes out of beta scope to pay for the audit surface** (2026-09-14). | Rule 2's trade. Morpho stays in the repo; it leaves the frozen scope. **Both audit firms must be sent a scope diff this week, while they are still scoping** |
+| D13 | **Hyperliquid is the perps venue** (2026-09-14). | The only non-custodial venue with a ZEC perp; every alternative is an exchange the user would hand their coins to. Chain-verified in `VERIFIED-PERPS-FACTS-2026-09-14.md` |
+
 **Interpretation I am applying** (say so if wrong): "in both" for D6 means both
 Simple and Advanced modes. For cross-chain positions the slider's binding cap is
 Kamino's own 40 % LTV, which on ZEC (LT 65 %) means entry HF ≥ 1.625 — above
@@ -175,6 +181,28 @@ on Solana devnet ↔ Base Sepolia — which is also what would measure Circle's 
 the Monte Carlo; choosing Fast versus Standard when the Fast allowance is exhausted; and the two-key process
 itself, which is the founder's call (a Base key beside the Solana key). Inputs recorded: fees 1 bp / 1.3 bp,
 the shared Fast allowance, the domain ids (Addendum 1), every receive account (Addendum 4).
+
+**Stream D — perps, delta-neutral "earn funding on your ZEC" (HyperEVM)** — **new 2026-09-14, D12/D13.**
+Nothing is built. The facts are read and the architecture is decided; the order below is the one the Solana
+module proved works — facts, then design, then the program, then the keeper, then the web, then an audit pass.
+
+| Step | What | State | Done when |
+|---|---|---|---|
+| D0 | Verified facts: the venue, the market, the funding history, CoreWriter, the read precompiles | **done 2026-09-14** — `VERIFIED-PERPS-FACTS-2026-09-14.md`: no ZEC perp on Base; Hyperliquid ZEC index **214**, $476 M open interest, funding **+10.7 % to +22.4 %** annualised to shorts over 31 days measured hourly; CoreWriter `0x3333…3333` with `sendRawAction(bytes)` `0x17938e13` in its deployed dispatch table; mark/oracle precompiles `0x…0806` / `0x…0807` matching the API to the last digit | every number dated and sourced |
+| D0b | The three facts still taken from a document | **not started** — the limit-order action bytes (id 1), the `position` struct's fields, the margin table behind `marginTableId: 52` | proven against testnet, not read from a page |
+| D1 | **Design before code** (rule 10): the HyperEVM account, how the short is opened and closed, what the keeper may do under a grant, and **how the ladder learns a liquidation distance that is not a borrow** | **not started** — this is the piece with no precedent in the tree | a design doc the founder has read |
+| D2 | `OilskinPerpAccount` on HyperEVM — clone factory, owner = the user's wallet, the position owned by the account itself, grants in the shape `OilskinAccount` already uses | not started | Foundry unit + a HyperEVM fork suite |
+| D3 | The venue adapter: open/close the short through CoreWriter, read size and margin through the precompiles | not started | fork tests against live HyperCore state |
+| D4 | The keeper's perps path: funding accrual, the short's own liquidation distance, the rungs that act on it | not started | ladder replay tests, the Base/Solana pattern |
+| D5 | USDC in and out over **CCTP** from the user's Base account — the rail Stream C already built | not started | end to end on testnet |
+| D6 | Web: the fourth wizard, the **measured funding history with its variance** (never a rate, never "yield"), the acknowledgment, the position page | not started | Playwright; banned-words test green |
+| D7 | Internal audit pass over D2–D6 | not started | `docs/AUDIT-<date>.md` |
+
+**The one thing in this stream with no precedent.** Every rung the keeper knows is about a *borrow against
+collateral*. A short against a spot holding fails the other way: if ZEC rises far enough the short is
+liquidated and the user is left long spot with a realised loss — the opposite of what they were sold. ZEC
+moved **+9.9 % in the 23 hours between the two price reads in the facts file**, on a venue whose maximum
+leverage is 10×. D1 has to answer this before D2 is written.
 
 **Cowork**: the B1 draft — done, superseded by the chain read `65a6a16` with its CCTP rows folded in; the two
 audit shortlists — done (`AUDIT-SHORTLIST-2026-09.md`); the forecast page copy, the two disclosures and the
