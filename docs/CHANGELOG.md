@@ -50,6 +50,50 @@ the same failure rule 7 names for `TESTING.md`, in the file that states the rule
   that bundle is already in the repo at its real path and its own `CLAUDE-CODE-HANDOFF.md` says it is not
   committed. Ignored, not deleted — removing it is the founder's call, and it is one line to undo.
 
+## 2026-09-14 — D11: the cross-chain loop is in beta; perps priced against the chain rather than guessed
+
+Founder, 2026-09-14: *"These things need to be included in beta: cross chain loop, perps too. how feasible is
+that?"*
+
+**The cross-chain loop is in (D11)**, which closes `ROADMAP.md` §3's scope valve early. Defensible: it is
+built on both chains, internally audited, and **already inside both RFP packages' scope**, so including it
+adds nothing to the audit. Closing a valve means keeping a fallback, so one is written down now — if the
+devnet ↔ Sepolia run has not passed by **2026-11-13**, the loop ships **disabled behind a flag** at the
+freeze rather than the freeze moving. Nothing has crossed a chain for real yet; that is the one item left
+that can still surprise us.
+
+**Perps: accepted in principle, and the research it was resting on was wrong in the way that matters.**
+Everything below was read from the venue's own API or from chain on 2026-09-13/14 and recorded in
+`docs/VERIFIED-PERPS-FACTS-2026-09-14.md`:
+
+- **There is no ZEC perp on Base.** Avantis lists BTC/ETH/SOL/XRP/HYPE; Synthetix left Base in July 2025. So
+  the delta-neutral trade cannot be done on Base at all, and perps means a **third chain**.
+- **Hyperliquid has one, and it is deep**: $476 M open interest, $284 M of 24-hour volume, 10× max leverage.
+  It is the only **non-custodial** venue found with a ZEC perp — the others are exchanges, which would mean
+  the user giving up their coins.
+- **The funding is real, and better than the old estimate.** Measured over 31 days of hourly samples rather
+  than one aggregator on one day: **+10.7 % to +22.4 % annualised paid to shorts**, positive in ~96 % of
+  hours — but with extremes of −64 % and +241 % annualised. It goes on a screen as a measured history with
+  its variance, never as a rate, and never as "yield".
+- **The architecture fits, chain-verified.** CoreWriter (`0x3333…3333`) carries 544 bytes of code and its
+  `sendRawAction(bytes)` selector `0x17938e13` appears in the deployed dispatch table; **the position belongs
+  to the calling contract's own address**, so a per-user HyperEVM account owns its own short exactly as
+  `OilskinAccount` owns its Aave position. It is EVM, so Solidity, Foundry, the ABI seam and the grant model
+  carry over — much closer to a second Base than to a second Solana. USDC reaches it from Base **via CCTP**,
+  the rail already built.
+- **Cost: ~3–5 weeks and one genuinely new risk class** — the short leg can be liquidated, and the keeper's
+  ladder knows only about borrows against collateral, not shorts against a spot holding.
+
+`docs/PERPS-FEASIBILITY-2026-09-14.md` names the four options and the trade rule 2 requires, and recommends
+two together: perps in beta, **tell the audit firms this week while they are still scoping and have not
+quoted**, and take the Morpho venue — a second Base lending venue that duplicates Aave's role and is disabled
+on Sepolia — out of beta scope to pay for the surface. One question blocks any code: is Hyperliquid the
+venue, given the alternatives are custodial.
+
+Also: `docs/handoff/2026-09-12-cowork/` deleted at the founder's request, after checking every file — six
+were superseded earlier copies, one identical, and the two unique ones were the 2026-09-07 guide for moving
+the repo onto the Mac. `git status` is now completely clean.
+
 ## 2026-09-13 — The Sepolia dry run re-proved against the live chain, six days on
 
 `DEPLOY-SEPOLIA.md` §3's dry run was last run on 2026-09-07. Re-run today against live Base Sepolia — a

@@ -150,6 +150,31 @@ emissions anyway, so the loop's destination is not yet worth reaching.
 
 This is written down now so that in November it is a checkbox, not an argument.
 
+> ### The valve was closed early — founder, 2026-09-14 (D11)
+>
+> *"These things need to be included in beta: cross chain loop, perps too."* The
+> loop is **in beta**, so this valve no longer decides its fate. That is a
+> defensible call: the code is built on both chains, internally audited
+> (`AUDIT-2026-09-13.md` Part 1), and **already inside both RFP packages' scope**,
+> so including it adds nothing to the audit. What is left is a keeper process
+> holding two keys, an address lookup table, and one end-to-end run.
+>
+> **Closing a valve means keeping a fallback, or the November argument simply
+> moves.** The fallback, decided now: if the devnet ↔ Sepolia run has not passed
+> by **2026-11-13**, the loop **ships disabled behind a flag** at the freeze —
+> audited as code, off in the product — rather than the freeze moving. Nothing
+> has crossed a chain for real yet, and that is the one item that can still
+> surprise us.
+>
+> **Perps is the new valve.** It is accepted in principle and is a *third chain*
+> (HyperEVM — there is no ZEC perp on Base), roughly the size of the Solana
+> module, landing in the last quarter before a freeze that is not moving.
+> `docs/PERPS-FEASIBILITY-2026-09-14.md` prices it, names the four options and
+> recommends two together: put it in beta, **tell the audit firms this week while
+> they are still scoping**, and take the Morpho venue out of beta scope to pay for
+> the surface. Its own decision date is **2026-11-13** as well: not building by
+> then, and it is v1.1.
+
 ## 4 · Standing rules that stop the circling
 
 1. **The audit clock is the master clock.** Once a kickoff date is booked,

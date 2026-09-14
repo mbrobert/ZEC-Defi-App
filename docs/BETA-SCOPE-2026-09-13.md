@@ -1,5 +1,12 @@
 # Beta scope — the "in" and "not in beta" lists (draft, 2026-09-13)
 
+> **AMENDED BY THE FOUNDER, 2026-09-14:** *"These things need to be included in beta: cross
+> chain loop, perps too."* The cross-chain loop has moved from "Not in beta" to **In beta**
+> (decision **D11**), which closes `ROADMAP.md` §3's scope valve early. **Perps is accepted in
+> principle and blocked on one answer** — see the row at the foot of "Not in beta" and
+> `docs/PERPS-FEASIBILITY-2026-09-14.md`, which prices both and names the trade. The rest of this
+> draft stands as written.
+>
 > **This is a draft for the founder's sign-off**, the deliverable `docs/ROADMAP.md`
 > §2 H1 asks for ("Beta scope agreed in writing — the 'in' list and the 'not in
 > beta' list … signed off by the founder"). Nothing here is decided until the
@@ -36,16 +43,17 @@ workstream's actual state (§4 of that file, reconciled 2026-09-13), not intent.
 | Solana web flow | Wallet adapter, five-screen deposit/borrow wizard on Kamino's live numbers, position page with an exit hatch | B5 part 1 `67307df`, part 2 (2026-09-13) |
 | Wallet UX | EIP-6963 multi-wallet connect, restyled | A7 `13f3af5` |
 | Base Sepolia rehearsal | Deploy package prepared (mock LP venue, swap adapter, Sepolia profile, `DEPLOYMENTS.md` template) — **not yet deployed; needs the founder's key** | A1, `e2350e3`/`17fc8f7`/`b3b482f` |
+| **Cross-chain loop** (ZEC on Kamino → USDC via CCTP V2 → LP on the user's own Base account, D6) | **IN, by founder's decision D11 (2026-09-14)** — this closes `ROADMAP.md` §3's scope valve early. Built on both chains and internally audited: Base receiving side `e931bc0`, Solana burn and reserve `1bdbe63`, the keeper's pair `b369e81`, attestation + delivery + stage machine + runbook `2868e7e`, the cross-chain forecast `f69a377`, `AUDIT-2026-09-13.md` Part 1. **Costs the audit nothing extra — both RFP packages already scope it.** What is left is not code: a keeper process holding a Base key beside the Solana one, the address lookup table both transactions need, and **one end-to-end run on devnet ↔ Sepolia, which nothing has ever done** | A5, B3.1, A5.2, Stream C |
 
 ## Not in beta
 
 | Item | Why it's out | Path back in |
 |---|---|---|
-| **Cross-chain loop** (ZEC on Kamino → USDC via CCTP V2 → LP on Base, D6) | **Conditional, not a flat no — this is the scope valve** (`ROADMAP.md` §3). A5 (Base receiving side) is done; B3.1 (Solana burn) is done up to the attestation; Stream C (the two-key attestation-poll-and-deliver process, end to end on devnet ↔ Sepolia with the reserve rule enforced) has not started. **Decision date 2026-11-13**: if Stream C is not running end to end by then, this is cut from beta and ships as v1.1. Cutting it costs nothing a user can see today — the Base yield gate refuses every pool at current emissions anyway (`docs/MODEL-NUMBERS-2026-09-13.md`), so the loop's destination is not yet worth reaching | Ships as v1.1 immediately after the audit if cut; ships in beta if Stream C lands by the valve date |
 | cbZEC/USDC Morpho market on Base | Explicit decision D3 — wait for Aave or another curator to list cbZEC first, rather than Oilskin creating the market itself | Revisit when an external market lists cbZEC; no code change needed on our side beyond flipping the registry, which is exactly why `RISKS.md` §16 says a "registry flip away" is still a real access-control event, not a triviality |
 | Two external audits (A9 EVM, B7 Solana) | By definition happen after the freeze, not part of the frozen code itself; A9 and B7 are both **not started** — `docs/AUDIT-SHORTLIST-2026-09.md` has the firm shortlist. `docs/ROADMAP.md` §0's whole argument is that sending the inquiry emails this week is the one action that is actually late | H1 (this week): inquiries sent, six questions, freeze date stated. H3: RFP packages sent at the tagged hash |
 | Launch parameters (deposit cap, allowlist size, day-one funds at risk) | A launch decision, not a beta-scope one — `ROADMAP.md` §2 "End of year" puts this after both audits, not before | Decided at or after the H3 freeze |
-| Long/short (perps), tokenized stocks | **Not in the current plan of record at all.** These were items 9–10 of the superseded `docs/BASE-PIVOT-2026-09.md` numbering (its own "v1.2" tier); D1–D7 and the Stream A/B/C framework that replaced it name neither. Reviving either needs a fresh founder decision, not a beta-scope toggle | A new decision, not on `ROADMAP.md` today |
+| **Long/short (perps)** — delta-neutral "earn funding on your ZEC" | **ACCEPTED IN PRINCIPLE by the founder 2026-09-14; blocked on one answer, not on effort.** Measured 2026-09-13/14 (`VERIFIED-PERPS-FACTS-2026-09-14.md`): **there is no ZEC perp on Base** — Avantis lists BTC/ETH/SOL/XRP/HYPE and Synthetix left Base in 2025 — so this is a **third chain, HyperEVM (999)**, not an extension of an existing module. The trade is real: funding paid shorts **+10.7 % to +22.4 % annualised over the last 31 days**, negative in only 3–5 % of hours, on a market with $476 M open interest. The architecture fits — CoreWriter (`0x3333…3333`, chain-verified) lets **a contract own its own position**, so "you own your account" survives, and it is EVM, so Solidity/Foundry/the grant model carry over. Cost: ~3–5 weeks and one new risk class (**the short leg can be liquidated**; the keeper's ladder has no concept of that today) | **Answer the venue question in `PERPS-FEASIBILITY-2026-09-14.md` §4**, and send the audit firms a scope diff **this week**, while they are still scoping and have not quoted |
+| Tokenized stocks | **Not in the current plan of record.** Item 10 of the superseded `docs/BASE-PIVOT-2026-09.md` numbering; D1–D7 and the Stream A/B/C framework that replaced it do not name it | A new decision, not on `ROADMAP.md` today |
 
 ## What this does not cover
 
