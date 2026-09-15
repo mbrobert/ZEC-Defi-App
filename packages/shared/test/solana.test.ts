@@ -6,6 +6,7 @@ import {
   KLEND_SEEDS,
   SOLANA_PROGRAMS,
   SOLANA_TOKENS,
+  isSolanaAddress,
   ZEC_MINT_AUTHORITY_SEEDS,
   kaminoCurveAprBps,
   maxOfferedLtvBps,
@@ -14,21 +15,6 @@ import {
   rungDropPct,
   liquidationDropPct,
 } from "../dist/index.js";
-
-const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-function isBase58Pubkey(s: string): boolean {
-  if (typeof s !== "string" || s.length < 32 || s.length > 44) return false;
-  let n = 0n;
-  for (const ch of s) {
-    const v = B58.indexOf(ch);
-    if (v < 0) return false;
-    n = n * 58n + BigInt(v);
-  }
-  // Leading '1's encode leading zero bytes; the rest is the big-endian magnitude (0 → no bytes).
-  const leadingOnes = s.match(/^1*/)![0].length;
-  const magnitudeBytes = n === 0n ? 0 : Math.ceil(n.toString(16).length / 2);
-  return leadingOnes + magnitudeBytes === 32;
-}
 
 test("every Solana address in shared decodes to exactly 32 bytes of base58", () => {
   const all: string[] = [
@@ -47,8 +33,8 @@ test("every Solana address in shared decodes to exactly 32 bytes of base58", () 
       r.collateralSupplyVault,
     ]),
   ];
-  for (const a of all) assert.ok(isBase58Pubkey(a), `${a} is not a 32-byte base58 key`);
-  assert.ok(!isBase58Pubkey("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"), "an EVM address must not pass");
+  for (const a of all) assert.ok(isSolanaAddress(a), `${a} is not a 32-byte base58 key`);
+  assert.ok(!isSolanaAddress("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"), "an EVM address must not pass");
 });
 
 test("the reserves point at the mints and the Scope indices the facts file recorded (2026-09-12)", () => {

@@ -4,9 +4,9 @@
      below came from running the command in its own row, on the tree named here. README.md
      carries the prose and no numbers; this file carries the numbers and no prose. -->
 
-_Generated 2026-09-15T00:03:31Z by `npm run status` on darwin-arm64, Node 22.23.2._
+_Generated 2026-09-15T01:01:40Z by `npm run status` on darwin-arm64, Node 22.23.2._
 
-**Tree:** the working tree at `da6b524` on `main`, with **8 file(s) modified on top of it** — including this one, when it is regenerated just before a commit. Each suite ran against that tree, not against a published commit.
+**Tree:** the working tree at `6a05968` on `main`, with **7 file(s) modified on top of it** — including this one, when it is regenerated just before a commit. Each suite ran against that tree, not against a published commit.
 
 Abbreviations: ABI = application binary interface; e2e = end-to-end; HF = health factor;
 LP = liquidity provision; RPC = remote procedure call; CCTP = Circle's Cross-Chain Transfer Protocol.
@@ -18,7 +18,7 @@ LP = liquidity provision; RPC = remote procedure call; CCTP = Circle's Cross-Cha
 | Contracts (Foundry) | `cd contracts && forge test` | **433 passed / 0 failed / 13 skipped** (446 total), 39 suites |
 | Contracts, fork | `FORK_URL=<Base archive RPC> forge test --match-path test/fork/BaseFork.t.sol` | not run — add `--all` |
 | Root ABI seam | `node scripts/verify-abi.mjs` | **444** selectors / topics / errors across 19 contracts |
-| Shared | `npm test -w @zyo/shared` | **99** |
+| Shared | `npm test -w @zyo/shared` | **113** |
 | Solana, seams | `npm test -w @zyo/solana` | **14** |
 | Solana, program unit | `cd solana && cargo test --manifest-path programs/oilskin/Cargo.toml` | not run — add `--all` |
 | Solana, localnet | `bash solana/scripts/localnet.sh (terminal 1) · cd solana && anchor test --skip-build --skip-local-validator (terminal 2)` | not run — add `--all` |
@@ -75,7 +75,7 @@ the regression tests themselves are `contracts/test/audit-regressions/`.
 
 ## Every document in docs/
 
-All 56 documents beside this one, from an `ls` of `docs/` at generation time, each with its own first heading, plus the subdirectory `docs/research/`.
+All 57 documents beside this one, from an `ls` of `docs/` at generation time, each with its own first heading, plus the subdirectory `docs/research/`.
 
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — Architecture — Base module v1 (the Solana module is designed in `SOLANA-ARCHITECTURE.md`)
 - [`AUDIT-2026-09-06.md`](AUDIT-2026-09-06.md) — Internal adversarial audit — wave 1, and the fix round it produced (2026-09-06)
@@ -133,6 +133,7 @@ All 56 documents beside this one, from an `ls` of `docs/` at generation time, ea
 - [`VERIFIED-SOLANA-FACTS.md`](VERIFIED-SOLANA-FACTS.md) — Verified Solana mainnet facts for the Solana module (read live 2026-09-12 00:36–00:57 UTC, slots 446,294,693 → 446,298,641)
 - [`YIELD-REALITY-2026-08-31.md`](YIELD-REALITY-2026-08-31.md) — Yield reality check — measured 2026-08-31
 - [`YIELD-SERVICE.md`](YIELD-SERVICE.md) — The yield service — live Base rates, gauge emissions, the gate, and empirical bands
+- [`ZEC-FORMS-AND-DOORS-2026-09-15.md`](ZEC-FORMS-AND-DOORS-2026-09-15.md) — ZEC forms, and the two doors — plan of record for the Zcash direction
 
 ## Regenerating this file
 

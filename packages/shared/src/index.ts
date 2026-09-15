@@ -13,4 +13,5 @@ export * from "./lpEnumeration.js";
 export * from "./dust.js";
 export * from "./b20.js";
 export * from "./solana.js";
+export * from "./zecForms.js";
 export * from "./cctp.js";

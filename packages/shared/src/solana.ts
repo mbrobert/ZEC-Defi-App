@@ -10,12 +10,35 @@
  * asserted against these), and the dated snapshot in `KAMINO_ZCASH_SNAPSHOT_2026_09_12`, which exists so a
  * test can tell a re-read has drifted, never so code can skip the read.
  *
- * Addresses are base58 Solana public keys (32 bytes), not EVM hex; `isBase58Pubkey` in test/solana.test.ts
- * checks the alphabet and decoded length.
+ * Addresses are base58 Solana public keys (32 bytes), not EVM hex; `isSolanaAddress` below checks the
+ * alphabet and the decoded length, and is the only such check in the workspace.
  */
 
 /** A base58-encoded 32-byte Solana public key. */
 export type SolanaAddress = string;
+
+/** The base58 alphabet Solana uses (Bitcoin's: no 0, O, I or l). */
+const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+/**
+ * True when `value` is a base58 string that decodes to exactly 32 bytes — the shape of every Solana
+ * public key (mints, programs, PDAs and ordinary wallets alike). It proves the encoding, never that
+ * the account exists: an address that passes here can still be absent from the chain, and every
+ * account this module names was additionally read live (see the facts file above).
+ */
+export function isSolanaAddress(value: unknown): value is SolanaAddress {
+  if (typeof value !== "string" || value.length < 32 || value.length > 44) return false;
+  let n = 0n;
+  for (const ch of value) {
+    const v = BASE58_ALPHABET.indexOf(ch);
+    if (v < 0) return false;
+    n = n * 58n + BigInt(v);
+  }
+  // Leading '1's encode leading zero bytes; the rest is the big-endian magnitude (0 -> no bytes).
+  const leadingOnes = value.match(/^1*/)![0].length;
+  const magnitudeBytes = n === 0n ? 0 : Math.ceil(n.toString(16).length / 2);
+  return leadingOnes + magnitudeBytes === 32;
+}
 
 export const SOLANA_CLUSTER = {
   name: "Solana mainnet-beta",
