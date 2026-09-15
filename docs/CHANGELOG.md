@@ -3,6 +3,38 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-14 — README carries prose, `docs/STATUS.md` carries the numbers, and a generator writes them
+
+`README.md` stated the contract suite's size **three different ways in one file**: 374 in the repo-layout
+table, 380 in the run block, and neither matched the 388 the tree held that morning — itself long superseded
+by **433**. The keeper (233 → 316), the yield service (131 → 179), the web app (152 → 199), shared (85 → 99)
+and the root ABI seam (327 → 444) were stale the same way, and the "Verified state (2026-09-10, this tree)"
+column dated the whole table to four days earlier. Every one of those numbers had been typed by a person.
+
+- **`scripts/status.mjs` + `npm run status`** (new). Runs each suite, parses that runner's own summary line
+  (forge's epilogue, `node --test`'s TAP counts, Playwright's, cargo's, mocha's, the prototypes' own line) and
+  writes **`docs/STATUS.md`**: the suite table, what is deployed (parsed from `DEPLOYMENTS.md`, which is still
+  empty on every row), the forecast verdict (read out of the generated `demo-forecast.json`), the audit history
+  with the severities each record states, and an index of `docs/` built from an `ls`. `-- --all` adds the fork,
+  cargo, localnet and Playwright suites; `-- --check` exits 1 when the file is stale. A suite whose output
+  cannot be parsed is reported as unparsed — the script never writes a number it did not read.
+  First generated run, all green: contracts **433 passed / 0 failed / 13 skipped** (446 total, 39 suites), root
+  ABI seam **444**, shared **99**, Solana seams **14**, keeper **316** (+ ABI seam 123/123, IDL seam 77/77),
+  yield **179**, web unit **199**, prototypes **130 · 116 · 62 · 6**.
+- **`README.md` rewritten.** One screen before the first code block: what Oilskin does in plain words, who it is
+  for, the risk slider (which the old README never mentioned), the two modules in two sentences each, how to run
+  it, where to read next. No counts, no dated block readings, no contract paths in the opening. The repo-layout
+  table lost its stale "verified state" column and gained the **`solana/`** row it never had; the audit
+  paragraph names **waves 2 and 3**, the nightly invariant finding and the four passes of 2026-09-13, not just
+  wave 1; the docs index is the generated one.
+- **"A loan never crosses a chain" is gone** — it contradicted D6 as any reader would take it. Everywhere it
+  appeared (`README.md`, `CLAUDE.md`, `package.json`, `SOLANA-ARCHITECTURE.md` §2 and §14) it now says what is
+  true: **a loan stays on the chain it was borrowed on — debt, collateral and repayment never move; the
+  borrowed USDC may cross by CCTP (Circle's Cross-Chain Transfer Protocol) to be deployed.** `package.json` also stopped calling the Solana module
+  "designed, not built".
+- **`TESTING.md`** says which of the two count tables was measured by a machine, and that its own is the one
+  that can drift. `CLAUDE.md`'s reading order now names `STATUS.md`.
+
 ## 2026-09-13 — Five findings from driving the site, and the overflow test that could not have caught the first
 
 The web app was walked page by page in demo mode at 1024 and 375 wide. Web unit **199 / 199**, e2e **18 passed /

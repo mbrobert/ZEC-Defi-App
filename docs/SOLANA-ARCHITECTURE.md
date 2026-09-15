@@ -42,7 +42,9 @@ bounded per period, revocable in one transaction. The venue is Kamino Lend's **Z
 
 It is **borrow-and-hold**. There is no liquidity-provision leg on Solana: no Aerodrome, no Snuggle engine, and
 nothing modelled for Orca / Meteora (`DIRECTION-2026-09-11.md` §2). The yield gate does not apply; the
-**pool-size gate** (§7) does. A loan never crosses a chain.
+**pool-size gate** (§7) does. The loan stays on Solana — the debt, the collateral and the repayment
+never leave it; since D6 the borrowed USDC itself may cross to the user's own Base account and back
+(§14).
 
 It is **not a port**. Solidity clones with `exec(target, data)` passthroughs do not map onto Solana, where every
 instruction names its accounts and the program must know each CPI it makes. The consequence is stated in §3: the
@@ -500,7 +502,7 @@ Kamino obligation orders (disabled on this market).
 ## 14 · D6 addendum (2026-09-13) — the loop's Solana side: entry-HF record, per-position ladder, the reserve, `deposit_for_burn`
 
 BUILD-PLAN D6 puts the cross-chain loop in v1 and §13 above had listed moving USDC between chains as another
-product; this section is the design that replaces that line. The loan still never crosses a chain: the debt
+product; this section is the design that replaces that line. The loan itself still stays on Solana: the debt
 stays on Kamino, only USDC moves — out to the user's Base `OilskinAccount` by Circle's CCTP V2 (Cross-Chain
 Transfer Protocol) in the deploy direction, back to the Account's USDC token account in the protective
 direction. Facts every number here rests on: `VERIFIED-SOLANA-FACTS.md` Addenda 1 and 3. Base's half is

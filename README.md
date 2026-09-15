@@ -1,161 +1,140 @@
-# Oilskin — chain-agnostic, ZEC-holder-centric
+# Oilskin
 
-Wherever a market for ZEC exists, a ZEC holder can deploy it there through
-Oilskin (founder's direction, `docs/DIRECTION-2026-09-11.md`). Two modules under
-one policy layer — the health ladder, the entry rule, the copy rules and the one
-website live in `packages/shared` and `web/`; the account container and the venue
-adapters are built per chain:
+**Oilskin lets you borrow against a coin you do not want to sell, and decide for
+yourself how much risk that costs you.** You deposit the coin as collateral, you
+borrow US dollars (USDC) against it, and you either keep those dollars or put
+them to work — all inside a smart account that only your own wallet owns. It is
+built for ZEC holders first: wherever a market for ZEC exists, a ZEC holder
+should be able to deploy it there through Oilskin
+(`docs/DIRECTION-2026-09-11.md`).
 
-- **Base module (v1, this tree):** everything below this paragraph.
-- **Solana module (built 2026-09-12, proven on localnet, not deployed):** bridged
-  ZEC on Kamino's ZCASH market, USDC borrowed, the same ladder run by an Anchor
-  program + program-derived account the wallet owns, protected by the keeper's
-  Solana path (`agent/src/solana/`), with the web flow (`/solana`, `/solana/new`) and the yield service's
-  Kamino view (`/v1/solana/borrow`) — `docs/VERIFIED-SOLANA-FACTS.md` (read live),
-  `docs/SOLANA-ARCHITECTURE.md` (the design, the founder's decisions, what the
-  localnet runs proved), `solana/` (the program, the localnet harness, 26 specs).
+**Who it is for.** Someone who has never used DeFi. One decision per screen,
+plain words, the risk stated before the button, and a Simple / Advanced toggle
+that hides or shows the machinery. Nothing here is advice: the app shows its
+numbers and you choose.
 
-A loan never crosses a chain.
+**You set the risk, on a slider.** One continuous control sets your *health
+factor* — how far your collateral can fall before the position is liquidated —
+and moves the borrow amount with it, in both directions. It cannot go below the
+floor the on-chain registry enforces (1.25) or above the lending venue's own
+limit; "Sheltered" (1.55) and "Expert" (1.30) are marks on that slider, not
+modes. Every protective step the keeper later takes is derived from the number
+you picked.
 
-## Base module — v1
+**Base module.** Deposit **cbBTC** or **WETH** on Base, borrow **USDC** on Aave
+v3 or Morpho Blue, and — if you want — deploy that USDC into an **Aerodrome
+Slipstream** liquidity position, after seeing what the model forecasts it will
+earn or lose. **cbZEC** is spendable in spot swaps and is registered as
+collateral but **disabled**, with the reason shown, because no lending market on
+Base lists it yet.
 
-Oilskin lets a wallet on Base (Coinbase Wallet, MetaMask, WalletConnect, or any
-EIP-6963 wallet — EIP is an Ethereum Improvement Proposal) deposit **cbBTC or
-WETH** as collateral on **Aave v3**, borrow **USDC** at the live rate, and
-either keep the USDC or put it into an **Aerodrome Slipstream** concentrated-
-liquidity (CL) position through the **Snuggle/MaxFi engine** — after reading the
-yield forecast for that pool (both models, the drag, the break-even; today a
-loss on every pool) and acknowledging it; only safety refuses. Spot swaps go through **CoW
-Protocol** batch auctions. **cbZEC** (Coinbase Wrapped ZEC) is usable in spot; it
-is registered as collateral but **disabled** with the reason shown, because no
-lending market on Base lists it (`CollateralRegistry.register(cbZEC, …,
-enabled=false, "no collateral market on Base yet")` in
-`contracts/script/Deploy.s.sol`).
+**Solana module.** Deposit **bridged ZEC** on Kamino's ZCASH market, borrow
+**USDC**, and have the same risk ladder run by an Anchor program whose account
+your wallet owns. It is borrow-and-hold: there is no liquidity-provision leg on
+Solana, so the loan either sits or comes home.
 
-Every position is owned by the user's own `OilskinAccount` — an EIP-1167 clone
-whose `owner` is the wallet that created it and can never change
-(`contracts/src/account/OilskinAccount.sol`). Oilskin's contracts hold nothing
-between transactions: the router's balance of every token it touches is
-**unchanged** across every call, asserted as a delta rather than a zero
-(`StrategyRouter._assertUnchanged` — asserting a zero on a public address was
-the audit's Critical, because one base unit sent by anybody would have bricked
-the protocol permanently). A keeper may act on an account only within a grant
-the owner signed and can revoke (`OilskinAccount.grant` / `revoke` /
-`revokeAll`), and since 2026-09-06 that grant is a single root call
-(`StrategyRouter.unwind`) whose peripheral rights only the owner can enable.
+**A loan stays on the chain it was borrowed on.** The debt, the collateral and
+the repayment never move. What *may* cross is the borrowed USDC: Circle's
+Cross-Chain Transfer Protocol (CCTP) can carry it from a Solana loan to your own
+Base account and into Aerodrome, and close and burn it back the other way
+(`docs/BUILD-PLAN-2026-09-12.md` D6). If that transfer stalls, the Solana loan is
+still repayable from a reserve on its own chain.
+
+**Nothing is deployed.** No transaction has ever been signed or broadcast from
+this repository, no external audit has been done, and the web app runs in demo
+mode until a deployment's addresses exist. `docs/STATUS.md` — generated, never
+typed — carries what is deployed, what every suite counts today, what the
+forecast says and what the internal audits found.
+
+```bash
+npm install
+npm run build -w @zyo/shared    # every workspace imports its dist/
+npm run web                     # http://localhost:3000, demo mode
+```
+
+Read next: **`docs/BUILD-PLAN-2026-09-12.md`** (the plan of record — decisions
+D1–D13), then `SETUP.md` (build and run everything), `docs/STATUS.md` (today's
+numbers), `docs/RISKS.md` (every risk, and what does *not* mitigate it),
+`docs/TESTING.md` (what each suite proves), `docs/ROADMAP.md` (dates and
+trade-offs). The full index of `docs/` is generated into
+[`docs/STATUS.md`](docs/STATUS.md#every-document-in-docs).
+
+Abbreviations used below: LP = liquidity provision; LTV = loan-to-value; HF =
+health factor; RPC = remote procedure call (a chain node endpoint); ABI =
+application binary interface; EIP = Ethereum Improvement Proposal; PDA =
+program-derived address (a Solana account a program owns).
+
+## Who holds what
+
+Every Base position is owned by the user's own `OilskinAccount` — an EIP-1167
+clone whose `owner` is the wallet that created it and can never change. Oilskin's
+own contracts hold nothing between transactions: the router's balance of every
+token it touches is asserted **unchanged** across every call, as a delta rather
+than a zero. (Asserting a zero was the internal audit's one Critical: a single
+base unit of USDC sent by a stranger would have bricked the protocol
+permanently.) On Solana the equivalent is a PDA the user's wallet owns; because
+Kamino refuses to hand a PDA-owned obligation to a wallet, the exit there is
+always through the program.
+
+A keeper may act on an account only inside a grant the owner signed and can
+revoke, and that grant is a single root call whose peripheral rights only the
+owner can switch on.
 
 **Oilskin does have one privileged role, and says so.** The `CollateralRegistry`
-owner chooses which asset is offered at which venue contract. It can disable any
-asset **instantly**, move the entry health-factor floor **instantly** within
-(1.0, 10.0], and replace a venue **after an immutable on-chain delay** (2 days
-as deployed) — after which that new contract receives every calling account's
-peripheral rights. The delay and its events are a warning, not a prohibition.
-The product therefore makes no claim of being free of operator powers — the
-phrasings that used to appear in the UI copy are now in a banned-words list and
-grep-tested in `web/test/copy.test.ts` and `prototype/test/verify-toggle.mjs`.
-See `docs/RISKS.md` §16.
+owner chooses which asset is offered at which venue. It can disable any asset
+**instantly**, move the entry health-factor floor **instantly** within (1.0,
+10.0], and replace a venue **after an immutable on-chain delay** — after which
+the new contract receives every calling account's peripheral rights. The delay
+and its events are a warning, not a prohibition. So the product makes no claim
+to be free of operator powers: the phrasings that used to say otherwise are in a
+banned-words list and grep-tested in `web/test/copy.test.ts`. See
+`docs/RISKS.md` §16.
 
-**This is a demo-status build.** Nothing is deployed on Base, no transaction has
-been signed or broadcast, and no external audit has been done — an internal
-adversarial audit (wave 1, four lenses) and its fix round are recorded in
-`docs/AUDIT-2026-09-06.md`. The web app runs in demo mode until a deployment's
-addresses are configured (`web/lib/env.ts: contractsConfigured()`).
+## The forecast is a forecast, not a gate
 
-Abbreviations used below: LP = liquidity provision; LTV = loan-to-value; RPC =
-remote procedure call (a chain node endpoint); ABI = application binary
-interface; KYC = Know Your Customer.
+Every curated pool × setting is shown with both of the model's LP-net numbers
+(a published closed form and a Monte-Carlo-calibrated one), the gap between
+them, the impermanent-loss drag, the break-evens, your net at the health factor
+you chose, the drawdown to liquidation, and the borrow rate *after* your own
+borrow moves the venue's curve. Any of them may then be opened, once you tick
+one sentence that names those numbers (`docs/BUILD-PLAN-2026-09-12.md` D4/D5).
 
-## The honest yield forecast
-
-Since 2026-09-12 (`docs/BUILD-PLAN-2026-09-12.md` D4/D5, step A3) the yield model is a
-**forecast, not a gate**: every curated pool × setting is shown with both of the model's
-LP-net numbers, the gap between them, the impermanent-loss drag, the break-evens, the
-user's net at the loan-to-value they chose, the liquidation drawdown and the borrow
-rate *after* their own borrow on the venue's curve — and any of them may be opened after
-an acknowledgment that names those numbers. The only refusals are safety: the registry
-entry floor, a borrow the pool cannot fund, stale rates, a paused or inactive reserve, a
-disabled asset. `GET /v1/forecast` serves it (`services/yield/src/forecast.ts`); the site
-consumes it (`web/lib/forecast.ts`) and the demo snapshot is the evaluator's own output
-on the recorded inputs (`services/yield/samples/demo-forecast.json`, pinned cell for cell).
-
-What the forecast says today is unchanged from what the gate said. At the USDC variable
-borrow rate of **4.5174 %** (Aave v3 Base `PoolDataProvider.getReserveData(USDC)`, read live
-2026-09-12 19:31 UTC at block 51,226,072 together with every Aerodrome gauge word,
-`docs/VERIFIED-BASE-FACTS.md` Addendum 12) **no pool × setting beats the borrow on both
-models**: 0 of 27 cells in `docs/MODEL-NUMBERS-2026-09-12.md` (generated by
-`services/yield/scripts/lp-sim.py` from that sample — `npm run model` reads every input
-from the sample file — and pinned cell-by-cell by `services/yield/test/model-pin.test.ts`,
-`web/test/snapshot.test.ts` and `prototype/test/verify-toggle.mjs`). The best cell,
-cbBTC/USDC at the "sheltered" width, forecasts **−10.92 %/yr** on the LP slice after the
-engine's 15 % fee, Oilskin's 10 % performance fee and the impermanent-loss drag at the
-recorded volatility (the stricter Monte-Carlo form says −10.89 %); it would need **4.56×**
-today's net emissions to break even. Every priced cell's LP slice is negative, so no borrow
-rate would turn one positive at today's emissions. The cbZEC/USDC gauge carries its first
-emissions vote (≈ 617 AERO a day to 2026-09-17) — 1 to 17 % gross across the widths — and
-still sits below the borrow at the two wider widths, with no calibrated σ at the narrowest.
-
-The model prices every cell **twice** — the published closed form and a Monte-Carlo-
-calibrated form — and reports both, with the gap: at the boundary where the closed form
-used to flip, it is 0.1–32 points optimistic (`docs/MODEL-NUMBERS-2026-09-12.md`; one cell,
-WETH/cbBTC at the working width, also breaches the closed form's own tolerance at today's
-emissions — `docs/RISKS.md` §14). Where the two forms disagree the site says so; it no
-longer refuses.
-
-Gauge-emission inputs are the 2026-09-12 words (block 51,226,072); σ is the 2026-08-31
-realized volatility; the USDC borrow curve and pool liquidity are the 2026-09-12 20:25 UTC
-read at block 51,227,701 (Addendum 13). Re-run `npm run backfill -- sample` (with
-`BASE_RPC_URL` set to a Base RPC that serves the batched read and
-`GECKO_MIN_INTERVAL_MS=15000` for GeckoTerminal), `npm run model` and
-`npm run demo-forecast` in `services/yield` before believing any number.
-
-What the product does with the forecast: Simple mode shows every pool at its best setting
-and names the least-bad one as a loss when it is one (`web/lib/recommend.ts`); Advanced mode
-shows every pool × setting with both numbers and the gap; before any new position — LP,
-hold or spot — the user ticks one sentence that states the forecast, the borrow cost and the
-drawdown to liquidation for that position. The forecast is computed, never curated.
+The only refusals are safety: the registry's entry floor, a borrow the pool
+cannot fund, stale rates, a paused or inactive reserve, a disabled asset, an
+unfunded cross-chain reserve. The model is computed from recorded chain reads,
+never curated — `GET /v1/forecast` serves it, the site consumes it, and
+`docs/STATUS.md` carries what it says today.
 
 ## Repo layout
 
-| Path | What | Verified state (2026-09-10, this tree) |
-|---|---|---|
-| `contracts/` | Foundry — `OilskinAccount` + factory, `StrategyRouter`, `AaveV3Venue`, `SnuggleLpVenue`, `SlipstreamLpVenue` + `SlipstreamPoolSwapAdapter` (cbZEC/USDC held directly on the second Slipstream deployment, 2026-09-11), `CollateralRegistry`, `AerodromeSwapAdapter`, `MorphoBlueVenue` (built over the two verified Base markets; not the registry's venue until propose → timelock → accept), `PythOracleAdapter` (v1.1, unused) | 374 passed / 0 failed / 12 skipped (2026-09-11; the 12 fork tests need `FORK_URL` — 10 of them run against Base on 2026-09-10: 9 pass / 1 fail, `docs/TESTING.md`), 29 suites |
-| `agent/` | Keeper daemon (viem) — discovers accounts, values health fail-closed across every venue the registry names (the Aave pool cross-checked by G1–G4, any other venue against the Chainlink feeds by V1–V4, the worst venue runs the ladder) with per-feed staleness, acts only via one root `StrategyRouter.unwind` inside the user's grant, and notifies | 233 tests / 45 suites; `verify-abi` 72/72 |
-| `services/yield/` | Live Aave rates, Aerodrome gauge emissions, the two-model yield forecast (`/v1/forecast`; `/v1/gate` is the same model as a verdict, kept for its consumers), the LP model, empirical bands — HTTP API + backfill CLI | 131 tests |
-| `web/` | Next.js 14 — wallet connect, cbZEC onboarding, wizard, venue-aware chain-read dashboard with a keeper panel and a pending-venue banner, CoW spot; demo mode without a wallet | 152 unit tests (150 passed, 2 skipped); Playwright 12/12 |
-| `packages/shared/` | The one source for addresses, fees, the health-factor ladder (`ladderFor(entryHf)` — a position's rungs derive from the entry HF it opened at), the slider's bounds, widths, pools | 85 tests |
-| `prototype/` | `simple.html` and `index.html` — dependency-free walkthroughs pinned to the same facts and model numbers, the risk slider and the derived ladder included | 308 checks (130 + 116 + 62) + 6 fuzz |
-| `scripts/verify-abi.mjs` | Generates / diffs `contracts/abi/oilskin-abi.json` from `contracts/out` | 327/327 |
-| `docs/` | `ARCHITECTURE` · `FLOWS` · `DEPOSIT-FLOW` · `RISKS` · `AUDIT` · `AUDIT-SCOPE` · `AUDIT-2026-09-06` · `TESTING` · `PRIVACY` · `CONTRACT-ABI` · `VERIFIED-BASE-FACTS` · `BASE-PIVOT-2026-09` · `BUILD-SPEC-2026-09` · `YIELD-SERVICE` · `MODEL-NUMBERS-2026-09-05` · `CHANGELOG` | this build |
+| Path | What is in it |
+|---|---|
+| `contracts/` | Foundry (Solidity 0.8.24, via-IR) — `OilskinAccount` + factory, `StrategyRouter` (including the CCTP arrival, `openLpOnly` and `closeLpAndBurn`), `AaveV3Venue`, `MorphoBlueVenue`, `SnuggleLpVenue`, `SlipstreamLpVenue` + `SlipstreamPoolSwapAdapter`, `CollateralRegistry`, `AerodromeSwapAdapter`, `PythOracleAdapter` (v1.1, unused) |
+| `solana/` | Anchor workspace — the `oilskin` program (the PDA position, the Kamino CPIs, the entry-HF record, the per-position ladder, the USDC reserve, `deposit_for_burn`), its localnet harness and fixtures, and `scripts/gen-ladder.mjs`, which generates the program's ladder constants from `packages/shared` so the two chains cannot drift |
+| `agent/` | The keeper daemon — discovers accounts, values health fail-closed across every venue the registry names (with per-feed staleness), acts only through one root `StrategyRouter.unwind` inside the user's grant, and notifies. `agent/src/solana/` is the same job on Solana, plus the cross-chain class that watches a CCTP transfer and falls back when it stalls |
+| `services/yield/` | Live Aave and Kamino rates, Aerodrome gauge emissions, the two-model yield forecast (`/v1/forecast`), the LP model and its empirical bands — an HTTP API plus a backfill CLI |
+| `web/` | Next.js 14 — wallet connect, cbZEC onboarding, the wizard and the risk slider, a venue-aware dashboard reading the chain, the keeper panel, CoW Protocol spot swaps, the `/solana` flow; demo mode without a wallet |
+| `packages/shared/` | The one source for addresses, fees, the health-factor ladder (`ladderFor(entryHf)`), the slider's bounds, the widths and the pools — imported by every other workspace and by the Solana program's generated constants |
+| `prototype/` | `simple.html` and `index.html` — dependency-free walkthroughs pinned to the same facts and model numbers |
+| `scripts/` | `verify-abi.mjs` (generates and diffs `contracts/abi/oilskin-abi.json` — the ABI is never hand-typed), `status.mjs` (writes `docs/STATUS.md`), and the chain-reading tools |
+| `docs/` | The plan, the verified facts, the audits, the risks. Index: [`docs/STATUS.md`](docs/STATUS.md#every-document-in-docs) |
 
-## Run every suite
+## Tests, and today's numbers
 
 ```bash
-# Contracts — Foundry. Libraries are not vendored; clone the pinned versions once:
-cd contracts
-git clone --depth 1 --branch v5.7.0 https://github.com/OpenZeppelin/openzeppelin-contracts lib/openzeppelin-contracts
-git clone --depth 1 --branch v1.16.2 https://github.com/foundry-rs/forge-std lib/forge-std
-forge test                                   # 380 pass, 0 fail, 11 fork tests SKIPPED without FORK_URL (2026-09-12) (isolation pinned in foundry.toml; --no-isolate is green too)
-FORK_URL=<Base RPC> forge test --match-path test/fork/BaseFork.t.sol -vv   # the 11 fork tests — 2026-09-12 against Base at block 51,222,568: 11 pass / 0 fail; cbZEC's B20 shape is scripts/check-cbzec-b20.sh (no fork EVM can run it)
-# (offline container with a pre-fetched solc: FOUNDRY_PROFILE=local forge test)
-
-# Root ABI seam — regenerates or diffs contracts/abi/oilskin-abi.json against contracts/out
-node scripts/verify-abi.mjs                  # exits 1 on drift; --write to regenerate
-
-# Node workspaces (Node ≥ 22). Build shared first; every consumer imports its dist/.
-npm install
-npm test -w @zyo/shared                      # 53
-npm test -w @zyo/agent                       # tsc + verify-abi (54/54) + 171 tests
-npm test -w @zyo/yield                       # tsc + 131 tests (RPC mocked with recorded chain words)
-npm test -w @zyo/web                         # 125 unit tests (ABI drift + both MODEL-NUMBERS pins run, not skipped)
-cd web && PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npx playwright test   # 12 (6 scenarios × 2 viewports)
-
-# Prototypes (Playwright + Chromium)
-CHROMIUM_PATH="$(node -e "console.log(require('playwright').chromium.executablePath())")" node prototype/test/run-all.mjs   # 130 + 116 + 62 + 6
+npm run status              # runs the suites and rewrites docs/STATUS.md
+npm run status -- --all     # plus fork, Solana localnet, cargo and Playwright
+npm run status -- --check   # exits 1 if docs/STATUS.md is out of date
 ```
 
-`docs/TESTING.md` says what each suite proves and how the counts were obtained.
+Counts live in `docs/STATUS.md` because that file is generated; this one is not,
+and README counts went stale three different ways at once before the generator
+existed. What each suite *proves* is `docs/TESTING.md`; every suite's own
+command is in both. `SETUP.md` covers the prerequisites — Node ≥ 22, Foundry
+with two libraries cloned into `contracts/lib`, and for `solana/` the Rust,
+Solana CLI and Anchor toolchain.
 
-## Run the apps
+## Running the pieces
 
 ```bash
 # Keeper — observe-only without KEEPER_PRIVATE_KEY (rungs recorded, on-chain actions REFUSED)
@@ -172,20 +151,40 @@ npm run web
 # Prototypes — open prototype/simple.html or prototype/index.html, or `bash start-demo.command`
 ```
 
+Never run the keeper, the yield service or the web app against mainnet with a
+signing key.
+
 ## What is real and what is a plan
 
-Real, in this tree: the contracts above with their tests; the keeper; the
-yield service and model; the web app in demo mode; the prototypes.
+**Real, in this tree:** the contracts and their suites; the Solana program,
+proven on a local validator; the keeper on both chains, including the
+cross-chain path; the yield service and its model; the web app in demo mode;
+the prototypes.
 
-Prepared, not run: a **Base Sepolia** deployment — script, offline tests, a
-dry run that cleared the live guard, and a runbook in `docs/DEPLOY-SEPOLIA.md`;
-the founder holds the keys and nothing has been broadcast.
+**Prepared, not run:** a **Base Sepolia** deployment — script, offline tests, a
+dry run that cleared the live guard, and a runbook (`docs/DEPLOY-SEPOLIA.md`).
+The founder holds the keys; nothing has been broadcast. The cross-chain loop is
+built on both chains but **has never moved value across one**: it still needs a
+process holding a Base key beside the Solana one, the address lookup table both
+transactions need, and a devnet ↔ Sepolia run
+(`docs/CROSSCHAIN-RUNBOOK-2026-09-13.md`).
 
-Plans, not shipped: a deployment on Base mainnet; an external audit; a multisig
-registry owner and a watcher on `VenueChangeProposed`; a keeper notification
-channel that actually reaches a person; the cbZEC
-collateral market and the Pyth oracle adapter in use (v1.1, `docs/BASE-PIVOT-2026-09.md`
-§3); moving cbBTC/WETH from Aave to the Morpho Blue venue (built and tested, and the keeper and the web now read whichever venue the registry names; the registry owner's propose → timelock → accept, not run); the perps and
-tokenized-stock lines (v1.2). `docs/RISKS.md` states every risk with what
-mitigates it and what does not; `docs/PRIVACY.md` states plainly that the cbZEC
+**Internal audits, not an external one:** three adversarial waves, each with its
+fix round — wave 1 (`docs/AUDIT-2026-09-06.md`), wave 2
+(`docs/AUDIT-2026-09-07.md`) and wave 3 (`docs/AUDIT-2026-09-11.md`) — plus the
+nightly invariant finding (`docs/AUDIT-2026-09-12.md`) and the four passes of
+2026-09-13 over the Solana module, the cross-chain code, the keeper's feed
+staleness, the risk slider and the forecast service
+(`docs/AUDIT-2026-09-13.md`). Every finding's severity, fix commit and
+regression test is in its own record, and the regressions run in
+`contracts/test/audit-regressions/`. Inquiries to external firms went out on
+2026-09-13. `docs/STATUS.md` tabulates all of it.
+
+**Plans, not shipped:** a Base mainnet deployment; an external audit; a multisig
+registry owner with a watcher on `VenueChangeProposed`; a keeper notification
+channel that actually reaches a person; a cbZEC collateral market and the Pyth
+oracle adapter in use; moving cbBTC/WETH from Aave to Morpho Blue (built and
+tested — the registry owner's propose → timelock → accept has not been run); the
+perps and tokenized-stock lines. `docs/RISKS.md` states every risk with what
+mitigates it and what does not; `docs/PRIVACY.md` says plainly that the cbZEC
 entry runs through a Coinbase account and that everything on Base is public.

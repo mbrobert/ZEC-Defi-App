@@ -2,7 +2,7 @@
   "name": "zec-yield-orchestrator",
   "version": "0.1.0",
   "private": true,
-  "description": "Oilskin \u2014 a chain-agnostic, ZEC-holder-centric DeFi app. Base module: cbBTC, WETH or cbZEC as collateral on Aave v3 (or a Morpho Blue cbZEC/USDC market), borrow USDC, deploy it into Aerodrome liquidity, every position owned by the user's own smart account. Solana module (designed, not built): bridged ZEC on Kamino's ZCASH market, USDC borrowed, the same ladder run by an Anchor program + PDA the user's wallet owns. A loan never crosses a chain.",
+  "description": "Oilskin \u2014 a chain-agnostic, ZEC-holder-centric DeFi app. Base module: cbBTC or WETH as collateral on Aave v3 (or Morpho Blue), borrow USDC, deploy it into Aerodrome liquidity, every position owned by the user's own smart account. Solana module (built, proven on localnet, not deployed): bridged ZEC on Kamino's ZCASH market, USDC borrowed, the same ladder run by an Anchor program + PDA the user's wallet owns. A loan stays on the chain it was borrowed on; borrowed USDC may cross by Circle's CCTP to be deployed.",
   "workspaces": [
     "packages/shared",
     "agent",
@@ -14,6 +14,7 @@
     "build": "npm run build -w @zyo/shared && npm run build -w @zyo/agent && npm run build -w @zyo/yield && npm run build -w @zyo/web",
     "test": "npm run test -w @zyo/agent && npm run test -w @zyo/yield && npm run test:contracts",
     "test:contracts": "cd contracts && forge test -vv",
+    "status": "node scripts/status.mjs",
     "agent": "npm run dev -w @zyo/agent",
     "yield": "npm run dev -w @zyo/yield",
     "backfill": "npm run backfill -w @zyo/yield --",

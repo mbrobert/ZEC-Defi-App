@@ -29,6 +29,13 @@ MC = Monte Carlo.
 | Web, e2e against Base Sepolia | `cd web && npx playwright test -c playwright.sepolia.config.ts` | **3 skipped by name** until `docs/DEPLOYMENTS.md` carries Sepolia addresses |
 | Prototypes | `mkdir -p /tmp/build && cp services/yield/samples/MODEL-NUMBERS.md /tmp/build/ && node prototype/test/run-all.mjs` | **verify-simple 130 · verify-advanced 116 · verify-toggle 62 · fuzz 6** |
 
+Since 2026-09-14 the same counts are also **generated**: `npm run status` runs every suite above that
+needs nothing but this checkout (`-- --all` adds the fork, cargo, localnet and Playwright suites),
+parses each runner's own summary line and writes `docs/STATUS.md`; `npm run status -- --check` exits 1
+when that file is stale. The table below is still measured by hand, so it is the one that can drift:
+if it and `docs/STATUS.md` disagree, STATUS.md is the one that was measured, and the row here needs
+re-running. (That is exactly how README.md came to carry three different contract-suite counts at once.)
+
 Counts are measured on the founder's Mac at the tree they name, and CI re-runs every one of them on each push
 (§ CI below). **This table carries the command and today's number, nothing else** — `docs/ROADMAP.md` rule 7:
 it is read often and was becoming a changelog inside table cells, which is how it came to state a superseded
