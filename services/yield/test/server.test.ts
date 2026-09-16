@@ -3,8 +3,8 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { CURATED_POOLS, poolById } from "@zyo/shared";
-import { DEMO_ID_MAP, YieldServer } from "../src/server.js";
+import { CURATED_POOLS, poolById, ZEC_EXIT_FACTS_DOC, ZEC_EXIT_OPEN_QUESTIONS } from "@zyo/shared";
+import { DEMO_ID_MAP, YieldServer, zecRouteFactsPresent } from "../src/server.js";
 import { ENGINE_FEE_BPS } from "../src/model.js";
 import { onchainToken1 } from "../src/sources/gauges.js";
 import type { YieldConfig } from "../src/config.js";
@@ -19,7 +19,8 @@ const STALE_AFTER = 600_000;
 function cfg(dataDir: string): YieldConfig {
   return {
     baseRpcUrl: undefined, blockscoutKey: undefined, engineVault: "0x" + "0".repeat(40),
-    port: 0, dataDir, samplesDir: dataDir, refreshMs: 60_000, staleAfterMs: STALE_AFTER,
+    port: 0, dataDir, samplesDir: dataDir, refreshMs: 60_000,
+ zecExitEnabled: false, staleAfterMs: STALE_AFTER,
     cohortWindows: [30, 60, 90], minDaysOpen: 1, logChunk: 5_000,
   };
 }
@@ -483,4 +484,52 @@ test("FIX D-HIGH-1: /v1/gate serves mcLpNetPct alongside the published lpNetPct 
     }
     assert.equal(typeof g.mcCalibrationGeneratedAt, "string");
   });
+});
+
+test("/v1/exit-quote refuses: the facts file that would unblock Door 1 does not exist, and no flag substitutes for it", async () => {
+  // docs/ZEC-FORMS-AND-DOORS-2026-09-15.md §3.3 — nothing about the NEAR Intents route has been read
+  // into a docs/VERIFIED-*-FACTS.md file. The route is wired so it can be tested and so the refusal
+  // is a real answer with a reason, not a 404 that reads like a typo.
+  await withServer(async (dir, track) => {
+    const c = clock();
+    const base = { gecko: geckoStub, aave: aaveStub(c), gauges: gaugesStub(c), volatility: volatilityFixture(), mcCalibration: mcCalibrationDocFixture(), now: c.now };
+
+    const off = new YieldServer(cfg(dir), base);
+    const httpOff = await off.start();
+    track(off, httpOff);
+    const r = await get((httpOff.address() as { port: number }).port, "/v1/exit-quote");
+    assert.equal(r.status, 503);
+    assert.equal(r.body.error, "zec_exit_unavailable");
+    assert.equal(r.body.blockedBy, "facts-missing");
+    assert.ok(String(r.body.reason).includes(ZEC_EXIT_FACTS_DOC), "the refusal names the document that would unblock it");
+    // What is missing is shown, not hidden behind a grey button — Step Z1's checklist.
+    assert.ok(Array.isArray(r.body.openQuestions) && r.body.openQuestions.length >= 9);
+    assert.deepEqual(r.body.openQuestions, [...ZEC_EXIT_OPEN_QUESTIONS]);
+
+    // The operator's switch is not the precondition: turning it on changes nothing while the
+    // document is absent. That precedence is the whole design (CLAUDE.md rule 3).
+    const on = new YieldServer({ ...cfg(dir), zecExitEnabled: true }, base);
+    const httpOn = await on.start();
+    track(on, httpOn);
+    const r2 = await get((httpOn.address() as { port: number }).port, "/v1/exit-quote");
+    assert.equal(r2.status, 503);
+    assert.equal(r2.body.blockedBy, "facts-missing");
+  });
+});
+
+test("zecRouteFactsPresent: absent until a docs/VERIFIED-ZEC-ROUTES-<date>.md exists, and fails closed when docs/ cannot be read", () => {
+  const dir = mkdtempSync(join(tmpdir(), "yield-zecdocs-"));
+  try {
+    assert.equal(zecRouteFactsPresent(dir), false, "an empty docs/ is not a read route");
+    writeFileSync(join(dir, "VERIFIED-BASE-FACTS.md"), "# not this one\n");
+    assert.equal(zecRouteFactsPresent(dir), false, "some other facts file does not count");
+    writeFileSync(join(dir, "VERIFIED-ZEC-ROUTES-2026-10-01.md"), "# Step Z1\n");
+    assert.equal(zecRouteFactsPresent(dir), true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  // A directory that is not there at all, or cannot be read, is "absent" and never a throw: the
+  // service must run from a container carrying only dist/, and an unreadable precondition has to
+  // fail in the closed direction.
+  assert.equal(zecRouteFactsPresent(join(tmpdir(), "no-such-dir-oilskin-zec")), false);
 });

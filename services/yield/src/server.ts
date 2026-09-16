@@ -36,7 +36,7 @@
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import {
   COLLATERAL_ASSETS,
@@ -45,6 +45,10 @@ import {
   ENTRY_HF_FLOOR,
   isCollateralSymbol,
   kaminoCurveAprBps,
+  ZEC_EXIT_FACTS_DOC,
+  ZEC_EXIT_OPEN_QUESTIONS,
+  zecExitReadiness,
+  zecExitRefusal,
   type CollateralSymbol,
   type CuratedPool,
 } from "@zyo/shared";
@@ -116,6 +120,24 @@ async function runBounded<T>(
       signal.addEventListener("abort", () => resolve(), { once: true });
     }),
   ]);
+}
+
+/**
+ * Does `docs/VERIFIED-ZEC-ROUTES-<date>.md` exist yet? Step Z1's output, and Door 1's precondition
+ * (`ZEC_EXIT_FACTS_DOC` in `@zyo/shared` names it, so the service and the web agree on the name).
+ *
+ * A missing `docs/` is treated as absent rather than thrown: the service must run from a container
+ * that carries only `dist/`, and "I cannot see the document" and "the document is not there" both
+ * mean the door stays shut. Failing closed on an unreadable precondition is the only safe direction.
+ */
+export function zecRouteFactsPresent(docsDir = new URL(new URL(".", import.meta.url).pathname.endsWith("/dist/src/") ? "../../../../docs" : "../../../docs", import.meta.url).pathname): boolean {
+  try {
+    if (!existsSync(docsDir)) return false;
+    const want = ZEC_EXIT_FACTS_DOC.replace(/^docs\//, "");
+    return readdirSync(docsDir).some((f) => f.startsWith(want) && f.endsWith(".md"));
+  } catch {
+    return false;
+  }
 }
 
 export class YieldServer {
@@ -630,6 +652,28 @@ export class YieldServer {
    * GET /v1/solana/borrow[?collateral=<ZEC>&amount=<USDC>&entryHf=<hf>] — Kamino's ZCASH market as it is, and
    * what a borrow would do to it (SOLANA-ARCHITECTURE.md §7, BUILD-PLAN D4/D5: refusals are safety only).
    */
+  /**
+   * `GET /v1/exit-quote` — Door 1's endpoint (`docs/ZEC-FORMS-AND-DOORS-2026-09-15.md` §3.1), which
+   * will proxy a LIVE NEAR Intents quote for USDC → ZEC and cache no rate into code.
+   *
+   * Today it refuses, and the refusal is the feature. §3.3: nothing about that route has been read
+   * into a `docs/VERIFIED-*-FACTS.md` file — not the endpoints, not their shapes, not a fee, not the
+   * signer set. Step Z1 is that read. So the route exists, is wired, is tested, and answers 503 with
+   * the reason and the name of the document that would unblock it; there is no code path here that
+   * reaches the network, and `zecExit.ts` is pinned by its own test to contain no URL.
+   *
+   * The precondition is checked by looking for the document, not by trusting a flag: an operator can
+   * turn Door 1 off, but nobody can turn "somebody read this" on.
+   */
+  private exitQuotePayload(): Record<string, unknown> & { status?: number } {
+    const readiness = zecExitReadiness({ factsPresent: zecRouteFactsPresent(), flagEnabled: this.cfg.zecExitEnabled });
+    if (!readiness.ready) return { ...zecExitRefusal(readiness), openQuestions: ZEC_EXIT_OPEN_QUESTIONS, status: 503 };
+    // Unreachable until Step Z1 lands AND the operator switches it on. When that happens the live
+    // proxy goes here — and `verifiedIn` on the quote is what makes it impossible to ship a shape
+    // nobody read, the same discipline as zecForms.ts.
+    return { error: "zec_exit_unimplemented", reason: "The route has been read but the live quote proxy is not built yet.", status: 501 };
+  }
+
   private solanaBorrowPayload(url: URL): (SolanaBorrowView & Record<string, unknown> & { status?: number }) | (Record<string, unknown> & { status: number }) {
     const q = url.searchParams;
     const num = (name: string, max: number): number | null | "bad" => {
@@ -832,6 +876,8 @@ export class YieldServer {
           return sendPayload(this.forecastPayload(url) as Record<string, unknown> & { status?: number });
         case "/v1/solana/borrow":
           return sendPayload(this.solanaBorrowPayload(url) as Record<string, unknown> & { status?: number });
+        case "/v1/exit-quote":
+          return sendPayload(this.exitQuotePayload() as Record<string, unknown> & { status?: number });
         default:
           return send(404, { error: "not found" });
       }

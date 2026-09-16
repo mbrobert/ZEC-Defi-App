@@ -197,7 +197,8 @@ const STALE_AFTER = 600_000;
 function cfg(dataDir: string): YieldConfig {
   return {
     baseRpcUrl: undefined, blockscoutKey: undefined, engineVault: "0x" + "0".repeat(40),
-    port: 0, dataDir, samplesDir: dataDir, refreshMs: 60_000, staleAfterMs: STALE_AFTER,
+    port: 0, dataDir, samplesDir: dataDir, refreshMs: 60_000,
+ zecExitEnabled: false, staleAfterMs: STALE_AFTER,
     cohortWindows: [30, 60, 90], minDaysOpen: 1, logChunk: 5_000,
   };
 }

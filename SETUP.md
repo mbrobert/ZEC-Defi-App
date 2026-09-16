@@ -140,12 +140,22 @@ endpoint), `NEXT_PUBLIC_YIELD_URL` (default
 wallets only; Coinbase Wallet and injected wallets work without it),
 `NEXT_PUBLIC_OILSKIN_FACTORY`, `NEXT_PUBLIC_OILSKIN_ROUTER` (registry, venues and
 engine are read from the router — `readDeployment`), `NEXT_PUBLIC_OILSKIN_KEEPER`
-(optional), `NEXT_PUBLIC_COW_APP_CODE`, `NEXT_PUBLIC_FORCE_DEMO=1` (e2e). Solana surfaces (`web/lib/solana/env.ts`, 2026-09-13):
+(optional), `NEXT_PUBLIC_COW_APP_CODE`, `NEXT_PUBLIC_FORCE_DEMO=1` (e2e),
+`NEXT_PUBLIC_ZEC_EXIT_ENABLED=1` (Door 1 — sending withdrawn USDC out as ZEC; **leave it unset**, and
+see below). Solana surfaces (`web/lib/solana/env.ts`, 2026-09-13):
 `NEXT_PUBLIC_SOLANA_CLUSTER` (`mainnet-beta` or `localnet`; unset = the Solana pages run on a labelled snapshot and
 sign nothing), `NEXT_PUBLIC_OILSKIN_SOLANA_PROGRAM` (the deployed program, never defaulted),
 `NEXT_PUBLIC_OILSKIN_SOLANA_KEEPER` (optional; enables the protection grant step), `NEXT_PUBLIC_SOLANA_RPC_URL`
 (default: the cluster's public endpoint; `127.0.0.1:8899` on localnet). After an IDL change run
 `node web/scripts/sync-solana-idl.mjs`; `test/solana-idl.test.ts` fails on drift.
+
+**Door 1 is off and needs two things to open, not one** (`docs/ZEC-FORMS-AND-DOORS-2026-09-15.md`
+§3). `NEXT_PUBLIC_ZEC_EXIT_ENABLED=1` in the web and `ZEC_EXIT_ENABLED=1` in the yield service are
+the operator's switch; `docs/VERIFIED-ZEC-ROUTES-<date>.md` is the precondition, and the service
+refuses `/v1/exit-quote` with `blockedBy: "facts-missing"` while that file is absent, whatever the
+flag says. That ordering is deliberate: a flag is a decision, and the facts file is whether anybody
+has actually read the route (`CLAUDE.md` rule 3). Turning the flag on today changes nothing except
+that a refusal is rendered where nothing was rendered before.
 
 ```bash
 npm run web                       # http://localhost:3000 — demo mode until the factory/router are set

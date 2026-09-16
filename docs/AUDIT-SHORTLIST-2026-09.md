@@ -95,6 +95,30 @@ should be sent with them invented. Send both with "code freeze expected 2026-12-
 6. Timeline asks: earliest kickoff, review length, fix-review window, whether
    they will publish the report.
 
+## 5b · The lawyer's read
+
+`docs/ROADMAP.md` §1 item 6 schedules "the lawyer's read on `AUDIT-SHORTLIST` §5" as part of H3.
+**The checklist it points at does not exist yet.** `docs/BUILD-PLAN-2026-09-12.md` §4 records the
+"get a lawyer's read" checklist as Cowork's and "not in the tree yet", alongside the forecast page
+copy and the two disclosures. This section is where it goes when it is written.
+
+Until then this is a list of one, and saying so is the point: a heading with a single bullet under it
+is honest, and a heading that implied four when three were never written would not be.
+
+Abbreviations: ZEC = Zcash's native coin; USDC = the borrowed asset; KYC = know-your-customer.
+
+| # | Question | Where it came from |
+|---|---|---|
+| **L-1** | Routing a user's withdrawn USDC into a swap that ends in ZEC at an address they control — Door 1 — is a different question from lending against collateral, and it is not covered by whatever answer the lending side gets. The user's funds have left every Oilskin contract by then; Oilskin builds no transaction, signs nothing and never receives the funds; what it does is show a quote and a destination field. Whether that is a different regulated thing in any jurisdiction is counsel's to say. | `docs/ZEC-FORMS-AND-DOORS-2026-09-15.md` §3.4, founder's direction 2026-09-15 |
+
+**Do not pre-empt the answer in the copy** (`CLAUDE.md` rule 4). Door 1 states the mechanism and
+ships behind a disabled flag; nothing in the product asserts a legal position, and nothing should
+start to while this is open. `ZEC-FORMS-AND-DOORS-2026-09-15.md` §6 makes counsel's answer one of the
+two things the flag waits on — the other is Step Z1, the facts pass on the route itself.
+
+When the rest of the checklist is written, the three items it carries go in this table above L-1, and
+this paragraph goes away.
+
 ## 6 · Order of operations
 
 Send the EVM RFPs the week A5 freezes and the Solana RFPs the week B3 freezes;

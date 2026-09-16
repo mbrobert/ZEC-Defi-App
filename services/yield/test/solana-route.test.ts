@@ -17,7 +17,8 @@ import { mcCalibrationDocFixture, NOW_MS, volatilityFixture } from "./fixtures/m
 const STALE_AFTER = 600_000;
 const cfg = (dataDir: string): YieldConfig => ({
   baseRpcUrl: undefined, blockscoutKey: undefined, engineVault: "0x" + "0".repeat(40), solanaRpcUrl: undefined,
-  port: 0, dataDir, samplesDir: dataDir, refreshMs: 60_000, staleAfterMs: STALE_AFTER, cohortWindows: [30], minDaysOpen: 1, logChunk: 5_000,
+  port: 0, dataDir, samplesDir: dataDir, refreshMs: 60_000,
+ zecExitEnabled: false, staleAfterMs: STALE_AFTER, cohortWindows: [30], minDaysOpen: 1, logChunk: 5_000,
 });
 const geckoOff = { liveSample: async () => { throw new Error("gecko off in this test"); } } as unknown as GeckoSource;
 function clock(start = NOW_MS) {

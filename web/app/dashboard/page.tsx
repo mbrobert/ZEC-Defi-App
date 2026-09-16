@@ -23,6 +23,7 @@ import Disclosures from "@/components/Disclosures";
 import Chip from "@/components/Chip";
 import SignStep from "@/components/wizard/SignStep";
 import KeeperPanel from "@/components/KeeperPanel";
+import ZecExitStep from "@/components/ZecExitStep";
 
 const ACTION_TITLE = { claim: "Claim rewards", unwind: "Unwind position", grant: "Keeper protection", revoke: "Revoke every permission" } as const;
 const ACTION_DONE_TITLE = { claim: "Rewards sent to your wallet", unwind: "Position closed", grant: "Keeper protection granted", revoke: "Every permission revoked" } as const;
@@ -404,6 +405,16 @@ export default function DashboardPage() {
                     doneTitle={ACTION_DONE_TITLE[action.kind]}
                     doneBody={ACTION_DONE_BODY[action.kind]}
                   />
+                  {/* Door 1's destination step, at the end of an unwind and nowhere else — the USDC
+                      is in the user's own account by then, so this is a choice about money already
+                      withdrawn rather than a step in the flow. It renders NOTHING while
+                      NEXT_PUBLIC_ZEC_EXIT_ENABLED is off, which is how it ships today
+                      (docs/ZEC-FORMS-AND-DOORS-2026-09-15.md §6). */}
+                  {action.kind === "unwind" && (
+                    <div className="mt-4">
+                      <ZecExitStep />
+                    </div>
+                  )}
                 </div>
               )}
 

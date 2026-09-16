@@ -41,6 +41,15 @@ export const ENV = {
   oilskinRouter: process.env.NEXT_PUBLIC_OILSKIN_ROUTER ?? "",
   /** Oilskin keeper address (optional): enables the revocable protection grant step. Everything else is read from the router. */
   oilskinKeeper: process.env.NEXT_PUBLIC_OILSKIN_KEEPER ?? "",
+  /**
+   * Door 1 — sending withdrawn USDC out as ZEC (docs/ZEC-FORMS-AND-DOORS-2026-09-15.md §3).
+   * OFF, and shipped that way deliberately: nothing about that route has been read into a
+   * docs/VERIFIED-*-FACTS.md file yet (Step Z1). Exactly "1" turns it on; anything else — unset,
+   * "true", a typo — leaves it shut, which is the direction a flag over an unread route fails in.
+   * The flag is not sufficient either: the yield service refuses /v1/exit-quote while the facts
+   * file is absent, whatever this says.
+   */
+  zecExitEnabled: process.env.NEXT_PUBLIC_ZEC_EXIT_ENABLED === "1",
   /** Force demo mode regardless of wallet state (used by e2e). */
   forceDemo: process.env.NEXT_PUBLIC_FORCE_DEMO === "1",
   /** Registers wagmi's test-only mock connector (used by e2e to exercise the connected wallet pill). Never on in production. */

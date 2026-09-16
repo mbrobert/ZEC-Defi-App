@@ -38,6 +38,13 @@ export interface YieldConfig {
   /** Live-sample refresh cadence. */
   refreshMs: number;
   /**
+   * Door 1 — sending a user's USDC out as ZEC (`docs/ZEC-FORMS-AND-DOORS-2026-09-15.md` §3).
+   * OFF by default and, on its own, not enough: `/v1/exit-quote` also requires
+   * `docs/VERIFIED-ZEC-ROUTES-<date>.md` to exist, which no flag can substitute for. This is the
+   * operator's switch; the facts file is the precondition.
+   */
+  zecExitEnabled: boolean;
+  /**
    * Samples older than this are STALE: served with stale:true and never
    * used by the gate (fail closed).
    */
@@ -114,6 +121,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): YieldConfig {
     dataDir: str(env, "YIELD_DATA_DIR", packageRelative("data")),
     samplesDir: str(env, "YIELD_SAMPLES_DIR", packageRelative("samples")),
     refreshMs: num(env, "YIELD_REFRESH_MS", 120_000, 5_000),
+    // Exactly "1" turns it on. Anything else — unset, "true", "yes", a typo — leaves Door 1 shut,
+    // which is the direction a flag guarding an unread route should fail in.
+    zecExitEnabled: env.ZEC_EXIT_ENABLED === "1",
     staleAfterMs: num(env, "YIELD_STALE_AFTER_MS", 600_000, 10_000),
     cohortWindows: str(env, "YIELD_COHORT_WINDOWS", "30,60,90")
       .split(",")
