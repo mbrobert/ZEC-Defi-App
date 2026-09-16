@@ -14,4 +14,5 @@ export * from "./dust.js";
 export * from "./b20.js";
 export * from "./solana.js";
 export * from "./zecForms.js";
+export * from "./zecRoutes.js";
 export * from "./cctp.js";

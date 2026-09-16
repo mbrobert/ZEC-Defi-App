@@ -15,7 +15,7 @@ const TABS = [
   { href: "/dashboard", label: "Dashboard", advancedOnly: false },
   { href: "/new", label: "New position", advancedOnly: false },
   { href: "/spot", label: "Spot", advancedOnly: true },
-  { href: "/onboard", label: "ZEC → cbZEC", advancedOnly: false },
+  { href: "/onboard", label: "Your ZEC", advancedOnly: false },
   { href: "/solana", label: "ZEC on Solana", advancedOnly: false },
 ];
 

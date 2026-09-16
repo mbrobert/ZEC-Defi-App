@@ -5,13 +5,84 @@
  * claims a protection the contracts do not enforce.
  *
  * Words that may NOT appear anywhere in the product copy (test/copy.test.ts
- * enforces it across app/, components/ and lib/): the words in BANNED_WORDS.
+ * enforces it across app/, components/ and lib/): the words in BANNED_WORDS,
+ * except where they occur inside one of the TERMS_OF_ART below.
  */
 
 // The last two entries came from audit wave 2 (G-MED-1): the keeper grant permits a collateral
 // withdraw into the account and a keeper-chosen swap quote, so neither absolute claim about what
 // the keeper "cannot" do was true of the permission as signed.
 export const BANNED_WORDS: readonly string[] = ["private", "shielded", "non-custodial", "locked payout address", "no operator custody", "no owner powers", "can never withdraw", "move a token on its own"];
+
+/**
+ * Phrases in which a banned word NAMES SOMETHING rather than claims something, and so is allowed.
+ *
+ * The ban exists to stop Oilskin describing itself with a quality it has not earned — the adjective
+ * a product reaches for about its own behaviour. It was never meant to stop the product saying what
+ * an external thing is CALLED. Zcash's shielded pool is the actual name of the actual pool; the ZSA
+ * work in ZIP 226/227 is named for it too; a private key is a private key. Refusing those names
+ * makes the copy vaguer rather than more honest, and a user who is not told the name of a mechanism
+ * cannot go and read about it.
+ *
+ * Founder's instruction, 2026-09-15: "remove the enlistment of banned_words if the word is an
+ * actual feature, ie 'shielded pool', use common sense with those banned words."
+ *
+ * Two rules keep this from becoming the loophole that swallows the ban:
+ *
+ * 1. A phrase earns a place here only by naming a thing that exists OUTSIDE Oilskin and is called
+ *    that by whoever made it — a Zcash pool, a ZIP, a key. A phrase naming a vault or a position of
+ *    ours does not qualify, however true it might one day be, and the test rejects any entry with
+ *    "Oilskin" in it.
+ * 2. The bare word stays banned, and `test/copy.test.ts` proves both halves: the word alone still
+ *    fails, the two-word name does not, and a name earlier in a sentence does not license the word
+ *    later in it.
+ *
+ * What this cannot catch is a true name used to smuggle a false claim: a sentence asserting the coin
+ * never leaves Zcash's shielded pool would pass the scanner and still be untrue. That is a review
+ * question and not a regular expression, and it is why every route in `@zyo/shared`'s
+ * `zecRoutes.ts` spells the custody gap out step by step rather than leaning on a noun.
+ */
+export const TERMS_OF_ART: readonly string[] = [
+  // Zcash's pools, named. Orchard and Sapling are the whole set that exists — this is an
+  // enumeration of a real closed list, not a pattern with room to grow.
+  "shielded pool",
+  "shielded Orchard pool",
+  "shielded Sapling pool",
+  "shielded address",
+  "shielded addresses",
+  // ZIP 226/227's own name for itself, still Draft (ZEC-FORMS-AND-DOORS-2026-09-15.md §5).
+  "Zcash Shielded Assets",
+  "shielded assets",
+  "private key",
+  "private keys",
+];
+
+/**
+ * The offending banned words in one piece of text, empty when it is clean. The scanner in
+ * `test/copy.test.ts` uses this so the rule lives beside the list it enforces rather than in a test
+ * file, and so any surface that ever checks copy at runtime checks the same rule.
+ */
+export function bannedWordsIn(text: string): { word: string; index: number }[] {
+  // Where every term of art sits in this text, so an occurrence inside one can be skipped.
+  const allowed: [number, number][] = [];
+  for (const term of TERMS_OF_ART) {
+    const re = new RegExp(term.replace(/[-\s]/g, "[-\\s]"), "gi");
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text))) allowed.push([m.index, m.index + m[0].length]);
+  }
+  const hits: { word: string; index: number }[] = [];
+  for (const word of BANNED_WORDS) {
+    const re = new RegExp(`\\b${word.replace(/[-\s]/g, "[-\\s]")}\\b`, "gi");
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text))) {
+      const start = m.index;
+      const end = start + m[0].length;
+      if (allowed.some(([a, b]) => start >= a && end <= b)) continue;
+      hits.push({ word, index: start });
+    }
+  }
+  return hits;
+}
 
 export interface RiskItem {
   id: string;

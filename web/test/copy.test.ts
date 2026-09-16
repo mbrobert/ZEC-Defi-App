@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
-import { BANNED_WORDS, FOOTER_LINES, RISKS, risksFor } from "../lib/copy";
+import { BANNED_WORDS, FOOTER_LINES, RISKS, TERMS_OF_ART, bannedWordsIn, risksFor } from "../lib/copy";
 
 const ROOT = join(__dirname, "..");
 const SCAN_DIRS = ["app", "components", "lib"];
@@ -22,19 +22,49 @@ test("banned words never appear in product source (app/, components/, lib/)", ()
   const offenders: string[] = [];
   for (const f of files) {
     const text = readFileSync(f, "utf8");
-    for (const w of BANNED_WORDS) {
-      const re = new RegExp(`\\b${w.replace(/[-\s]/g, "[-\\s]")}\\b`, "gi");
-      let m: RegExpExecArray | null;
-      while ((m = re.exec(text))) {
-        const line = text.slice(0, m.index).split("\n").length;
-        const lineText = text.split("\n")[line - 1];
-        // The only permitted occurrence is the BANNED_WORDS definition itself.
-        if (/BANNED_WORDS\s*:/.test(lineText)) continue;
-        offenders.push(`${relative(ROOT, f)}:${line}: "${w}" in: ${lineText.trim().slice(0, 100)}`);
-      }
+    for (const hit of bannedWordsIn(text)) {
+      const line = text.slice(0, hit.index).split("\n").length;
+      const lineText = text.split("\n")[line - 1];
+      // The two permitted occurrences are the lists' own definitions.
+      if (/BANNED_WORDS\s*:|TERMS_OF_ART\s*:/.test(lineText)) continue;
+      offenders.push(`${relative(ROOT, f)}:${line}: "${hit.word}" in: ${lineText.trim().slice(0, 100)}`);
     }
   }
   assert.deepEqual(offenders, []);
+});
+
+test("a banned word inside a term of art is allowed; the bare word is not", () => {
+  // The founder's instruction of 2026-09-15: a word that names an actual feature is not a claim.
+  // Zcash's shielded pool is what the pool is called, and a user who cannot be told its name cannot
+  // go and read about it.
+  assert.deepEqual(bannedWordsIn("Your ZEC leaves Zcash's shielded pool."), []);
+  assert.deepEqual(bannedWordsIn("Withdrawals go to shielded addresses only."), []);
+  assert.deepEqual(bannedWordsIn("Zcash Shielded Assets (ZIP 226) are still Draft."), []);
+  assert.deepEqual(bannedWordsIn("Never paste a private key here."), []);
+
+  // and the ban itself is intact — the whole point of allowing the phrase is that the word alone
+  // is still a claim we have not earned.
+  assert.deepEqual(
+    bannedWordsIn("Your position is shielded.").map((h) => h.word),
+    ["shielded"],
+  );
+  assert.deepEqual(
+    bannedWordsIn("A private, non-custodial vault.").map((h) => h.word),
+    ["private", "non-custodial"],
+  );
+  // A term of art does not license the word elsewhere in the same sentence.
+  assert.deepEqual(
+    bannedWordsIn("It leaves the shielded pool, and the transfer is shielded.").map((h) => h.word),
+    ["shielded"],
+  );
+
+  // Every allowance names something outside Oilskin that its own makers call that. If a phrase is
+  // ever added that names something of ours, this is where the reviewer is meant to stop.
+  assert.ok(TERMS_OF_ART.length <= 10, "the allowance stays small enough to read in one go");
+  for (const t of TERMS_OF_ART) {
+    assert.ok(BANNED_WORDS.some((w) => new RegExp(`\\b${w}\\b`, "i").test(t)), `${t} contains no banned word — it does not belong here`);
+    assert.doesNotMatch(t, /oilskin/i, `${t} names something of ours`);
+  }
 });
 
 test("the disclosure list covers every BASE-PIVOT item-19 topic", () => {

@@ -11,10 +11,10 @@ import Chip from "@/components/Chip";
 const PATHS = [
   {
     href: "/onboard",
-    kicker: "I hold ZEC on Coinbase",
-    title: "ZEC → cbZEC on Base",
-    body: "Three steps through your Coinbase account. Jurisdiction check first, identity-verification facts stated, the real cbZEC address pinned.",
-    cta: "Start onboarding",
+    kicker: "I hold ZEC",
+    title: "Every route your ZEC can take",
+    body: "Say where your coin is — a Zcash wallet, an exchange, Solana, Base — and see every route from there: who holds it on the way, what has not been measured, and which ones end in a loan. One of them does not, and it says so.",
+    cta: "See the routes",
   },
   {
     href: "/new",

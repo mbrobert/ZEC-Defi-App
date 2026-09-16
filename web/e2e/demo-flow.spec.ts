@@ -48,8 +48,8 @@ test.describe("Oilskin demo mode", () => {
 
     // Client-side navigation, as a user would: a hard `goto` here would abort the Coinbase SDK's
     // in-flight COOP HEAD probe and log a spurious "Failed to fetch" console error.
-    await page.getByRole("link", { name: "ZEC → cbZEC", exact: true }).click();
-    await expect(page.getByRole("heading", { level: 1 })).toContainText("Three steps");
+    await page.getByRole("link", { name: "Your ZEC", exact: true }).click();
+    await expect(page.getByRole("heading", { level: 1 })).toContainText("Where is your ZEC?");
     const jur = page.getByTestId("jurisdiction");
     await jur.locator("#country").selectOption("US");
     await jur.locator("#state").selectOption("NY");
@@ -79,6 +79,51 @@ test.describe("Oilskin demo mode", () => {
 
     await expect(page.getByTestId("already-on-base")).toContainText("Already on Base?");
     await expect(page.getByTestId("disclosures-onboard")).toContainText("Jurisdiction");
+    expect(errors).toEqual([]);
+  });
+
+  // Door 2 (docs/ZEC-FORMS-AND-DOORS-2026-09-15.md §4): the route that ends in a loan today runs
+  // through Solana, and until this landed the website never said so. What is checked here is the
+  // honesty of the answer, not its layout — the loan claim, the custody gap, the unmeasured list,
+  // and that a route which stops says why in the registry's own words.
+  test("onboarding routes by where the ZEC is: the Solana lane ends in a loan and names its custody gap; Base says why it does not", async ({ page }) => {
+    const { errors } = watchConsole(page);
+    await page.goto("/onboard");
+    const picker = page.getByTestId("zec-origin");
+    await expect(picker.locator("[data-origin]")).toHaveCount(4);
+    // Nothing is chosen yet, so the Coinbase door is still written out below.
+    await expect(page.getByTestId("jurisdiction")).toBeVisible();
+
+    await picker.locator('[data-origin="zcash-address"]').click();
+    const routes = page.getByTestId("zec-routes");
+    await expect(routes).toHaveAttribute("data-origin", "zcash-address");
+    const bridged = routes.getByTestId("zec-route").first();
+    await expect(bridged).toHaveAttribute("data-outcome", "reaches-a-lending-venue");
+    await expect(bridged).toContainText("Kamino");
+    // Nothing is deployed on any chain, and the route says so rather than implying a live ladder.
+    await expect(bridged).toContainText("is not deployed on Solana");
+    // The one shared disclosure block, and the mechanism rather than an adjective.
+    const custody = bridged.getByTestId("bridge-custody");
+    await expect(custody).toHaveAttribute("data-direction", "in");
+    await expect(custody).toContainText("transparent Zcash address");
+    await expect(custody).toContainText("Oilskin does not build or sign any part of this transfer");
+    // Step Z1 has not run, so the unread questions are shown rather than a plausible number.
+    const unread = bridged.getByTestId("route-unverified");
+    await expect(unread).toContainText("What the bridge charges");
+    await expect(unread).toContainText("OmniBridge signer set");
+    // A jurisdiction form for a door this user is not walking through is noise in front of the
+    // one they are.
+    await expect(page.getByTestId("jurisdiction")).toHaveCount(0);
+
+    await picker.locator('[data-origin="base"]').click();
+    const onBase = page.getByTestId("zec-routes").getByTestId("zec-route").first();
+    await expect(onBase).toHaveAttribute("data-outcome", "no-lending-venue");
+    // D3's reason, verbatim from the registry — not a softened paraphrase, and not "v1.1".
+    const stops = onBase.getByTestId("route-stops");
+    await expect(stops).toContainText("does not create that market itself");
+    await expect(stops).not.toContainText("v1.1");
+    await expect(onBase.getByTestId("bridge-custody")).toHaveCount(0);
+
     expect(errors).toEqual([]);
   });
 

@@ -34,7 +34,7 @@ test.describe("Base Sepolia rehearsal (live chain, read-only, no wallet)", () =>
     await page.goto("/");
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     await expect(page.getByTestId("demo-banner")).toHaveCount(0); // a live build, not the snapshot
-    await page.getByRole("link", { name: "ZEC → cbZEC", exact: true }).click();
+    await page.getByRole("link", { name: "Your ZEC", exact: true }).click();
     await expect(page.getByTestId("cbzec-address")).toHaveText(dep!.cbzec);
     const link = page.locator('a[href^="https://sepolia.basescan.org/token/"]').first();
     await expect(link).toHaveAttribute("href", `https://sepolia.basescan.org/token/${dep!.cbzec}`);

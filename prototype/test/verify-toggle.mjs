@@ -182,7 +182,13 @@ check("toggle: both nav toggles carry a title explaining the other build", /titl
 check("toggle (hosted): both builds carry the same HOSTED fallback pair (Simple ⇄ Advanced artifact URLs) for when the sibling file is not deployed alongside", (simple.match(/const HOSTED = \{[^}]+\}/) || [])[0] === (adv.match(/const HOSTED = \{[^}]+\}/) || [])[0] && /HOSTED\.advanced/.test(simple) && /HOSTED\.simple/.test(adv));
 await b.close(); srv.close();
 
-/* ── 6. repo-wide grep for the removed vocabulary — prototype/ must be clean; other areas are reported ── */
+/* ── 6. repo-wide grep for the removed vocabulary — prototype/ must be clean; other areas are reported ──
+   Note (2026-09-15): part of this list is no longer "removed". The founder's ZEC-forms direction
+   (docs/ZEC-FORMS-AND-DOORS-2026-09-15.md) brings NEAR Intents back as the entry and exit route, and
+   Zcash's shielded pool back as a thing the copy is allowed to NAME (web/lib/copy.ts TERMS_OF_ART).
+   So packages/shared/src/zecRoutes.ts and web/components/BridgeCustodyNote.tsx appearing in the
+   (info) lines below is correct and expected. The HARD check is still right as it stands: the
+   prototypes are the Base-only demo and none of that vocabulary belongs in them. ── */
 {
   const areas = ["prototype", "packages/shared/src", "agent/src", "services/yield/src", "web", "contracts/src", "docs", "README.md", "SETUP.md"];
   const report = {};
