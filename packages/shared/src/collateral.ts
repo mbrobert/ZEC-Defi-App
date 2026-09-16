@@ -9,6 +9,7 @@
 import { AAVE_V3, BASE_TOKENS, CHAINLINK_FEEDS, type TokenSymbol } from "./base.js";
 import type { Address } from "./evm.js";
 import { ENTRY_HF_FLOOR, entryHfForLtv, liquidationDropPct, assertBps, entryHfAtLtvBps } from "./health.js";
+import { ZEC_FORMS, type ZecForm, type ZecFormId } from "./zecForms.js";
 
 export type CollateralSymbol = "cbBTC" | "WETH" | "cbZEC";
 export type CollateralVenueId = "aave-v3" | "morpho-blue";
@@ -32,6 +33,18 @@ export interface CollateralAsset {
   disabledReason?: string;
   /** Extra risk facts the UI must state (B20 rebase, peg, etc.). */
   riskNotes: readonly string[];
+  /**
+   * The form of ZEC (ZEC = Zcash's native coin) this row represents, when it represents one.
+   * Present on exactly the rows that are a ZEC representation, absent on cbBTC and WETH.
+   *
+   * This pointer is what makes cbZEC *a* ZEC rather than *the* ZEC
+   * (`docs/ZEC-FORMS-AND-DOORS-2026-09-15.md` §2): the form's own facts — custody, who can freeze
+   * it, whether identity is required, which venue lends against it, why it is disabled — live once,
+   * in `zecForms.ts`, next to the `verifiedIn` row that proves them. What this file adds is only
+   * what is true of the row *as Base collateral*: the venue, the data source, the display feed.
+   * `zecFormRowFaults()` below fails the suite if the two ever disagree.
+   */
+  zecForm?: ZecFormId;
 }
 
 export const COLLATERAL_ASSETS: Readonly<Record<CollateralSymbol, CollateralAsset>> = {
@@ -74,13 +87,18 @@ export const COLLATERAL_ASSETS: Readonly<Record<CollateralSymbol, CollateralAsse
      * on chain (its `PegBreak`). Stated in `riskNotes` below, because a user sees those.
      */
     feed: { kind: "chainlink", ...CHAINLINK_FEEDS.ZEC_USD },
-    enabled: false,
-    disabledReason:
-      "No lending market accepts cbZEC as collateral on Base yet (not listed on Aave v3, no Morpho market). Planned for v1.1 once the Oilskin cbZEC/USDC market ships.",
+    zecForm: "cbzec-base",
+    // Derived, never retyped. Until 2026-09-15 this row kept its own copy and the copy had gone
+    // wrong: it said cbZEC collateral was "Planned for v1.1 once the Oilskin cbZEC/USDC market
+    // ships", which decision D3 of 2026-09-12 reversed — Oilskin does not create that market and
+    // waits for an external one. A second copy of a reason is a second chance to be out of date.
+    enabled: ZEC_FORMS["cbzec-base"].enabled,
+    disabledReason: ZEC_FORMS["cbzec-base"].disabledReason,
     riskNotes: [
-      "B20 precompile: balances can rebase via a live multiplier and transfers can be blocked by the issuer.",
+      ...ZEC_FORMS["cbzec-base"].riskNotes,
+      // The form's own notes say what cbZEC is; this one says what *this registry* does with it,
+      // which is a fact about Base collateral rather than about the form, and so belongs here.
       "Priced by Chainlink's ZEC/USD feed, which prices ZEC and not cbZEC: if the wrapper ever traded below ZEC, that feed would still quote ZEC's price and overvalue it. The on-chain oracle compares it against the Aerodrome cbZEC/USDC pool and refuses a price that has drifted too far; the feed's own aggregator has no usable circuit breaker of its own.",
-      "Thin DEX depth (~$0.7M) — peg to ZEC can break under stress.",
     ],
   },
 };
@@ -109,6 +127,88 @@ export function isCollateralSymbol(value: unknown): value is CollateralSymbol {
 
 export function tokenForCollateral(symbol: CollateralSymbol): (typeof BASE_TOKENS)[TokenSymbol] {
   return BASE_TOKENS[symbol];
+}
+
+// ---------------------------------------------------------------------------
+// The seam to the ZEC form registry (`zecForms.ts`)
+// ---------------------------------------------------------------------------
+
+/**
+ * Why `CollateralSymbol` was NOT widened to carry `ZecFormId`, which
+ * `docs/ZEC-FORMS-AND-DOORS-2026-09-15.md` §2.3 rule 4 offered as the alternative and left to
+ * whichever produced the smaller diff.
+ *
+ * `COLLATERAL_ASSETS` is the off-chain mirror of `CollateralRegistry.sol` **on Base**, and
+ * `Record<CollateralSymbol, …>` is consumed as a Base table throughout: `tokenForCollateral` indexes
+ * `BASE_TOKENS`, the keeper builds `venueOf` / `isEnabled` calls from it, the yield service reads
+ * Aave reserves by it, the web builds multicalls from it. A key like `"zec-solana-bridged"` — a
+ * Solana SPL mint with no Base address, no Aave reserve and no EVM venue — cannot mean anything in
+ * those tables; widening the union would have put a category error into the type and then asked
+ * roughly eighty consumer sites to exclude it again by hand.
+ *
+ * The pointer keeps the two registries in the shape each is actually in: `zecForms.ts` lists forms
+ * of ZEC on any chain; this file lists what Base will take as collateral. A Base-chain form must
+ * appear in both, and `zecFormRowFaults()` proves it did not drift. Adding a second Base ZEC wrapper
+ * is: pin it in `BASE_TOKENS`, add its form row with `verifiedIn`, add its collateral row pointing
+ * at that form. Nothing about it is blocked by this union being closed — `BASE_TOKENS` is the pin
+ * that actually governs, and a Base token with no pinned address was never addable anyway.
+ */
+
+/** The ZEC form a collateral row represents, or undefined when the row is not a ZEC representation. */
+export function zecFormForCollateral(symbol: CollateralSymbol): ZecForm | undefined {
+  const id = COLLATERAL_ASSETS[symbol].zecForm;
+  return id === undefined ? undefined : ZEC_FORMS[id];
+}
+
+/** The collateral row for a ZEC form, or undefined when Base holds no row for it (any Solana form). */
+export function collateralForZecForm(id: ZecFormId): CollateralAsset | undefined {
+  return COLLATERAL_SYMBOLS.map((s) => COLLATERAL_ASSETS[s]).find((a) => a.zecForm === id);
+}
+
+/** Every collateral row that represents some form of ZEC, in registry order. */
+export function zecCollateral(): CollateralAsset[] {
+  return COLLATERAL_SYMBOLS.map((s) => COLLATERAL_ASSETS[s]).filter((a) => a.zecForm !== undefined);
+}
+
+/**
+ * Where the two registries disagree, as plain sentences (empty = they agree). The companion to
+ * `zecFormRegistryFaults()` in `zecForms.ts`: that one checks a form row is well-formed, this one
+ * checks Base's collateral table and the form registry still describe the same asset.
+ *
+ * Returned rather than thrown, for the same reason as there: a surface can report the fault instead
+ * of white-screening on it. `collateral.test.ts` asserts the list is empty.
+ */
+export function zecFormRowFaults(): string[] {
+  const faults: string[] = [];
+  for (const symbol of COLLATERAL_SYMBOLS) {
+    const a = COLLATERAL_ASSETS[symbol];
+    if (a.zecForm === undefined) continue;
+    const form = ZEC_FORMS[a.zecForm];
+    if (form === undefined) {
+      faults.push(`${symbol}: points at unknown ZEC form "${String(a.zecForm)}"`);
+      continue;
+    }
+    if (form.chain !== "base") faults.push(`${symbol}: points at ${form.id}, whose chain is "${form.chain}"`);
+    if (a.address.toLowerCase() !== form.assetRef.toLowerCase()) {
+      faults.push(`${symbol}: address ${a.address} but ${form.id}.assetRef ${form.assetRef}`);
+    }
+    if (a.decimals !== form.decimals) faults.push(`${symbol}: decimals ${a.decimals} but ${form.id} says ${form.decimals}`);
+    if (a.enabled !== form.enabled) faults.push(`${symbol}: enabled ${a.enabled} but ${form.id} says ${form.enabled}`);
+    if (a.disabledReason !== form.disabledReason) faults.push(`${symbol}: disabledReason differs from ${form.id}'s`);
+    for (const note of form.riskNotes) {
+      if (!a.riskNotes.includes(note)) faults.push(`${symbol}: does not carry ${form.id}'s risk note "${note.slice(0, 40)}…"`);
+    }
+  }
+  // The other direction, and the one that matters for a wrapper added later: a form that lives on
+  // Base but that Base's collateral table has never heard of would be invisible to every surface
+  // that reasons about collateral.
+  for (const form of Object.values(ZEC_FORMS)) {
+    if (form.chain !== "base") continue;
+    const rows = COLLATERAL_SYMBOLS.filter((s) => COLLATERAL_ASSETS[s].zecForm === form.id);
+    if (rows.length === 0) faults.push(`${form.id}: a Base form with no row in COLLATERAL_ASSETS`);
+    if (rows.length > 1) faults.push(`${form.id}: claimed by ${rows.length} collateral rows (${rows.join(", ")})`);
+  }
+  return faults;
 }
 
 // ---------------------------------------------------------------------------

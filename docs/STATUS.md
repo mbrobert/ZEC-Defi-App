@@ -4,9 +4,9 @@
      below came from running the command in its own row, on the tree named here. README.md
      carries the prose and no numbers; this file carries the numbers and no prose. -->
 
-_Generated 2026-09-16T00:07:21Z by `npm run status` on darwin-arm64, Node 22.23.2._
+_Generated 2026-09-16T00:13:16Z by `npm run status` on darwin-arm64, Node 22.23.2._
 
-**Tree:** the working tree at `c1aec05` on `main`, with **6 file(s) modified on top of it** — including this one, when it is regenerated just before a commit. Each suite ran against that tree, not against a published commit.
+**Tree:** the working tree at `07220e6` on `main`, with **6 file(s) modified on top of it** — including this one, when it is regenerated just before a commit. Each suite ran against that tree, not against a published commit.
 
 Abbreviations: ABI = application binary interface; e2e = end-to-end; HF = health factor;
 LP = liquidity provision; RPC = remote procedure call; CCTP = Circle's Cross-Chain Transfer Protocol.
@@ -18,7 +18,7 @@ LP = liquidity provision; RPC = remote procedure call; CCTP = Circle's Cross-Cha
 | Contracts (Foundry) | `cd contracts && forge test` | **433 passed / 0 failed / 13 skipped** (446 total), 39 suites |
 | Contracts, fork | `FORK_URL=<Base archive RPC> forge test --match-path test/fork/BaseFork.t.sol` | not run — add `--all` |
 | Root ABI seam | `node scripts/verify-abi.mjs` | **444** selectors / topics / errors across 19 contracts |
-| Shared | `npm test -w @zyo/shared` | **114** |
+| Shared | `npm test -w @zyo/shared` | **117** |
 | Solana, seams | `npm test -w @zyo/solana` | **14** |
 | Solana, program unit | `cd solana && cargo test --manifest-path programs/oilskin/Cargo.toml` | not run — add `--all` |
 | Solana, localnet | `bash solana/scripts/localnet.sh (terminal 1) · cd solana && anchor test --skip-build --skip-local-validator (terminal 2)` | not run — add `--all` |

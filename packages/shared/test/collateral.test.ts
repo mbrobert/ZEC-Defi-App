@@ -17,6 +17,11 @@ import {
   BASE_TOKENS,
   AAVE_V3,
   CHAINLINK_FEEDS,
+  ZEC_FORMS,
+  zecFormForCollateral,
+  collateralForZecForm,
+  zecCollateral,
+  zecFormRowFaults,
 } from "../dist/index.js";
 
 test("registry: cbBTC + WETH enabled on aave-v3, cbZEC disabled with a reason", () => {
@@ -72,6 +77,42 @@ test("cbZEC's feed carries its two hazards in data, not in a comment", () => {
   );
   // Pyth is no longer this row's source anywhere in the registry.
   assert.equal(JSON.stringify(COLLATERAL_ASSETS.cbZEC).toLowerCase().includes("pyth"), false);
+});
+
+test("the cbZEC row points at its ZEC form and keeps no second copy of the form's facts", () => {
+  const form = ZEC_FORMS["cbzec-base"];
+  assert.equal(COLLATERAL_ASSETS.cbZEC.zecForm, "cbzec-base");
+  assert.equal(zecFormForCollateral("cbZEC"), form);
+  assert.equal(collateralForZecForm("cbzec-base")?.symbol, "cbZEC");
+  assert.deepEqual(zecCollateral().map((a) => a.symbol), ["cbZEC"]);
+
+  // cbBTC and WETH are not ZEC and say so by absence, not by a sentinel.
+  assert.equal(COLLATERAL_ASSETS.cbBTC.zecForm, undefined);
+  assert.equal(COLLATERAL_ASSETS.WETH.zecForm, undefined);
+  assert.equal(zecFormForCollateral("WETH"), undefined);
+  // A Solana form has no Base collateral row, and asking for one is not an error.
+  assert.equal(collateralForZecForm("zec-solana-bridged"), undefined);
+
+  // The reason and the risks are the form's own objects, not copies that could drift apart.
+  assert.equal(COLLATERAL_ASSETS.cbZEC.disabledReason, form.disabledReason);
+  assert.equal(COLLATERAL_ASSETS.cbZEC.enabled, form.enabled);
+  for (const note of form.riskNotes) assert.ok(COLLATERAL_ASSETS.cbZEC.riskNotes.includes(note), note.slice(0, 40));
+});
+
+test("the two registries agree — zecFormRowFaults() is empty", () => {
+  assert.deepEqual(zecFormRowFaults(), []);
+});
+
+test("cbZEC's disabled reason is D3's, not the superseded 'v1.1 market' claim", () => {
+  const reason = COLLATERAL_ASSETS.cbZEC.disabledReason ?? "";
+  // Until 2026-09-15 this row said cbZEC collateral was "Planned for v1.1 once the Oilskin
+  // cbZEC/USDC market ships" — a promise decision D3 of 2026-09-12 had already reversed. Oilskin
+  // does not create that market; it waits for an external one. Pin the reversal, not the wording.
+  assert.doesNotMatch(reason, /Oilskin cbZEC\/USDC market ships/i);
+  assert.match(reason, /does not create that market/i);
+  assert.match(reason, /D3/);
+  // And it points the ZEC holder at the route that does work today rather than leaving a dead end.
+  assert.match(reason, /Solana/i);
 });
 
 test("registry carries NO typed liquidation threshold / LTV / HF", () => {
