@@ -17,7 +17,6 @@ import {
   BASE_TOKENS,
   AAVE_V3,
   CHAINLINK_FEEDS,
-  PYTH,
 } from "../dist/index.js";
 
 test("registry: cbBTC + WETH enabled on aave-v3, cbZEC disabled with a reason", () => {
@@ -44,15 +43,35 @@ test("registry: cbBTC + WETH enabled on aave-v3, cbZEC disabled with a reason", 
   assert.equal(COLLATERAL_ASSETS.cbZEC.decimals, 8);
 });
 
-test("registry feeds: Chainlink for cbBTC/WETH, Pyth for cbZEC (no Chainlink ZEC feed)", () => {
+test("registry feeds: Chainlink throughout — cbBTC, WETH, and cbZEC by ZEC/USD at 18 decimals", () => {
   assert.deepEqual(COLLATERAL_ASSETS.cbBTC.feed, { kind: "chainlink", ...CHAINLINK_FEEDS.cbBTC_USD });
   assert.deepEqual(COLLATERAL_ASSETS.WETH.feed, { kind: "chainlink", ...CHAINLINK_FEEDS.ETH_USD });
-  assert.equal(COLLATERAL_ASSETS.cbZEC.feed.kind, "pyth");
-  if (COLLATERAL_ASSETS.cbZEC.feed.kind === "pyth") {
-    assert.equal(COLLATERAL_ASSETS.cbZEC.feed.contract, PYTH.contract);
-    assert.equal(COLLATERAL_ASSETS.cbZEC.feed.priceId, PYTH.priceIds.ZEC_USD);
-  }
+  // The founder's decision of 2026-09-13 ("use chainlink zec/usd exclusively until a cbZEC/USD
+  // source is available"), which ChainlinkOracleAdapter implements and PythOracleAdapter lost to.
+  // Until 2026-09-13 this row was Pyth, on the belief that Base had no Chainlink ZEC feed;
+  // VERIFIED-BASE-FACTS.md Addendum 16 read one live and superseded that.
+  assert.deepEqual(COLLATERAL_ASSETS.cbZEC.feed, { kind: "chainlink", ...CHAINLINK_FEEDS.ZEC_USD });
   assert.ok(COLLATERAL_ASSETS.cbZEC.riskNotes.some((n) => /rebase|multiplier/i.test(n)));
+});
+
+test("cbZEC's feed carries its two hazards in data, not in a comment", () => {
+  const feed = COLLATERAL_ASSETS.cbZEC.feed;
+  assert.equal(feed.kind, "chainlink");
+  if (feed.kind !== "chainlink") return;
+  // Hazard 1 — 18 decimals, the only feed in this repo that is not 8. A consumer assuming 8 is
+  // wrong by a factor of 10^10, so the number must travel with the feed and be read from it.
+  assert.equal(feed.decimals, 18);
+  assert.equal(COLLATERAL_ASSETS.cbBTC.feed.kind === "chainlink" && COLLATERAL_ASSETS.cbBTC.feed.decimals, 8);
+  assert.equal(COLLATERAL_ASSETS.WETH.feed.kind === "chainlink" && COLLATERAL_ASSETS.WETH.feed.decimals, 8);
+  // Hazard 2 — it prices ZEC, not cbZEC. A user reading riskNotes must be told that, because the
+  // wrapper can trade below ZEC and this feed would not notice.
+  assert.equal(feed.description, "ZEC / USD");
+  assert.ok(
+    COLLATERAL_ASSETS.cbZEC.riskNotes.some((n) => /prices ZEC and not cbZEC/i.test(n)),
+    "riskNotes must say the feed prices ZEC rather than cbZEC",
+  );
+  // Pyth is no longer this row's source anywhere in the registry.
+  assert.equal(JSON.stringify(COLLATERAL_ASSETS.cbZEC).toLowerCase().includes("pyth"), false);
 });
 
 test("registry carries NO typed liquidation threshold / LTV / HF", () => {

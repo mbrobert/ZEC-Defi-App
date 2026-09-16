@@ -18,7 +18,7 @@ MC = Monte Carlo.
 | Contracts (Foundry) | `cd contracts && forge test` | **433 passed / 0 failed / 13 skipped** (446 total), 39 suites |
 | Contracts, fork | `FORK_URL=<Base archive RPC> FORK_BLOCK=51222568 forge test --match-path test/fork/BaseFork.t.sol -vv`, then `scripts/check-cbzec-b20.sh <Base RPC> 51222568` | **13 / 13** |
 | Root ABI seam | `node scripts/verify-abi.mjs` | **444** selectors / topics / errors across 19 contracts |
-| Shared | `npm test -w @zyo/shared` | **113** |
+| Shared | `npm test -w @zyo/shared` | **114** |
 | Solana, seams | `npm test -w @zyo/solana` | **14** |
 | Solana, program unit | `cd solana && cargo test --manifest-path programs/oilskin/Cargo.toml` | **12** |
 | Solana, localnet | `bash solana/scripts/localnet.sh` (terminal 1) · `cd solana && anchor test --skip-build --skip-local-validator` (terminal 2) | **36 passing / 0 failing** |
@@ -320,7 +320,7 @@ pull requests, and no job can go green over a suite it did not run:
 | `contracts-build` | `forge build --skip test`, uploads `contracts/out` | one compile of the product contracts and scripts, shared by the two seam jobs (they read product artifacts only) |
 | `abi-seam` | `node scripts/verify-abi.mjs`, then `VERIFY_ABI_STRICT=1 node agent/scripts/verify-abi.mjs`, both on the downloaded artifacts | the committed bundle equals the compiled artifacts (exit 1 on drift) and the keeper's seam runs with nothing skipped — before this slice the keeper job had no artifacts, printed `verify-abi: SKIP` on every run and stayed green |
 | `agent` | `VERIFY_ABI_STRICT=1 npm test -w @zyo/agent`, `npm test -w @zyo/yield`, on the artifacts | keeper 123/123 strict + IDL seam 77/77 + 316 tests; yield 179 |
-| `shared` | `npm test -w @zyo/shared` | 113 |
+| `shared` | `npm test -w @zyo/shared` | 114 |
 | `web` | `npm run typecheck -w @zyo/web`, `VERIFY_ABI_STRICT=1 npm test -w @zyo/web` | tsc clean; 199 tests, the ABI-drift test and both model pins RUN |
 | `prototypes` | Playwright's Chromium (`playwright install --with-deps chromium`), `services/yield/samples/MODEL-NUMBERS.md` copied to `/tmp/build/` so `verify-toggle`'s model pin runs | 118 · 109 · 56 · 6 |
 | `fork` | `forge test --match-path test/fork/BaseFork.t.sol -vv` at `FORK_BLOCK` (pinned in the workflow's `env`: 51,222,568) with `secrets.BASE_RPC_URL` as `FORK_URL`, then `scripts/check-cbzec-b20.sh` at the same block; the log is uploaded | the 11 fork tests and the B20 read. **Without the secret the job FAILS and its own summary line reads `fork: 11 skipped = NOT VERIFIED`** — the green check over eleven skipped tests is what this slice removed. With the secret, a skip (an engine entry the suite selects by property has vanished) also fails, by name. An RPC that no longer serves state at the pinned block fails with the RPC's error: move `FORK_BLOCK` forward deliberately, re-run, record the block |

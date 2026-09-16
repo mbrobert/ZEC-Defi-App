@@ -6,7 +6,7 @@
  * functions below. The only typed numbers here are token decimals and the
  * product policy constants (ENTRY_HF_FLOOR via health.ts, the 50% cap).
  */
-import { AAVE_V3, BASE_TOKENS, CHAINLINK_FEEDS, PYTH, type TokenSymbol } from "./base.js";
+import { AAVE_V3, BASE_TOKENS, CHAINLINK_FEEDS, type TokenSymbol } from "./base.js";
 import type { Address } from "./evm.js";
 import { ENTRY_HF_FLOOR, entryHfForLtv, liquidationDropPct, assertBps, entryHfAtLtvBps } from "./health.js";
 
@@ -61,18 +61,25 @@ export const COLLATERAL_ASSETS: Readonly<Record<CollateralSymbol, CollateralAsse
     decimals: BASE_TOKENS.cbZEC.decimals,
     venue: "aave-v3",
     venueDataSource: AAVE_V3.poolDataProvider,
-    feed: {
-      kind: "pyth",
-      contract: PYTH.contract,
-      priceId: PYTH.priceIds.ZEC_USD,
-      description: "Crypto.ZEC/USD (pull-based; stale unless updated in-tx)",
-    },
+    /**
+     * Chainlink `ZEC / USD`, not Pyth — the founder's decision of 2026-09-13, "use chainlink zec/usd
+     * exclusively until a cbZEC/USD source is available", which `ChainlinkOracleAdapter` implements
+     * and which retired `PythOracleAdapter`. Before that day this row said Pyth because no Chainlink
+     * ZEC feed was known to exist on Base; `VERIFIED-BASE-FACTS.md` Addendum 16 superseded that.
+     *
+     * Two hazards travel with this feed and both are carried in the data rather than in a comment:
+     * it reports **18 decimals** where every other Chainlink feed here reports 8, so `decimals` must
+     * be read and never assumed; and it prices **ZEC**, while the product holds **cbZEC**, so any
+     * surface valuing cbZEC with it also owes the Aerodrome cbZEC/USDC cross-check the adapter does
+     * on chain (its `PegBreak`). Stated in `riskNotes` below, because a user sees those.
+     */
+    feed: { kind: "chainlink", ...CHAINLINK_FEEDS.ZEC_USD },
     enabled: false,
     disabledReason:
       "No lending market accepts cbZEC as collateral on Base yet (not listed on Aave v3, no Morpho market). Planned for v1.1 once the Oilskin cbZEC/USDC market ships.",
     riskNotes: [
       "B20 precompile: balances can rebase via a live multiplier and transfers can be blocked by the issuer.",
-      "No Chainlink feed; Pyth price is only as fresh as the last posted update.",
+      "Priced by Chainlink's ZEC/USD feed, which prices ZEC and not cbZEC: if the wrapper ever traded below ZEC, that feed would still quote ZEC's price and overvalue it. The on-chain oracle compares it against the Aerodrome cbZEC/USDC pool and refuses a price that has drifted too far; the feed's own aggregator has no usable circuit breaker of its own.",
       "Thin DEX depth (~$0.7M) — peg to ZEC can break under stress.",
     ],
   },

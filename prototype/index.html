@@ -1144,7 +1144,7 @@ const OIL_SHARED = Object.freeze({
     cbBTC: { symbol: "cbBTC", enabled: true,  riskNotes: ["Custodial wrapper issued by Coinbase; issuer policy applies to the underlying BTC."] },
     WETH:  { symbol: "WETH",  enabled: true,  riskNotes: [] },
     cbZEC: { symbol: "cbZEC", enabled: false, disabledReason: "No lending market accepts cbZEC as collateral on Base yet (not listed on Aave v3, no Morpho market). Planned for v1.1 once the Oilskin cbZEC/USDC market ships.",
-      riskNotes: ["B20 precompile: balances can rebase via a live multiplier and transfers can be blocked by the issuer.", "No Chainlink feed; Pyth price is only as fresh as the last posted update.", "Thin DEX depth (~$0.7M) — peg to ZEC can break under stress."] },
+      riskNotes: ["B20 precompile: balances can rebase via a live multiplier and transfers can be blocked by the issuer.", "Priced by Chainlink's ZEC/USD feed, which prices ZEC and not cbZEC: if the wrapper ever traded below ZEC, that feed would still quote ZEC's price and overvalue it. The on-chain oracle compares it against the Aerodrome cbZEC/USDC pool and refuses a price that has drifted too far; the feed's own aggregator has no usable circuit breaker of its own.", "Thin DEX depth (~$0.7M) — peg to ZEC can break under stress."] },
   },
   LTV_PRESET_FIXED_BPS: { p30: 3000, p40: 4000 },
   FEES: { performanceBps: 1000, maxPerformanceBps: 2000, curatorBps: 1000, orchestrationBps: 0 },

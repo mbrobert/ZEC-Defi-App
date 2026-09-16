@@ -234,6 +234,11 @@ export function collateralAssetsFor(table: ChainTable, tokens: Readonly<Record<T
   for (const symbol of COLLATERAL_SYMBOLS) {
     const base = COLLATERAL_ASSETS[symbol];
     const token = tokens[symbol];
+    // cbZEC is the one row that does not come from `collateralFeeds`, and on a rehearsal chain it is
+    // still Pyth even though Base mainnet moved to Chainlink ZEC/USD on 2026-09-13: Base Sepolia has
+    // no ZEC/USD aggregator at all. Pyth's price there was 12.0 days stale when it was read
+    // (VERIFIED-BASE-FACTS.md, the Sepolia "Pyth" section), which is why the description says so
+    // rather than implying a live price. Do not "fix" this to match the mainnet row.
     const feed: CollateralAsset["feed"] =
       symbol === "cbZEC"
         ? { kind: "pyth", contract: table.pyth, priceId: PYTH.priceIds.ZEC_USD, description: "Crypto.ZEC/USD (pull-based; nobody pushes it on Base Sepolia)" }
