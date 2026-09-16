@@ -377,6 +377,33 @@ describe("Solana monitor: fail closed", () => {
     await r2.close();
   });
 
+  it("a PERMANENT failure is ABANDONED on the first tick and never retried — the O-5 fix, and the contrast with the transient one above", async () => {
+    // AUDIT-2026-09-13.md O-5: a mismatched Circle message failed the rung correctly, but the record was
+    // then resumed and the identical error re-logged each tick until maxDispatchAttempts. The answer
+    // cannot change — Circle returns the same message for the same nonce — so every one of those ticks
+    // was noise in front of the single line a person has to act on.
+    const r = await rig();
+    const a = r.world.add(10n * ONE_ZEC, 3_990n * ONE_USDC, 3_990n * ONE_USDC);
+    await r.tick();
+    r.world.zecUsd = P_REPAY;
+    r.fake.script.push(() => ({ status: "FAILED", error: "Circle's message is not the burn we made: amount 1 is not the burned 4000000000", permanent: true }));
+    await r.tick();
+
+    const rec = r.store.listDispatches({ account: a })[0];
+    assert.equal(rec.status, "ABANDONED", "straight to ABANDONED, not FAILED-then-retried");
+    assert.equal(rec.attempts, 1, "one attempt, not maxDispatchAttempts of them");
+    assert.match(rec.error!, /^permanent: Circle's message is not the burn we made/);
+    assert.equal(r.escalations.length, 1, "escalated on the first tick, when it happened");
+    assert.ok(r.escalations.some((e) => e.reasons.some((x) => x.includes("retrying cannot fix this"))));
+
+    // and it stays abandoned: two more ticks call the dispatcher zero more times.
+    await r.tick();
+    await r.tick();
+    assert.equal(r.store.listDispatches({ account: a })[0].status, "ABANDONED");
+    assert.equal(r.fake.calls.length, 1, "a permanent failure is never re-dispatched");
+    await r.close();
+  });
+
   it("SENT: the signature is persisted before the broadcast; the resume path confirms it on the next tick without dispatching again", async () => {
     const r = await rig();
     const id = r.world.add(10n * ONE_ZEC, 3_990n * ONE_USDC, 3_990n * ONE_USDC);

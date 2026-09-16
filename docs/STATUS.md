@@ -4,9 +4,9 @@
      below came from running the command in its own row, on the tree named here. README.md
      carries the prose and no numbers; this file carries the numbers and no prose. -->
 
-_Generated 2026-09-16T00:42:24Z by `npm run status` on darwin-arm64, Node 22.23.2._
+_Generated 2026-09-16T22:43:17Z by `npm run status` on darwin-arm64, Node 22.23.2._
 
-**Tree:** the working tree at `b9849aa` on `main`, with **17 file(s) modified on top of it** — including this one, when it is regenerated just before a commit. Each suite ran against that tree, not against a published commit.
+**Tree:** the working tree at `76a52cb` on `main`, with **11 file(s) modified on top of it** — including this one, when it is regenerated just before a commit. Each suite ran against that tree, not against a published commit.
 
 Abbreviations: ABI = application binary interface; e2e = end-to-end; HF = health factor;
 LP = liquidity provision; RPC = remote procedure call; CCTP = Circle's Cross-Chain Transfer Protocol.
@@ -22,7 +22,7 @@ LP = liquidity provision; RPC = remote procedure call; CCTP = Circle's Cross-Cha
 | Solana, seams | `npm test -w @zyo/solana` | **14** |
 | Solana, program unit | `cd solana && cargo test --manifest-path programs/oilskin/Cargo.toml` | not run — add `--all` |
 | Solana, localnet | `bash solana/scripts/localnet.sh (terminal 1) · cd solana && anchor test --skip-build --skip-local-validator (terminal 2)` | not run — add `--all` |
-| Keeper | `npm test -w @zyo/agent` | **316**, plus its ABI seam **123 / 123** and the IDL seam **77 / 77** |
+| Keeper | `npm test -w @zyo/agent` | **318**, plus its ABI seam **123 / 123** and the IDL seam **77 / 77** |
 | Yield | `npm test -w @zyo/yield` | **181** |
 | Web, unit | `npm test -w @zyo/web` | **205** |
 | Web, e2e | `cd web && npx playwright test` | not run — add `--all` |

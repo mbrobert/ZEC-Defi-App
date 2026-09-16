@@ -324,6 +324,11 @@ test.describe("Oilskin demo mode", () => {
     // ladderFor(1.95) = 1.86 / 1.61 / 1.34 / 1.09, and the line says where the numbers come from.
     await expect(page.getByTestId("health-band")).toContainText("warning < 1.86");
     await expect(page.getByTestId("ladder-line")).toContainText("derived from this position's recorded entry health factor 1.95");
+    // Backlog L-1: the rungs derive from a number the ROUTER records, and the owner's own `exec` goes
+    // around the router. The hatch stays open, so the disclosure has to sit beside the rungs.
+    const scope = page.getByTestId("ladder-scope");
+    await expect(scope).toContainText("through Oilskin");
+    await expect(scope).toContainText("Oilskin does not see those borrows and repayments");
     await expect(page.getByTestId("keeper-rungs")).toContainText("Warning (HF < 1.86)");
     await expect(page.getByTestId("account-link")).toHaveText("0x2222…2222");
 

@@ -15,6 +15,12 @@ import Chip from "./Chip";
  * `ladder` is the POSITION's (A4, BUILD-PLAN D7): derived from the entry HF the router recorded —
  * or chose, in the wizard — via `ladderFor`; the floor's `HF_LADDER` when nothing is recorded, and
  * `ladderNote` says which.
+ *
+ * The line under it says what the record does NOT cover, and it is not optional (backlog L-1). The
+ * router is what re-records the entry HF on an owner action (D9); an owner who calls the venue
+ * directly through their account's `exec` goes around it. That hatch is deliberate — closing it would
+ * mean blocking the owner from their own funds — so the disclosure is the mitigation, and it belongs
+ * beside the rungs rather than in a document nobody opens.
  */
 export default function HealthBand({
   hf,
@@ -117,6 +123,17 @@ export default function HealthBand({
       <div className="mt-2 text-[11.5px] text-oil-ink3" data-testid="ladder-line">
         Keeper ladder: {ladder.map((r) => `${r.label.toLowerCase()} < ${r.hf.toFixed(2)}`).join(" · ")} (re-arms at rung + {(ladder[0]!.disarmHf - ladder[0]!.hf).toFixed(2)})
         {ladderNote ? ` — ${ladderNote}` : ""}
+      </div>
+      {/* Backlog L-1 (docs/BACKLOG.md §2, from AUDIT-2026-09-11): your account's `exec` lets you call the
+          lending venue yourself, which is the exit hatch and must stay open — intercepting it would mean
+          blocking it. But the entry health factor these rungs derive from is re-recorded by the ROUTER, so
+          a borrow or repay made around it leaves the record describing a position that no longer exists.
+          The honest answer is to say so where the rungs are shown, not to pretend the record tracks
+          everything. */}
+      <div className="mt-1 text-[11.5px] text-oil-ink3" data-testid="ladder-scope">
+        These rungs follow what you do <strong>through Oilskin</strong>. You can also call the lending venue straight from your account — that door
+        stays open on purpose — but Oilskin does not see those borrows and repayments, so the entry health factor it recorded stays where it was and
+        these rungs keep deriving from it.
       </div>
     </div>
   );

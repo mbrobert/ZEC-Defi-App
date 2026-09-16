@@ -517,6 +517,15 @@ export class SolanaMonitor {
           patch.status = "REFUSED";
           patch.error = `permanent: ${msg}`;
           escalation = `keeper refused permanently: ${msg}`;
+        } else if (result.status === "FAILED" && result.permanent) {
+          // A failure re-trying cannot fix — today only Circle returning a message that is not our burn
+          // (AUDIT-2026-09-13.md O-5). Abandoned on the spot rather than re-run until the attempt cap:
+          // the error is the same every tick, and burying the one line a person must read under N copies
+          // of itself is how it gets missed. The `permanent:` prefix is the same marker the resume path
+          // already reads, so a record left in the store by a crash is abandoned rather than retried too.
+          patch.status = "ABANDONED";
+          patch.error = `permanent: ${msg}`;
+          escalation = `dispatch abandoned — retrying cannot fix this: ${msg}`;
         } else if (attempts >= this.d.config.maxDispatchAttempts) {
           patch.status = "ABANDONED";
           patch.error = `after ${attempts} attempts: ${msg}`;

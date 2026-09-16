@@ -141,11 +141,31 @@ describe("the bridge stage machine", () => {
     assert.equal(out.status, "SENT");
   });
 
-  it("burn-confirmed: a message that is not our burn ENDS the rung by name — it is never delivered", async () => {
+  it("burn-confirmed: a message that is not our burn ENDS the rung by name, and ends it PERMANENTLY — it is never delivered and never re-asked", async () => {
     const r = rig({ attest: { kind: "mismatch", why: "amount 1 is not the burned 4000000000" } });
     const out = await r.d.confirm(record("burn-confirmed"));
     assert.equal(out.status, "FAILED");
-    if (out.status === "FAILED") assert.match(out.error, /is not the burn we made: amount 1/);
+    if (out.status !== "FAILED") return;
+    assert.match(out.error, /is not the burn we made: amount 1/);
+    // AUDIT-2026-09-13.md O-5. Circle is deterministic about a nonce: the message it returns for one is
+    // the message it keeps returning, so asking again gets the same answer. Without this flag the record
+    // was re-run and the same error re-logged every tick until maxDispatchAttempts, burying the one line
+    // a person has to read under N copies of itself.
+    assert.equal(out.permanent, true);
+  });
+
+  it("burn-confirmed: the failures retrying CAN fix are not marked permanent", async () => {
+    // The flag has to stay narrow or it becomes a way to abandon a rung during an outage. A record
+    // missing its nonce is a bug in our own store, and Circle being unreachable is an outage; neither
+    // is "Circle answered, and the answer was not ours".
+    const noNonce = await rig({ attest: { kind: "not-found" } }).d.confirm(record("burn-confirmed", { nonce: undefined }));
+    assert.equal(noNonce.status, "FAILED");
+    if (noNonce.status === "FAILED") assert.notEqual(noNonce.permanent, true);
+
+    const down = await rig({ attest: { kind: "unavailable", why: "attestation service answered 503" } }).d.confirm(record("burn-confirmed"));
+    // An unreachable service is not a failure at all — the rung waits, which is the whole point of the
+    // stall window and the Solana-only fallback behind it (S-1).
+    assert.equal(down.status, "SENT");
   });
 
   it("burn-confirmed: a record with no nonce cannot be asked about, and says so instead of guessing", async () => {

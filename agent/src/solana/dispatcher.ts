@@ -40,7 +40,14 @@ export type SolanaDispatchResult =
   | { status: "CONFIRMED"; signature: string; note?: string; bridge?: BridgeInfo }
   | { status: "REFUSED"; reason: string; permanent?: boolean }
   | { status: "SUPERSEDED"; reason: string }
-  | { status: "FAILED"; error: string };
+  /**
+   * `permanent` marks a failure that re-trying cannot fix, so the monitor abandons the record at once
+   * instead of re-running it and re-logging the same error until the attempt cap
+   * (`AUDIT-2026-09-13.md` O-5). The same word the REFUSED arm already uses, and the monitor gives
+   * both arms the same treatment. Default false: a failure is transient unless something has
+   * established that it is not, which is the direction that costs an outage nothing.
+   */
+  | { status: "FAILED"; error: string; permanent?: boolean };
 
 export interface SolanaGrantSnapshot {
   live: boolean;
@@ -288,7 +295,14 @@ export class KeeperSolanaDispatcher implements SolanaDispatcher {
       if (!b.nonce || !b.recipient) return { status: "FAILED", error: "a confirmed burn with no nonce or recipient on the record — cannot ask Circle for it" };
       const expect = { nonce: b.nonce as `0x${string}`, mintRecipient: b.recipient as `0x${string}`, amount: BigInt(b.amountUsdc), destinationDomain: CCTP_DOMAINS.solana };
       const att = await this.d.attestation.byNonce(CCTP_DOMAINS.base, b.nonce, expect, signal);
-      if (att.kind === "mismatch") return { status: "FAILED", error: `Circle's message is not the burn we made: ${att.why}` };
+      if (att.kind === "mismatch") {
+        // PERMANENT. Circle's attestation service is deterministic about a given nonce: the message it
+        // returns for one is the message it will keep returning. If that message is not our burn, asking
+        // again tomorrow gets the same answer, so re-asking is pure noise in front of the one log line a
+        // person has to see. It is also the failure that most needs a person — nothing will be delivered
+        // — so it escalates on the first tick rather than after maxDispatchAttempts of them.
+        return { status: "FAILED", error: `Circle's message is not the burn we made: ${att.why}`, permanent: true };
+      }
       if (att.kind !== "complete") {
         const why = att.kind === "pending" ? `Circle has not attested it yet (${att.status}${att.delayReason ? `: ${att.delayReason}` : ""})` : att.kind === "not-found" ? "Circle has not indexed the burn yet" : att.why;
         log.info("waiting on the attestation", { why });
