@@ -243,6 +243,34 @@ export function enabledZecForms(): ZecForm[] {
   return zecForms().filter((f) => f.enabled);
 }
 
+/** How a venue id reads in a sentence a user is shown. */
+const VENUE_LABELS: Readonly<Record<ZecLendingVenueId, string>> = {
+  "aave-v3": "Aave v3 on Base",
+  "morpho-blue": "Morpho Blue on Base",
+  "kamino-zcash": "Kamino's ZCASH market on Solana",
+};
+
+/**
+ * The one line every surface shows about whether a form can be borrowed against today — the
+ * onboarding capability card, the "where is your ZEC?" table, the collateral step's hint. One
+ * sentence, one place, so those three cannot drift from each other or from `enabled`.
+ *
+ * It cannot return an empty note. A disabled form is required to carry a `disabledReason`
+ * (`zecFormRegistryFaults()` fails the suite otherwise), but if one ever slipped through, silence
+ * would read to a user as a green light. The fallback says the opposite, out loud.
+ */
+export function zecFormAvailability(form: ZecForm): { available: boolean; note: string } {
+  if (form.enabled && form.collateralVenue !== null) {
+    return { available: true, note: `${VENUE_LABELS[form.collateralVenue]} accepts ${form.label} as collateral today.` };
+  }
+  return {
+    available: false,
+    note:
+      form.disabledReason ??
+      `${form.label} cannot be used as collateral, and the registry carries no reason for it. Treat a missing reason as a fault, not as permission.`,
+  };
+}
+
 /**
  * Find a form by its on-chain key. EVM addresses match case-insensitively (they are hex); Solana
  * mints match exactly (base58 is case-significant).

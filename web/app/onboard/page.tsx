@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { BASE_TOKENS, COLLATERAL_ASSETS } from "@/lib/chain";
+import { ZEC_FORMS } from "@zyo/shared";
+import { BASE_TOKENS } from "@/lib/chain";
 import { CBZEC_V1_CAPABILITIES, COUNTRY_OPTIONS, EXCLUDED_REGIONS, ONBOARD_STEPS, US_STATES, cbZecEligibility } from "@/lib/onboarding";
 import CbzecAddressCard from "@/components/CbzecAddressCard";
 import WalletAddressCard from "@/components/WalletAddressCard";
@@ -137,7 +138,12 @@ export default function OnboardPage() {
             </li>
           ))}
         </ul>
-        <p className="mt-3 text-[12.5px] text-oil-ink3">Collateral status shown here is the registry entry: {COLLATERAL_ASSETS.cbZEC.disabledReason}</p>
+        {/* The Collateral row above already prints the registry's reason verbatim — it is read from
+            the ZEC form registry, not written in this page. What is worth adding is where the reason
+            comes from, so a reader can check it rather than take our word for it. */}
+        <p className="mt-3 text-[12.5px] text-oil-ink3">
+          Collateral status is the registry entry for {ZEC_FORMS["cbzec-base"].label}, not a plan: it changes when a Base lending market lists the token, which is not something Oilskin does for it.
+        </p>
       </section>
 
       {/* Already on Base */}
@@ -150,7 +156,9 @@ export default function OnboardPage() {
               <TokenMark symbol={sym} size={26} />
               <div>
                 <div className="font-semibold">{sym}</div>
-                <div className="text-[12px] text-oil-ink3">{sym === "cbZEC" ? "spot now · collateral in v1.1" : "collateral on Aave v3"}</div>
+                {/* Not "collateral in v1.1" — that promise was reversed by decision D3 of
+                    2026-09-12 and this line outlived it by three days. The registry answers. */}
+                <div className="text-[12px] text-oil-ink3">{sym === "cbZEC" ? (CBZEC_V1_CAPABILITIES.collateral.available ? "spot now · collateral on Base" : "spot now · not collateral on Base") : "collateral on Aave v3"}</div>
               </div>
             </Link>
           ))}

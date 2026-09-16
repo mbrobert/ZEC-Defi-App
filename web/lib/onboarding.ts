@@ -2,7 +2,14 @@
  * "ZEC on Coinbase → cbZEC on Base" onboarding facts, from
  * docs/BASE-PIVOT-2026-09.md §1 (read 2026-09-05). Anything not stated there
  * is marked unpublished/unverified rather than guessed.
+ *
+ * This file describes ONE route to ONE form of ZEC (ZEC = Zcash's native coin) — the Coinbase door
+ * to cbZEC on Base. It is deliberately specific: the steps, the jurisdictions and the identity
+ * requirements below are Coinbase's, not "how you get ZEC". What a form can be USED for is not this
+ * file's to state; that is read from the ZEC form registry (`@zyo/shared` `zecForms.ts`), which is
+ * the one place that knows which venue lends against which form.
  */
+import { ZEC_FORMS, zecFormAvailability } from "@zyo/shared";
 
 export type Eligibility =
   | { status: "eligible"; reason: string }
@@ -126,15 +133,20 @@ export const ONBOARD_STEPS: readonly OnboardStep[] = [
   },
 ];
 
-/** What a cbZEC holder can and cannot do in v1 (never claim more than the code enforces). */
+/**
+ * What a cbZEC holder can and cannot do in v1 (never claim more than the code enforces).
+ *
+ * `collateral` is READ from the ZEC form registry rather than written here. Until 2026-09-15 it was
+ * written here, and what it said — "Planned for v1.1 behind a liquidity gate" — had been reversed by
+ * decision D3 of 2026-09-12 three days earlier: Oilskin does not build cbZEC a lending market, it
+ * waits for an external one to list it. A capability card is exactly the wrong place to keep a
+ * copy of a promise all to itself.
+ */
 export const CBZEC_V1_CAPABILITIES = {
   spot: { available: true, note: "Swap cbZEC ↔ USDC via CoW on Base." },
   lp: {
     available: false,
     note: "The Aerodrome cbZEC/USDC gauge received its first emissions vote in the epoch that began 2026-09-10 (0.08% of the Voter; re-voted weekly). The LP engine lists no cbZEC pool and the swap router Oilskin verified cannot reach that pool, so cbZEC LP is not offered; the options are in docs/CBZEC-PATH-2026-09.md.",
   },
-  collateral: {
-    available: false,
-    note: "No lending market on Base accepts cbZEC yet. Planned for v1.1 behind a liquidity gate.",
-  },
+  collateral: zecFormAvailability(ZEC_FORMS["cbzec-base"]),
 } as const;

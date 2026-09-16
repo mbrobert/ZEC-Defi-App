@@ -582,7 +582,7 @@ button:focus-visible,[tabindex]:focus-visible,a:focus-visible,input:focus-visibl
           <div class="small faint" id="wizWalletHint" style="margin-top:6px">Base only (chain id 8453).</div>
         </div>
         <div class="field">
-          <label>Collateral <span class="tt" title="cbBTC and WETH are live Aave v3 reserves with Chainlink feeds. cbZEC has no lending market on Base yet and ships disabled as collateral (v1.1); it can still be swapped via CoW.">ⓘ</span></label>
+          <label>Collateral <span class="tt" title="cbBTC and WETH are live Aave v3 reserves with Chainlink feeds. cbZEC has no lending market on Base, so it ships disabled as collateral; Oilskin does not create that market for it (decision D3) and waits for an external listing. It can still be swapped via CoW.">ⓘ</span></label>
           <div class="seg" id="assetSeg" role="radiogroup"></div>
           <div class="small faint" id="assetHint" style="margin-top:6px"></div>
         </div>
@@ -745,7 +745,7 @@ button:focus-visible,[tabindex]:focus-visible,a:focus-visible,input:focus-visibl
         <p class="small muted" style="margin-bottom:8px">cbZEC is Coinbase Wrapped ZEC, 1:1 backed by ZEC in Coinbase custody. There is exactly one door for newly-minted cbZEC, and it is Coinbase's.</p>
         <div class="rstep"><span class="n">1</span><div><b>Deposit ZEC to your Coinbase account.</b> Coinbase ZEC balances are transparent addresses; a send from any Zcash balance lands there in the open.</div></div>
         <div class="rstep"><span class="n">2</span><div><b>Choose "Send ZEC on Base"</b> and give your Base wallet address. cbZEC arrives there.</div></div>
-        <div class="rstep" style="border-bottom:none"><span class="n">3</span><div><b>Connect that wallet here.</b> In v1 cbZEC can be swapped via CoW or LP'd once its gauge is voted; as collateral it is v1.1 — no lending market exists yet.</div></div>
+        <div class="rstep" style="border-bottom:none"><span class="n">3</span><div><b>Connect that wallet here.</b> In v1 cbZEC can be swapped via CoW or LP'd once its gauge is voted; as collateral it is disabled, because no Base lending market lists it and Oilskin does not create one (decision D3). A ZEC holder who wants to borrow uses the Solana lane.</div></div>
         <div class="note warn small" style="margin-top:12px"><b>Before you start.</b>
           <ul style="margin:6px 0 0 18px">
             <li><b>Jurisdiction.</b> Wrap/unwrap is unavailable in 100+ jurisdictions — all of the EEA, Australia, Brazil, Canada, Japan, Singapore, and New York. Effectively the US ex-NY (UK unverified). Non-US users can still buy cbZEC on Base; cbBTC/WETH users are unaffected.</li>
@@ -801,7 +801,7 @@ button:focus-visible,[tabindex]:focus-visible,a:focus-visible,input:focus-visibl
         <h2>Getting started</h2>
         <p>You need one thing: <b>a wallet on Base</b> — Coinbase Wallet, MetaMask, WalletConnect, or any EIP-6963 wallet. It signs; your Oilskin account owns.</p>
         <h3>Your first position, in three steps</h3>
-        <p>1 · Connect, pick collateral (cbBTC or WETH; cbZEC as collateral is v1.1) and a strategy in <b>New position</b>.</p>
+        <p>1 · Connect, pick collateral (cbBTC or WETH; cbZEC is disabled — no Base market lists it) and a strategy in <b>New position</b>.</p>
         <p>2 · Review the projection rail: net APY (sign shown honestly), health factor, liquidation price, fees, the forecast. Tick the acknowledgment. Nothing moves until you confirm.</p>
         <p>3 · Sign. Your first deposit is two transactions (account creation, then the router call); after that, one. Each step turns green only when its Base transaction confirms.</p>
         <p>There is no email and no account with us. There is KYC only if you enter through Coinbase to get cbZEC — see Risks &amp; cbZEC.</p>
@@ -2263,7 +2263,7 @@ function renderPoolTable(){
 function renderRisks(){
   $("#riskList").innerHTML=RISKS.map(r=>`<li><b>${r.t}.</b> ${r.d}</li>`).join("");
   $("#cbzecPinned").textContent=SH.CBZEC_ADDRESS;
-  $("#cbzecFacts").innerHTML=[["Address (pinned)",short(SH.CBZEC_ADDRESS)],["Kind","B20 precompile (eth_getCode = 0xef)"],["multiplier()","1e18 (rebase present, currently 1.0)"],["owner() / paused()","revert — not exposed"],["Aave v3 listing","not listed (config returns zeros)"],["Chainlink ZEC/USD","none on Base"],["Pyth ZEC/USD",`$${CR.pythZecUsd.price.toFixed(2)} · ${(CR.pythZecUsd.ageS/3600).toFixed(1)}h stale at read`],["Aerodrome cbZEC/USDC",`≈ $${CR.cbzecUsdcPool.priceUsdc} · gauge rewardRate ${CR.cbzecUsdcPool.gaugeRewardRate}`],["Collateral in v1",SH.COLLATERAL_ASSETS.cbZEC.enabled?"yes":"no — v1.1"]].map(([k,v])=>`<span class="r">${k}</span><span class="v num">${v}</span>`).join("");
+  $("#cbzecFacts").innerHTML=[["Address (pinned)",short(SH.CBZEC_ADDRESS)],["Kind","B20 precompile (eth_getCode = 0xef)"],["multiplier()","1e18 (rebase present, currently 1.0)"],["owner() / paused()","revert — not exposed"],["Aave v3 listing","not listed (config returns zeros)"],["Chainlink ZEC/USD",`${short(SH.CHAINLINK_ZEC_USD)} · 18 dp · prices ZEC, not cbZEC`],["Pyth ZEC/USD (not used)",`$${CR.pythZecUsd.price.toFixed(2)} · ${(CR.pythZecUsd.ageS/3600).toFixed(1)}h stale at read`],["Aerodrome cbZEC/USDC",`≈ $${CR.cbzecUsdcPool.priceUsdc} · gauge rewardRate ${CR.cbzecUsdcPool.gaugeRewardRate}`],["Collateral in v1",SH.COLLATERAL_ASSETS.cbZEC.enabled?"yes":"no — no Base market lists it"]].map(([k,v])=>`<span class="r">${k}</span><span class="v num">${v}</span>`).join("");
 }
 function cfCheck(v){ const c=classifyCbZecAddress(v); const out=$("#cfOut"); out.className="addr-help "+(c==="genuine"?"good":c==="counterfeit"?"bad":""); out.innerHTML=c==="genuine"?`<b>Genuine cbZEC.</b> Exactly the pinned address. B20 — balances can rebase and transfers can be blocked by the issuer.`:c==="counterfeit"?`<b>Counterfeit.</b> Shares the <span class="mono">${SH.COUNTERFEIT_PREFIX}…</span> vanity prefix but is not the pinned cbZEC. The router refuses it; do not buy it.`:c==="unrelated"?`Not cbZEC — a different token entirely (${short(v)}).`:`Not a token address (need 0x + 40 hex).`; }
 $("#cfInput").addEventListener("input",e=>cfCheck(e.target.value.trim()));

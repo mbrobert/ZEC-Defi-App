@@ -23,6 +23,7 @@ import {
   KAMINO_ZCASH_MARKET,
   AAVE_V3_RESERVES,
   type ZecForm,
+  zecFormAvailability,
 } from "../dist/index.js";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
@@ -298,4 +299,33 @@ test("no banned word appears in any user-facing string on a form", () => {
       }
     }
   }
+});
+
+test("zecFormAvailability: one sentence per form, and it can never be empty", () => {
+  const cb = zecFormAvailability(ZEC_FORMS["cbzec-base"]);
+  assert.equal(cb.available, false);
+  assert.equal(cb.note, ZEC_FORMS["cbzec-base"].disabledReason, "a disabled form shows its reason verbatim");
+
+  const sol = zecFormAvailability(ZEC_FORMS["zec-solana-bridged"]);
+  assert.equal(sol.available, true);
+  assert.match(sol.note, /Kamino's ZCASH market on Solana/, "an enabled form names the venue that takes it");
+  assert.match(sol.note, /Bridged ZEC on Solana/, "and names the form by its own label, not by a bare symbol");
+
+  for (const form of zecForms()) {
+    const a = zecFormAvailability(form);
+    assert.ok(a.note.trim().length > 0, `${form.id}: empty note`);
+    assert.equal(a.available, form.enabled, `${form.id}: available disagrees with enabled`);
+  }
+});
+
+test("zecFormAvailability fails closed: an enabled form with no venue is reported unavailable, and a disabled one with no reason says so out loud", () => {
+  // Neither state can exist in the registry — zecFormRegistryFaults() rejects both — so this pins
+  // what a surface would render if one ever slipped through. Silence would read as permission.
+  const noVenue = { ...ZEC_FORMS["zec-solana-bridged"], enabled: true, collateralVenue: null };
+  assert.equal(zecFormAvailability(noVenue).available, false);
+
+  const noReason = { ...ZEC_FORMS["cbzec-base"], disabledReason: undefined };
+  const a = zecFormAvailability(noReason);
+  assert.equal(a.available, false);
+  assert.match(a.note, /Treat a missing reason as a fault, not as permission/);
 });

@@ -96,7 +96,7 @@ check("fees: keep = (1−15%)(1−10%) = 0.765 on engine pools, 0.90 direct; per
 check("flow: CTA demands a wallet first", (await page.textContent("#startBtn")) === "Connect a wallet first" && await page.$eval("#startBtn", e => e.disabled));
 await page.click('#walletGrid [data-provider="coinbase"]');
 check("flow: connecting shows the demo address and the CREATE2 account", /0x7a3F…0c1E/.test(await page.textContent("#walletBtn")) && /account will be 0x/.test(await page.textContent("#walletHint")));
-check("collateral: cbZEC is disabled with the reason; cbBTC/WETH enabled", await page.$eval('#assetSeg [data-asset="cbZEC"]', e => e.disabled && /no collateral market/.test(e.textContent)) && await page.$eval('#assetSeg [data-asset="WETH"]', e => !e.disabled));
+check("collateral: cbZEC is disabled and the reason says no Base market lists it and Oilskin does not create one (D3), not the superseded 'v1.1'", await page.$eval('#assetSeg [data-asset="cbZEC"]', e => e.disabled && /no Base market lists it/.test(e.textContent) && !/v1\.1/.test(e.textContent)) && await page.$eval('#assetSeg [data-asset="WETH"]', e => !e.disabled));
 await page.click('#assetSeg [data-asset="WETH"]');
 check("collateral: switching to WETH recomputes the slider's stop from LT 83% — lowest offered 1.25 (66.40 %), the registry floor named, the Sheltered default kept at 1.55 → 53.54 %, both marks offered", /lowest offered 1\.25 · the registry's entry floor of 1\.25/.test(await page.textContent("#hfMin")) && /Entry health factor 1\.55 → borrow 53\.54%/.test(await page.textContent("#riskHint")) && (await page.$$eval('#riskMarks [data-mark]', e => e.length === 2 && e.every(x => !x.disabled))));
 await page.click('#assetSeg [data-asset="cbBTC"]');

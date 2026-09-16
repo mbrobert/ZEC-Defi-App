@@ -382,7 +382,7 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
         <ol>
           <li><b>Deposit ZEC to your Coinbase account.</b> Coinbase ZEC balances are transparent addresses; a send from any Zcash balance lands there in the open.</li>
           <li><b>Choose "Send ZEC on Base"</b> and give your Base wallet address. cbZEC arrives at that address.</li>
-          <li><b>Connect that wallet here.</b> In v1 cbZEC can be swapped or LP'd; as collateral it is v1.1 (no lending market on Base yet).</li>
+          <li><b>Connect that wallet here.</b> In v1 cbZEC can be swapped or LP'd; as collateral it is disabled, because no Base lending market lists it and Oilskin does not create one (decision D3).</li>
         </ol>
         <div class="note warn" style="margin-top:12px"><b>Before you start — three facts, stated plainly.</b>
           <ul style="margin:6px 0 0 18px">
@@ -513,7 +513,7 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
   <p>Yes. Withdrawal unwinds your pool share, repays the loan's part automatically, and returns collateral to your wallet — in one transaction from your own account. There is no pause on exits because there is nothing to pause: you can always execute the unwind yourself from your account.</p>
 
   <h3>Where does the ZEC come in?</h3>
-  <p>cbZEC — Coinbase Wrapped ZEC on Base. The entry is Coinbase's: KYC'd, custodial, US-ex-NY, transparent addresses only. It is identity-linked, and this product makes no privacy claim about it. In v1 cbZEC can be swapped or LP'd; as collateral it needs a lending market that does not exist yet (v1.1). cbBTC and WETH work today. See the explainer on the Earn tab.</p>
+  <p>cbZEC — Coinbase Wrapped ZEC on Base. The entry is Coinbase's: KYC'd, custodial, US-ex-NY, transparent addresses only. It is identity-linked, and this product makes no privacy claim about it. In v1 cbZEC can be swapped or LP'd; as collateral it needs a Base lending market that does not exist, and Oilskin does not create one for it (decision D3) — a ZEC holder who wants to borrow uses the Solana lane. cbBTC and WETH work today. See the explainer on the Earn tab.</p>
 
   <h3>What is emissions-only?</h3>
   <p>Staked Aerodrome positions earn AERO incentives in lieu of trading fees (fees go to veAERO voters). Every yield number here assumes emissions only, after the engine's and Oilskin's fees, minus impermanent-loss drag, minus the live borrow rate. A pool whose gauge pays nothing earns nothing, and its forecast says so — the drag alone, in red.</p>
@@ -1605,12 +1605,12 @@ function renderAssetSeg(){
   const p = S.pos && !S.pos.example ? S.pos : null; const cur = p ? p.asset : S.sel.asset;
   $("#assetSeg").innerHTML = ["cbBTC","WETH","cbZEC"].map(a=>{
     const lt=ltOf(a); const on=cur===a; const off = lt==null;
-    const reason = off ? "no collateral market on Base yet · v1.1" : `Aave LT ${(lt*100).toFixed(0)}% · top setting ${topLtvPct(a)}%`;
+    const reason = off ? "no Base market lists it · Oilskin does not create one" : `Aave LT ${(lt*100).toFixed(0)}% · top setting ${topLtvPct(a)}%`;
     return `<button type="button" class="segb${on?" on":""}${off?" off":""}" role="radio" aria-checked="${on}" data-asset="${a}" ${off||p?"disabled":""} aria-disabled="${off}" tabindex="${on||(!p&&!off&&a==="cbBTC")?0:-1}"><b>${a}</b><span class="num">${reason}</span></button>`;
   }).join("");
   $$("#assetSeg [data-asset]").forEach(b=>b.addEventListener("click",()=>{ if(b.disabled) return; dispatch({type:"selectAsset", asset:b.dataset.asset}); }));
   const r = CR.aaveReserves[cur];
-  $("#assetHint").textContent = p ? `Locked for this position: ${cur}. Withdraw fully to change collateral.` : `${cur} on Aave v3: liquidation threshold ${(r.liquidationThresholdBps/100).toFixed(0)}%, supply ${r.supplyAprPct.toFixed(3)}% APR, Chainlink feed. cbZEC: no lending market, no Chainlink feed, Pyth stale by default — collateral is v1.1.`;
+  $("#assetHint").textContent = p ? `Locked for this position: ${cur}. Withdraw fully to change collateral.` : `${cur} on Aave v3: liquidation threshold ${(r.liquidationThresholdBps/100).toFixed(0)}%, supply ${r.supplyAprPct.toFixed(3)}% APR, Chainlink feed. cbZEC: no Base lending market lists it, so collateral is disabled; it is priced by Chainlink ZEC/USD, which prices ZEC and not cbZEC.`;
   $("#amtSuffix").textContent=cur; $("#pxAsset").textContent=cur; $("#px").textContent=usd(S.price[cur]);
   $("#amtMin").textContent=`min ${MIN_AMOUNT[cur]} ${cur} · wallet holds ${DEMO_BAL[cur]} ${cur} (demo)`;
   if(document.activeElement!==$("#amt")) $("#amt").value = S.sel.amount;
@@ -1761,7 +1761,7 @@ function renderActivity(){
 function renderDocs(){
   const R=CR.aaveReserves;
   $("#docReadAt").textContent = CR.readAt.replace("T"," ").replace(/Z$/," UTC") + ` (block ${CR.readBlock.toLocaleString("en-US")})`;
-  $("#docReserves").innerHTML = `<tr><th>Reserve</th><th>LTV</th><th>Liq. threshold</th><th>Supply APR</th><th>Borrow APR</th><th>Collateral in v1</th></tr>` + ["cbBTC","WETH","USDC","cbZEC"].map(a=>{ const r=R[a]; return r ? `<tr><td><b>${a}</b></td><td class="num">${(r.ltvBps/100).toFixed(0)}%</td><td class="num"><b>${(r.liquidationThresholdBps/100).toFixed(0)}%</b></td><td class="num">${r.supplyAprPct.toFixed(3)}%</td><td class="num">${r.borrowAprPct.toFixed(3)}%</td><td>${a==="USDC"?"borrow asset":"yes"}</td></tr>` : `<tr><td><b>${a}</b></td><td colspan="4">not listed on Aave (config returns zeros)</td><td>v1.1 — enabled:false</td></tr>`; }).join("");
+  $("#docReserves").innerHTML = `<tr><th>Reserve</th><th>LTV</th><th>Liq. threshold</th><th>Supply APR</th><th>Borrow APR</th><th>Collateral in v1</th></tr>` + ["cbBTC","WETH","USDC","cbZEC"].map(a=>{ const r=R[a]; return r ? `<tr><td><b>${a}</b></td><td class="num">${(r.ltvBps/100).toFixed(0)}%</td><td class="num"><b>${(r.liquidationThresholdBps/100).toFixed(0)}%</b></td><td class="num">${r.supplyAprPct.toFixed(3)}%</td><td class="num">${r.borrowAprPct.toFixed(3)}%</td><td>${a==="USDC"?"borrow asset":"yes"}</td></tr>` : `<tr><td><b>${a}</b></td><td colspan="4">not listed on Aave (config returns zeros)</td><td>no — enabled:false</td></tr>`; }).join("");
   const pool=poolById(S.sel.pool);
   { const rows = []; const short = b => b==="entry_hf_floor" ? "registry floor" : "Aave's max LTV";
     for(const a of ["cbBTC","WETH"]){ const b = offeredBounds(a); rows.push(`<tr><td><b>${a}</b> lowest</td><td class="num">${b.minHf.toFixed(2)}</td><td class="num">${(b.maxLtvBps/100).toFixed(2)}%</td><td class="num">${(100*(1-1/b.minHf)).toFixed(1)}%</td><td>${short(b.binding)}</td></tr>`); }

@@ -18,13 +18,13 @@ MC = Monte Carlo.
 | Contracts (Foundry) | `cd contracts && forge test` | **433 passed / 0 failed / 13 skipped** (446 total), 39 suites |
 | Contracts, fork | `FORK_URL=<Base archive RPC> FORK_BLOCK=51222568 forge test --match-path test/fork/BaseFork.t.sol -vv`, then `scripts/check-cbzec-b20.sh <Base RPC> 51222568` | **13 / 13** |
 | Root ABI seam | `node scripts/verify-abi.mjs` | **444** selectors / topics / errors across 19 contracts |
-| Shared | `npm test -w @zyo/shared` | **117** |
+| Shared | `npm test -w @zyo/shared` | **119** |
 | Solana, seams | `npm test -w @zyo/solana` | **14** |
 | Solana, program unit | `cd solana && cargo test --manifest-path programs/oilskin/Cargo.toml` | **12** |
 | Solana, localnet | `bash solana/scripts/localnet.sh` (terminal 1) · `cd solana && anchor test --skip-build --skip-local-validator` (terminal 2) | **36 passing / 0 failing** |
 | Keeper | `npm test -w @zyo/agent` | **316 tests / 61 suites**, plus its own ABI seam **123 / 123** and the IDL seam **77 / 77** |
 | Yield | `npm test -w @zyo/yield` | **179** |
-| Web, unit | `npm test -w @zyo/web` | **199** |
+| Web, unit | `npm test -w @zyo/web` | **200** |
 | Web, e2e | `cd web && npx playwright test` | **18 passed / 0 failed / 6 skipped** |
 | Web, e2e against Base Sepolia | `cd web && npx playwright test -c playwright.sepolia.config.ts` | **3 skipped by name** until `docs/DEPLOYMENTS.md` carries Sepolia addresses |
 | Prototypes | `mkdir -p /tmp/build && cp services/yield/samples/MODEL-NUMBERS.md /tmp/build/ && node prototype/test/run-all.mjs` | **verify-simple 130 · verify-advanced 116 · verify-toggle 62 · fuzz 6** |
@@ -320,8 +320,8 @@ pull requests, and no job can go green over a suite it did not run:
 | `contracts-build` | `forge build --skip test`, uploads `contracts/out` | one compile of the product contracts and scripts, shared by the two seam jobs (they read product artifacts only) |
 | `abi-seam` | `node scripts/verify-abi.mjs`, then `VERIFY_ABI_STRICT=1 node agent/scripts/verify-abi.mjs`, both on the downloaded artifacts | the committed bundle equals the compiled artifacts (exit 1 on drift) and the keeper's seam runs with nothing skipped — before this slice the keeper job had no artifacts, printed `verify-abi: SKIP` on every run and stayed green |
 | `agent` | `VERIFY_ABI_STRICT=1 npm test -w @zyo/agent`, `npm test -w @zyo/yield`, on the artifacts | keeper 123/123 strict + IDL seam 77/77 + 316 tests; yield 179 |
-| `shared` | `npm test -w @zyo/shared` | 117 |
-| `web` | `npm run typecheck -w @zyo/web`, `VERIFY_ABI_STRICT=1 npm test -w @zyo/web` | tsc clean; 199 tests, the ABI-drift test and both model pins RUN |
+| `shared` | `npm test -w @zyo/shared` | 119 |
+| `web` | `npm run typecheck -w @zyo/web`, `VERIFY_ABI_STRICT=1 npm test -w @zyo/web` | tsc clean; 200 tests, the ABI-drift test and both model pins RUN |
 | `prototypes` | Playwright's Chromium (`playwright install --with-deps chromium`), `services/yield/samples/MODEL-NUMBERS.md` copied to `/tmp/build/` so `verify-toggle`'s model pin runs | 118 · 109 · 56 · 6 |
 | `fork` | `forge test --match-path test/fork/BaseFork.t.sol -vv` at `FORK_BLOCK` (pinned in the workflow's `env`: 51,222,568) with `secrets.BASE_RPC_URL` as `FORK_URL`, then `scripts/check-cbzec-b20.sh` at the same block; the log is uploaded | the 11 fork tests and the B20 read. **Without the secret the job FAILS and its own summary line reads `fork: 11 skipped = NOT VERIFIED`** — the green check over eleven skipped tests is what this slice removed. With the secret, a skip (an engine entry the suite selects by property has vanished) also fails, by name. An RPC that no longer serves state at the pinned block fails with the RPC's error: move `FORK_BLOCK` forward deliberately, re-run, record the block |
 | `static-analysis` | Slither (`--fail-high`), Aderyn, halmos — the halmos steps under `FOUNDRY_PROFILE=halmos` (`test = "test/halmos"`, so forge compiles src + the two harnesses, and `dynamic_test_linking = false`, because halmos has no `deployCode` cheat) | fails on a High or a violated account property (`AccountGrantHalmos` 4 / 4 locally, 2026-09-12); the router property is `continue-on-error` |

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { CBZEC_ADDRESS, classifyCbZecAddress, isCounterfeitCbZec } from "@zyo/shared";
+import { ZEC_FORMS, zecFormAvailability } from "@zyo/shared";
 import { CBZEC_V1_CAPABILITIES, COUNTRY_OPTIONS, EXCLUDED_REGIONS, ONBOARD_STEPS, US_STATES, cbZecEligibility } from "../lib/onboarding";
 
 test("jurisdiction: US ex-NY eligible, NY excluded, state required", () => {
@@ -38,6 +39,16 @@ test("v1 capabilities never claim more than the code enforces", () => {
   assert.equal(CBZEC_V1_CAPABILITIES.spot.available, true);
   assert.equal(CBZEC_V1_CAPABILITIES.lp.available, false);
   assert.equal(CBZEC_V1_CAPABILITIES.collateral.available, false);
+});
+
+test("the collateral capability is the ZEC form registry's answer, not this page's", () => {
+  // It used to be this page's, and this page's had gone stale: "Planned for v1.1 behind a liquidity
+  // gate", three days after decision D3 of 2026-09-12 reversed exactly that. The card now reads the
+  // registry, so the reversal cannot be un-said here without the registry changing.
+  assert.deepEqual(CBZEC_V1_CAPABILITIES.collateral, zecFormAvailability(ZEC_FORMS["cbzec-base"]));
+  assert.equal(CBZEC_V1_CAPABILITIES.collateral.note, ZEC_FORMS["cbzec-base"].disabledReason);
+  assert.doesNotMatch(CBZEC_V1_CAPABILITIES.collateral.note, /v1\.1|liquidity gate/i);
+  assert.match(CBZEC_V1_CAPABILITIES.collateral.note, /does not create that market/i);
 });
 
 test("counterfeit classifier (shared) behaves as the onboarding card expects", () => {
