@@ -75,7 +75,10 @@ quotes are in.
 ## 5 · The RFP package (identical for both, plus a chain-specific appendix)
 
 **Written 2026-09-13:** `docs/RFP-EVM-2026-09-13.md` and `docs/RFP-SOLANA-2026-09-13.md`, both measured at
-`e1d57a4`. Each carries the six items below and asks the same six questions, so quotes compare. Both leave
+`e1d57a4`. Each carries the six items below and asks the same six questions, so quotes compare. **The EVM
+package gained a §4b on 2026-09-16** — three questions we already know we cannot answer, each with the test
+that pins today's behaviour (backlog O-4, C-1 and G-1). It is an addition to what we are asking, not a change
+to the tree we are asking about. Both leave
 §5 (deposit cap, allowlist size, funds at risk) blank: those are the founder's numbers and neither package
 should be sent with them invented. Send both with "code freeze expected 2026-12-11" stated.
 
