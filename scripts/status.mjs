@@ -44,14 +44,34 @@ const PATH = [...extraPath, process.env.PATH ?? ""].join(":");
 
 const have = (bin) => spawnSync("sh", ["-lc", `command -v ${bin}`], { env: { ...process.env, PATH } }).status === 0;
 
-function run(cmd, cwd = repoRoot, env = {}) {
+/**
+ * A suite that HANGS is worse than one that fails: it produces no row, no reason, and no bound on how
+ * long this command takes. On 2026-09-16 the prototype suite hung for 1,069 s inside one invocation
+ * against a standalone run of ~31 s, and the only evidence afterwards was an elapsed time nobody was
+ * watching. Every suite now carries a ceiling, and passing it is reported as a timeout by name rather
+ * than as an unparseable failure.
+ *
+ * The ceilings are generous on purpose — several times the measured time on the founder's Mac — so
+ * that a slow machine is never called a hang. `docs/BACKLOG.md` T-1 is the underlying flake; this is
+ * the guard that stops it costing a quarter of an hour in silence, not the fix for it.
+ */
+const DEFAULT_TIMEOUT_MS = 20 * 60_000;
+
+function run(cmd, cwd = repoRoot, env = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
   const r = spawnSync("bash", ["-c", cmd], {
     cwd,
     env: { ...process.env, ...env, PATH, FORCE_COLOR: "0", NO_COLOR: "1" },
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
+    timeout: timeoutMs,
+    killSignal: "SIGKILL",
   });
-  return { status: r.status ?? 1, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
+  const out = `${r.stdout ?? ""}${r.stderr ?? ""}`;
+  // spawnSync reports a timeout by setting `error.code` to ETIMEDOUT and leaving `status` null.
+  if (r.error && r.error.code === "ETIMEDOUT") {
+    return { status: 124, timedOut: true, out: `${out}\n[status] TIMED OUT after ${Math.round(timeoutMs / 1000)}s and was killed.` };
+  }
+  return { status: r.status ?? 1, timedOut: false, out };
 }
 
 /* ── parsers: each reads the runner's own summary line ─────────────────────────────── */
@@ -207,6 +227,9 @@ const SUITES = [
     gate: () => (deployments().sepolia.length ? null : "skips by name until `docs/DEPLOYMENTS.md` carries Sepolia addresses"),
   },
   {
+    // Measured at ~31 s on the founder's Mac; five minutes is ten times that and still catches the
+    // 1,069 s hang of 2026-09-16 inside the first minute of it going wrong (backlog T-1).
+    timeoutMs: 5 * 60_000,
     area: "Prototypes",
     display: "node prototype/test/run-all.mjs",
     cmd: "node prototype/test/run-all.mjs",
@@ -312,8 +335,10 @@ for (const s of SUITES) {
   process.stderr.write(`status: ${s.area} — running…\n`);
   s.before?.();
   const t0 = Date.now();
-  const { status, out } = run(s.cmd, s.cwd ?? repoRoot);
-  const parsed = s.parse(out);
+  const { status, out, timedOut } = run(s.cmd, s.cwd ?? repoRoot, {}, s.timeoutMs);
+  // A timeout has no summary line to parse, and calling it "output not parsed" would send the next
+  // reader to fix a parser that is working. Say what happened.
+  const parsed = timedOut ? { text: `**TIMED OUT** and was killed \u2014 re-run \`${s.display ?? s.cmd}\` alone` } : s.parse(out);
   const secs = Math.round((Date.now() - t0) / 1000);
   results.push({ ...s, status, parsed, out });
   process.stderr.write(
