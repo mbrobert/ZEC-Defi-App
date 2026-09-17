@@ -84,6 +84,10 @@ contract Handler is Test {
     /// Registry venue switches (cbBTC: Aave ↔ Morpho) performed, so the exit probes above are
     /// proved against a moved pointer and not only against the venue every position sits on.
     uint256 public g_switches;
+    /// (d) above: WETH's own pointer moves, counted apart from cbBTC's so a run can show it happened.
+    uint256 public g_switchesWeth;
+    /// (h) above: how many closeMany calls met a refusing position manager.
+    uint256 public g_closeManyRefusedProbes;
     /// Two-book repay (2026-09-10). After the owner's `unwind(repay max)` with enough USDC to cover
     /// every book, a venue the registry names for cbBTC — the current pointer or a `previousVenues`
     /// entry — still owed USDC, or the call reverted without a name (empty data, `Panic`, a bare
@@ -867,6 +871,180 @@ contract Handler is Test {
             if (!ok) return false;
         }
         return true;
+    }
+
+    // ───────────────────────────────────────────────────────────────────────────────────────────
+    // The eight gaps W3-MED-3 named and did not fill (2026-09-16, docs/BACKLOG.md §6)
+    //
+    // Wave 3 listed, by letter, what the Handler could not reach, and said none of them changed a
+    // property the suite asserts — they widen the fuzz's REACH, not its claims. That is still true:
+    // nothing below adds an invariant. What it buys is an answer to the question an auditor asks
+    // first, which is not "how many runs" but "what did they actually explore".
+    //
+    // Every one of these is a real power somebody holds — the registry owner's, the engine
+    // operator's, the pool's, the owner's — so a state only reachable through them is a state the
+    // product can be in.
+    // ───────────────────────────────────────────────────────────────────────────────────────────
+
+    /// (a) A pool whose gauge is dead at OPEN time — the unstaked branch of `open`, which no action
+    /// could reach because the fixture's pool is gauged from construction and nothing turned it off.
+    /// A gauge can be killed by Aerodrome's voter at any moment, including between a user's quote
+    /// and their signature, so the branch is not hypothetical. Flipping it back is the same power.
+    function deadGauge(bool dead) external {
+        g_calls++;
+        engine.setPoolGauged(poolId, !dead);
+    }
+
+    /// (a, second half) The enumeration window's own-position residual (W3-MED-2): a single-sided
+    /// deposit that leaves dust behind. Bounded to a tenth of a percent so it is a residual and not
+    /// a haircut the fee properties would have to reason about.
+    function singleSidedResidual(uint256 bps) external {
+        g_calls++;
+        engine.setSingleSidedResidualBps(bound(bps, 0, 10));
+    }
+
+    /// (b) `increase` on the ENGINE venue. The engine has no in-place increase, so this mints a new
+    /// id beside the old one — which is the interesting part: it is the one call that grows an
+    /// account's id set without going through `open`, and every property that iterates ids has to
+    /// survive it.
+    function increaseLp(uint256 seed, uint256 amount) external {
+        g_calls++;
+        uint256[] memory ids = _ids();
+        if (ids.length == 0) return;
+        uint256 idle = usdc.balanceOf(address(acct));
+        if (idle < 1e6) return;
+        amount = bound(amount, 1e6, idle);
+        _exec(
+            address(lpVenue),
+            abi.encodeCall(ILpVenue.increase, (ids[seed % ids.length], 0, amount, _band(), block.timestamp + 1))
+        );
+    }
+
+    /// (b, second venue) `increase` on the DIRECT venue, which mints through the NPM and stakes in
+    /// the gauge. The same gap, and it has to be filled on both or the answer is half an answer.
+    function increaseDirectLp(uint256 seed, uint256 amount) external {
+        g_calls++;
+        uint256[] memory ids = _directIds();
+        if (ids.length == 0) return;
+        uint256 idle = usdc.balanceOf(address(acct));
+        if (idle < 10e6) return;
+        amount = bound(amount, 10e6, idle);
+        _exec(
+            address(directVenue),
+            abi.encodeCall(ILpVenue.increase, (ids[seed % ids.length], amount, 0, _bandDirect(), block.timestamp + 1))
+        );
+    }
+
+    /// (c) A FIXED `withdrawAmount`, as the owner, through the router.
+    ///
+    /// Every withdraw the Handler drove before this was `max` — `_routerExit` and `_singleClose`
+    /// both pass type(uint256).max — so the two refusals that only a fixed amount can produce were
+    /// unreachable under fuzz: `CollateralShort` (asking for more than the venue holds) and
+    /// `ExitHfTooLow` (asking for an amount that would leave the account below the floor). Those are
+    /// the gates that stand between a user and an accidental liquidation, and a gate no sequence can
+    /// reach is a gate no invariant has an opinion about.
+    ///
+    /// It is deliberately NOT a probe: no snapshot, no ghost, no assertion that it succeeds. A
+    /// refusal here is the correct outcome most of the time. What matters is that the state AFTER
+    /// it — whether it withdrew, or refused and changed nothing — still satisfies every property.
+    function ownerWithdrawAmount(uint256 amount) external {
+        g_calls++;
+        // Spanning the whole collateral and beyond: the low end is a dust withdraw that should just
+        // work, the high end is past anything the account holds, so `CollateralShort` is reachable,
+        // and the middle is where `ExitHfTooLow` lives.
+        amount = bound(amount, 1, 4e8);
+        StrategyRouter.UnwindParams memory u = StrategyRouter.UnwindParams({
+            collateralAsset: address(cbbtc),
+            positionIds: new uint256[](0),
+            band: _band(),
+            swap: StrategyRouter.SwapQuote({quotedIn: 0, quotedOut: 0, maxSlippageBps: 0, routeData: ""}),
+            repayAmount: 0,
+            withdrawAmount: amount,
+            deadline: block.timestamp + 1
+        });
+        _exec(address(router), abi.encodeCall(StrategyRouter.unwind, (u)));
+    }
+
+    /// (d) A venue switch for WETH. `switchVenue` moves cbBTC only, so a WETH book has never seen
+    /// the pointer move under it — and `previousVenues` is per-asset, so cbBTC's coverage says
+    /// nothing about WETH's. The registry owner holds this power over every registered asset, not
+    /// over one of them.
+    function switchVenueWeth(bool toMorpho) external {
+        g_calls++;
+        address target = toMorpho ? address(morphoVenue) : address(aaveVenue);
+        if (registry.venueOf(address(weth)) == target) return;
+        address feed = registry.config(address(weth)).priceFeed;
+        vm.prank(registryOwner);
+        registry.proposeVenue(address(weth), target, feed);
+        vm.warp(block.timestamp + registry.TIMELOCK_DELAY());
+        vm.prank(registryOwner);
+        registry.acceptVenue(address(weth));
+        g_switchesWeth++;
+    }
+
+    /// (e) A SINGLE-grant revoke. `revokeAll` clears the whole table in one sweep; `revoke` walks to
+    /// one entry and removes it, and the two are different code. With one grant outstanding the
+    /// observable end state is the same, which is exactly why the path was never exercised — and why
+    /// a bug in it would have been invisible.
+    function revokeOne() external {
+        g_calls++;
+        vm.prank(alice);
+        acct.revoke(keeper, address(router), StrategyRouter.unwind.selector);
+    }
+
+    /// (f) The pool adapter's two failure modes, which existed in the mock and were driven only by
+    /// unit tests: a PARTIAL fill (the pool gives less than asked) and a pool PAYING SHORT (it
+    /// settles the callback for less than it owes). Both are what a real pool does when its
+    /// liquidity is thinner than the quote assumed, and both must leave the adapter holding nothing
+    /// and the account whole — which is what `peripheralsAcquireNothing` asserts and could not,
+    /// before this, ever have been asserted about a pool behaving badly.
+    ///
+    /// Both bounds reach 0, so the fuzzer can and does restore the honest pool; a mode that could
+    /// only be turned on would silently end the run's useful life at the first call.
+    function poolMisbehaves(uint256 shortBps, uint256 fillBps) external {
+        g_calls++;
+        // A tenth of a percent is a rounding difference; five percent is a pool in trouble. Beyond
+        // that the direct paths simply revert everywhere and the sequence stops exploring.
+        poolDirect.setShortPayBps(bound(shortBps, 0, 500));
+        // 10_000 is a full fill. Below ~5_000 nothing completes, so the useful band is the top half.
+        poolDirect.setFillBps(bound(fillBps, 5_000, 10_000));
+    }
+
+    /// (g) The engine's pause. An operator we do not control can stop the engine at any moment, and
+    /// the property that matters then is the first one in the file: the owner can ALWAYS exit
+    /// through raw `exec`. That probe has never once run against a paused engine.
+    function pauseEngine(bool paused) external {
+        g_calls++;
+        engine.setPaused(paused);
+    }
+
+    /// (h) A `closeMany` on the direct venue that unstakes but cannot withdraw — the "left
+    /// unstaked" branch, where the position leaves the gauge and then the NPM refuses, so the id
+    /// ends up in `failed` and the account holds a staked-nowhere position. The gauge's refusal is
+    /// the mock's `setRefuse`; the close that follows is the call that walks into it.
+    ///
+    /// The refusal is cleared by the same action on the next draw, so the run recovers.
+    function closeManyDirectRefused(bool refuse) external {
+        g_calls++;
+        uint256[] memory ids = _directIds();
+        // The refusal has to be on the POSITION MANAGER, not the gauge. The gauge's own `refuse`
+        // blocks unstaking, which produces a different (and already reachable) state: the id never
+        // leaves the gauge. Only a manager that will not decrease liquidity reaches the branch the
+        // audit named — unstaked, then refused, id in `failed`, position out of the gauge.
+        //
+        // ARMED ONLY FOR THE CALL. The 1,500-run deep sweep of 2026-09-16 found that leaving it
+        // armed breaks `invariant_singleCloseClearsEveryBook` — a persistent withdraw refusal makes
+        // the product's one-click Close revert WHOLESALE, taking the repayment of both books down
+        // with it, rather than degrading to `failed`. That is a finding about `unwind`'s error
+        // handling and it is written up in `docs/AUDIT-2026-09-16.md`, not something this action
+        // should assert by leaving the world broken: its job is to reach the branch, and a probe
+        // that runs afterwards is entitled to an operable world. Disarmed in the same call.
+        npm.setRefuseDecrease(refuse);
+        if (ids.length != 0) {
+            _exec(address(directVenue), abi.encodeCall(ILpVenue.closeMany, (ids, _bandDirect())));
+            g_closeManyRefusedProbes++;
+        }
+        npm.setRefuseDecrease(false);
     }
 
     function _grant() internal {

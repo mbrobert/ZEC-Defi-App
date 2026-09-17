@@ -20,6 +20,13 @@ import {MockCLPool} from "./MockCLPool.sol";
 ///         real `LiquidityAmounts` math at the pool's live sqrt price, so a position's value
 ///         moves with the price like the real one. Bound to ONE `MockCLPool`, which holds the tokens.
 contract MockSlipstreamNpm is ERC721Enumerable {
+    /// @dev Reverts `decreaseLiquidity` so the venue's best-effort withdraw can be driven (section 6 (h)).
+    bool public refuseDecrease;
+
+    function setRefuseDecrease(bool r) external {
+        refuseDecrease = r;
+    }
+
     using SafeERC20 for IERC20;
 
     MockCLPool public immutable POOL;
@@ -140,6 +147,11 @@ contract MockSlipstreamNpm is ERC721Enumerable {
     {
         _requireAuthorized(params.tokenId);
         if (block.timestamp > params.deadline) revert DeadlinePassed();
+        // A position manager that will not let go. Added 2026-09-16 for backlog section 6 (h): the
+        // gauge's own `refuse` blocks unstaking, so it can never produce the state the audit named
+        // -- a closeMany that DID unstake and then could not withdraw, leaving the id in `failed`
+        // and the position out of the gauge. Only a refusal on this side reaches that branch.
+        require(!refuseDecrease, "npm refused");
         require(params.liquidity > 0);
         Position storage p = _positions[params.tokenId];
         require(p.liquidity >= params.liquidity);

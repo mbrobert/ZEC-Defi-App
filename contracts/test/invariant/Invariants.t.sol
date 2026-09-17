@@ -44,7 +44,7 @@ contract InvariantsTest is Fixture {
         handler.grantKeeper();
 
         targetContract(address(handler));
-        bytes4[] memory sel = new bytes4[](25);
+        bytes4[] memory sel = new bytes4[](35);
         sel[0] = Handler.supplyAndBorrow.selector;
         sel[1] = Handler.openLp.selector;
         sel[2] = Handler.accrueYield.selector;
@@ -71,6 +71,19 @@ contract InvariantsTest is Fixture {
         sel[22] = Handler.accrueDirectReward.selector;
         sel[23] = Handler.ownerCloseDirect.selector;
         sel[24] = Handler.keeperUnwindDirect.selector;
+        // 2026-09-16 (docs/BACKLOG.md §6): the eight reaches W3-MED-3 named and left open. None of
+        // them adds a property — they widen what the sequences below can put the existing ones
+        // through, which is what an auditor asks about before they ask how many runs.
+        sel[25] = Handler.deadGauge.selector; // (a) a pool ungauged at open time
+        sel[26] = Handler.singleSidedResidual.selector; // (a) the enumeration window's residual
+        sel[27] = Handler.increaseLp.selector; // (b) increase, engine venue
+        sel[28] = Handler.increaseDirectLp.selector; // (b) increase, direct venue
+        sel[29] = Handler.ownerWithdrawAmount.selector; // (c) a fixed withdraw: CollateralShort, ExitHfTooLow
+        sel[30] = Handler.switchVenueWeth.selector; // (d) the pointer moves under a WETH book too
+        sel[31] = Handler.revokeOne.selector; // (e) the single-grant revoke path, not revokeAll
+        sel[32] = Handler.poolMisbehaves.selector; // (f) a partial fill and a pool paying short
+        sel[33] = Handler.pauseEngine.selector; // (g) the engine stops; the raw exit must not
+        sel[34] = Handler.closeManyDirectRefused.selector; // (h) unstaked, then the NPM refuses
         targetSelector(FuzzSelector({addr: address(handler), selectors: sel}));
     }
 
@@ -306,5 +319,180 @@ contract InvariantsTest is Fixture {
         assertFalse(handler.g_exitProbeFailed(), "the raw exit clears the direct position at the gauge and the NPM");
         handler.routerExitProbe();
         assertFalse(handler.g_routerExitProbeFailed(), "the router exit clears the direct position too");
+    }
+
+    /// The counterexample the 1,500-run sweep of 2026-09-16 found, replayed deterministically.
+    ///
+    /// The new reach for section 6 (h) — a position manager that refuses `decreaseLiquidity` —
+    /// broke `invariant_singleCloseClearsEveryBook` when the refusal was left ARMED across calls.
+    /// This is the fuzzer's own sequence, in its own order, with the refusal armed directly rather
+    /// than through the handler action (which now disarms itself in the same call, so the state can
+    /// no longer persist into a probe).
+    ///
+    /// What it establishes, and the reason it is written as an observation rather than a fix: the
+    /// single Close reverts only when a two-book account ALSO holds a position that cannot be
+    /// withdrawn. On a one-book account the same refusal does not stop it. The probe funds the
+    /// account to cover every book, so the revert is not about money — it is `unwind` having no
+    /// tolerance for one stuck id where `closeMany` has a `failed` array for exactly that.
+    ///
+    /// Not "safety" under `docs/ROADMAP.md` rule 3: nothing is lost or locked, and the raw `exec`
+    /// exit — invariant 1 — is asserted below to still work in the same state.
+    function test_obs_singleCloseUnderARefusingPositionManager() public {
+        handler.switchVenue(true); // the registry points cbBTC at Morpho
+        handler.supplyAndBorrowOnCurrentVenue(1e8, 4000); // a Morpho book
+        handler.openLp(type(uint256).max);
+        handler.switchVenue(false); // and back to Aave, leaving two books
+        handler.supplyAndBorrow(1e8, 4000); // the Aave book
+        handler.openDirectLp(type(uint256).max);
+        assertGt(directVenue.positionsOf(address(acct)).length, 0, "a direct position to get stuck");
+        assertGt(morphoVenue.debt(address(acct), address(usdc)), 0, "the Morpho book is open");
+        assertGt(aaveVenue.debt(address(acct), address(usdc)), 0, "and the Aave book");
+
+        // Armed and LEFT armed, which is what the handler action no longer does.
+        npmCbzec.setRefuseDecrease(true);
+        handler.singleCloseProbe();
+        assertTrue(
+            handler.g_singleCloseUnexpected(),
+            "OBSERVED 2026-09-16: a two-book Close reverts wholesale when one position cannot be withdrawn"
+        );
+
+        // The always-works path is unaffected, which is why this is availability and not funds.
+        handler.rawExitProbe();
+        assertFalse(handler.g_exitProbeFailed(), "the owner's raw exit still clears both books with the manager refusing");
+
+        // And it is about tolerance during the refusal, not a permanently broken path.
+        npmCbzec.setRefuseDecrease(false);
+    }
+
+    /// 2026-09-16 (`docs/BACKLOG.md` §6): the eight reaches W3-MED-3 named, each driven once and
+    /// each PROVED to have taken the branch it was added for.
+    ///
+    /// This is the point of the whole exercise. An action that is registered but no-ops widens
+    /// nothing, and the difference is invisible from a run count — which is why wave 3's own answer
+    /// to "what does the fuzz explore" was a list of what it did not. Every assertion below is on
+    /// the branch, not on the call returning.
+    function test_theEightNamedGapsAreReached() public {
+        // ── (a) a pool whose gauge is DEAD, and the fallback nothing could reach ────────────
+        //
+        // `SnuggleLpVenue._claimOne` tries `claimStakingRewards` and, if that reverts, falls through
+        // to `harvest`; if both refuse it emits ClaimSkipped and moves on. An un-gauged entry makes
+        // the first leg revert `NoRewardAdapter()`, so the HARVEST fallback is the branch a dead
+        // gauge selects — and nothing could ungauge the fixture's pool, so that try/catch had never
+        // once been taken under fuzz. Aerodrome's voter can kill a gauge at any moment, including
+        // between a user's quote and their signature.
+        handler.supplyAndBorrow(1e8, 4000);
+        handler.openLp(type(uint256).max);
+        // USDC-only yield, deliberately: `accrueYield`'s AERO leg stakes the id, and a staked id
+        // would take the FIRST leg and prove nothing about the fallback.
+        handler.accrueYield(0, 1_000e6, 0, 0);
+        handler.deadGauge(true);
+        uint256 acctUsdcBefore = usdc.balanceOf(address(acct));
+        handler.ownerClaim();
+        assertGt(
+            usdc.balanceOf(address(acct)),
+            acctUsdcBefore,
+            "(a) with the gauge dead, claimStakingRewards reverts and the harvest fallback must still pay the owner"
+        );
+        handler.deadGauge(false); // the voter can bring it back, and the run has to keep exploring
+
+        // ── (a, second half) the enumeration window's own-position residual ───────────────────
+        handler.singleSidedResidual(10);
+        assertEq(engine.singleSidedResidualBps(), 10, "(a) the residual is armed");
+        handler.singleSidedResidual(0);
+
+        // ── (b) increase, on BOTH venues — the one call that grows an id set without `open` ────
+        uint256 before = lpVenue.positionsOf(address(acct)).length;
+        handler.increaseLp(0, type(uint256).max);
+        assertEq(lpVenue.positionsOf(address(acct)).length, before + 1, "(b) increase mints a new id beside the old one");
+
+        handler.supplyAndBorrow(1e8, 4000); // idle USDC: the claim and the increase above spent it
+        handler.openDirectLp(type(uint256).max);
+        uint256 beforeDirect = directVenue.positionsOf(address(acct)).length;
+        assertGt(beforeDirect, 0, "a direct position to increase");
+        handler.supplyAndBorrow(1e8, 4000); // and more idle USDC for the increase itself
+        handler.increaseDirectLp(0, type(uint256).max);
+        assertEq(directVenue.positionsOf(address(acct)).length, beforeDirect + 1, "(b) and on the direct venue too");
+
+        // ── (c) a FIXED withdraw amount: both refusals, and a success ─────────────────────────
+        // Asking for more collateral than the venue holds. The gate refuses and NOTHING moves —
+        // which is the whole assertion: before this action no fuzz sequence could ask.
+        uint256 heldBefore = aaveVenue.collateral(address(acct), address(cbbtc));
+        assertGt(heldBefore, 0, "collateral to ask for");
+        handler.ownerWithdrawAmount(4e8);
+        assertEq(aaveVenue.collateral(address(acct), address(cbbtc)), heldBefore, "(c) CollateralShort: refused, nothing moved");
+        // A dust withdraw against a healthy account goes through.
+        handler.ownerWithdrawAmount(1);
+        assertLt(aaveVenue.collateral(address(acct), address(cbbtc)), heldBefore, "(c) a withdraw the floor allows still works");
+
+        // ── (d) the pointer moves under a WETH book ───────────────────────────────────────────
+        assertEq(registry.venueOf(address(weth)), address(aaveVenue));
+        handler.switchVenueWeth(true);
+        assertEq(handler.g_switchesWeth(), 1, "(d) WETH's own pointer moved, not cbBTC's");
+        assertEq(registry.venueOf(address(weth)), address(morphoVenue));
+        handler.switchVenueWeth(false);
+        assertEq(registry.venueOf(address(weth)), address(aaveVenue));
+        assertEq(handler.g_switchesWeth(), 2);
+
+        // ── (e) the single-grant revoke, which is different code from revokeAll ───────────────
+        handler.regrant();
+        (bool activeBefore,,,,,,) = acct.grantOf(keeper, address(router), StrategyRouter.unwind.selector);
+        assertTrue(activeBefore, "the grant is live before the revoke");
+        uint256 unwindsBefore = handler.g_keeperUnwinds();
+        handler.revokeOne();
+        // `revoke` kills the grant by zeroing its expiry, which is what every authorisation check
+        // reads. Asserted on `grantOf(...).active` rather than on an unwind succeeding first:
+        // whether a given unwind goes through depends on the account's state at that moment, and
+        // this is a claim about `revoke`, not about the router.
+        (bool activeAfter,,,,,,) = acct.grantOf(keeper, address(router), StrategyRouter.unwind.selector);
+        assertFalse(activeAfter, "(e) revoke() alone kills the grant, the same as revokeAll would");
+        handler.keeperUnwind(1_000e6);
+        assertEq(handler.g_keeperUnwinds(), unwindsBefore, "(e) and the keeper is refused afterwards");
+        assertFalse(handler.g_keeperUngrantedSucceeded());
+        // Found by this action, on its first run (2026-09-16): `tokenBudgetOf` is the ONE grant view
+        // that does not consult expiry, so it keeps reporting a revoked keeper's budget while
+        // `grantOf` correctly says `active: false`. Not a hole — the authorisation path reads the
+        // expiry this just checked, and the keeper is refused above — and not user-visible, because
+        // `web/components/KeeperPanel.tsx` gates the budget rows on `active`. An integrator reading
+        // `tokenBudgetOf` alone would over-report. Recorded as backlog G-1; pinned here so the
+        // behaviour cannot change without someone reading that entry.
+        (uint256 staleBudget,) = acct.tokenBudgetOf(keeper, address(router), StrategyRouter.unwind.selector, address(usdc));
+        assertGt(staleBudget, 0, "backlog G-1: tokenBudgetOf still reports a revoked grant's budget");
+
+        // ── (f) the pool paying short and filling partially ───────────────────────────────────
+        handler.regrant();
+        handler.supplyAndBorrow(1e8, 4000);
+        handler.poolMisbehaves(500, 5_000);
+        assertEq(poolCbzecUsdc.shortPayBps(), 500, "(f) the pool is settling the callback short");
+        assertEq(poolCbzecUsdc.fillBps(), 5_000, "(f) and filling half of what is asked");
+        handler.openDirectLp(type(uint256).max);
+        // Whatever the pool did, the adapter is a conduit and ends holding nothing — the property
+        // that could never before have been asserted about a pool behaving badly.
+        assertEq(usdc.balanceOf(address(poolSwapAdapter)), 0, "(f) the adapter keeps nothing from a short-paying pool");
+        assertEq(cbzec.balanceOf(address(poolSwapAdapter)), 0, "(f) nor of the other leg");
+        handler.poolMisbehaves(0, 10_000);
+
+        // ── (g) the engine stops, and the owner's raw exit does not ───────────────────────────
+        handler.openLp(type(uint256).max);
+        handler.pauseEngine(true);
+        assertTrue(engine.paused(), "(g) the engine is stopped");
+        handler.rawExitProbe();
+        assertFalse(handler.g_exitProbeFailed(), "(g) the raw exit must work with the engine PAUSED - invariant 1, in the state it was written for");
+        handler.pauseEngine(false);
+
+        // ── (h) closeMany unstakes and then cannot withdraw ───────────────────────────────────
+        handler.openDirectLp(type(uint256).max);
+        uint256[] memory directIds = directVenue.positionsOf(address(acct));
+        assertGt(directIds.length, 0, "a direct position to close");
+        uint256 victim = directIds[0];
+        assertTrue(gaugeCbzec.stakedContains(address(acct), victim), "staked before the refusal");
+        // The refusal is on the position manager, not the gauge: a gauge that refuses never lets the
+        // id out, which is a different state. This one unstakes and THEN cannot withdraw.
+        handler.closeManyDirectRefused(true);
+        // The id left the gauge and the withdraw was refused, so the account still owns it and it is
+        // no longer staked — the "left unstaked" branch, and the state a user could be stranded in.
+        assertFalse(gaugeCbzec.stakedContains(address(acct), victim), "(h) it was unstaked before the refusal bit");
+        handler.closeManyDirectRefused(false);
+        handler.rawExitProbe();
+        assertFalse(handler.g_exitProbeFailed(), "(h) and the owner still gets out once the refusal lifts");
     }
 }

@@ -4,9 +4,9 @@
      below came from running the command in its own row, on the tree named here. README.md
      carries the prose and no numbers; this file carries the numbers and no prose. -->
 
-_Generated 2026-09-16T22:43:17Z by `npm run status` on darwin-arm64, Node 22.23.2._
+_Generated 2026-09-17T00:16:49Z by `npm run status` on darwin-arm64, Node 22.23.2._
 
-**Tree:** the working tree at `76a52cb` on `main`, with **11 file(s) modified on top of it** — including this one, when it is regenerated just before a commit. Each suite ran against that tree, not against a published commit.
+**Tree:** the working tree at `3eb6937` on `main`, with **6 file(s) modified on top of it** — including this one, when it is regenerated just before a commit. Each suite ran against that tree, not against a published commit.
 
 Abbreviations: ABI = application binary interface; e2e = end-to-end; HF = health factor;
 LP = liquidity provision; RPC = remote procedure call; CCTP = Circle's Cross-Chain Transfer Protocol.
@@ -15,7 +15,7 @@ LP = liquidity provision; RPC = remote procedure call; CCTP = Circle's Cross-Cha
 
 | Area | Command | Result |
 |---|---|---|
-| Contracts (Foundry) | `cd contracts && forge test` | **433 passed / 0 failed / 13 skipped** (446 total), 39 suites |
+| Contracts (Foundry) | `cd contracts && forge test` | **435 passed / 0 failed / 13 skipped** (448 total), 39 suites |
 | Contracts, fork | `FORK_URL=<Base archive RPC> forge test --match-path test/fork/BaseFork.t.sol` | not run — add `--all` |
 | Root ABI seam | `node scripts/verify-abi.mjs` | **444** selectors / topics / errors across 19 contracts |
 | Shared | `npm test -w @zyo/shared` | **132** |
@@ -68,6 +68,7 @@ with the severities the document itself records; the inquiries to external firms
 | [`AUDIT-2026-09-11.md`](AUDIT-2026-09-11.md) | Internal adversarial audit — wave 3 (2026-09-11) | 3 Medium · 7 Low · 10 Info |
 | [`AUDIT-2026-09-12.md`](AUDIT-2026-09-12.md) | Finding from the nightly invariant configuration — NI-HIGH-1 (2026-09-12) | 1 High |
 | [`AUDIT-2026-09-13.md`](AUDIT-2026-09-13.md) | Internal audit — the Solana module and the cross-chain code, 2026-09-13 | 5 Medium · 1 Low |
+| [`AUDIT-2026-09-16.md`](AUDIT-2026-09-16.md) | Internal audit — what widening the invariant fuzz found (2026-09-16) | stated per finding in the document |
 | [`AUDIT-FINDINGS-2026-09-03.md`](AUDIT-FINDINGS-2026-09-03.md) | Project Oilskin — pre-audit findings, waves 1 and 2 (2026-09-03) | stated per finding in the document |
 
 Fix commits, the failing scenario and the regression test path are inside each record;
@@ -75,7 +76,7 @@ the regression tests themselves are `contracts/test/audit-regressions/`.
 
 ## Every document in docs/
 
-All 57 documents beside this one, from an `ls` of `docs/` at generation time, each with its own first heading, plus the subdirectory `docs/research/`.
+All 58 documents beside this one, from an `ls` of `docs/` at generation time, each with its own first heading, plus the subdirectory `docs/research/`.
 
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — Architecture — Base module v1 (the Solana module is designed in `SOLANA-ARCHITECTURE.md`)
 - [`AUDIT-2026-09-06.md`](AUDIT-2026-09-06.md) — Internal adversarial audit — wave 1, and the fix round it produced (2026-09-06)
@@ -83,6 +84,7 @@ All 57 documents beside this one, from an `ls` of `docs/` at generation time, ea
 - [`AUDIT-2026-09-11.md`](AUDIT-2026-09-11.md) — Internal adversarial audit — wave 3 (2026-09-11)
 - [`AUDIT-2026-09-12.md`](AUDIT-2026-09-12.md) — Finding from the nightly invariant configuration — NI-HIGH-1 (2026-09-12)
 - [`AUDIT-2026-09-13.md`](AUDIT-2026-09-13.md) — Internal audit — the Solana module and the cross-chain code, 2026-09-13
+- [`AUDIT-2026-09-16.md`](AUDIT-2026-09-16.md) — Internal audit — what widening the invariant fuzz found (2026-09-16)
 - [`AUDIT-FINDINGS-2026-09-03.md`](AUDIT-FINDINGS-2026-09-03.md) — Project Oilskin — pre-audit findings, waves 1 and 2 (2026-09-03)
 - [`AUDIT-INQUIRY-2026-09-13.md`](AUDIT-INQUIRY-2026-09-13.md) — Audit inquiry — ready to send (draft, 2026-09-13)
 - [`AUDIT-LEDGER-2026-08.md`](AUDIT-LEDGER-2026-08.md) — Internal security review — v0.5 (2026-08-06)

@@ -51,17 +51,16 @@ Add to it from a pass; remove from it when the thing is done, naming the commit.
 | **D-1** | `ChainlinkOracleAdapter.maxAge` — an **immutable constructor parameter with no chosen value** | Founder's call, 2026-09-13: **leave it until later.** Nothing is blocked: cbZEC is registered-disabled (D3), the adapter is deployed by no script, and `VERIFIED-BASE-FACTS.md` Addendum 17 records the three honest ways to choose it. **The contract cannot ship without it** |
 | **D-2** | `docs/handoff/2026-09-12-cowork/` — an untracked inbound bundle in the working tree | The founder's to keep or remove; deletions are his (CLAUDE.md rule 7). It is the only thing standing between `git status` and clean |
 
-## 6 · Test coverage the fuzzer cannot reach (`AUDIT-2026-09-11.md`)
+## 6 · New observations, from the coverage pass of 2026-09-16 (`AUDIT-2026-09-16.md`)
 
-Eight handler actions, each 10–30 lines, that the invariant Handler cannot currently reach: a dead gauge at
-open time and the enumeration window's own-position residual; `increase` on either venue; a fixed
-`withdrawAmount` and the per-venue exit gate under fuzz (`CollateralShort`, `ExitHfTooLow` on a second venue);
-a venue switch for WETH; a single-grant `revoke`; the pool adapter's partial-fill and paying-short modes; the
-engine's pause; and a `closeMany` on the direct venue that unstakes but cannot withdraw.
+The eight reaches this section used to list are **done** — see the Done table below. Widening the
+fuzz to them surfaced two things, neither of which is a safety defect and both of which are pinned by
+a test so they cannot change silently.
 
-**Why it waits:** none of them changes a property the suite asserts today — they widen the *reach* of the
-fuzz, not its claims. **Worth doing before the freeze**, because an auditor will ask what the invariants
-actually explore, and "eight named gaps" is a better answer than a number of runs.
+| # | What | Why it waits |
+|---|---|---|
+| **G-1** | `tokenBudgetOf` is the one grant view that does not consult expiry, so after `revoke` it still reports the full budget while `grantOf` correctly says `active: false` (`contracts/src/account/OilskinAccount.sol`) | The authorisation path reads the expiry `revoke` zeroes and the keeper IS refused, so nothing can exceed a grant. Not user-visible either: `web/lib/reads.ts` carries `grantOf`'s `active` and `KeeperPanel` gates the budget rows on it. An integrator reading `tokenBudgetOf` alone would over-report — erring towards alarming a reader rather than towards trusting a dead keeper. It is a one-line change to an audited contract, for a reporting gap with no user-visible effect, on a tree heading for a freeze. **Name it in the audit RFP** |
+| **C-1** | The one-click Close (`StrategyRouter.unwind`) reverts WHOLESALE when a two-book account holds one position that cannot be withdrawn, instead of degrading the way `closeMany`'s `failed` array does (`contracts/src/router/StrategyRouter.sol`) | Giving `unwind` partial-failure tolerance is a change to money movement across a trust boundary, and a product decision about what a half-finished Close should leave behind — not a thing to decide inside a coverage pass. No funds are lost or locked: the owner's raw `exec` exit works in the same state, asserted in the same test. The refusal is not only a mock switch — a real `decreaseLiquidity` reverts on its own slippage check against a moved price. **Founder's and the auditors' call**; the scenario is `test_obs_singleCloseUnderARefusingPositionManager` |
 
 ## 7 · `npm run status` and the prototype suite (observed 2026-09-16)
 
@@ -82,6 +81,7 @@ docs/BACKLOG.md` finds it, and `git log -S` on the regression test's name finds 
 |---|---|---|---|
 | **O-5** | A mismatched Circle message failed the rung correctly but was then resumed and the identical error re-logged every tick until the attempt cap | **2026-09-16.** `SolanaDispatchResult`'s `FAILED` arm gains `permanent?`, the same word the `REFUSED` arm already used; the dispatcher sets it on `mismatch`, and the monitor abandons a permanent failure on the first tick with one escalation instead of running it to `maxDispatchAttempts`. Circle is deterministic about a nonce — the message it returns for one is the message it keeps returning — so every retry was noise in front of the single line a person has to act on | `agent/test/solana-monitor.test.ts`, "a PERMANENT failure is ABANDONED on the first tick and never retried"; `agent/test/bridge-stages.test.ts`, the mismatch case now asserts `permanent`, and a companion case asserts the failures retrying *can* fix are **not** marked permanent, so the flag cannot widen into a way to abandon a rung during an outage |
 | **L-1** | The owner's raw `account.exec` bypasses the router and so bypasses D9's re-record of the entry HF. **Owed: a line of dashboard copy** | **2026-09-16.** The hatch stays open — intercepting it would mean blocking the owner from their own funds — so the disclosure is the mitigation, and it sits beside the rungs rather than in a document nobody opens. `HealthBand` renders it under the ladder line, and the Advanced prototype carries the same sentence | `web/e2e/demo-flow.spec.ts`, the dashboard case asserts `ladder-scope` says "through Oilskin" and "Oilskin does not see those borrows and repayments" |
+| **§6, all eight** | Eight handler actions the invariant Handler could not reach, named by letter in `AUDIT-2026-09-11.md` W3-MED-3: a dead gauge at open time and the enumeration residual; `increase` on either venue; a fixed `withdrawAmount` and the per-venue exit gate under fuzz; a venue switch for WETH; a single-grant `revoke`; the pool adapter's partial-fill and paying-short modes; the engine's pause; and a `closeMany` that unstakes but cannot withdraw | **2026-09-16.** Nine actions added (b splits across two venues) and registered; one new hook on a test double (`MockSlipstreamNpm.setRefuseDecrease`) because the gauge's own refusal reaches a different state. Deep sweep re-run at 1,500 × 120 = **180,000 calls, 2,150 reverts, 0 failures**. Two observations fell out — G-1 and C-1 above — which is what the reach was for | `contracts/test/invariant/Invariants.t.sol`, `test_theEightNamedGapsAreReached`: each gap proved by the EFFECT of its branch, not by the call returning, because an action that no-ops widens nothing and a run count cannot tell the difference |
 
 ## What is NOT in this file
 

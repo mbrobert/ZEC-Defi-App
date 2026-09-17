@@ -15,7 +15,7 @@ MC = Monte Carlo.
 
 | Area | Command | Counted result |
 |---|---|---|
-| Contracts (Foundry) | `cd contracts && forge test` | **433 passed / 0 failed / 13 skipped** (446 total), 39 suites |
+| Contracts (Foundry) | `cd contracts && forge test` | **435 passed / 0 failed / 13 skipped** (448 total), 39 suites |
 | Contracts, fork | `FORK_URL=<Base archive RPC> FORK_BLOCK=51222568 forge test --match-path test/fork/BaseFork.t.sol -vv`, then `scripts/check-cbzec-b20.sh <Base RPC> 51222568` | **13 / 13** |
 | Root ABI seam | `node scripts/verify-abi.mjs` | **444** selectors / topics / errors across 19 contracts |
 | Shared | `npm test -w @zyo/shared` | **132** |
@@ -68,6 +68,19 @@ the root cause (`ZeroQuote` on a 6,192-wei WETH leg) and the fix are in the
 2026-09-12 section at the end of this file and in `AUDIT-2026-09-12.md`. **With
 the fix (NI-HIGH-1), the same configuration passes: 10 of 10 invariants,
 180,000 calls each, 0 reverts, 113.6 s.**
+
+**Re-run 2026-09-16, after the coverage pass** that filled W3-MED-3's eight named
+gaps (`docs/BACKLOG.md` §6, now closed; `docs/AUDIT-2026-09-16.md`): the same
+`runs=1500 depth=120` configuration, **180,000 calls, 2,150 reverts, 0 failures,
+110.1 s**. The reverts are up from 0 because the new actions deliberately drive
+states that refuse — a dead gauge, a paused engine, a pool paying short, a
+position manager that will not decrease liquidity, a withdraw the floor blocks —
+and a refusal reached on purpose is coverage, not a fault. What the pass found is
+two observations, W4-OBS-1 and W4-OBS-2, both recorded and both pinned by a test.
+Left ARMED across calls, the refusing position manager breaks
+`invariant_singleCloseClearsEveryBook`; that is W4-OBS-1, and the action disarms
+itself so the finding is recorded rather than asserted by leaving the world
+broken.
 
 A note on the e2e count: the suite now warms every route in
 `e2e/global-setup.ts` before the first assertion. Without that, the first
