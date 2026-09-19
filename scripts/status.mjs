@@ -140,13 +140,24 @@ function mocha(out) {
   return { pass, fail, skipped: 0, text: `**${pass} passing / ${fail} failing**` };
 }
 
-/** The four prototype suites, each printing `<suite>: N passed, M failed (K checks)`. */
+/**
+ * The four prototype suites, each printing `<suite>: N passed, M failed (K checks, T s)` — or, since
+ * 2026-09-18, `<suite>: STALLED … last completed: "<check>"` from the harness's watchdog, or
+ * `<suite>: TIMED OUT …` from run-all's ceiling. A broken suite is reported by name with the last check
+ * that completed, which is the one fact the 1,069 s hang of 2026-09-16 never left behind (backlog T-1).
+ */
 function prototypes(out) {
-  const ms = [...out.matchAll(/^(verify-simple|verify-advanced|verify-toggle|fuzz): (\d+) passed, (\d+) failed/gm)];
-  if (ms.length !== 4) return null;
-  const pass = ms.reduce((a, m) => a + Number(m[2]), 0);
-  const fail = ms.reduce((a, m) => a + Number(m[3]), 0);
-  return { pass, fail, skipped: 0, text: ms.map((m) => `${m[1]} **${m[2]}**`).join(" · ") };
+  const NAMES = "verify-simple|verify-advanced|verify-toggle|fuzz";
+  const done = [...out.matchAll(new RegExp(`^(${NAMES}): (\\d+) passed, (\\d+) failed`, "gm"))];
+  const broke = [...out.matchAll(new RegExp(`^(${NAMES}): (STALLED|TIMED OUT)([^\\n]*)`, "gm"))];
+  if (done.length + broke.length !== 4) return null;
+  const pass = done.reduce((a, m) => a + Number(m[2]), 0);
+  const fail = done.reduce((a, m) => a + Number(m[3]), 0) + broke.length;
+  const cell = (m) => {
+    const last = m[3].match(/last completed: "([^"]*)"/)?.[1];
+    return `${m[1]} **${m[2]}**${last ? ` after "${last.replace(/\|/g, "\\|")}"` : ""}`;
+  };
+  return { pass, fail, skipped: 0, text: [...done.map((m) => `${m[1]} **${m[2]}**`), ...broke.map(cell)].join(" · ") };
 }
 
 /* ── the suites ────────────────────────────────────────────────────────────────────── */
@@ -227,8 +238,10 @@ const SUITES = [
     gate: () => (deployments().sepolia.length ? null : "skips by name until `docs/DEPLOYMENTS.md` carries Sepolia addresses"),
   },
   {
-    // Measured at ~31 s on the founder's Mac; five minutes is ten times that and still catches the
-    // 1,069 s hang of 2026-09-16 inside the first minute of it going wrong (backlog T-1).
+    // Measured at ~29 s on the founder's Mac; five minutes is ten times that and still catches the
+    // 1,069 s hang of 2026-09-16 inside the first minute of it going wrong (backlog T-1). Since
+    // 2026-09-18 this is the OUTER guard: each suite's harness watchdog fires first (90 s without a
+    // completed check, naming the last one) and run-all's per-suite ceiling second (300 s, by name).
     timeoutMs: 5 * 60_000,
     area: "Prototypes",
     display: "node prototype/test/run-all.mjs",
@@ -340,11 +353,24 @@ for (const s of SUITES) {
   // reader to fix a parser that is working. Say what happened.
   const parsed = timedOut ? { text: `**TIMED OUT** and was killed \u2014 re-run \`${s.display ?? s.cmd}\` alone` } : s.parse(out);
   const secs = Math.round((Date.now() - t0) / 1000);
-  results.push({ ...s, status, parsed, out });
+  // A suite that did not come back green keeps its whole output on disk. Until 2026-09-18 it was
+  // captured here and dropped, so the three red prototype rows of 2026-09-16 left nothing but a
+  // count — not one failing check's name (backlog T-1). One file per area, overwritten each run.
+  const green = status === 0 && parsed && !(parsed.fail > 0);
+  const logPath = green ? null : keepOutput(s.area, out);
+  results.push({ ...s, status, parsed, out, logPath });
   process.stderr.write(
     `status: ${s.area} — ${parsed ? parsed.text.replace(/\*\*/g, "") : "OUTPUT NOT PARSED"}` +
-      `${status === 0 ? "" : ` (exit ${status})`} [${secs}s]\n`,
+      `${status === 0 ? "" : ` (exit ${status})`} [${secs}s]${logPath ? ` — output kept in ${logPath}` : ""}\n`,
   );
+}
+
+function keepOutput(area, out) {
+  const dir = join(tmpdir(), "oilskin-status");
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, `${area.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}.log`);
+  writeFileSync(file, out);
+  return file;
 }
 
 const git = (cmd) => run(`git ${cmd}`).out.trim();
@@ -387,7 +413,8 @@ for (const r of results) {
 }
 L.push("");
 L.push(red.length
-  ? `**${red.length} suite(s) did not come back green on this run: ${red.map((r) => r.area).join(", ")}.** The output is in the terminal that produced this file.`
+  ? `**${red.length} suite(s) did not come back green on this run: ${red.map((r) => r.area).join(", ")}.** ` +
+    `Each one's full output was kept: ${red.map((r) => `\`${r.logPath}\``).join(", ")} — read it before re-running anything.`
   : "Every suite that ran came back green.");
 L.push("");
 L.push("What each suite *proves* is `docs/TESTING.md`; what changed and when is `docs/CHANGELOG.md`.");

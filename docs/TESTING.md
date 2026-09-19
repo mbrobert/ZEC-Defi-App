@@ -42,7 +42,10 @@ it is read often and was becoming a changelog inside table cells, which is how i
 407 for the contracts suite and 442 for the ABI seam on 2026-09-13 while the tree said 433 and 444. What each
 suite *proves* is in the per-area sections below; what *changed and when* is `docs/CHANGELOG.md`.
 
-**Running notes that are easy to lose.** The Playwright suites use Playwright's own Chromium; a `CHROMIUM_PATH`
+**Running notes that are easy to lose.** A prototype suite that stops making progress kills itself after 90 s
+(`OIL_STALL_S`) and prints `STALLED … last completed: "<check>"`; `run-all.mjs` kills a suite at 300 s by name; and
+`npm run status` keeps every red suite's whole output in `<tmpdir>/oilskin-status/<area>.log` and names the file —
+read it before re-running anything (backlog T-1). The Playwright suites use Playwright's own Chromium; a `CHROMIUM_PATH`
 that does not exist is ignored rather than forwarded (`prototype/test/_harness.mjs`). If anything else is
 listening on **:3111**, the web e2e config's `reuseExistingServer` runs the suite against *that* server —
 start your own `NEXT_PUBLIC_FORCE_DEMO=1 NEXT_PUBLIC_E2E_MOCK_WALLET=1 npx next dev -p 3112` and pass

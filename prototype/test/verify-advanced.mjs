@@ -4,7 +4,7 @@
    reachability) plus the pivot rules shared with the simple build. */
 import fs from "node:fs";
 import path from "node:path";
-import { serve, browser, openPage, runner, forbiddenHits, ROOT } from "./_harness.mjs";
+import { serve, browser, openPage, runner, forbiddenHits, settledWidths, ROOT } from "./_harness.mjs";
 
 const { check, near, done } = runner("verify-advanced");
 const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
@@ -215,9 +215,8 @@ await page.evaluate(() => { const o = window.__oil; o.S.positions.forEach(p => p
   await page.click(".tab[data-view=docs]"); await page.click('#docsNav [data-doc="health"]');
   check("docs: ladder rows computed from HF_LADDER — the 1.25 floor's, re-arm at rung + 0.02 stated (1.25 and 1.07), the 1.30 row beside each", /Re-arms at HF ≥ 1\.25/.test(await page.textContent("#docLadder")) && /Re-arms at HF ≥ 1\.07/.test(await page.textContent("#docLadder")) && /1\.27 for one opened at 1\.30/.test(await page.textContent("#docLadder")));
   await page.setViewportSize({ width: 390, height: 800 }); await page.waitForTimeout(200);
-  for (const v of ["dash", "wiz", "pools", "risks", "docs"]) { await page.click(`.tab[data-view="${v}"]`); await page.waitForTimeout(80); const s2 = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]); check(`390px: no horizontal overflow on ${v}`, s2[0] <= s2[1], s2.join("/")); }
-  await page.click("#tkBtn"); await page.waitForTimeout(80);
-  const s3 = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
+  for (const v of ["dash", "wiz", "pools", "risks", "docs"]) { await page.click(`.tab[data-view="${v}"]`); const s2 = await settledWidths(page); check(`390px: no horizontal overflow on ${v}`, s2[0] <= s2[1], s2.join("/")); }
+  await page.click("#tkBtn"); const s3 = await settledWidths(page);
   check("390px: tester's kit fits", s3[0] <= s3[1]);
   check("tester's kit: failure simulations present (reject, revert, refund, range, keeper, store, crash, recover, what-if, seed)", ["fail:reject","fail:revert","refund","range:out","range:in","keeper:off","keeper:on","store:corrupt","px:-55","px:+30","seed"].every(k => html.includes(`data-tk="${k}"`)) && /data-tk="mult:[2-9]\d*">WHAT-IF emissions ×/.test(html));
 }
@@ -337,8 +336,7 @@ await page.evaluate(() => { const o = window.__oil; o.S.positions.forEach(p => p
   check("grant: an expired permission stops the ladder dead, is announced exactly once, and renewing restores the full 30-day term and protection", life.firedExpired === 0 && /Expired/.test(life.chip) && life.logged === true && life.churn === 0 && life.acted === true && Math.abs(life.days - 30) < 1e-9, JSON.stringify(life));
   const ff = await p3.evaluate(() => { const oil = window.__oil; for (let i = 0; i < 24 * 30; i++) oil.S = oil.reduce(oil.S, { type: "tick", dt: oil.MAX_TICK_S }); oil.renderAll(); const g = oil.grantOf(oil.S, oil.S.wallet.addr); return { expired: g.expired, remainingS: g.remainingS, chip: document.querySelector("#grantChip").textContent }; });
   check("grant: 30 demo days of ticks run the permission down to exactly its expiry — the countdown is the real clock, not decoration", ff.expired && ff.remainingS === 0 && /Expired/.test(ff.chip), JSON.stringify(ff));
-  await p3.setViewportSize({ width: 390, height: 800 }); await p3.waitForTimeout(150);
-  const sw3 = await p3.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
+  await p3.setViewportSize({ width: 390, height: 800 }); const sw3 = await settledWidths(p3);
   check("390px: the dashboard with the keeper-permission card has no horizontal overflow", sw3[0] <= sw3[1], sw3.join("/"));
   check("tester's kit: the new levers are all present (pauses, corroboration, gauge re-vote, raw batch, sandwich, grant revoke/renew/expire, the disagreement band)", ["pause:collateral","pause:borrow","pause:off","corr:off","corr:on","revote:on","revote:off","rawbatch","sandwich:on","sandwich:off","grant:revoke","grant:renew","grant:expire","mult:23.1"].every(k => html.includes(`data-tk="${k}"`)));
   check("sim: zero console errors across every new simulation", p3.__errors.length === 0, p3.__errors.join(" | "));

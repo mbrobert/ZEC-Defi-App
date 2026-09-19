@@ -21,7 +21,8 @@ import { serve, browser, openPage, runner } from "./_harness.mjs";
 const argv = process.argv.slice(2);
 const N = +(argv[argv.indexOf("--actions") + 1] || 5000);
 const SEEDS = (argv.includes("--seeds") ? argv[argv.indexOf("--seeds") + 1] : "11,22,33").split(",").map(Number);
-const { check, done } = runner("fuzz");
+/* 5,000 actions per check inside one evaluate: give the watchdog five minutes, not ninety seconds. */
+const { check, done } = runner("fuzz", { stallS: 300 });
 const srv = await serve(); const b = await browser();
 
 /* ── the in-page fuzzer for simple.html ── */

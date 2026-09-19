@@ -79,8 +79,8 @@ under pressure.
       `docs/DEPLOY-SEPOLIA.md` (its §5.2 numbers were wrong until 2026-09-13:
       they carried the superseded 1.55 floor and the deleted 50 % cap)
 - [x] Uncommitted Solana keeper work committed; `git status` clean — nothing
-      outstanding but the untracked `docs/handoff/` bundle, which is the
-      founder's to keep or remove
+      outstanding but the untracked `docs/handoff/` bundle, which was the
+      founder's to keep or remove; **gone by 2026-09-18** (`BACKLOG.md` D-2, Done)
 - [x] **Reconciliation posted** — first at `57d1670`, re-verified against `git log`
       at **2026-09-13 / `18c8684`** in `BUILD-PLAN` §4 and its preamble (the plan
       of record carries it; a separate file would only rot beside it). §6's grep
@@ -96,16 +96,29 @@ already at risk and the roadmap is re-cut that day, not in December.
 
 *Theme: everything in scope exists and the founder has driven it himself.*
 
-- [ ] Cross-chain: A5 receiving side on Base (`openLpOnly`, CCTP
-      `mintRecipient` = the user's own account) built, Anvil fork green
-- [ ] Solana `depositForBurn` to the user's Base account, localnet green
-- [ ] Pool-size gate live in the yield service (refuse a borrow the Kamino pool
-      cannot fund below threshold)
+- [x] Cross-chain: A5 receiving side on Base (`openLpOnly`, CCTP
+      `mintRecipient` = the user's own account) built, Anvil fork green —
+      **built 2026-09-12** (`e931bc0`, A5.1); the fork suite burns native USDC
+      through Circle's real messenger at block 51,222,568 (**13 / 13**,
+      `docs/TESTING.md`). Ticked 2026-09-18 on reconciliation against `git log`
+- [x] Solana `depositForBurn` to the user's Base account, localnet green —
+      **built 2026-09-12** (`1bdbe63`, B3.1): one CPI into the cloned Circle
+      program with the Account PDA as burn authority; localnet **36 passing / 0
+      failing** with the burn's message decoded as Circle would attest it
+- [x] Pool-size gate live in the yield service (refuse a borrow the Kamino pool
+      cannot fund below threshold) — **live since 2026-09-12** (`67307df`, B5
+      part 1): `/v1/solana/borrow` refuses `pool_cannot_fund` from Kamino's own
+      reserve read (`services/yield/src/solanaBorrow.ts`, pinned by
+      `services/yield/test/solana-borrow.test.ts`)
 - [ ] Founder has walked the manual test script **end to end on Sepolia**
       and on localnet, and written down what felt wrong
 - [ ] At least two audit quotes in hand, one per chain
-- [ ] Copy pass: the two disclosures (bridge/privacy, Circle) in the deposit
-      flow; banned-words test green
+- [x] Copy pass: the two disclosures (bridge/privacy, Circle) in the deposit
+      flow; banned-words test green — the bridged-token and Circle-freeze
+      disclosures sit in the Solana wizard (`937d4fa`, `web/lib/solana/copy.ts`)
+      and the custody note on the Base side (`b9849aa`); `web/test/copy.test.ts`
+      scans `app/`, `components/` and `lib/` and is green inside the web unit
+      count in `docs/STATUS.md`
 
 **Backstop:** no new features after this date without removing one. If A5 is
 not building by 2026-10-16, the scope valve (§3) opens early.

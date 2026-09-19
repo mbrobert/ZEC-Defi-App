@@ -62,10 +62,51 @@ export async function openPage(b, url, { width = 1100, height = 900, context } =
   return page;
 }
 
-export function runner(suiteName) {
+/**
+ * `[scrollWidth, clientWidth]` of the document once the layout has settled: polled every 50 ms for up
+ * to `ms`, returning the last reading either way. The 390 px probes used to sample ONCE after a fixed
+ * 80–200 ms sleep, which on a busy machine can read a layout mid-way through a viewport change (the
+ * two timing reds of backlog T-1). "No horizontal overflow" means the layout SETTLES with none; a page
+ * that still overflows after `ms` fails by the same name, with the same numbers.
+ */
+export async function settledWidths(page, ms = 3000) {
+  const read = () => page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
+  const deadline = Date.now() + ms;
+  let w = await read();
+  while (w[0] > w[1] && Date.now() < deadline) { await page.waitForTimeout(50); w = await read(); }
+  return w;
+}
+
+/**
+ * Backlog T-1. On 2026-09-16 one run of these suites under `npm run status` took 1,069 s against
+ * ~30 s alone and ended WITHOUT a summary line, so nothing said which suite stalled or after which
+ * check. Playwright bounds every navigation and locator action at 30 s, but `page.evaluate` and
+ * `browser.close()` carry no timeout, and a suite stuck in either prints nothing at all. The runner
+ * therefore remembers the last check that completed; if no check completes for `stallS` seconds
+ * (OIL_STALL_S, default 90 — the slowest suite takes about 10 s alone) it prints that name and exits
+ * 124, and Playwright's own exit handler kills the browser it launched. `done()` also lists every gap
+ * of ten seconds or more between checks, so a slow-but-green run says where the time went.
+ */
+const DEFAULT_STALL_S = Number(process.env.OIL_STALL_S || 90);
+const SLOW_GAP_MS = 10_000;
+
+export function runner(suiteName, { stallS = DEFAULT_STALL_S } = {}) {
   const results = [];
   let pass = 0, fail = 0;
+  const t0 = Date.now();
+  let last = { name: "(suite start)", at: t0 };
+  const slow = [];
+  const watchdog = setInterval(() => {
+    const idle = Date.now() - last.at;
+    if (idle < stallS * 1000) return;
+    console.log(`${suiteName}: STALLED — no check completed in ${Math.round(idle / 1000)} s; last completed: "${last.name}" (${results.length} checks so far, ${pass} passed, ${fail} failed)`);
+    process.exit(124);
+  }, 1000);
+  watchdog.unref();
   const check = (name, cond, detail = "") => {
+    const now = Date.now();
+    if (now - last.at >= SLOW_GAP_MS) slow.push({ name, gap: now - last.at });
+    last = { name, at: now };
     const ok = !!cond;
     results.push({ name, ok, detail });
     if (ok) pass++; else { fail++; console.log(`  ✗ ${name}${detail ? " — " + String(detail).slice(0, 300) : ""}`); }
@@ -73,7 +114,9 @@ export function runner(suiteName) {
   };
   const near = (a, b, tol) => Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) <= tol;
   const done = () => {
-    console.log(`${suiteName}: ${pass} passed, ${fail} failed (${results.length} checks)`);
+    clearInterval(watchdog);
+    for (const g of slow) console.log(`  (slow) ${(g.gap / 1000).toFixed(1)} s passed before "${g.name}"`);
+    console.log(`${suiteName}: ${pass} passed, ${fail} failed (${results.length} checks, ${((Date.now() - t0) / 1000).toFixed(1)} s)`);
     return { suite: suiteName, pass, fail, total: results.length, results };
   };
   return { check, near, done, results };

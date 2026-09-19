@@ -3,6 +3,42 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-18 — A stalled prototype suite names the check it stopped after, and a red suite's output is kept
+
+Backlog T-1, the slice that row asked for. On 2026-09-16 the Prototypes row of `npm run status` came back
+red three times while the same command alone was green; the third time it took 1,069 s and left nothing
+but that number. Two things made it illegible, and neither was the flake: the harness had no way to say
+which suite or which check it was stuck in, and `scripts/status.mjs` captured every suite's output and then
+dropped it, so not one failing check's name survived. Both fixed; the flake itself is not explained, and the
+row stays open saying so.
+
+- **`prototype/test/_harness.mjs`.** The runner remembers the last check that completed. If none completes for
+  90 s (`OIL_STALL_S`; the fuzz suite gets 300 s — one check there is 5,000 actions in one `evaluate`) it prints
+  `<suite>: STALLED … last completed: "<check>"` and exits 124; Playwright's own exit handler kills the browser,
+  proven by tripping it with `OIL_STALL_S=0.5` — no Chromium left behind. `done()` lists every gap of ten
+  seconds or more between checks, and each summary line now carries the suite's seconds. Playwright bounds
+  every navigation and locator action at 30 s, but `page.evaluate` and `browser.close()` carry no timeout,
+  which is where a silent hang has to live.
+- **`prototype/test/run-all.mjs`.** Each suite runs under its own 300 s ceiling (`OIL_SUITE_TIMEOUT_S`) and a
+  timeout is reported by suite name with its wall time; `OIL_SUITE_TIMEOUT_S=3` proved the kill and the report.
+- **`scripts/status.mjs`.** A suite that is not green keeps its whole output in `<tmpdir>/oilskin-status/<area>.log`,
+  named in the terminal and in `STATUS.md`'s red sentence — which used to say the output was "in the terminal that
+  produced this file"; it never was. The prototype parser reads the STALLED and TIMED OUT lines and puts the last
+  completed check's name in the row.
+- **The 390 px overflow probes settle instead of sampling.** Four in the Simple suite and three in Advanced used to
+  read `scrollWidth` once after a fixed 80–200 ms sleep; `settledWidths` polls for up to 3 s and a layout that never
+  settles fails by the same name with the same numbers. The corrupted-store probe is untouched: both pages set the
+  boot note synchronously inside `load()`, before `window.__oil` exists, so nothing there is timing-sensitive on the
+  page side — the kept log will say what it actually was.
+- **Docs reconciled.** `ROADMAP.md` H2 had four boxes unticked that `git log` says closed on 2026-09-12 and 15: the
+  A5 receiving side (`e931bc0`), Solana `deposit_for_burn` (`1bdbe63`), the pool-size refusal (`67307df`) and the two
+  disclosures with the banned-words test (`937d4fa`, `b9849aa`). `BACKLOG.md` D-2 moved to Done: the untracked
+  handoff bundle is gone from the tree and `git status` is clean.
+
+Prototypes alone: **130 · 116 · 62 · 6** in 29.8 s, unchanged counts. The first `npm run status` under the new
+harness, prototypes last after the seven suites before them: every suite green, the prototypes in 30 s at the same
+counts — the flake did not show, one run of the twenty T-1 asks for. No other suite's count moved.
+
 ## 2026-09-14 — README carries prose, `docs/STATUS.md` carries the numbers, and a generator writes them
 
 `README.md` stated the contract suite's size **three different ways in one file**: 374 in the repo-layout

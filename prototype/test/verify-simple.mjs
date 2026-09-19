@@ -4,7 +4,7 @@
    through window.__oil (the real reducer, not a reimplementation). */
 import fs from "node:fs";
 import path from "node:path";
-import { serve, browser, openPage, runner, forbiddenHits, ROOT, REPO } from "./_harness.mjs";
+import { serve, browser, openPage, runner, forbiddenHits, settledWidths, ROOT, REPO } from "./_harness.mjs";
 
 const { check, near, done } = runner("verify-simple");
 const html = fs.readFileSync(path.join(ROOT, "simple.html"), "utf8");
@@ -230,12 +230,10 @@ check("position: entry HF shown 1.55, recorded on the position as the router wou
   check("keyboard: arrow keys move and pick within the collateral radiogroup (the setting is a slider now, with two mark buttons)", kb.asset === "WETH" && kb.focusedIsRadio);
   const roles = await page.$$eval('#assetSeg [role="radio"], #riskMarks [data-mark], #poolSeg [role="radio"], #walletGrid [role="radio"]', els => els.map(e => e.tagName === "BUTTON"));
   check("keyboard: every choice control is a real <button> (focusable, Enter/Space native)", roles.length >= 15 && roles.every(Boolean));
-  await page.setViewportSize({ width: 390, height: 800 }); await page.waitForTimeout(200);
-  const sw = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
+  await page.setViewportSize({ width: 390, height: 800 }); const sw = await settledWidths(page);
   check("390px: no horizontal overflow on the earn view", sw[0] <= sw[1], sw.join("/"));
-  for (const v of ["docs", "faq", "activity"]) { await page.click(`.tab[data-view="${v}"]`); await page.waitForTimeout(80); const s2 = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]); check(`390px: no horizontal overflow on ${v}`, s2[0] <= s2[1], s2.join("/")); }
-  await page.click("#tkBtn"); await page.waitForTimeout(80);
-  const s3 = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
+  for (const v of ["docs", "faq", "activity"]) { await page.click(`.tab[data-view="${v}"]`); const s2 = await settledWidths(page); check(`390px: no horizontal overflow on ${v}`, s2[0] <= s2[1], s2.join("/")); }
+  await page.click("#tkBtn"); const s3 = await settledWidths(page);
   check("390px: tester's kit modal fits", s3[0] <= s3[1]);
   check("tester's kit: failure simulations present (reject, revert, refund, out-of-range, keeper, store corrupt, price crash, recover, what-if)", ["fail:reject","fail:revert","refund","range:out","range:in","keeper:off","keeper:on","store:corrupt","px:-55","px:+30"].every(k => html.includes(`data-tk="${k}"`)) && /data-tk="mult:[2-9]\d*">WHAT-IF emissions ×/.test(html));
 }
@@ -353,8 +351,7 @@ check("position: entry HF shown 1.55, recorded on the position as the router wou
     oil.dispatch({ type: "renewGrant" }); const firedAfter = Object.values(oil.S.pos.ladder).filter(v => !v).length; oil.dispatch({ type: "setPrice", asset: "cbBTC", px }); 
     return { fired, chip, logged, firedAfter, live: oil.grantOf(oil.S.pos).live }; });
   check("grant: revoking stops the ladder dead (no rung fires, the chip says so, the activity records it) and renewing brings protection straight back", revoke.fired === 0 && /Revoked/.test(revoke.chip) && revoke.logged === true && revoke.firedAfter > 0 && revoke.live === true, JSON.stringify(revoke));
-  await p4.setViewportSize({ width: 390, height: 800 }); await p4.waitForTimeout(150);
-  const sw2 = await p4.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
+  await p4.setViewportSize({ width: 390, height: 800 }); const sw2 = await settledWidths(p4);
   check("390px: the position view with the keeper-permission card still has no horizontal overflow", sw2[0] <= sw2[1], sw2.join("/"));
   check("tester's kit: the new levers are all present (pauses, corroboration, gauge re-vote, raw batch, sandwich, grant revoke/renew/expire, the disagreement band)", ["pause:collateral","pause:borrow","pause:off","corr:off","corr:on","revote:on","revote:off","rawbatch","sandwich:on","sandwich:off","grant:revoke","grant:renew","grant:expire","mult:3.17"].every(k => html.includes(`data-tk="${k}"`)));
   check("sim: zero console errors across every new simulation", p4.__errors.length === 0, p4.__errors.join(" | "));
