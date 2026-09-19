@@ -39,6 +39,55 @@ Prototypes alone: **130 · 116 · 62 · 6** in 29.8 s, unchanged counts. The fir
 harness, prototypes last after the seven suites before them: every suite green, the prototypes in 30 s at the same
 counts — the flake did not show, one run of the twenty T-1 asks for. No other suite's count moved.
 
+## 2026-09-16 — Four backlog rows closed, the open questions put in the RFP, and a ceiling on `npm run status`
+
+Written up on 2026-09-18 from the commit messages, which carry the full reasoning; `ROADMAP.md` rule 7 sends
+history here and the 15th and 16th had none.
+
+- **O-5 and L-1 closed** (`3eb6937`). A Circle message that is not our burn now fails the rung **permanently**
+  (`SolanaDispatchResult`'s `FAILED` arm gains `permanent?`) and the monitor abandons it on the first tick with
+  one escalation, instead of re-logging the identical error every tick to the attempt cap — Circle is
+  deterministic about a nonce. The dashboard's ladder line says the owner's raw `exec` is a hatch the ladder does
+  not see (L-1's owed sentence). Tests named in `BACKLOG.md`'s Done table.
+- **Backlog §6, all eight reaches** (`e6cd46a`). Nine invariant `Handler` actions reach the eight gaps
+  `AUDIT-2026-09-11.md` W3-MED-3 named, each proved by the *effect* of its branch (`test_theEightNamedGapsAreReached`);
+  180,000 calls, 0 failures. Two observations fell out and are recorded in `AUDIT-2026-09-16.md` and the backlog:
+  G-1 (`tokenBudgetOf` does not consult expiry) and C-1 (`unwind` reverts wholesale under a refusing position manager).
+- **The three questions go into the EVM RFP** (`dda0788`). O-4, G-1 and C-1 are §4b of `RFP-EVM-2026-09-13.md`
+  as Q-A, Q-B and Q-C — decisions deliberately not made, each pinned by a test asserting today's behaviour, so a
+  firm sees the code and the open question side by side.
+- **A hanging suite is bounded** (`68755ef`). Every suite in `scripts/status.mjs` runs under a timeout (20 min;
+  5 for the prototypes) and a timeout is reported as one, by name, not as "output not parsed". Backlog T-1
+  opened for the flake itself; the 2026-09-18 entry above is its next slice.
+
+## 2026-09-15 — ZEC becomes a set of forms; Door 2 opens; Door 1 is built and shipped dark
+
+`docs/ZEC-FORMS-AND-DOORS-2026-09-15.md` §7, steps 1–7, in seven commits (`c1aec05`, dated the 14th, is step 1).
+Nothing here enlarges what the 2026-12-11 freeze prices: no Solidity, no Anchor.
+
+- **Step 1** (`c1aec05`): `packages/shared/src/zecForms.ts` — one row per form of ZEC, described by its properties
+  rather than its brand, `verifiedIn` mandatory and a `docs/VERIFIED-*-FACTS.md` section. Two rows: `cbzec-base`
+  (custodial, disabled — D3 stands, no Morpho market) and `zec-solana-bridged` (bridged, enabled on Kamino's ZCASH
+  market).
+- **cbZEC's price source catches up** (`07220e6`): the off-chain collateral row names Chainlink ZEC/USD, as decided
+  2026-09-13 and read live in `VERIFIED-BASE-FACTS.md` Addendum 16; the Pyth claim it still carried, and the test
+  titled for it, are gone.
+- **Step 2** (`fed6189`): the collateral registry keeps its Base symbols and the cbZEC row points at its form
+  (`zecForm: "cbzec-base"`) instead of keeping a copy; `CollateralSymbol` was deliberately not widened — a Solana
+  mint with no Base address means nothing to the ~80 sites that consume the type as a Base table.
+- **Step 3** (`90d5047`): the copy sweep found eleven places still promising cbZEC as collateral "in v1.1", three
+  days after that was reversed. All gone; very little renaming was owed, because most "cbZEC" genuinely means the
+  Coinbase token.
+- **Step 4, Door 2** (`b9849aa`): `/onboard` opens with one question — where is your ZEC? — and four answers, each
+  saying on the button whether a loan is reachable from there. `packages/shared/src/zecRoutes.ts` is the table;
+  `zecRouteFaults()` fails the suite if a route claims a venue whose form is not enabled.
+- **Steps 5–7, Door 1 dark** (`2c76ac0`, and `76a52cb` for the thirteen modified files a bare `git commit` left out
+  — fixed forward, never force-pushed): the exit to a Zcash address the user controls is built end to end and does
+  nothing, under two locks that are not the same lock — the operator's flag (`ZEC_EXIT_ENABLED`, exactly `"1"`) and
+  the precondition (`docs/VERIFIED-ZEC-ROUTES-<date>.md`, Step Z1, not run), on which `/v1/exit-quote` answers 503
+  `facts-missing` and fails closed on a `docs/` it cannot read. The lawyer's item is written down and
+  `BETA-SCOPE-2026-09-13.md` updated.
+
 ## 2026-09-14 — README carries prose, `docs/STATUS.md` carries the numbers, and a generator writes them
 
 `README.md` stated the contract suite's size **three different ways in one file**: 374 in the repo-layout
