@@ -4,9 +4,9 @@
      below came from running the command in its own row, on the tree named here. README.md
      carries the prose and no numbers; this file carries the numbers and no prose. -->
 
-_Generated 2026-09-19T01:56:16Z by `npm run status` on darwin-arm64, Node 22.23.2._
+_Generated 2026-09-20T00:17:33Z by `npm run status` on darwin-arm64, Node 22.23.2._
 
-**Tree:** the working tree at `68755ef` on `main`, with **10 file(s) modified on top of it** — including this one, when it is regenerated just before a commit. Each suite ran against that tree, not against a published commit.
+**Tree:** the working tree at `c787de6` on `main`, with **11 file(s) modified on top of it** — including this one, when it is regenerated just before a commit. Each suite ran against that tree, not against a published commit.
 
 Abbreviations: ABI = application binary interface; e2e = end-to-end; HF = health factor;
 LP = liquidity provision; RPC = remote procedure call; CCTP = Circle's Cross-Chain Transfer Protocol.
@@ -23,7 +23,7 @@ LP = liquidity provision; RPC = remote procedure call; CCTP = Circle's Cross-Cha
 | Solana, program unit | `cd solana && cargo test --manifest-path programs/oilskin/Cargo.toml` | not run — add `--all` |
 | Solana, localnet | `bash solana/scripts/localnet.sh (terminal 1) · cd solana && anchor test --skip-build --skip-local-validator (terminal 2)` | not run — add `--all` |
 | Keeper | `npm test -w @zyo/agent` | **318**, plus its ABI seam **123 / 123** and the IDL seam **77 / 77** |
-| Yield | `npm test -w @zyo/yield` | **181** |
+| Yield | `npm test -w @zyo/yield` | **192** |
 | Web, unit | `npm test -w @zyo/web` | **205** |
 | Web, e2e | `cd web && npx playwright test` | not run — add `--all` |
 | Web, e2e against Base Sepolia | `cd web && npx playwright test -c playwright.sepolia.config.ts` | not run — add `--all` |
@@ -76,7 +76,7 @@ the regression tests themselves are `contracts/test/audit-regressions/`.
 
 ## Every document in docs/
 
-All 58 documents beside this one, from an `ls` of `docs/` at generation time, each with its own first heading, plus the subdirectory `docs/research/`.
+All 59 documents beside this one, from an `ls` of `docs/` at generation time, each with its own first heading, plus the subdirectory `docs/research/`.
 
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — Architecture — Base module v1 (the Solana module is designed in `SOLANA-ARCHITECTURE.md`)
 - [`AUDIT-2026-09-06.md`](AUDIT-2026-09-06.md) — Internal adversarial audit — wave 1, and the fix round it produced (2026-09-06)
@@ -113,6 +113,7 @@ All 58 documents beside this one, from an `ls` of `docs/` at generation time, ea
 - [`MODEL-NUMBERS-2026-09-05.md`](MODEL-NUMBERS-2026-09-05.md) — MODEL-NUMBERS — Base-first yield gate, generated 2026-09-06T04:16:02+00:00
 - [`MODEL-NUMBERS-2026-09-12.md`](MODEL-NUMBERS-2026-09-12.md) — MODEL-NUMBERS — Base-first yield gate, generated 2026-09-13T02:43:16+00:00
 - [`MODEL-NUMBERS-2026-09-13.md`](MODEL-NUMBERS-2026-09-13.md) — MODEL-NUMBERS — the Base module's yield model, generated 2026-09-13T04:35:28+00:00
+- [`MODEL-RESERVE-2026-09-19.md`](MODEL-RESERVE-2026-09-19.md) — The Solana-side reserve against ZEC's own price history — a model, not a decision (2026-09-19)
 - [`PERPS-FEASIBILITY-2026-09-14.md`](PERPS-FEASIBILITY-2026-09-14.md) — Perps and the cross-chain loop in beta — feasibility, cost, and the trade
 - [`POOLS.md`](POOLS.md) — Pool research — blue-chip Aerodrome pools the Snuggle engine supports
 - [`PRE-AUDIT-2026-09-02.md`](PRE-AUDIT-2026-09-02.md) — Pre-audit sweep — 2026-09-02

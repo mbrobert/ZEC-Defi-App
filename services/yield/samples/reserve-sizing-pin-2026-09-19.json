@@ -1,0 +1,11 @@
+{
+  "note": "Written by the first run of scripts/reserve-sizing.mjs on the dated sample; test/reserve-sizing.test.ts asserts the sample still reproduces these. Regenerate only with the sample.",
+  "sample": "zec-usd-kraken-2026-09-19.json",
+  "hourlyVolPct": 1.3916,
+  "dailyVolAnnualizedPct": 131.95,
+  "worst24hPct": 18.56,
+  "freq24hAtGap": 0.431,
+  "worst1dPct": 45.42,
+  "k1Never30dZecSold": 39.1,
+  "k3Never30dZecSold": 27.93
+}

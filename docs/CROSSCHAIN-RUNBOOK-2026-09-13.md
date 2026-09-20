@@ -105,8 +105,12 @@ running: `bridge.stage`, `burnTxHash`, `nonce`, `messageHex`, `attestationHex`, 
   is proven up to Circle's signature check, which is as far as any localnet can go without Circle's attester
   keys. End to end on Solana devnet ↔ Base Sepolia is the next real test, and it is the one that would measure
   the "~8 seconds" Circle advertises.
-- **The reserve has not been sized against the Monte Carlo.** Today it is the rung-2 requirement
-  (4.11 % of the debt at a 1.625 entry); whether that is the right number under a real ZEC drawdown is a
-  modelling question, not a code one.
+- **The reserve was modelled against ZEC's own price history on 2026-09-19** — `docs/MODEL-RESERVE-2026-09-19.md`,
+  from `services/yield/scripts/reserve-sizing.mjs` on a dated Kraken sample. Today it is the rung-2 requirement
+  (4.11 % of the debt at a 1.625 entry). The model says: inside the time a bridge needs, a fall from the reserve's
+  disarm level to rung 3 is rare (0.14 % of hours in the last 30 days); over a month the ladder's cushion is
+  spent on two thirds of paths and five reserves cut the share of paths on which ZEC is sold from 39 % to 21 %,
+  while a lower entry (HF 2.2) cuts it to 15 % at one reserve. **The multiple is the founder's decision; the rule
+  in code is unchanged.**
 - **Fast versus Standard.** The keeper sends whatever threshold the caller passes. Nothing yet *chooses* Fast
   when the Fast allowance is exhausted, or falls back to Standard automatically.

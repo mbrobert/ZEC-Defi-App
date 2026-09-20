@@ -23,7 +23,7 @@ MC = Monte Carlo.
 | Solana, program unit | `cd solana && cargo test --manifest-path programs/oilskin/Cargo.toml` | **12** |
 | Solana, localnet | `bash solana/scripts/localnet.sh` (terminal 1) · `cd solana && anchor test --skip-build --skip-local-validator` (terminal 2) | **36 passing / 0 failing** |
 | Keeper | `npm test -w @zyo/agent` | **318 tests / 61 suites**, plus its own ABI seam **123 / 123** and the IDL seam **77 / 77** |
-| Yield | `npm test -w @zyo/yield` | **181** |
+| Yield | `npm test -w @zyo/yield` | **192** |
 | Web, unit | `npm test -w @zyo/web` | **205** |
 | Web, e2e | `cd web && npx playwright test` | **20 passed / 0 failed / 6 skipped** |
 | Web, e2e against Base Sepolia | `cd web && npx playwright test -c playwright.sepolia.config.ts` | **3 skipped by name** until `docs/DEPLOYMENTS.md` carries Sepolia addresses |
@@ -192,7 +192,13 @@ disagreement between the venue's health factor and the keeper's own feeds is
 UNKNOWN in both directions, and the startup probe is fatal only for a venue that
 does not answer the interface.
 
-## Yield (`services/yield/test`, 17 files)
+## Yield (`services/yield/test`, 18 files)
+
+**`reserve-sizing.test.ts`** (2026-09-19) — the reserve model behind `docs/MODEL-RESERVE-2026-09-19.md`: the
+window and volatility arithmetic on hand-built candles, the ladder walk on paths whose outcome is known by
+construction (one repay per episode under the hysteresis; one requirement short by the tick's overshoot; de-risk
+selling part of the collateral, never all; replay refusing a window that runs off the series), and a pin that the
+committed Kraken sample still reproduces the document's headline numbers.
 
 Strict Aave decoding (exact word counts, bounds, a half-readable sample
 refused; fixture reproduces 4.828 % / LT 7800 / 8300, plus the new `getPaused`

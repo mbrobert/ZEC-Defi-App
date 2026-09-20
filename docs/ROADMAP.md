@@ -49,10 +49,13 @@ RFP packages are written and re-measured at the current tree (`16cf235`,
    (the delivery measured 1,264 bytes against the 1,232 legacy limit), and the run
    end to end on devnet ↔ Sepolia. Valve date **2026-11-13** (§3).
 4. **Two questions behind that loop that are not code.** Nothing yet *chooses*
-   Fast over Standard when the Fast allowance is exhausted; and the reserve —
-   today the rung-2 requirement, 4.11 % of the debt at a 1.625 entry — has never
-   been sized against a real ZEC drawdown. Both are
-   `docs/CROSSCHAIN-RUNBOOK-2026-09-13.md` §5.
+   Fast over Standard when the Fast allowance is exhausted
+   (`docs/CROSSCHAIN-RUNBOOK-2026-09-13.md` §5). The reserve — the rung-2
+   requirement, 4.11 % of the debt at a 1.625 entry — **was modelled against
+   ZEC's real price history on 2026-09-19** (`docs/MODEL-RESERVE-2026-09-19.md`):
+   on the bridge's timescale it is not the constraint, the multiple buys little,
+   the entry HF is the lever, and the number is the founder's to decide — nothing
+   in code changes until he does.
 5. **The founder's own walk-through**, end to end on Sepolia and on localnet,
    with what felt wrong written down (H2).
 6. **The H3 items**: one internal audit wave over everything merged since the

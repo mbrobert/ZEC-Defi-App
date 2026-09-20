@@ -3,6 +3,27 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-19 — The reserve sized against ZEC's own history: a model for the founder, not a change
+
+`ROADMAP.md` §1 item 4 and `CROSSCHAIN-RUNBOOK-2026-09-13.md` §5 both said the Solana-side reserve — the rung-2
+requirement, 4.11 % of the debt at a 1.625 entry — had never been sized against a real ZEC drawdown. Now it has,
+with every input stated and nothing in code changed: **`docs/MODEL-RESERVE-2026-09-19.md`**.
+
+- **`services/yield/src/reserveSizing.ts`** — the pure model: close-to-low drops per window, a seeded block bootstrap
+  of de-meaned returns, a replay of the record as it happened, and the ladder walk (one repay per episode under the
+  hysteresis, de-risk selling exactly the ZEC that lifts HF to its disarm level, a top-up landing after a stated delay).
+- **`services/yield/scripts/reserve-sizing.mjs`** — reads a dated Kraken ZEC/USD sample (`--fetch` writes a new one:
+  15-minute, hourly, 4-hour and daily candles, 720 each) and prints the tables the document carries.
+  **`samples/zec-usd-kraken-2026-09-19.json`** is the run's data; **`samples/reserve-sizing-pin-2026-09-19.json`** its
+  headline numbers, which `test/reserve-sizing.test.ts` asserts the sample still reproduces. Yield **181 → 192**.
+- **What it says.** On the bridge's timescale the reserve is not the constraint (0.14 % of hours in the last 30 days
+  fell the whole rung-2→3 gap). Over a month the ladder's cushion is spent on two thirds of paths at ZEC's 130 %
+  volatility; five reserves cut the share of paths on which the keeper sells ZEC from 39 % to 21 %, while an entry
+  at HF 2.2 (LTV 29.5 %) cuts it to 15 % at one reserve — the entry is the lever. One requirement is short by the
+  tick's overshoot on nearly every rung-2 event (`BACKLOG.md` O-7). The 45 % day of 2026-06-04 is in the record.
+- The roadmap, the runbook and backlog O-1 point at the document; the multiple, the cross-chain entry mark and a
+  top-up threshold are listed as the founder's options with the numbers beside each.
+
 ## 2026-09-18 — A stalled prototype suite names the check it stopped after, and a red suite's output is kept
 
 Backlog T-1, the slice that row asked for. On 2026-09-16 the Prototypes row of `npm run status` came back
