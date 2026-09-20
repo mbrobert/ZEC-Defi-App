@@ -6,7 +6,7 @@
 import { ComputeBudgetProgram, Transaction, type Connection, type PublicKey, type TransactionInstruction } from "@solana/web3.js";
 import { grantPda, PK } from "./addresses";
 import { anchorErrorName, ixBorrow, ixClosePosition, ixCreateAtaIdempotent, ixDeposit, ixGrant, ixInitAccount, ixRevokeAll, ixSplTransfer, ixTransferOut, type AccountKeys } from "./instructions";
-import { grantParamsFor, openSteps, type SolanaOpenPlan } from "./plan";
+import { DEFAULT_GRANT_CHOICE, grantParamsFor, openSteps, type SolanaGrantChoice, type SolanaOpenPlan } from "./plan";
 import type { SolanaPosition } from "./reads";
 import { solanaErrorPlain } from "./copy";
 
@@ -92,12 +92,15 @@ export interface OpenRun {
   accountExists: boolean;
   /** Chain time for the grant's expiry (the chain clock, not the host's). */
   nowS: number;
+  /** The owner's one choice inside the grant (Advanced mode); Oilskin's default lets the keeper sell. */
+  grantChoice?: SolanaGrantChoice;
   emit: SolanaEmit;
 }
 /** The open: init (if needed) → deposit → borrow → grant, one prompt each; stops at the first refusal. */
 export async function runSolanaOpen(r: OpenRun): Promise<string[]> {
   const k: AccountKeys = { program: r.programId, owner: r.wallet.publicKey, account: r.account };
-  const steps = openSteps(r.plan, { accountExists: r.accountExists, keeperConfigured: r.keeper !== null });
+  const choice = r.grantChoice ?? DEFAULT_GRANT_CHOICE;
+  const steps = openSteps(r.plan, { accountExists: r.accountExists, keeperConfigured: r.keeper !== null, keeperMaySell: choice.keeperMaySell });
   const sigs: string[] = [];
   for (let i = 0; i < steps.length; i++) {
     const s = steps[i]!;
@@ -108,7 +111,7 @@ export async function runSolanaOpen(r: OpenRun): Promise<string[]> {
           ? [ixDeposit(k, r.plan.collateralUnits)]
           : s.id === "borrow"
             ? [ixBorrow(k, r.plan.borrowUnits)]
-            : [ixGrant(k, r.keeper!, grantPda(r.programId, r.account, r.keeper!), grantParamsFor(r.plan, r.nowS))];
+            : [ixGrant(k, r.keeper!, grantPda(r.programId, r.account, r.keeper!), grantParamsFor(r.plan, r.nowS, choice))];
     sigs.push(await sendStep(r.conn, r.wallet, ixs, i, r.emit));
   }
   return sigs;

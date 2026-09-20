@@ -57,6 +57,39 @@ test("solana wizard: Kamino's words → amount with the pool view → the slider
   expect(errors, errors.join("\n")).toEqual([]);
 });
 
+test("solana review, Advanced: whether the keeper may sell ZEC is the owner's choice; Simple takes the default and shows no control", async ({ page }) => {
+  const errors = await collectErrors(page);
+  await page.goto("/solana/new");
+  await page.getByTestId("mode-advanced").click();
+  await expect(page.getByTestId("mode-advanced")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("ack-bridged").check();
+  await page.getByTestId("sol-wizard-next").click();
+  await page.getByTestId("zec-amount").fill("10");
+  await page.getByTestId("sol-wizard-next").click();
+  await page.getByTestId("sol-wizard-next").click();
+  await expect(page.getByTestId("sol-review")).toContainText("Entry health factor");
+  // the default: the keeper may sell, and the risk list says so
+  const control = page.getByTestId("sol-keeper-sell");
+  await expect(control).toBeVisible();
+  await expect(page.getByTestId("sol-keeper-sell-yes")).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("sol-risk-keeper-sells")).toContainText("The keeper may sell your ZEC");
+  await expect(page.getByTestId("sol-risk-keeper-no-sell")).toHaveCount(0);
+  // no: the card swaps for the one that says what it costs, and the acknowledgment is still required
+  await page.getByTestId("sol-keeper-sell-no").click();
+  await expect(page.getByTestId("sol-keeper-sell-no")).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("sol-risk-keeper-no-sell")).toContainText("the keeper may not sell your ZEC");
+  await expect(page.getByTestId("sol-risk-keeper-no-sell")).toContainText("liquidates at a health factor of 1");
+  await expect(page.getByTestId("sol-risk-keeper-sells")).toHaveCount(0);
+  await expect(page.getByTestId("sol-wizard-next")).toBeDisabled();
+  // Simple mode: no control, and Oilskin's default is back whatever was chosen
+  await page.getByTestId("mode-simple").click();
+  await expect(page.getByTestId("mode-simple")).toHaveAttribute("aria-checked", "true");
+  await expect(control).toHaveCount(0);
+  await expect(page.getByTestId("sol-risk-keeper-sells")).toBeVisible();
+  await expect(page.getByTestId("sol-risk-keeper-no-sell")).toHaveCount(0);
+  expect(errors, errors.join("\n")).toEqual([]);
+});
+
 test("solana positions page: demo says the build names no program, lists the risks, links to a new position", async ({ page }) => {
   const errors = await collectErrors(page);
   await page.goto("/solana");

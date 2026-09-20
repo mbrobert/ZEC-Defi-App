@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ENTRY_HF_FLOOR, HF_MARKS, ladderFor } from "@zyo/shared";
-import { clampSolanaHf, grantParamsFor, openSteps, planSolanaOpen, SOLANA_GRANT, solanaHfBounds, solanaHfForBorrow } from "../lib/solana/plan";
+import { clampSolanaHf, DEFAULT_GRANT_CHOICE, grantParamsFor, openSteps, planSolanaOpen, SOLANA_GRANT, solanaHfBounds, solanaHfForBorrow } from "../lib/solana/plan";
 import { demoSolanaBorrow, normalizeSolanaBorrow, solanaBorrowPath, solanaRefusalPlain, unavailableSolanaBorrow } from "../lib/solana/yield";
 
 const view = demoSolanaBorrow();
@@ -74,6 +74,22 @@ test("the grant is sized to the position: 30 days, one day per period, the whole
   assert.equal(g.maxSellSlippageBps, 200);
   assert.equal(g.allowedRungs, 0b1111);
   assert.equal(SOLANA_GRANT.expiryDays, 30);
+  // decision 1: the keeper may sell, on by default; Advanced mode may say no, which is a sell budget of zero and nothing else
+  assert.equal(DEFAULT_GRANT_CHOICE.keeperMaySell, true);
+  const repayOnly = grantParamsFor(p, 1_789_000_000, { keeperMaySell: false });
+  assert.equal(repayOnly.sellZecPerPeriod, 0n);
+  assert.deepEqual({ ...repayOnly, sellZecPerPeriod: g.sellZecPerPeriod }, g, "every other field is the default's");
+});
+
+test("the grant step's sentence says what the keeper may do: sell within the budget by default, or repay only and nothing else", () => {
+  const p = planSolanaOpen({ collateralZec: 10, entryHf: 2, view })!;
+  const yes = openSteps(p, { accountExists: true, keeperConfigured: true }).find((s) => s.id === "grant")!;
+  const no = openSteps(p, { accountExists: true, keeperConfigured: true, keeperMaySell: false }).find((s) => s.id === "grant")!;
+  assert.match(yes.sentence, /sell up to 10 ZEC per day/);
+  assert.match(no.sentence, /may not sell your ZEC/);
+  assert.match(no.sentence, /sell budget is zero/);
+  assert.doesNotMatch(no.sentence, /sell up to/);
+  assert.equal(openSteps(p, { accountExists: true, keeperConfigured: false, keeperMaySell: false }).some((s) => s.id === "grant"), false, "no keeper, no grant, whatever the choice");
 });
 
 test("the steps are the transactions signed: init only for a new account, borrow only when there is one, grant only with a keeper and a borrow", () => {

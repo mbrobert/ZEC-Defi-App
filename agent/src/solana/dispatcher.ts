@@ -192,7 +192,7 @@ export class KeeperSolanaDispatcher implements SolanaDispatcher {
     const plan = planProtect({
       valuation,
       rung,
-      grant: { live: rem.live, allowedRungs: grant.allowedRungs, repayLeft: rem.repayLeft, sellLeft: rem.sellLeft, maxSellSlippageBps: grant.maxSellSlippageBps },
+      grant: { live: rem.live, allowedRungs: grant.allowedRungs, repayLeft: rem.repayLeft, sellLeft: rem.sellLeft, sellAllowed: grant.sellZecPerPeriod > 0n, maxSellSlippageBps: grant.maxSellSlippageBps },
       keeperUsdc,
       saleDiscountBps: this.d.saleDiscountBps,
       marginBps: this.d.planMarginBps,

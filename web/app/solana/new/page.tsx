@@ -11,6 +11,7 @@ import SolanaReviewStep from "@/components/solana/wizard/SolanaReviewStep";
 import SolanaSignStep from "@/components/solana/wizard/SolanaSignStep";
 import { SOLANA_ENV } from "@/lib/solana/env";
 import { runSolanaOpen, type SolanaEmit } from "@/lib/solana/execute";
+import { useMode } from "@/lib/mode";
 import { useSolanaBorrowView, useSolanaPosition, useSolanaSession } from "@/lib/solana/hooks";
 import { clampSolanaHf, fromUnits, openSteps, planSolanaOpen, SOLANA_WIZARD_STEPS, solanaHfBounds } from "@/lib/solana/plan";
 import { needsHfAcknowledgment } from "@/lib/wizard";
@@ -36,6 +37,10 @@ function SolanaWizard() {
   const [hfTouched, setHfTouched] = useState(false);
   const [ackHf, setAckHf] = useState(false);
   const [ackReview, setAckReview] = useState(false);
+  // Advanced mode's one extra decision inside the grant; Simple mode takes Oilskin's default whatever was chosen before the switch
+  const { mode: productMode } = useMode();
+  const [keeperMaySellChoice, setKeeperMaySell] = useState(true);
+  const keeperMaySell = productMode === "advanced" ? keeperMaySellChoice : true;
 
   const collateralZec = Number(amount) > 0 ? Number(amount) : 0;
   // the pool view (no query) for step 2; the priced view for steps 3–5 once an amount exists
@@ -47,7 +52,7 @@ function SolanaWizard() {
   const { view: pricedView } = useSolanaBorrowView(collateralZec > 0 ? { collateralZec, amountUsdc: draftPlan && draftPlan.borrowUsdc > 0 ? draftPlan.borrowUsdc : null, entryHf: Number.isFinite(hf) ? hf : null } : {});
   const view = collateralZec > 0 ? pricedView : poolView;
   const plan = useMemo(() => (collateralZec > 0 ? planSolanaOpen({ collateralZec, entryHf: hf, view: poolView }) : null), [collateralZec, hf, poolView]);
-  const steps = plan ? openSteps(plan, { accountExists: position?.exists ?? false, keeperConfigured: s.keeperConfigured }) : [];
+  const steps = plan ? openSteps(plan, { accountExists: position?.exists ?? false, keeperConfigured: s.keeperConfigured, keeperMaySell }) : [];
   const walletZec = s.connected && position ? fromUnits(position.walletZec.amount, 8) : null;
 
   const onHf = (v: number) => {
@@ -71,6 +76,7 @@ function SolanaWizard() {
       plan,
       accountExists: position?.exists ?? false,
       nowS,
+      grantChoice: { keeperMaySell },
       emit,
     });
   };
@@ -86,7 +92,7 @@ function SolanaWizard() {
         {step === 0 && <BridgedZecStep acknowledged={ackBridged} onAcknowledge={setAckBridged} />}
         {step === 1 && <AmountStep amount={amount} onAmount={setAmount} view={view} walletZec={walletZec} mode={s.mode} />}
         {step === 2 && plan && bounds && <HfStep plan={plan} bounds={bounds} view={view} entryHf={hf} onChange={onHf} acknowledged={ackHf} onAcknowledge={setAckHf} keeperProtection={s.keeperConfigured} />}
-        {step === 3 && plan && <SolanaReviewStep plan={plan} view={view} steps={steps} acknowledged={ackReview} onAcknowledge={setAckReview} mode={s.mode} />}
+        {step === 3 && plan && <SolanaReviewStep plan={plan} view={view} steps={steps} acknowledged={ackReview} onAcknowledge={setAckReview} mode={s.mode} productMode={productMode} keeperMaySell={keeperMaySell} onKeeperMaySell={setKeeperMaySell} />}
         {step === 4 && plan && <SolanaSignStep steps={steps} mode={s.mode} run={run} />}
         {step < 4 && (
           <div className="mt-6 flex justify-between">

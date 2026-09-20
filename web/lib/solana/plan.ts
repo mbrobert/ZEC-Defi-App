@@ -122,12 +122,21 @@ export interface SolanaGrantPlan {
   maxSellSlippageBps: number;
   allowedRungs: number;
 }
-export function grantParamsFor(plan: SolanaOpenPlan, nowS: number): SolanaGrantPlan {
+/**
+ * The one choice the owner has inside the grant. Founder's decision 1 (2026-09-12): the keeper MAY sell collateral,
+ * on by default. Advanced mode may turn it off, which sets the grant's sell budget to zero — the program then refuses
+ * any sale on chain (`sell_zec > 0` with `sell_zec_per_period == 0`), and rungs 3 and 4 cannot act beyond idle USDC.
+ */
+export interface SolanaGrantChoice {
+  keeperMaySell: boolean;
+}
+export const DEFAULT_GRANT_CHOICE: SolanaGrantChoice = { keeperMaySell: true };
+export function grantParamsFor(plan: SolanaOpenPlan, nowS: number, choice: SolanaGrantChoice = DEFAULT_GRANT_CHOICE): SolanaGrantPlan {
   return {
     expiryTs: BigInt(nowS + SOLANA_GRANT.expiryDays * 86_400),
     periodSecs: SOLANA_GRANT.periodSecs,
     repayUsdcPerPeriod: plan.borrowUnits,
-    sellZecPerPeriod: plan.collateralUnits,
+    sellZecPerPeriod: choice.keeperMaySell ? plan.collateralUnits : 0n,
     maxSellSlippageBps: SOLANA_GRANT.maxSellSlippageBps,
     allowedRungs: SOLANA_GRANT.allowedRungs,
   };
@@ -140,11 +149,20 @@ export interface OpenStep {
   sentence: string;
 }
 /** One wallet prompt per step; each introduced by one plain sentence. Separate transactions: together they exceed Solana's size limit. */
-export function openSteps(plan: SolanaOpenPlan, o: { accountExists: boolean; keeperConfigured: boolean }): OpenStep[] {
+export function openSteps(plan: SolanaOpenPlan, o: { accountExists: boolean; keeperConfigured: boolean; keeperMaySell?: boolean }): OpenStep[] {
+  const maySell = o.keeperMaySell ?? DEFAULT_GRANT_CHOICE.keeperMaySell;
   const steps: OpenStep[] = [];
   if (!o.accountExists) steps.push({ id: "init", title: "Create your Oilskin account", sentence: "Creates an account on Solana that only your wallet controls, with its own ZEC and USDC token accounts and a Kamino borrowing position owned by that account. One-time, refundable rent only." });
   steps.push({ id: "deposit", title: `Deposit ${plan.collateralZec} ZEC`, sentence: `Moves ${plan.collateralZec} ZEC from your wallet into your Oilskin account and on into Kamino as collateral.` });
   if (plan.borrowUsdc > 0) steps.push({ id: "borrow", title: `Borrow ${plan.borrowUsdc.toFixed(2)} USDC`, sentence: `Borrows ${plan.borrowUsdc.toFixed(2)} USDC from Kamino into your Oilskin account at a health factor of ${plan.entryHf.toFixed(2)}. The program refuses if the result would be under the entry floor.` });
-  if (o.keeperConfigured && plan.borrowUsdc > 0) steps.push({ id: "grant", title: "Allow the keeper to protect this position", sentence: `Lets the Oilskin keeper repay up to ${plan.borrowUsdc.toFixed(2)} USDC and, if liquidation threatens, sell up to ${plan.collateralZec} ZEC per day at no worse than 2 % under Kamino's oracle price, for 30 days. You can revoke it at any time; the program checks every action against these limits.` });
+  if (o.keeperConfigured && plan.borrowUsdc > 0) {
+    steps.push({
+      id: "grant",
+      title: "Allow the keeper to protect this position",
+      sentence: maySell
+        ? `Lets the Oilskin keeper repay up to ${plan.borrowUsdc.toFixed(2)} USDC and, if liquidation threatens, sell up to ${plan.collateralZec} ZEC per day at no worse than 2 % under Kamino's oracle price, for 30 days. You can revoke it at any time; the program checks every action against these limits.`
+        : `Lets the Oilskin keeper repay up to ${plan.borrowUsdc.toFixed(2)} USDC per day from your account's idle USDC, for 30 days, and nothing else: its sell budget is zero, so it may not sell your ZEC and the program refuses any sale. A fall that idle USDC cannot answer is yours to answer. You can revoke or change it at any time.`,
+    });
+  }
   return steps;
 }

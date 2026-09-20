@@ -247,16 +247,25 @@ const SUITES = [
     display: "node prototype/test/run-all.mjs",
     cmd: "node prototype/test/run-all.mjs",
     parse: prototypes,
-    /* verify-toggle reads the generated model table from /tmp/build; without it, 6 checks
-       silently do not run (docs/TESTING.md, running notes). Stage it rather than lose them. */
-    before: () => {
-      const dir = join(tmpdir(), "build");
-      mkdirSync(dir, { recursive: true });
-      const src = join(repoRoot, "services", "yield", "samples", "MODEL-NUMBERS.md");
-      if (existsSync(src)) copyFileSync(src, join(dir, "MODEL-NUMBERS.md"));
-    },
+    before: stageModelNumbers,
   },
 ];
+
+/**
+ * Two suites read the generated model table from the LITERAL path /tmp/build/MODEL-NUMBERS.md — the six
+ * parity checks of prototype/test/verify-toggle.mjs and the web's demo-gate pin (web/test/snapshot.test.ts),
+ * which SKIPS rather than fails without it — and CI stages it there (ci.yml). Until 2026-09-20 this script
+ * staged it into os.tmpdir()/build, which on macOS is /var/folders/…/T/build, so on the founder's Mac the
+ * staging did nothing and the counts depended on whether someone had run the copy by hand since the last
+ * reboot: the first run after one reported the web suite with a skip and the toggle suite crashed writing
+ * its report into the missing directory. Stage the file where it is read, once, before any suite runs.
+ */
+const MODEL_STAGE_DIR = "/tmp/build";
+function stageModelNumbers() {
+  mkdirSync(MODEL_STAGE_DIR, { recursive: true });
+  const src = join(repoRoot, "services", "yield", "samples", "MODEL-NUMBERS.md");
+  if (existsSync(src)) copyFileSync(src, join(MODEL_STAGE_DIR, "MODEL-NUMBERS.md"));
+}
 
 /* ── the state that is not a suite ─────────────────────────────────────────────────── */
 
@@ -338,6 +347,7 @@ const label = (s) =>
 /* ── run ───────────────────────────────────────────────────────────────────────────── */
 
 const results = [];
+stageModelNumbers();
 for (const s of SUITES) {
   const skipReason = s.optIn && !wantAll ? "not run — add `--all`" : s.gate?.();
   if (skipReason) {

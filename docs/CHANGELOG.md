@@ -3,6 +3,36 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-20 — Advanced mode may tell the keeper not to sell ZEC; the Solana suites measured live
+
+The last web item B5 listed as remaining besides the wallet-driven run: **the sell budget of zero.** Founder's
+decision 1 (2026-09-12) is that the keeper may sell collateral, on by default; the grant's `sell_zec_per_period`
+was always the whole collateral and nothing offered the owner the other setting.
+
+- **The review step, in Advanced mode only**, asks whether the keeper may sell ZEC to protect the position. Yes is
+  pre-selected. No sets the budget to zero and nothing else — every other field of the grant is the default's —
+  swaps the "keeper may sell your ZEC" card for **"You chose: the keeper may not sell your ZEC"**, which says that
+  rungs 3 and 4 then cannot act beyond idle USDC and that Kamino liquidates at a health factor of 1 whatever the
+  keeper is allowed, and rewrites the grant step's sentence ("… and nothing else"). Simple mode shows no control and
+  takes the default whatever was chosen before the switch (`web/lib/solana/plan.ts` `SolanaGrantChoice`,
+  `SolanaReviewStep`, `web/app/solana/new/page.tsx`). The position card names a zero budget as the owner's choice.
+- **The keeper's policy** (`agent/src/solana/policy.ts`) refuses a sale under a zero budget **by name** — "the owner
+  chose repay-only … only the owner can add USDC, repay or close" — instead of calling it an exhausted budget that
+  will roll over; `GrantBounds.sellAllowed` is read from the grant by the dispatcher.
+- Tests: web unit **205 → 206** (the choice and the two sentences), keeper **318 → 319** (repay-only versus
+  exhausted, told apart), e2e **20 → 22** (the Advanced control, the swap, and Simple's silence, at both widths).
+- **`npm run status` stages the model table where it is read.** The first status run after the Mac's reboot came
+  back with the web suite skipping one test and the prototypes "not parsed" — and, because the 18th's change keeps a
+  red suite's output, the log said why in one line: `verify-toggle` crashed writing its grep report into a missing
+  `/tmp/build`. The script had been staging `MODEL-NUMBERS.md` into `os.tmpdir()/build`, which on macOS is not
+  `/tmp/build`, so on the founder's Mac the staging never reached the two consumers and the counts depended on a
+  copy someone had run by hand. It now stages into `/tmp/build` once, before any suite; the toggle suite treats its
+  report file as a report and not a check.
+- **The Solana suites, measured today** on a fresh localnet from the 4.2.2 toolchain: program unit **12**,
+  localnet **36 passing / 0 failing** in 42 s. The first attempt failed to deploy because the machine's active
+  Solana release was 3.1.10 until it was switched mid-session — a 3.1.10 loader calls an SBPFv3 ELF an invalid
+  file header. Recorded in memory, not a repo change.
+
 ## 2026-09-19 — The corrupted-store flake, named by the new harness on its first CI occurrence, and fixed
 
 CI's prototypes job went red on the docs-only commit `c787de6` (run 35414440672), and for the first time the log

@@ -199,7 +199,9 @@ await b.close(); srv.close();
     report[a] = out.split("\n").filter(Boolean).map(f => path.relative(REPO, f));
   }
   check("grep: prototype/ (simple.html, index.html, test/) has no removed vocabulary", report.prototype.length === 0, report.prototype.join(", "));
-  fs.writeFileSync("/tmp/build/prototypes-removed-symbols-grep.json", JSON.stringify(report, null, 2));
+  // a report file, not a check: a missing /tmp/build (the first run after a reboot) must not take the suite down with it
+  try { fs.mkdirSync("/tmp/build", { recursive: true }); fs.writeFileSync("/tmp/build/prototypes-removed-symbols-grep.json", JSON.stringify(report, null, 2)); }
+  catch (e) { console.log(`  (info) could not write /tmp/build/prototypes-removed-symbols-grep.json: ${e.message}`); }
   for (const [a, files] of Object.entries(report)) if (a !== "prototype" && files.length) console.log(`  (info) ${a}: ${files.length} file(s) still mention removed vocabulary — ${files.slice(0, 6).join(", ")}${files.length > 6 ? " …" : ""}`);
 }
 

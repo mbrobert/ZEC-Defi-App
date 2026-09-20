@@ -56,6 +56,17 @@ export const SOLANA_DISCLOSURES: Record<SolanaCopyId, { title: string; body: str
 };
 
 /** Oilskin's own risk list for the Solana review and positions pages. */
+/**
+ * Rendered in place of the "keeper-sells" card when the owner, in Advanced mode, sets the grant's sell budget to
+ * zero. It has to say the consequence plainly: rungs 3 and 4 cannot act beyond idle USDC, and Kamino liquidates at
+ * a health factor of 1 whatever the keeper is or is not allowed to do.
+ */
+export const SOLANA_KEEPER_NO_SELL = {
+  id: "keeper-no-sell",
+  title: "You chose: the keeper may not sell your ZEC",
+  body: "The permission you sign lets the keeper repay from your account's idle USDC and nothing else. Its sell budget is zero, and the program refuses any sale on chain. If ZEC falls further than the idle USDC can answer, the de-risk and emergency rungs cannot act: the keeper tells you, and only you can add USDC, repay, or close the position. Kamino liquidates at a health factor of 1 whatever the keeper is allowed to do.",
+} as const;
+
 export const SOLANA_RISKS: readonly { id: string; title: string; body: string }[] = [
   { id: "bridged", ...SOLANA_DISCLOSURES.bridged_zec },
   { id: "kamino-owner", ...SOLANA_DISCLOSURES.kamino_parameters_mutable },

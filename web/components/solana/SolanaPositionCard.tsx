@@ -65,7 +65,7 @@ export default function SolanaPositionCard({ position, view, nowS, onClose, onRe
         <div className="text-[13px] font-semibold">Keeper protection</div>
         {grant && p.grant ? (
           <p className="mt-1 text-[13px] text-oil-ink2">
-            {grant.live ? <Chip kind="good">live</Chip> : <Chip kind="warn">not live</Chip>} until {new Date(Number(p.grant.expiryTs) * 1000).toISOString().slice(0, 10)} · left this period: {fmtUsd(fromUnits(grant.repayLeft, 6))} USDC to repay, {fromUnits(grant.sellLeft, 8)} ZEC to sell · allowance {fmtPct(p.grant.maxSellSlippageBps / 100)} under the oracle.
+            {grant.live ? <Chip kind="good">live</Chip> : <Chip kind="warn">not live</Chip>} until {new Date(Number(p.grant.expiryTs) * 1000).toISOString().slice(0, 10)} · left this period: {fmtUsd(fromUnits(grant.repayLeft, 6))} USDC to repay{p.grant.sellZecPerPeriod === 0n ? " · repay-only: the keeper may not sell your ZEC (your choice; re-grant to change it)" : `, ${fromUnits(grant.sellLeft, 8)} ZEC to sell · allowance ${fmtPct(p.grant.maxSellSlippageBps / 100)} under the oracle`}.
           </p>
         ) : (
           <p className="mt-1 text-[13px] text-oil-ink2">No keeper permission on this account. Only the first rung — a message — exists; you act yourself.</p>

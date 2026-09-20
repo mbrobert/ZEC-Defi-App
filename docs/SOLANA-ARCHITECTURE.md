@@ -384,8 +384,13 @@ do: **repay everything and take the ZEC home** (top up USDC if the account is sh
 `transfer_out` both tokens — the exit hatch, one button) and **revoke** the keeper.
 
 Not in this build: exercising the signed path against a live wallet (the localnet specs prove the program; the
-web's encoders are pinned to the IDL; a wallet-driven run on localnet is the next check), Advanced mode's
-sell-budget of zero (decision 1 leaves it on by default), and the cross-chain forecast (Stream C). Copy rules:
+web's encoders are pinned to the IDL; a wallet-driven run on localnet is the next check) and the cross-chain
+forecast (Stream C). **Advanced mode's sell budget of zero is built (2026-09-20):** the review step asks, in
+Advanced mode only, whether the keeper may sell ZEC — decision 1's default, yes, is pre-selected; no sets
+`sell_zec_per_period` to 0, swaps the "keeper may sell" card for the one that says rungs 3 and 4 then cannot
+act beyond idle USDC, and the grant step's sentence says "and nothing else". Simple mode shows no control and
+takes the default whatever was chosen before the switch. The position card names a zero budget as the owner's
+choice, and the keeper's policy refuses a sale under it by name, not as an exhausted budget. Copy rules:
 `BANNED_WORDS` scan the new files; Kamino's quotation is a quotation.
 
 ## 9 · Risks specific to this module (for `RISKS.md` §22 and `web/lib/copy.ts`)

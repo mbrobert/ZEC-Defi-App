@@ -40,7 +40,7 @@ function ok(price: number, debt: number, idleUsdc = 0): Ok {
   };
 }
 const rung = (id: "repay" | "derisk" | "emergency") => ({ id: HF_LADDER.findIndex((r) => r.id === id), disarmHf: rungById(id).disarmHf });
-const grant = (over: Partial<PlanInput["grant"]> = {}): PlanInput["grant"] => ({ live: true, allowedRungs: 0b1111, repayLeft: 5_000n * USDC, sellLeft: 5n * ZEC, maxSellSlippageBps: 200, ...over });
+const grant = (over: Partial<PlanInput["grant"]> = {}): PlanInput["grant"] => ({ live: true, allowedRungs: 0b1111, repayLeft: 5_000n * USDC, sellLeft: 5n * ZEC, sellAllowed: true, maxSellSlippageBps: 200, ...over });
 const base = (v: Ok, r: ReturnType<typeof rung>, over: Partial<PlanInput> = {}): PlanInput => ({ valuation: v, rung: r, grant: grant(), keeperUsdc: 10_000n * USDC, saleDiscountBps: 0, marginBps: MARGIN_BPS, ...over });
 
 test("repay-only from idle USDC when it covers the lift to the disarm level (HF inside the repay band → ≥ repay's disarm)", () => {
@@ -99,6 +99,20 @@ test("idle USDC is used first, then the keeper's; a discount within the allowanc
   const tooMuch = planProtect(base(v, rung("derisk"), { saleDiscountBps: 300 }));
   assert.equal(tooMuch.kind, "refused");
   if (tooMuch.kind === "refused") assert.equal(tooMuch.permanent, true);
+});
+
+test("a repay-only grant (sell budget zero by the owner's choice) refuses the sale by name, not as an exhausted budget", () => {
+  const v = ok(P_DERISK, DEBT, 0);
+  const r = planProtect(base(v, rung("derisk"), { grant: grant({ sellLeft: 0n, sellAllowed: false }) }));
+  assert.equal(r.kind, "refused");
+  if (r.kind === "refused") {
+    assert.match(r.reason, /owner chose repay-only/);
+    assert.doesNotMatch(r.reason, /exhausted/);
+    assert.equal(r.permanent, false, "the owner may add USDC or re-grant; the next tick re-reads");
+  }
+  const exhausted = planProtect(base(v, rung("derisk"), { grant: grant({ sellLeft: 0n, sellAllowed: true }) }));
+  assert.equal(exhausted.kind, "refused");
+  if (exhausted.kind === "refused") assert.match(exhausted.reason, /exhausted/);
 });
 
 test("bounds: a binding grant budget clamps and says so (the program accepts an exhausted budget); short keeper capital refuses", () => {

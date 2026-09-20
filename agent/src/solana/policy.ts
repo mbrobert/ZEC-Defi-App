@@ -27,6 +27,8 @@ export interface GrantBounds {
   allowedRungs: number;
   repayLeft: bigint;
   sellLeft: bigint;
+  /** False when the grant's per-period sell budget is ZERO — the owner chose repay-only (Advanced mode), which is not an exhausted budget and does not roll over. */
+  sellAllowed: boolean;
   maxSellSlippageBps: number;
 }
 
@@ -107,6 +109,7 @@ export function planProtect(i: PlanInput): ProtectPlan {
   const keeperCash = Number(i.keeperUsdc) / USDC_UNIT;
   let note: string | undefined;
   if (Y > C) return { kind: "refused", reason: `a sale of ${Y.toFixed(4)} ZEC exceeds the ${C.toFixed(4)} ZEC of collateral — the position cannot reach the disarm level`, permanent: false };
+  if (!i.grant.sellAllowed) return { kind: "refused", reason: "the grant allows no sale — the owner chose repay-only — and idle USDC cannot reach the disarm level; only the owner can add USDC, repay or close", permanent: false };
   if (sellLeft <= 0) return { kind: "refused", reason: "sell budget for this period is exhausted and idle USDC cannot reach the disarm level", permanent: false };
   if (Y > sellLeft) {
     note = `sell budget binds: ${sellLeft.toFixed(4)} of ${Y.toFixed(4)} ZEC (the program accepts an exhausted budget)`;

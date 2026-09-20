@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { BANNED_WORDS } from "../lib/copy";
-import { KAMINO_WORDING, SOLANA_DISCLOSURES, SOLANA_RISKS, solanaErrorPlain } from "../lib/solana/copy";
+import { KAMINO_WORDING, SOLANA_DISCLOSURES, SOLANA_KEEPER_NO_SELL, SOLANA_RISKS, solanaErrorPlain } from "../lib/solana/copy";
 import { OILSKIN_SOLANA_IDL } from "../lib/solana/idl.generated";
 
 test("Kamino's words are the facts file's blockquote, verbatim, with source and date", () => {
@@ -24,7 +24,7 @@ test("the quotation is rendered as a quotation, attributed, and only there", () 
   assert.match(step, /KAMINO_WORDING\.quote/);
   assert.match(step, /KAMINO_WORDING\.source/);
   // Oilskin's own sentences never borrow Kamino's words for what the token is NOT
-  const ours = [...Object.values(SOLANA_DISCLOSURES).map((d) => d.body), ...SOLANA_RISKS.map((r) => r.body)].join(" ");
+  const ours = [...Object.values(SOLANA_DISCLOSURES).map((d) => d.body), ...SOLANA_RISKS.map((r) => r.body), SOLANA_KEEPER_NO_SELL.body].join(" ");
   for (const w of BANNED_WORDS) assert.doesNotMatch(ours, new RegExp(`\\b${w.replace(/[-\s]/g, "[-\\s]")}\\b`, "i"), w);
   assert.doesNotMatch(ours, /guarantee|risk-free|\bsafe\b|audited\b/i);
 });
@@ -42,6 +42,11 @@ test("every disclosure id the yield route can name has words; the §8 additions 
   assert.match(all, /Squads/);
   assert.match(all, /rate after your borrow/i);
   assert.ok(SOLANA_RISKS.some((r) => r.id === "keeper-sells" && /sell/i.test(r.body)), "decision 1: the keeper may sell");
+  // the card that replaces it when the owner sets the sell budget to zero says the consequence, and is not in the default list
+  assert.match(SOLANA_KEEPER_NO_SELL.body, /may not sell|sell budget is zero/i);
+  assert.match(SOLANA_KEEPER_NO_SELL.body, /liquidates at a health factor of 1/i);
+  assert.match(SOLANA_KEEPER_NO_SELL.body, /only you can/i);
+  assert.equal(SOLANA_RISKS.some((r) => r.id === SOLANA_KEEPER_NO_SELL.id), false);
   assert.ok(SOLANA_RISKS.some((r) => r.id === "demo" && /446,506,191/.test(r.body)));
 });
 

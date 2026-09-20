@@ -1,14 +1,25 @@
 "use client";
 
 import { fmtPct, fmtUsd } from "@/lib/format";
-import { SOLANA_DISCLOSURES, SOLANA_RISKS } from "@/lib/solana/copy";
+import { SOLANA_DISCLOSURES, SOLANA_KEEPER_NO_SELL, SOLANA_RISKS } from "@/lib/solana/copy";
+import type { Mode } from "@/lib/mode";
 import type { OpenStep, SolanaOpenPlan } from "@/lib/solana/plan";
 import type { SolanaBorrowView, SolanaDisclosureId } from "@/lib/solana/yield";
 import Chip from "@/components/Chip";
 
-/** Step 4: every number with its slot, the disclosures the yield route named, Oilskin's risk list, the steps to sign. */
-export default function SolanaReviewStep({ plan, view, steps, acknowledged, onAcknowledge, mode }: { plan: SolanaOpenPlan; view: SolanaBorrowView; steps: OpenStep[]; acknowledged: boolean; onAcknowledge: (v: boolean) => void; mode: "demo" | "live" }) {
+/**
+ * Step 4: every number with its slot, the disclosures the yield route named, Oilskin's risk list, the steps to sign.
+ * In Advanced mode, one more decision: whether the keeper may sell ZEC (founder's decision 1, on by default). Saying no
+ * sets the grant's sell budget to zero and swaps the "keeper may sell" card for the one that says what that costs.
+ */
+export default function SolanaReviewStep({ plan, view, steps, acknowledged, onAcknowledge, mode, productMode, keeperMaySell, onKeeperMaySell }: {
+  plan: SolanaOpenPlan; view: SolanaBorrowView; steps: OpenStep[]; acknowledged: boolean; onAcknowledge: (v: boolean) => void; mode: "demo" | "live";
+  productMode: Mode; keeperMaySell: boolean; onKeeperMaySell: (v: boolean) => void;
+}) {
   const ids = (view.disclosures.length ? view.disclosures : Object.keys(SOLANA_DISCLOSURES)) as SolanaDisclosureId[];
+  const risks = SOLANA_RISKS
+    .filter((r) => !["bridged", "kamino-owner", "usdc", "program-exit"].includes(r.id) && (mode === "demo" || r.id !== "demo"))
+    .map((r) => (r.id === "keeper-sells" && !keeperMaySell ? SOLANA_KEEPER_NO_SELL : r));
   return (
     <div className="space-y-5">
       <div>
@@ -51,6 +62,23 @@ export default function SolanaReviewStep({ plan, view, steps, acknowledged, onAc
         )}
       </div>
 
+      {productMode === "advanced" && plan.borrowUsdc > 0 && (
+        <div className="card p-5" data-testid="sol-keeper-sell">
+          <div className="text-[14px] font-semibold">May the keeper sell your ZEC to protect this position?</div>
+          <p className="mt-1 text-[13px] text-oil-ink2">
+            Yes is Oilskin&rsquo;s default: when idle USDC cannot lift the health factor, the keeper pays USDC in and takes ZEC out at no worse than 2 % under Kamino&rsquo;s oracle price, within the daily budget you sign. No sets that budget to zero: the keeper may only repay from idle USDC, and a fall it cannot answer is yours to answer.
+          </p>
+          <div role="radiogroup" aria-label="May the keeper sell your ZEC" className="mt-3 flex flex-wrap gap-2">
+            <button type="button" role="radio" aria-checked={keeperMaySell} className={`opt px-3 py-1.5 ${keeperMaySell ? "sel" : ""}`} onClick={() => onKeeperMaySell(true)} data-testid="sol-keeper-sell-yes">
+              Yes — repay, and sell if it must
+            </button>
+            <button type="button" role="radio" aria-checked={!keeperMaySell} className={`opt px-3 py-1.5 ${keeperMaySell ? "" : "sel"}`} onClick={() => onKeeperMaySell(false)} data-testid="sol-keeper-sell-no">
+              No — repay from idle USDC only
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="card p-5">
         <div className="text-[14px] font-semibold">What you will sign</div>
         <ol className="mt-2 space-y-2 text-[13px]">
@@ -73,8 +101,8 @@ export default function SolanaReviewStep({ plan, view, steps, acknowledged, onAc
             </div>
           ) : null;
         })}
-        {SOLANA_RISKS.filter((r) => !["bridged", "kamino-owner", "usdc", "program-exit"].includes(r.id) && (mode === "demo" || r.id !== "demo")).map((r) => (
-          <div key={r.id} className="card p-4">
+        {risks.map((r) => (
+          <div key={r.id} className="card p-4" data-testid={`sol-risk-${r.id}`}>
             <div className="text-[14px] font-semibold">{r.title}</div>
             <p className="mt-1 text-[13px] text-oil-ink2">{r.body}</p>
           </div>
