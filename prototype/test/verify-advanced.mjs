@@ -186,7 +186,9 @@ await page.evaluate(() => { const o = window.__oil; o.S.positions.forEach(p => p
   const clob = await pageB.evaluate(() => { const o = window.__oil; o.S.seq = 0; o.S.positions = []; const ok = o.save(); return { ok, n: o.S.positions.length }; });
   check("two-tab: a stale tab cannot clobber — its save is refused and it re-adopts the newer state", clob.ok === false && clob.n === nA);
   await pageB.close();
-  await page.evaluate(() => { window.__marker = 1; window.__oil.storage.set('{"v":1,"positions":"nope"}'); setTimeout(() => location.reload(), 0); });
+  // Same race as the Simple suite's probe: a tick between the corruption and the reload committing saves the valid
+  // state back over it (backlog T-1, seen on CI 2026-09-19). Clear the old document's timers first.
+  await page.evaluate(() => { for (let i = 1; i < 100000; i++) { clearInterval(i); clearTimeout(i); } window.__marker = 1; window.__oil.storage.set('{"v":1,"positions":"nope"}'); setTimeout(() => location.reload(), 0); });
   await page.waitForFunction(() => window.__marker === undefined && !!window.__oil); await page.waitForTimeout(200);
   check("store: corrupted store → fresh state + boot note, zero console errors", /rejected/.test(await o("bootNote") || "") && (await o("S")).positions.length === 0 && page.__errors.length === 0, JSON.stringify([await o("bootNote"), (await o("S")).positions.length, page.__errors]));
 }

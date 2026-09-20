@@ -208,9 +208,14 @@ check("position: entry HF shown 1.55, recorded on the position as the router wou
   const rt = await page.evaluate(() => { const o = window.__oil; o.dispatch({ type: "setAmount", amount: 0.05 }); const s = o.serialize(o.S); const r = o.validateStore(s); return r.ok && JSON.stringify(o.serialize(r.state)) === JSON.stringify(o.serialize(Object.assign(r.state, { seq: o.S.seq }))); });
   check("store: a valid serialised state round-trips through validateStore", rt === true);
   // corrupt → reload → fresh + boot note, no console errors
-  await page.evaluate(() => { window.__marker = 1; window.__oil.storage.set('{"v":1,"pos":{"zec":"lots"}}'); setTimeout(() => location.reload(), 0); });
+  // The page ticks on an interval and every dispatch saves, and save() overwrites a store it cannot validate.
+  // Between the corruption below and the reload committing, the old document keeps running: one tick in that
+  // window puts the valid state back and the fresh document boots clean with no note — which is exactly what
+  // CI's two-core runner did on 2026-09-19 (backlog T-1). So the old document's timers are cleared first.
+  await page.evaluate(() => { for (let i = 1; i < 100000; i++) { clearInterval(i); clearTimeout(i); } window.__marker = 1; window.__oil.storage.set('{"v":1,"pos":{"zec":"lots"}}'); setTimeout(() => location.reload(), 0); });
   await page.waitForFunction(() => window.__marker === undefined && !!window.__oil); await page.waitForTimeout(200);
-  check("store: a corrupted store resets to fresh state on load with a boot note and zero console errors", (await o("bootNote")) && /rejected/.test(await o("bootNote")) && (await o("S")).pos === null && page.__errors.length === 0, page.__errors.join(" | "));
+  const booted = { note: await o("bootNote"), pos: (await o("S")).pos, errors: page.__errors };
+  check("store: a corrupted store resets to fresh state on load with a boot note and zero console errors", !!booted.note && /rejected/.test(booted.note) && booted.pos === null && booted.errors.length === 0, JSON.stringify(booted));
   // two-tab: page A and page B share localStorage (same context)
   const pageB = await openPage(b, srv.url("simple.html"), { context: page.__ctx });
   await page.evaluate(() => { const o = window.__oil; o.dispatch({ type: "connect", provider: "coinbase" }); o.dispatch({ type: "setMult", mult: 2 }); o.dispatch({ type: "ack", on: true }); o.dispatch({ type: "beginDeposit" }); o.dispatch({ type: "flowAdvance", id: o.S.flow.id }); });

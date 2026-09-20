@@ -3,6 +3,18 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-19 — The corrupted-store flake, named by the new harness on its first CI occurrence, and fixed
+
+CI's prototypes job went red on the docs-only commit `c787de6` (run 35414440672), and for the first time the log
+said which check: `verify-simple 129 / 1` on **"store: a corrupted store resets to fresh state on load with a boot
+note and zero console errors"**, the whole run 36.7 s — the assertion flake of backlog T-1, not the hang. The cause
+is in the pages, not the test's timing: both prototypes save on an interval (Simple on every price-jitter dispatch,
+Advanced unconditionally every 4 s) and `save()` overwrites a store it cannot validate, so a tick between the
+probe corrupting the store and the reload committing puts the valid state back and the fresh document boots
+clean with no note. A two-core runner widens that window. Both probes now clear the old document's timers
+before corrupting, and the Simple probe reports what it read instead of only the (empty) console errors.
+Prototypes alone **130 · 116 · 62 · 6**; the hang stays open in T-1 on its own.
+
 ## 2026-09-19 — The reserve sized against ZEC's own history: a model for the founder, not a change
 
 `ROADMAP.md` §1 item 4 and `CROSSCHAIN-RUNBOOK-2026-09-13.md` §5 both said the Solana-side reserve — the rung-2
