@@ -4,9 +4,9 @@
      below came from running the command in its own row, on the tree named here. README.md
      carries the prose and no numbers; this file carries the numbers and no prose. -->
 
-_Generated 2026-09-20T20:33:34Z by `npm run status` on darwin-arm64, Node 22.23.2._
+_Generated 2026-09-21T00:14:34Z by `npm run status` --all on darwin-arm64, Node 22.23.2._
 
-**Tree:** the working tree at `8481885` on `main`, with **20 file(s) modified on top of it** — including this one, when it is regenerated just before a commit. Each suite ran against that tree, not against a published commit.
+**Tree:** the working tree at `43177e3` on `main`, with **24 file(s) modified on top of it** — including this one, when it is regenerated just before a commit. Each suite ran against that tree, not against a published commit.
 
 Abbreviations: ABI = application binary interface; e2e = end-to-end; HF = health factor;
 LP = liquidity provision; RPC = remote procedure call; CCTP = Circle's Cross-Chain Transfer Protocol.
@@ -16,17 +16,17 @@ LP = liquidity provision; RPC = remote procedure call; CCTP = Circle's Cross-Cha
 | Area | Command | Result |
 |---|---|---|
 | Contracts (Foundry) | `cd contracts && forge test` | **435 passed / 0 failed / 13 skipped** (448 total), 39 suites |
-| Contracts, fork | `FORK_URL=<Base archive RPC> forge test --match-path test/fork/BaseFork.t.sol` | not run — add `--all` |
+| Contracts, fork | `FORK_URL=<Base archive RPC> forge test --match-path test/fork/BaseFork.t.sol` | needs `FORK_URL` (a Base archive RPC) |
 | Root ABI seam | `node scripts/verify-abi.mjs` | **444** selectors / topics / errors across 19 contracts |
 | Shared | `npm test -w @zyo/shared` | **132** |
 | Solana, seams | `npm test -w @zyo/solana` | **14** |
-| Solana, program unit | `cd solana && cargo test --manifest-path programs/oilskin/Cargo.toml` | not run — add `--all` |
-| Solana, localnet | `bash solana/scripts/localnet.sh (terminal 1) · cd solana && anchor test --skip-build --skip-local-validator (terminal 2)` | not run — add `--all` |
+| Solana, program unit | `cd solana && cargo test --manifest-path programs/oilskin/Cargo.toml` | **12** |
+| Solana, localnet | `bash solana/scripts/localnet.sh (terminal 1) · cd solana && anchor test --skip-build --skip-local-validator (terminal 2)` | **36 passing / 0 failing** |
 | Keeper | `npm test -w @zyo/agent` | **319**, plus its ABI seam **123 / 123** and the IDL seam **77 / 77** |
-| Yield | `npm test -w @zyo/yield` | **192** |
-| Web, unit | `npm test -w @zyo/web` | **206** |
-| Web, e2e | `cd web && npx playwright test` | not run — add `--all` |
-| Web, e2e against Base Sepolia | `cd web && npx playwright test -c playwright.sepolia.config.ts` | not run — add `--all` |
+| Yield | `npm test -w @zyo/yield` | **194** |
+| Web, unit | `npm test -w @zyo/web` | **211** |
+| Web, e2e | `cd web && npx playwright test` | **24 passed / 0 failed / 6 skipped** |
+| Web, e2e against Base Sepolia | `cd web && npx playwright test -c playwright.sepolia.config.ts` | skips by name until `docs/DEPLOYMENTS.md` carries Sepolia addresses |
 | Prototypes | `node prototype/test/run-all.mjs` | verify-simple **130** · verify-advanced **116** · verify-toggle **62** · fuzz **6** |
 
 Every suite that ran came back green.

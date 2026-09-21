@@ -13,7 +13,7 @@ type State = "pending" | "signing" | "submitted" | "done" | "failed";
  * Step 5: one wallet prompt per step, each introduced by one sentence. In demo mode nothing runs and the page says
  * what would be signed; a Solana wallet button offers the live path.
  */
-export default function SolanaSignStep({ steps, mode, run, onDone }: { steps: OpenStep[]; mode: "demo" | "live"; run: (emit: SolanaEmit) => Promise<string[]>; onDone?: () => void }) {
+export default function SolanaSignStep({ steps, afterwards = [], mode, run, onDone }: { steps: OpenStep[]; afterwards?: { id: string; title: string; sentence: string }[]; mode: "demo" | "live"; run: (emit: SolanaEmit) => Promise<string[]>; onDone?: () => void }) {
   const [states, setStates] = useState<Record<number, { state: State; signature?: string; error?: string }>>({});
   const [running, setRunning] = useState(false);
   const [finished, setFinished] = useState(false);
@@ -65,6 +65,23 @@ export default function SolanaSignStep({ steps, mode, run, onDone }: { steps: Op
           );
         })}
       </ol>
+      {afterwards.length > 0 && (
+        <div data-testid="sol-afterwards">
+          <div className="text-[14px] font-semibold">Then, the crossing — not signable in this build</div>
+          <p className="mt-1 text-[12.5px] text-oil-ink3">The loop you chose is four more signatures on two chains. This build lists them and cannot sign them yet; they land with the devnet ↔ Sepolia run. Your USDC stays in your Solana account until then.</p>
+          <ol className="mt-2 space-y-2">
+            {afterwards.map((a, i) => (
+              <li key={a.id} className="card p-3" data-testid={`sol-after-${a.id}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-[13.5px] font-semibold"><span className="num text-oil-ink3">{steps.length + i + 1}.</span> {a.title}</div>
+                  <Chip kind="mute">not in this build</Chip>
+                </div>
+                <p className="mt-1 text-[12.5px] text-oil-ink2">{a.sentence}</p>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
       {mode === "live" ? (
         <button type="button" className="btn btn-brass btn-lg" onClick={start} disabled={running || finished} data-testid="sol-sign">
           {finished ? "Done" : running ? "Waiting for your wallet…" : `Sign ${steps.length} transaction${steps.length === 1 ? "" : "s"}`}

@@ -9,6 +9,8 @@ import { ENV } from "@/lib/env";
 import { SOLANA_ENV, solanaConfigured, solanaKeeperConfigured } from "./env";
 import { readSolanaPosition, type SolanaPosition } from "./reads";
 import { demoSolanaBorrow, fetchSolanaBorrow, type SolanaBorrowQuery, type SolanaBorrowView } from "./yield";
+import { fetchForecast, type ForecastView } from "@/lib/forecast";
+import { demoLoopForecast, LOOP_COLLATERAL_LABEL } from "./loop";
 
 export interface SolanaSession {
   mode: "demo" | "live";
@@ -50,6 +52,35 @@ export function useSolanaBorrowView(q: SolanaBorrowQuery): { view: SolanaBorrowV
     refetchInterval: offline ? false : 60_000,
   });
   return { view: fq.data ?? demoSolanaBorrow(), loading: fq.isFetching };
+}
+
+/**
+ * The cross-chain loop's forecast for the position being built: `/v1/forecast?crossChain=1` at this entry HF and
+ * collateral size (so the post-borrow Kamino rate is the cell's), the generated snapshot when offline or unreachable
+ * — labelled demo wherever it is shown.
+ */
+export function useLoopForecast(q: { entryHf?: number; depositUsd?: number; enabled: boolean }): { forecast: ForecastView; loading: boolean } {
+  const { offline } = useSolanaSession();
+  const key = [q.entryHf ?? "", q.depositUsd ?? ""].join("|");
+  const fq = useQuery<ForecastView>({
+    queryKey: ["solana-loop-forecast", offline, key],
+    enabled: q.enabled,
+    queryFn: async () => {
+      if (offline) return demoLoopForecast();
+      try {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 6_000);
+        const v = await fetchForecast(ENV.yieldUrl, { collateral: LOOP_COLLATERAL_LABEL, entryHf: q.entryHf, depositUsd: q.depositUsd, crossChain: true }, ctrl.signal);
+        clearTimeout(t);
+        return v;
+      } catch {
+        return demoLoopForecast();
+      }
+    },
+    placeholderData: demoLoopForecast(),
+    refetchInterval: offline ? false : 120_000,
+  });
+  return { forecast: fq.data ?? demoLoopForecast(), loading: fq.isFetching };
 }
 
 /** The connected wallet's Oilskin position on Solana; null in demo mode. */

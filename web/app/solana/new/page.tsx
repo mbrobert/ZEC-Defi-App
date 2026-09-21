@@ -8,6 +8,9 @@ import BridgedZecStep from "@/components/solana/wizard/BridgedZecStep";
 import AmountStep from "@/components/solana/wizard/AmountStep";
 import HfStep from "@/components/solana/wizard/HfStep";
 import SolanaReviewStep from "@/components/solana/wizard/SolanaReviewStep";
+import DeployStep from "@/components/solana/wizard/DeployStep";
+import { useLoopForecast } from "@/lib/solana/hooks";
+import { crossingSteps, DEFAULT_LOOP_CHOICE, planLoop, type LoopChoice } from "@/lib/solana/loop";
 import SolanaSignStep from "@/components/solana/wizard/SolanaSignStep";
 import { SOLANA_ENV } from "@/lib/solana/env";
 import { runSolanaOpen, type SolanaEmit } from "@/lib/solana/execute";
@@ -37,6 +40,9 @@ function SolanaWizard() {
   const [hfTouched, setHfTouched] = useState(false);
   const [ackHf, setAckHf] = useState(false);
   const [ackReview, setAckReview] = useState(false);
+  // where the borrowed USDC goes (the cross-chain loop, D6); the default is to keep it on Solana
+  const [loop, setLoop] = useState<LoopChoice>(DEFAULT_LOOP_CHOICE);
+  const [ackLoop, setAckLoop] = useState(false);
   // Advanced mode's one extra decision inside the grant; Simple mode takes Oilskin's default whatever was chosen before the switch
   const { mode: productMode } = useMode();
   const [keeperMaySellChoice, setKeeperMaySell] = useState(true);
@@ -53,14 +59,27 @@ function SolanaWizard() {
   const view = collateralZec > 0 ? pricedView : poolView;
   const plan = useMemo(() => (collateralZec > 0 ? planSolanaOpen({ collateralZec, entryHf: hf, view: poolView }) : null), [collateralZec, hf, poolView]);
   const steps = plan ? openSteps(plan, { accountExists: position?.exists ?? false, keeperConfigured: s.keeperConfigured, keeperMaySell }) : [];
+  const { forecast: loopForecast, loading: loopLoading } = useLoopForecast({ entryHf: Number.isFinite(hf) ? hf : undefined, depositUsd: plan?.collateralUsd, enabled: !!plan && plan.borrowUsdc > 0 });
+  const loopPlan = plan ? planLoop(plan, loop, loopForecast) : null;
+  const onLoop = (c: LoopChoice) => {
+    setLoop(c);
+    setAckLoop(false);
+  };
   const walletZec = s.connected && position ? fromUnits(position.walletZec.amount, 8) : null;
 
   const onHf = (v: number) => {
     setHfTouched(true);
     setEntryHf(bounds ? clampSolanaHf(v, bounds) : v);
     setAckHf(false);
+    setAckLoop(false);
   };
-  const canContinue = step === 0 ? ackBridged : step === 1 ? collateralZec > 0 && !!plan : step === 2 ? !!plan && (!needsHfAcknowledgment(hf) || ackHf) : step === 3 ? ackReview && view.allowed : false;
+  const canContinue =
+    step === 0 ? ackBridged
+    : step === 1 ? collateralZec > 0 && !!plan
+    : step === 2 ? !!plan && (!needsHfAcknowledgment(hf) || ackHf)
+    : step === 3 ? loopPlan !== null && (loopPlan.kind === "keep" || (ackLoop && loopPlan.allowed))
+    : step === 4 ? ackReview && view.allowed
+    : false;
 
   const run = async (emit: SolanaEmit): Promise<string[]> => {
     if (!plan || !s.publicKey || !wallet.sendTransaction) throw new Error("no wallet");
@@ -85,22 +104,23 @@ function SolanaWizard() {
     <div className="mx-auto max-w-[760px] space-y-6">
       <div>
         <h1 className="text-[24px]">ZEC on Solana → USDC on Kamino</h1>
-        <p className="mt-1 text-[13.5px] text-oil-ink2">Five screens, one decision each. Every number is read from Solana and shown with its slot before you sign anything. {s.mode === "demo" ? "Demo mode: the market is a labelled snapshot and nothing can be signed." : ""}</p>
+        <p className="mt-1 text-[13.5px] text-oil-ink2">Six screens, one decision each. Every number is read from Solana and shown with its slot before you sign anything. {s.mode === "demo" ? "Demo mode: the market is a labelled snapshot and nothing can be signed." : ""}</p>
       </div>
       <Steps steps={[...SOLANA_WIZARD_STEPS]} current={step} />
       <div className="card p-6">
         {step === 0 && <BridgedZecStep acknowledged={ackBridged} onAcknowledge={setAckBridged} />}
         {step === 1 && <AmountStep amount={amount} onAmount={setAmount} view={view} walletZec={walletZec} mode={s.mode} />}
         {step === 2 && plan && bounds && <HfStep plan={plan} bounds={bounds} view={view} entryHf={hf} onChange={onHf} acknowledged={ackHf} onAcknowledge={setAckHf} keeperProtection={s.keeperConfigured} />}
-        {step === 3 && plan && <SolanaReviewStep plan={plan} view={view} steps={steps} acknowledged={ackReview} onAcknowledge={setAckReview} mode={s.mode} productMode={productMode} keeperMaySell={keeperMaySell} onKeeperMaySell={setKeeperMaySell} />}
-        {step === 4 && plan && <SolanaSignStep steps={steps} mode={s.mode} run={run} />}
-        {step < 4 && (
+        {step === 3 && plan && loopPlan && <DeployStep plan={plan} forecast={loopForecast} loading={loopLoading} choice={loop} loop={loopPlan} onChoice={onLoop} acknowledged={ackLoop} onAcknowledge={setAckLoop} />}
+        {step === 4 && plan && <SolanaReviewStep plan={plan} view={view} steps={steps} loop={loopPlan} acknowledged={ackReview} onAcknowledge={setAckReview} mode={s.mode} productMode={productMode} keeperMaySell={keeperMaySell} onKeeperMaySell={setKeeperMaySell} />}
+        {step === 5 && plan && <SolanaSignStep steps={steps} afterwards={loopPlan ? crossingSteps(loopPlan) : []} mode={s.mode} run={run} />}
+        {step < 5 && (
           <div className="mt-6 flex justify-between">
             <button className="btn-ghost" onClick={() => setStep((x) => Math.max(0, x - 1))} disabled={step === 0} data-testid="sol-wizard-back">
               Back
             </button>
             <button className="btn btn-brass" onClick={() => setStep((x) => x + 1)} disabled={!canContinue} data-testid="sol-wizard-next">
-              {step === 3 ? "Continue to sign" : "Continue"}
+              {step === 4 ? "Continue to sign" : "Continue"}
             </button>
           </div>
         )}

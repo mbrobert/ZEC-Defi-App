@@ -19,6 +19,8 @@ import { evaluateForecast } from "../dist/src/forecast.js";
 import { calibrationIndex, loadMcCalibration } from "../dist/src/mc-calibration.js";
 import { ENGINE_FEE_BPS, SETTINGS } from "../dist/src/model.js";
 import { emissionsFromSample, ratesFromModel, readJson, relSample, STAKED_LIQUIDITY_PROVENANCE } from "./demo-inputs.mjs";
+import { venueBorrowFromKamino } from "../dist/src/solanaBorrow.js";
+import { FIXTURE_SLOT, kaminoSampleFixture, MARKET_FIXTURE_SLOT } from "../dist/test/fixtures/kamino.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const samples = resolve(here, "../samples");
@@ -128,4 +130,46 @@ const webDest = resolve(here, "../../../web/lib/demo-forecast.json");
 if (existsSync(dirname(webDest))) {
   writeFileSync(webDest, JSON.stringify(out, null, 2) + "\n");
   console.log(`mirrored → ${webDest}`);
+}
+
+/*
+ * The CROSS-CHAIN loop's forecast (BUILD-PLAN D6): the same pools and settings with the borrow side read from
+ * Kamino's ZCASH market — the recorded mainnet capture the Solana tests decode — through the same pure function
+ * the server uses on its live sample. One registry collateral label per cell, because the evaluator requires
+ * one; the loop's collateral is ZEC on Kamino, which `venueBorrow` carries and the web says in its own words.
+ */
+const CROSS_LABEL = "cbBTC";
+const kamino = venueBorrowFromKamino({ ...kaminoSampleFixture(Date.parse(asOfIso)), stale: false });
+// At the registry floor (1.25) the LTV would be 52 %, past Kamino's 40 % cap, and every cell is refused — which is
+// true and useless as a demo. A loop position enters at the cap: HF = LT ÷ LTV cap = 1.625 on this market.
+const CROSS_ENTRY_HF = Math.round((kamino.liquidationThresholdBps / kamino.venueMaxLtvBps) * 1000) / 1000;
+const crossCells = [];
+for (const pool of CURATED_POOLS.filter((p) => p.dex === "AERODROME")) {
+  const emissions = emissionsFromSample(sample, pool, nowSeconds);
+  for (const setting of SETTINGS) {
+    crossCells.push(
+      evaluateForecast({
+        pool, setting, collateral: CROSS_LABEL, rates, emissions, volatility, mcCalibration: mcIndex, nowSeconds,
+        entryHf: CROSS_ENTRY_HF, entryHfFloor: ENTRY_HF_FLOOR, depositUsd: null, collateralPriceUsd: null, venueBorrow: kamino,
+      })
+    );
+  }
+}
+const crossOut = {
+  ...out,
+  generatedBy: "services/yield/scripts/gen-demo-forecast.mjs — evaluateForecast() with venueBorrow = Kamino's ZCASH market from the recorded capture (the cross-chain loop, BUILD-PLAN D6), at the HF Kamino's cap implies, no deposit size",
+  _about: `Every cell's borrow side is Kamino's: the rate, the ZEC reserve's LT ${kamino.liquidationThresholdBps} bps and LTV cap ${kamino.venueMaxLtvBps} bps, the USDC pool's depth. Evaluated at entry HF ${CROSS_ENTRY_HF} — the cap's own HF, where a loop position enters — not at the registry floor, where Kamino refuses every cell. The cell's "collateral" is the registry label the evaluator requires (${CROSS_LABEL}), not the loop's collateral, which is ZEC on Kamino.`,
+  entryHf: CROSS_ENTRY_HF,
+  pinnedFrom: { ...out.pinnedFrom, kaminoCapture: `test/fixtures/solana-mainnet-2026-09-12.json (slot ${FIXTURE_SLOT}) + solana-lending-market-2026-09-13.json (slot ${MARKET_FIXTURE_SLOT})` },
+  borrowAprPct: kamino.borrowAprNowPct,
+  venueBorrow: { chain: kamino.chain, venue: kamino.venue, borrowAprNowPct: kamino.borrowAprNowPct, liquidationThresholdBps: kamino.liquidationThresholdBps, venueMaxLtvBps: kamino.venueMaxLtvBps, availableUnits: kamino.availableUnits, decimals: kamino.decimals, refusals: kamino.refusals },
+  cells: crossCells,
+};
+const crossPath = resolve(arg("out-crosschain", join(samples, "demo-forecast-crosschain.json")));
+writeFileSync(crossPath, JSON.stringify(crossOut, null, 2) + "\n");
+console.log(`wrote ${crossPath}: ${crossCells.length} cross-chain cells, ${crossCells.filter((c) => c.lpPriced).length} priced, Kamino borrow ${kamino.borrowAprNowPct}%`);
+const crossWebDest = resolve(here, "../../../web/lib/solana/demo-forecast-crosschain.json");
+if (existsSync(dirname(crossWebDest))) {
+  writeFileSync(crossWebDest, JSON.stringify(crossOut, null, 2) + "\n");
+  console.log(`mirrored → ${crossWebDest}`);
 }

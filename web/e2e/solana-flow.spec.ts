@@ -45,7 +45,13 @@ test("solana wizard: Kamino's words → amount with the pool view → the slider
   await expect(page.getByTestId("sol-hf-ack")).toHaveCount(0);
   await page.getByTestId("sol-wizard-next").click();
 
+  // step 4: where the borrowed USDC goes — the default keeps it on Solana and names the reserve
+  await expect(page.getByTestId("sol-deploy")).toContainText("stays on Solana as the reserve");
+  await expect(page.getByTestId("sol-loop-keep")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("sol-wizard-next").click();
+
   await expect(page.getByTestId("sol-review")).toContainText("Entry health factor");
+  await expect(page.getByTestId("sol-review-loop")).toContainText("stays in your Oilskin account on Solana");
   await expect(page.getByText("The way out is through the Oilskin program")).toBeVisible();
   await expect(page.getByText("Circle can freeze USDC")).toBeVisible();
   await expect(page.getByTestId("sol-wizard-next")).toBeDisabled();
@@ -65,6 +71,7 @@ test("solana review, Advanced: whether the keeper may sell ZEC is the owner's ch
   await page.getByTestId("ack-bridged").check();
   await page.getByTestId("sol-wizard-next").click();
   await page.getByTestId("zec-amount").fill("10");
+  await page.getByTestId("sol-wizard-next").click();
   await page.getByTestId("sol-wizard-next").click();
   await page.getByTestId("sol-wizard-next").click();
   await expect(page.getByTestId("sol-review")).toContainText("Entry health factor");
@@ -87,6 +94,52 @@ test("solana review, Advanced: whether the keeper may sell ZEC is the owner's ch
   await expect(control).toHaveCount(0);
   await expect(page.getByTestId("sol-risk-keeper-sells")).toBeVisible();
   await expect(page.getByTestId("sol-risk-keeper-no-sell")).toHaveCount(0);
+  expect(errors, errors.join("\n")).toEqual([]);
+});
+
+test("solana deploy: the loop's forecast is Kamino-priced; a chosen pool needs the acknowledgment, names the reserve, and the crossing is listed as not signable", async ({ page }) => {
+  const errors = await collectErrors(page);
+  await page.goto("/solana/new");
+  await page.getByTestId("mode-advanced").click();
+  await page.getByTestId("ack-bridged").check();
+  await page.getByTestId("sol-wizard-next").click();
+  await page.getByTestId("zec-amount").fill("10");
+  await page.getByTestId("sol-wizard-next").click();
+  await page.getByTestId("sol-wizard-next").click();
+  // the screen: the forecast line names Kamino, every pool × setting is listed in Advanced, the keep option is on
+  await expect(page.getByTestId("sol-loop-forecast-line")).toContainText("Kamino");
+  await expect(page.getByTestId("sol-loop-forecast-line")).toContainText("demo");
+  await expect(page.locator('[data-testid^="sol-loop-cell-"]')).toHaveCount(27);
+  await expect(page.locator('[data-testid^="sol-loop-cell-"][data-priced]').first()).toBeVisible();
+  await expect(page.getByTestId("sol-loop-disabled")).toHaveCount(0); // the e2e server runs with the flag on
+  await expect(page.getByTestId("sol-wizard-next")).toBeEnabled();
+  // Simple lists one cell per pool; back to Advanced for the choice below
+  await page.getByTestId("mode-simple").click();
+  await expect(page.locator('[data-testid^="sol-loop-cell-"]')).toHaveCount(9);
+  await page.getByTestId("mode-advanced").click();
+  await expect(page.locator('[data-testid^="sol-loop-cell-"]')).toHaveCount(27);
+  // choose the cbBTC/USDC sheltered cell: the summary, the two disclosures and the acknowledgment appear; Continue waits for it
+  await page.getByTestId("sol-loop-cell-aero-cbbtc-usdc-sheltered").click();
+  await expect(page.getByTestId("sol-loop-cell-aero-cbbtc-usdc-sheltered")).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("sol-loop-keep")).toHaveAttribute("aria-checked", "false");
+  await expect(page.getByTestId("sol-loop-summary")).toContainText("Stays on Solana");
+  await expect(page.getByTestId("sol-loop-summary")).toContainText("the reserve");
+  await expect(page.getByTestId("sol-loop-disclosure-cross_chain_circle")).toContainText("Circle");
+  await expect(page.getByTestId("sol-loop-ack-text")).toContainText("stays on Solana as the reserve");
+  await expect(page.getByTestId("sol-wizard-next")).toBeDisabled();
+  await page.getByTestId("sol-loop-ack").check();
+  await expect(page.getByTestId("sol-wizard-next")).toBeEnabled();
+  await page.getByTestId("sol-wizard-next").click();
+  // review names both amounts; sign lists the crossing's four steps as not in this build
+  // the web names a pair token0/token1 as the pool does (USDC/cbBTC), the prototypes the other way round
+  await expect(page.getByTestId("sol-review-loop")).toContainText(/crosses to Base into (USDC\/cbBTC|cbBTC\/USDC) \(sheltered\)/);
+  await expect(page.getByTestId("sol-review-loop")).toContainText("stays on Solana as the reserve");
+  await page.getByTestId("sol-ack-review").check();
+  await page.getByTestId("sol-wizard-next").click();
+  await expect(page.getByTestId("sol-afterwards")).toContainText("not signable in this build");
+  await expect(page.getByTestId("sol-after-set_base_account")).toBeVisible();
+  await expect(page.getByTestId("sol-after-deposit_for_burn")).toContainText("Burn");
+  await expect(page.getByTestId("sol-after-cross_chain_grant")).toContainText("not in this build");
   expect(errors, errors.join("\n")).toEqual([]);
 });
 

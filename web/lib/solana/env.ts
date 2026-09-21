@@ -20,6 +20,12 @@ export const SOLANA_ENV = {
   /** The Oilskin keeper's Solana public key (optional): enables the revocable protection grant step. */
   keeper: process.env.NEXT_PUBLIC_OILSKIN_SOLANA_KEEPER ?? "",
   explorerUrl: SOLANA_CLUSTER.explorerUrl,
+  /**
+   * The cross-chain loop's DEPLOY choice (ROADMAP §3: the loop ships behind a flag until the devnet ↔ Sepolia run
+   * has passed). Off: the wizard still shows the loop's forecast, and says the crossing cannot be chosen in this
+   * build. On: a pool may be chosen; the crossing's own transactions are listed as not yet signable here.
+   */
+  loopEnabled: process.env.NEXT_PUBLIC_CROSS_CHAIN_LOOP === "1",
 } as const;
 
 export function solanaConfigured(): boolean {

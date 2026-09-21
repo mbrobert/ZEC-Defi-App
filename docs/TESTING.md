@@ -23,9 +23,9 @@ MC = Monte Carlo.
 | Solana, program unit | `cd solana && cargo test --manifest-path programs/oilskin/Cargo.toml` | **12** |
 | Solana, localnet | `bash solana/scripts/localnet.sh` (terminal 1) · `cd solana && anchor test --skip-build --skip-local-validator` (terminal 2) | **36 passing / 0 failing** |
 | Keeper | `npm test -w @zyo/agent` | **319 tests / 61 suites**, plus its own ABI seam **123 / 123** and the IDL seam **77 / 77** |
-| Yield | `npm test -w @zyo/yield` | **192** |
-| Web, unit | `npm test -w @zyo/web` | **206** |
-| Web, e2e | `cd web && npx playwright test` | **22 passed / 0 failed / 6 skipped** |
+| Yield | `npm test -w @zyo/yield` | **194** |
+| Web, unit | `npm test -w @zyo/web` | **211** |
+| Web, e2e | `cd web && npx playwright test` | **24 passed / 0 failed / 6 skipped** |
 | Web, e2e against Base Sepolia | `cd web && npx playwright test -c playwright.sepolia.config.ts` | **3 skipped by name** until `docs/DEPLOYMENTS.md` carries Sepolia addresses |
 | Prototypes | `mkdir -p /tmp/build && cp services/yield/samples/MODEL-NUMBERS.md /tmp/build/ && node prototype/test/run-all.mjs` | **verify-simple 130 · verify-advanced 116 · verify-toggle 62 · fuzz 6** |
 
@@ -45,7 +45,7 @@ suite *proves* is in the per-area sections below; what *changed and when* is `do
 **Running notes that are easy to lose.** A prototype suite that stops making progress kills itself after 90 s
 (`OIL_STALL_S`) and prints `STALLED … last completed: "<check>"`; `run-all.mjs` kills a suite at 300 s by name; and
 `npm run status` keeps every red suite's whole output in `<tmpdir>/oilskin-status/<area>.log` and names the file —
-read it before re-running anything (backlog T-1). Two suites read `/tmp/build/MODEL-NUMBERS.md` — six parity checks in
+read it before re-running anything (backlog T-1, closed 2026-09-20 after twenty consecutive green runs). Two suites read `/tmp/build/MODEL-NUMBERS.md` — six parity checks in
 `verify-toggle` and the web's demo-gate pin, which skips without it — and a reboot empties `/tmp`; `npm run status`
 stages the file there before any suite runs (since 2026-09-20; it used to stage into the OS temp dir, which on
 macOS is not `/tmp`), and the manual commands above copy it themselves. The Playwright suites use Playwright's own Chromium; a `CHROMIUM_PATH`
@@ -195,7 +195,7 @@ disagreement between the venue's health factor and the keeper's own feeds is
 UNKNOWN in both directions, and the startup probe is fatal only for a venue that
 does not answer the interface.
 
-## Yield (`services/yield/test`, 18 files)
+## Yield (`services/yield/test`, 19 files)
 
 **`reserve-sizing.test.ts`** (2026-09-19) — the reserve model behind `docs/MODEL-RESERVE-2026-09-19.md`: the
 window and volatility arithmetic on hand-built candles, the ladder walk on paths whose outcome is known by

@@ -4,6 +4,7 @@ import { fmtPct, fmtUsd } from "@/lib/format";
 import { SOLANA_DISCLOSURES, SOLANA_KEEPER_NO_SELL, SOLANA_RISKS } from "@/lib/solana/copy";
 import type { Mode } from "@/lib/mode";
 import type { OpenStep, SolanaOpenPlan } from "@/lib/solana/plan";
+import type { LoopPlan } from "@/lib/solana/loop";
 import type { SolanaBorrowView, SolanaDisclosureId } from "@/lib/solana/yield";
 import Chip from "@/components/Chip";
 
@@ -12,8 +13,8 @@ import Chip from "@/components/Chip";
  * In Advanced mode, one more decision: whether the keeper may sell ZEC (founder's decision 1, on by default). Saying no
  * sets the grant's sell budget to zero and swaps the "keeper may sell" card for the one that says what that costs.
  */
-export default function SolanaReviewStep({ plan, view, steps, acknowledged, onAcknowledge, mode, productMode, keeperMaySell, onKeeperMaySell }: {
-  plan: SolanaOpenPlan; view: SolanaBorrowView; steps: OpenStep[]; acknowledged: boolean; onAcknowledge: (v: boolean) => void; mode: "demo" | "live";
+export default function SolanaReviewStep({ plan, view, steps, loop, acknowledged, onAcknowledge, mode, productMode, keeperMaySell, onKeeperMaySell }: {
+  plan: SolanaOpenPlan; view: SolanaBorrowView; steps: OpenStep[]; loop: LoopPlan | null; acknowledged: boolean; onAcknowledge: (v: boolean) => void; mode: "demo" | "live";
   productMode: Mode; keeperMaySell: boolean; onKeeperMaySell: (v: boolean) => void;
 }) {
   const ids = (view.disclosures.length ? view.disclosures : Object.keys(SOLANA_DISCLOSURES)) as SolanaDisclosureId[];
@@ -50,6 +51,16 @@ export default function SolanaReviewStep({ plan, view, steps, acknowledged, onAc
             <dt className="text-oil-ink3">Liquidation begins at</dt>
             <dd className="num">{plan.liquidationPriceUsd !== null ? `${fmtUsd(plan.liquidationPriceUsd)} per ZEC` : "never — no debt"}</dd>
           </div>
+          {plan.borrowUsdc > 0 && loop && (
+            <div className="sm:col-span-2" data-testid="sol-review-loop">
+              <dt className="text-oil-ink3">Borrowed USDC</dt>
+              <dd className="num">
+                {loop.kind === "base" && loop.cell
+                  ? `${fmtUsd(loop.crossUsdc)} crosses to Base into ${loop.cell.pool.token0}/${loop.cell.pool.token1} (${loop.cell.setting}); ${fmtUsd(loop.reserveUsdc)} stays on Solana as the reserve (${fmtPct(loop.reserveFraction * 100)} of the debt). The crossing is not signed by this build.`
+                  : "stays in your Oilskin account on Solana"}
+              </dd>
+            </div>
+          )}
           <div>
             <dt className="text-oil-ink3">Borrow rate after your borrow</dt>
             <dd className="num">{view.borrowAprAfterPct !== null ? `${fmtPct(view.borrowAprAfterPct)} a year` : "—"}</dd>

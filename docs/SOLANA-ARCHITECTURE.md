@@ -384,8 +384,16 @@ do: **repay everything and take the ZEC home** (top up USDC if the account is sh
 `transfer_out` both tokens — the exit hatch, one button) and **revoke** the keeper.
 
 Not in this build: exercising the signed path against a live wallet (the localnet specs prove the program; the
-web's encoders are pinned to the IDL; a wallet-driven run on localnet is the next check) and the cross-chain
-forecast (Stream C). **Advanced mode's sell budget of zero is built (2026-09-20):** the review step asks, in
+web's encoders are pinned to the IDL; a wallet-driven run on localnet is the next check). **The cross-chain
+forecast is built (2026-09-20):** a sixth screen, "Borrowed USDC", offers the loop as the forecast it is — every
+Aerodrome pool × setting priced by the service's `crossChain=1` cells on Kamino's borrow side (Simple: one cell
+per pool; Advanced: all, both models), the reserve of §14.3 named as what stays on Solana, the Base wizard's
+acknowledgment with the loop's own sentence, and the two cross-chain disclosures before the button. The choice is
+gated by `NEXT_PUBLIC_CROSS_CHAIN_LOOP` and, chosen, the sign screen lists §14.6's four crossing signatures as
+**not signable in this build** — the address lookup table and the two-key process are deploy artefacts, and
+nothing has crossed a chain (ROADMAP §3's fallback: the loop ships behind a flag). The service's Kamino-side
+reader is one pure function, `venueBorrowFromKamino`, run by the server on its live sample and by the demo
+generator on the recorded capture. **Advanced mode's sell budget of zero is built (2026-09-20):** the review step asks, in
 Advanced mode only, whether the keeper may sell ZEC — decision 1's default, yes, is pre-selected; no sets
 `sell_zec_per_period` to 0, swaps the "keeper may sell" card for the one that says rungs 3 and 4 then cannot
 act beyond idle USDC, and the grant step's sentence says "and nothing else". Simple mode shows no control and

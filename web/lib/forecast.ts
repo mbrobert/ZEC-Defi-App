@@ -318,6 +318,8 @@ export interface ForecastQuery {
   depositUsd?: number;
   pool?: string;
   setting?: GateSettingId;
+  /** The cross-chain loop (BUILD-PLAN D6): the borrow side is Kamino's, read live by the service; the LP slice stays Base's. */
+  crossChain?: boolean;
 }
 
 export function forecastPath(q: ForecastQuery): string {
@@ -327,6 +329,7 @@ export function forecastPath(q: ForecastQuery): string {
   if (q.depositUsd !== undefined && Number.isFinite(q.depositUsd) && q.depositUsd > 0) p.set("deposit", String(q.depositUsd));
   if (q.pool) p.set("pool", q.pool);
   if (q.setting) p.set("setting", q.setting);
+  if (q.crossChain) p.set("crossChain", "1");
   const s = p.toString();
   return `/v1/forecast${s ? `?${s}` : ""}`;
 }

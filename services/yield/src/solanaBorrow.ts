@@ -12,6 +12,8 @@
  */
 import { kaminoCurveAprBps } from "@zyo/shared";
 import type { KaminoSample, WithdrawalCaps } from "./sources/kamino.js";
+import type { ForecastVenueBorrow } from "./forecast.js";
+import type { ForecastRefusal } from "./types.js";
 
 export type SolanaBorrowRefusal =
   | "kamino_unavailable"
@@ -323,4 +325,42 @@ export function evaluateSolanaBorrow(input: SolanaBorrowInputs): SolanaBorrowVie
     }
   }
   return finish();
+}
+
+/**
+ * Kamino's ZCASH market as the borrow side of a CROSS-CHAIN forecast cell (`ForecastVenueBorrow`; BUILD-PLAN D6):
+ * the loan is Kamino's, so its rate, the ZEC reserve's LT and LTV cap, and the USDC pool's depth are what price
+ * the cell — Aave's say nothing about it. The refusals are the same conditions `/v1/solana/borrow` refuses on.
+ * Pure, so the demo generator can run it on the recorded capture and the server on the live sample alike.
+ */
+export function venueBorrowFromKamino(sample: KaminoSample & { stale: boolean }): ForecastVenueBorrow {
+  const { zec, usdc, market, scopeZec, scopeUsdc } = sample;
+  const refusals: ForecastRefusal[] = [];
+  if (market.emergencyMode || market.borrowDisabled) refusals.push("borrow_paused");
+  if (zec.status !== 0 || usdc.status !== 0) refusals.push("collateral_not_active");
+  const oracleAgeS = sample.chainTimeS - Number(scopeZec.unixTimestamp);
+  if (oracleAgeS > zec.maxAgePriceSeconds || oracleAgeS < -300) refusals.push("rates_stale");
+  const zecUsd = scopeZec.priceUsd;
+  const usdcUsd = scopeUsdc.priceUsd;
+  if (!(zecUsd >= zec.heuristicLowerUsd && zecUsd <= zec.heuristicUpperUsd)) refusals.push("rates_stale");
+  if (!(usdcUsd >= usdc.heuristicLowerUsd && usdcUsd <= usdc.heuristicUpperUsd)) refusals.push("rates_stale");
+  const supplied = usdc.availableUnits + usdc.borrowedUnits;
+  const utilBps = supplied > 0n ? Number((usdc.borrowedUnits * 10_000n) / supplied) : 0;
+  return {
+    chain: "solana",
+    venue: "kamino",
+    borrowAprNowPct: Math.round(kaminoCurveAprBps(usdc.borrowRateCurve, utilBps) * 100) / 10_000,
+    // The ZCASH market's ZEC reserve is collateral-only (its borrow limit is zero), so deposited ZEC earns
+    // nothing while it sits there. Stated rather than assumed: a non-zero number here would flatter the net.
+    supplyAprPct: 0,
+    liquidationThresholdBps: zec.liquidationThresholdPct * 100,
+    venueMaxLtvBps: zec.loanToValuePct * 100,
+    availableUnits: usdc.availableUnits.toString(),
+    borrowedUnits: usdc.borrowedUnits.toString(),
+    borrowLimitUnits: usdc.borrowLimitUnits.toString(),
+    decimals: usdc.mintDecimals,
+    borrowCurve: usdc.borrowRateCurve,
+    refusals,
+    stale: sample.stale,
+  };
 }

@@ -8,7 +8,7 @@ import { ENTRY_HF_FLOOR, HF_MARKS, ladderFor, MIN_LADDER_ENTRY_HF, type HfRung }
 import type { SolanaBorrowView } from "./yield";
 
 /** The five screens (SOLANA-ARCHITECTURE.md §8): one decision each. */
-export const SOLANA_WIZARD_STEPS = ["Your ZEC", "Amount", "Health factor", "Review", "Sign"] as const;
+export const SOLANA_WIZARD_STEPS = ["Your ZEC", "Amount", "Health factor", "Borrowed USDC", "Review", "Sign"] as const;
 
 export type SolanaBinding = "venue_max_ltv" | "entry_hf_floor";
 export interface SolanaHfMark {
