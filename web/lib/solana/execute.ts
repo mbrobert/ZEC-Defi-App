@@ -139,6 +139,24 @@ export function closeSteps(p: SolanaPosition): { id: CloseStepId; title: string;
   steps.push({ id: "transfer_usdc", title: "Move any USDC left to your wallet", sentence: `Moves whatever USDC remains in your Oilskin account (about ${(Number(usdcLeft) / 1e6).toFixed(2)}) to your wallet.`, amount: usdcLeft });
   return steps;
 }
+/** The account's balance of one token as the chain holds it now; 0 for a token account that does not exist. */
+async function accountBalance(conn: Connection, account: PublicKey, mint: PublicKey): Promise<bigint> {
+  try {
+    const b = await conn.getTokenAccountBalance(ataOf(account, mint), "confirmed");
+    return BigInt(b.value.amount);
+  } catch {
+    return 0n;
+  }
+}
+
+/**
+ * The close, step by step. The two transfers home move what the account holds WHEN THEY RUN, read from the
+ * chain, not the amounts the plan estimated from the position before the close: the plan's USDC-left is the
+ * pre-close balance less the debt (zero for a fresh position), while the close leaves the top-up margin less a
+ * few seconds' interest, and `transfer_out(0)` is refused by the program — the signed-path test on localnet
+ * found exactly that on 2026-09-20. A token the account no longer holds is a step with nothing to sign, reported
+ * done with no signature.
+ */
 export async function runSolanaClose(r: CloseRun): Promise<string[]> {
   const k: AccountKeys = { program: r.programId, owner: r.wallet.publicKey, account: r.position.account };
   const owner = r.wallet.publicKey;
@@ -155,12 +173,17 @@ export async function runSolanaClose(r: CloseRun): Promise<string[]> {
         ixs = [ixClosePosition(k)];
         break;
       case "transfer_zec":
-        // the transfer is the whole balance at the time it runs; the amount planned is a lower bound (interest does not touch ZEC)
-        ixs = [ixCreateAtaIdempotent(owner, owner, PK.zecMint), ixTransferOut(k, PK.zecMint, s.amount)];
+      case "transfer_usdc": {
+        const mint = s.id === "transfer_zec" ? PK.zecMint : PK.usdcMint;
+        const held = await accountBalance(r.conn, r.position.account, mint);
+        if (held === 0n) {
+          r.emit({ type: "done", step: i, signature: "" });
+          sigs.push("");
+          continue;
+        }
+        ixs = [ixCreateAtaIdempotent(owner, owner, mint), ixTransferOut(k, mint, held)];
         break;
-      case "transfer_usdc":
-        ixs = [ixCreateAtaIdempotent(owner, owner, PK.usdcMint), ixTransferOut(k, PK.usdcMint, s.amount)];
-        break;
+      }
     }
     sigs.push(await sendStep(r.conn, r.wallet, ixs, i, r.emit));
   }

@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ENTRY_HF_FLOOR, HF_MARKS, ladderFor } from "@zyo/shared";
-import { clampSolanaHf, DEFAULT_GRANT_CHOICE, grantParamsFor, openSteps, planSolanaOpen, SOLANA_GRANT, solanaHfBounds, solanaHfForBorrow } from "../lib/solana/plan";
+import { clampSolanaHf, DEFAULT_GRANT_CHOICE, grantParamsFor, openSteps, planSolanaOpen, SOLANA_GRANT, solanaHfBounds, solanaHfForBorrow, VENUE_CAP_MARGIN_BPS } from "../lib/solana/plan";
 import { demoSolanaBorrow, normalizeSolanaBorrow, solanaBorrowPath, solanaRefusalPlain, unavailableSolanaBorrow } from "../lib/solana/yield";
 
 const view = demoSolanaBorrow();
@@ -20,11 +20,14 @@ test("the demo snapshot is the capture: slot 446,506,191, Kamino's 40 / 65, a ZE
   assert.ok(view.maxFundableUsdc! > 0);
 });
 
-test("bounds: Kamino's cap (HF 1.625) is the lowest offered when the floor is under it; both marks are not offered and say why", () => {
+test("bounds: a quarter of a percent above Kamino's cap (HF 1.629, not 1.625) is the lowest offered when the floor is under it; both marks are not offered and say why", () => {
   const b = solanaHfBounds(view, ENTRY_HF_FLOOR)!;
   assert.ok(b);
   if (ENTRY_HF_FLOOR < 1.625) {
-    assert.equal(b.minHf, 1.625);
+    // the cap exactly is refused by Kamino (localnet, 2026-09-20: BorrowTooLarge); the margin is what the specs borrow at
+    assert.equal(VENUE_CAP_MARGIN_BPS, 25);
+    assert.equal(b.minHf, 1.629);
+    assert.ok(b.minHf > 1.625);
     assert.equal(b.binding, "venue_max_ltv");
   } else {
     assert.equal(b.minHf, ENTRY_HF_FLOOR);

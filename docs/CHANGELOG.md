@@ -3,6 +3,36 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-20 — The web's Solana library signs on localnet for the first time, and finds three things
+
+B5's last item: "a wallet-driven run on localnet." No browser and no real key — `web/test/localnet/open.test.ts`
+hands `runSolanaOpen` and `runSolanaClose` a throwaway keypair as the `SolanaWalletLike` the wizard would hand
+them, on the validator `solana/scripts/localnet.sh` starts, with the harness's mint authorities and the mock
+Scope stamped fresh. What runs is exactly what a wallet signs: the hand-encoded instructions, the plan from the
+demo snapshot, the step order, the error decoding; the dashboard's reader reads it back. Init, deposit, borrow,
+grant; top-up, close, ZEC home, USDC home — 8 signatures, 10 ZEC and the USDC back in the wallet less a few
+seconds' interest. `npm run test:localnet -w @zyo/web`; a row of `npm run status -- --all`.
+
+Its first three runs each stopped on something the demo could never have shown:
+
+- **A borrow at exactly Kamino's cap is refused** — klend's `BorrowTooLarge` — because its allowed borrow value
+  comes from the obligation's own valuation (cTokens × the exchange rate, at its oracle prices) and lands a hair
+  under the plan's. The slider's "most Kamino allows" was exactly the cap (HF 1.625); it is now a quarter of a
+  percent above it (`VENUE_CAP_MARGIN_BPS`, HF **1.629** — where the localnet specs have always borrowed).
+  `web/lib/solana/plan.ts`, pinned in `solana-plan.test.ts`.
+- **The web's Grant was 165 bytes; the program's is 173** (`_reserved: [u8; 32]`, counted as 24). The first grant
+  ever read from a live program was refused as "173 bytes or wrong discriminator" — a real user's position page
+  would have failed the same way, while the keeper's layout had 173 all along. `web/lib/solana/reads.ts`; the IDL
+  seam test now derives both account sizes from the committed IDL's types and pins the constants to them.
+- **The close's last step planned a transfer of zero and was refused.** The USDC-left estimate was the pre-close
+  balance less the debt (nothing, for a fresh position), while the close leaves the top-up margin less interest.
+  `runSolanaClose` now reads each token's live balance before moving it home and reports a token the account no
+  longer holds as done with nothing to sign. `web/lib/solana/execute.ts`.
+
+None can lose or lock funds (`ROADMAP.md` rule 3): a refused borrow moves nothing, an undecodable grant is a page
+that does not render, and USDC left after a failed transfer stays in the user's own account, movable at any time.
+Web unit **211 → 212**, the signed path **1 / 1**.
+
 ## 2026-09-20 — The cross-chain loop's forecast in the Solana wizard, shown and not yet signed
 
 B5's remaining web item besides the wallet-driven run. The loop (D6) is in beta by D11, nothing has crossed a

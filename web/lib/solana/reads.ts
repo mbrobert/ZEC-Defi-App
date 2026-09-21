@@ -8,7 +8,14 @@ import { accountPda, ata, grantPda, obligationPda, PK } from "./addresses";
 import { OILSKIN_SOLANA_IDL } from "./idl.generated";
 
 export const USER_ACCOUNT_LEN = 154;
-export const GRANT_LEN = 165;
+/**
+ * 8 (discriminator) + 32 account + 32 keeper + 1 bump + 1 version + 8 × 8 (epoch, expiry, period, period start, the
+ * four budgets) + 2 slippage + 1 rungs + 32 `_reserved` = 173. Until 2026-09-20 this said 165 — the reserved tail
+ * counted as 24 — so the first grant ever read from a live program (the signed-path test on localnet) was refused
+ * as "173 bytes or wrong discriminator", and a real user's position page would have failed the same way. The IDL
+ * seam test now derives both account sizes from the committed IDL's types and pins these constants to them.
+ */
+export const GRANT_LEN = 173;
 export const OBLIGATION_LEN = 3344;
 export const RESERVE_LEN = 8624;
 export const TOKEN_ACCOUNT_LEN = 165;

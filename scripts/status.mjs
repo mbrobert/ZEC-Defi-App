@@ -216,6 +216,19 @@ const SUITES = [
       : run("solana cluster-version -u http://127.0.0.1:8899").status !== 0 ? "needs a local validator (`bash solana/scripts/localnet.sh`)"
       : null,
   },
+  {
+    // The web's Solana library signing on localnet — the wizard's open and the exit hatch's close through the
+    // hand-encoded instructions, a throwaway keypair as the wallet, read back with the dashboard's reader.
+    area: "Web, signed path on localnet",
+    display: "bash solana/scripts/localnet.sh (terminal 1) · npm run test:localnet -w @zyo/web (terminal 2)",
+    cmd: "npm run test:localnet -w @zyo/web",
+    parse: nodeTest,
+    optIn: true,
+    gate: () =>
+      !existsSync(join(repoRoot, "solana", "fixtures", "local-mint-authority.json")) ? "needs the localnet fixtures (`bash solana/scripts/localnet.sh`)"
+      : run("solana cluster-version -u http://127.0.0.1:8899").status !== 0 ? "needs a local validator (`bash solana/scripts/localnet.sh`)"
+      : null,
+  },
   { area: "Keeper", display: "npm test -w @zyo/agent", cmd: "npm test -w @zyo/agent", parse: keeper },
   { area: "Yield", display: "npm test -w @zyo/yield", cmd: "npm test -w @zyo/yield", parse: nodeTest },
   { area: "Web, unit", display: "npm test -w @zyo/web", cmd: "npm test -w @zyo/web", parse: nodeTest },

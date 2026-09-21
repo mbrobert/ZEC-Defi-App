@@ -24,8 +24,9 @@ MC = Monte Carlo.
 | Solana, localnet | `bash solana/scripts/localnet.sh` (terminal 1) · `cd solana && anchor test --skip-build --skip-local-validator` (terminal 2) | **36 passing / 0 failing** |
 | Keeper | `npm test -w @zyo/agent` | **319 tests / 61 suites**, plus its own ABI seam **123 / 123** and the IDL seam **77 / 77** |
 | Yield | `npm test -w @zyo/yield` | **194** |
-| Web, unit | `npm test -w @zyo/web` | **211** |
+| Web, unit | `npm test -w @zyo/web` | **212** |
 | Web, e2e | `cd web && npx playwright test` | **24 passed / 0 failed / 6 skipped** |
+| Web, signed path on localnet | `bash solana/scripts/localnet.sh` (terminal 1) · `npm run test:localnet -w @zyo/web` (terminal 2) | **1** — the wizard's open and the exit hatch's close, signed by a throwaway keypair against the real program |
 | Web, e2e against Base Sepolia | `cd web && npx playwright test -c playwright.sepolia.config.ts` | **3 skipped by name** until `docs/DEPLOYMENTS.md` carries Sepolia addresses |
 | Prototypes | `mkdir -p /tmp/build && cp services/yield/samples/MODEL-NUMBERS.md /tmp/build/ && node prototype/test/run-all.mjs` | **verify-simple 130 · verify-advanced 116 · verify-toggle 62 · fuzz 6** |
 

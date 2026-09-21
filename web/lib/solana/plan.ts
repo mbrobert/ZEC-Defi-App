@@ -33,11 +33,20 @@ export function solanaBindingWords(b: SolanaBinding, floor: number): string {
 }
 
 /** Bounds from the LIVE reserve numbers the view carries; null when it carries none (unreadable, refused). */
+/**
+ * How far under Kamino's LTV cap the lowest offered health factor sits, in basis points of HF. Found on localnet
+ * 2026-09-20 by the signed-path test (`web/test/localnet/open.test.ts`): a borrow planned at EXACTLY the cap's HF
+ * (LT ÷ cap = 1.625) is refused by Kamino itself — klend's `BorrowTooLarge` — because its allowed borrow value is
+ * computed from the obligation's own valuation (cTokens × the reserve's exchange rate, at its oracle prices) and
+ * lands a hair under the plan's. A quarter of a percent clears it, and is what the localnet specs have always
+ * borrowed at ("Kamino's 40 % cap → HF 1.629"). The slider's "most Kamino allows" is therefore 1.629, not 1.625.
+ */
+export const VENUE_CAP_MARGIN_BPS = 25;
 export function solanaHfBounds(view: Pick<SolanaBorrowView, "liquidationThresholdBps" | "ltvCapBps" | "entryHfFloor">, floor: number = view.entryHfFloor || ENTRY_HF_FLOOR): SolanaHfBounds | null {
   const lt = view.liquidationThresholdBps;
   const cap = view.ltvCapBps;
   if (lt === null || cap === null || !(lt > 0) || !(cap > 0)) return null;
-  const hfAtCap = lt / cap;
+  const hfAtCap = Math.round((lt / cap) * (1 + VENUE_CAP_MARGIN_BPS / 10_000) * 1000) / 1000;
   const binding: SolanaBinding = hfAtCap > floor ? "venue_max_ltv" : "entry_hf_floor";
   const minHf = Math.max(hfAtCap, floor);
   const marks: SolanaHfMark[] = HF_MARKS.map((m) => {

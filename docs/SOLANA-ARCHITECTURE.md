@@ -384,7 +384,7 @@ do: **repay everything and take the ZEC home** (top up USDC if the account is sh
 `transfer_out` both tokens — the exit hatch, one button) and **revoke** the keeper.
 
 Not in this build: exercising the signed path against a live wallet (the localnet specs prove the program; the
-web's encoders are pinned to the IDL; a wallet-driven run on localnet is the next check). **The cross-chain
+web's encoders are pinned to the IDL, and **since 2026-09-20 proven against the program on localnet** by the signed-path test, `web/test/localnet/open.test.ts` — the wizard's open and the exit hatch's close, a throwaway keypair as the wallet, which found the web's Grant size wrong (165 for 173), a cap-exact borrow refused by klend, and a zero transfer at the end of the close; all three fixed the same day). **The cross-chain
 forecast is built (2026-09-20):** a sixth screen, "Borrowed USDC", offers the loop as the forecast it is — every
 Aerodrome pool × setting priced by the service's `crossChain=1` cells on Kamino's borrow side (Simple: one cell
 per pool; Advanced: all, both models), the reserve of §14.3 named as what stays on Solana, the Base wizard's

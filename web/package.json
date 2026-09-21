@@ -10,6 +10,7 @@
     "lint": "next lint",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --import ../node_modules/tsx/dist/loader.mjs --test test/*.test.ts",
+    "test:localnet": "OILSKIN_LOCALNET=1 node --import ../node_modules/tsx/dist/loader.mjs --test test/localnet/*.test.ts",
     "test:e2e": "PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers playwright test",
     "test:e2e:sepolia": "playwright test -c playwright.sepolia.config.ts"
   },

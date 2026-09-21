@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { Keypair, PublicKey } from "@solana/web3.js";
 import { OILSKIN_SOLANA_IDL } from "../lib/solana/idl.generated";
 import { accountPda, grantPda, lendingMarketAuthority, PK } from "../lib/solana/addresses";
+import { GRANT_LEN, USER_ACCOUNT_LEN } from "../lib/solana/reads";
 import { encodeGrantParams, ixBorrow, ixClosePosition, ixDeposit, ixGrant, ixInitAccount, ixRepay, ixRevoke, ixRevokeAll, ixTransferOut, ixWithdraw, kaminoMetas, u64le, anchorErrorName } from "../lib/solana/instructions";
 
 const idlRaw = readFileSync(join(__dirname, "../../solana/idl/oilskin.json"), "utf8");
@@ -94,4 +95,29 @@ test("anchor error names are read from logs by name or by custom code", () => {
   assert.equal(anchorErrorName(["Program failed: custom program error: 0x1778"]), "UnexpectedKaminoLayout", "6008 = 0x1778");
   assert.equal(anchorErrorName(["nothing here"]), null);
   assert.equal(anchorErrorName(null), null);
+});
+
+/** A borsh account's size from the IDL's own struct: 8 for the discriminator, then each field as anchor lays it out. */
+function idlAccountSize(typeName: string): number {
+  const t = idl.types.find((x: any) => x.name === typeName);
+  assert.ok(t && t.type.kind === "struct", `IDL type ${typeName}`);
+  const size = (ty: any): number => {
+    if (typeof ty === "string") {
+      const fixed: Record<string, number> = { bool: 1, u8: 1, i8: 1, u16: 2, i16: 2, u32: 4, i32: 4, u64: 8, i64: 8, u128: 16, i128: 16, pubkey: 32 };
+      assert.ok(ty in fixed, `unsized IDL type ${ty}`);
+      return fixed[ty]!;
+    }
+    if (ty.array) return size(ty.array[0]) * ty.array[1];
+    if (ty.defined) return idlAccountSize(ty.defined.name ?? ty.defined) - 8;
+    assert.fail(`unsized IDL type ${JSON.stringify(ty)}`);
+  };
+  return 8 + t.type.fields.reduce((n: number, f: any) => n + size(f.type), 0);
+}
+
+test("the reader's account sizes are the IDL's: a live Grant is 173 bytes (32 reserved), a UserAccount 154", () => {
+  // 2026-09-20: the web said 165 for a Grant and refused the first one ever read from a live program (localnet, the
+  // signed-path test); the keeper's layouts had 173 all along. Both constants are now derived here, not counted by hand.
+  assert.equal(idlAccountSize("Grant"), 173);
+  assert.equal(GRANT_LEN, idlAccountSize("Grant"));
+  assert.equal(USER_ACCOUNT_LEN, idlAccountSize("UserAccount"));
 });
