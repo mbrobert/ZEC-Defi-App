@@ -13,7 +13,8 @@ import { Logger, memorySink } from "../src/log.js";
 import type { AttestationResult } from "../src/solana/attestation.js";
 import { KeeperSolanaDispatcher, type BaseBurner, type SolanaDispatchRecord } from "../src/solana/dispatcher.js";
 import { PK, ata, OILSKIN_ERRORS } from "../src/solana/layouts.js";
-import { usedNoncePda } from "../src/solana/delivery.js";
+import { feeRecipientTokenAccount, ixReceiveMessage, usedNoncePda } from "../src/solana/delivery.js";
+import { AddressLookupTableAccount } from "@solana/web3.js";
 
 const OWNER = Keypair.generate().publicKey;
 const ACCOUNT = Keypair.generate().publicKey;
@@ -208,6 +209,68 @@ describe("the bridge stage machine", () => {
     assert.equal(out.permanent, true, "no retry will make a transaction smaller");
     assert.match(out.reason, /address lookup table/);
     assert.match(out.reason, /CCTP_LOOKUP_TABLE/);
+  });
+
+  it("AUDIT-2026-09-25 O-8: a delivery whose simulation fails drops the cached lookup table and fee account, so the next tick re-reads both — a table extended after startup is seen without a restart", async () => {
+    const keeper = Keypair.generate();
+    const tableKey = Keypair.generate().publicKey;
+    const feeAta = feeRecipientTokenAccount(new PublicKey(Buffer.alloc(32)), PK.usdcMint); // what a zero-filled token_messenger decodes to
+    const ix = ixReceiveMessage({ payer: keeper.publicKey, caller: keeper.publicKey, recipientTokenAccount: RECIPIENT, feeRecipientTokenAccount: feeAta }, message, Uint8Array.from(Buffer.from(ATTESTATION_HEX.slice(2), "hex")));
+    const tableReads: number[] = [];
+    const sims: string[] = [];
+    let simulateFails = true;
+    const connection = {
+      getAccountInfo: async (key: PublicKey) => (key.equals(usedNoncePda(NONCE)) ? null : { data: Buffer.alloc(177), owner: PK.tokenProgram, lamports: 1, executable: false }),
+      getAddressLookupTable: async () => {
+        tableReads.push(Date.now());
+        return { value: new AddressLookupTableAccount({ key: tableKey, state: { deactivationSlot: (1n << 64n) - 1n, lastExtendedSlot: 0, lastExtendedSlotStartIndex: 0, authority: undefined, addresses: ix.keys.map((k) => k.pubkey) } }) };
+      },
+      getLatestBlockhash: async () => ({ blockhash: Keypair.generate().publicKey.toBase58(), lastValidBlockHeight: 100 }),
+      simulateTransaction: async () => {
+        sims.push(simulateFails ? "fail" : "ok");
+        return simulateFails ? { value: { err: { InstructionError: [1, "ProgramFailedToComplete"] }, logs: ["Program log: Error: custody account changed"] } } : { value: { err: null, logs: [] } };
+      },
+      sendRawTransaction: async () => "5".repeat(88),
+      confirmTransaction: async () => ({ value: { err: null } }),
+    } as never;
+    const sink = memorySink();
+    const d = new KeeperSolanaDispatcher({
+      connection,
+      reader: {} as never,
+      programId: Keypair.generate().publicKey,
+      keeper,
+      rungs: [{ id: 0, disarmHf: 1.25 }, { id: 1, disarmHf: 1.18 }, { id: 2, disarmHf: 1.11 }, { id: 3, disarmHf: 1.07 }],
+      rungIndex: () => 2,
+      valuationParams: { priceMaxAgeS: 180, independentMaxAgeS: 120, oracleDeviationBps: 200, hfToleranceBps: 100, requireIndependent: false },
+      saleDiscountBps: 0,
+      keeperMaxSaleUsdc: 0n,
+      planMarginBps: 50,
+      confirmTimeoutMs: 2_000,
+      idlErrors: OILSKIN_ERRORS,
+      log: new Logger(sink.sink, "debug"),
+      attestation: null,
+      cctpLookupTable: tableKey,
+    });
+    // first tick: the simulation refuses — the delivery FAILS and the caches are dropped
+    const first = await d.confirm(record("attested", { messageHex: MESSAGE_HEX, attestationHex: ATTESTATION_HEX }));
+    assert.equal(first.status, "FAILED", JSON.stringify(first));
+    if (first.status === "FAILED") assert.match(first.error, /the delivery would fail/);
+    assert.equal(tableReads.length, 1);
+    assert.ok((sink.lines as string[]).some((l) => /dropped the cached lookup table and fee account/.test(l)), (sink.lines as string[]).join("\n"));
+    // second tick: the table is READ AGAIN (before the fix the first read was kept for the process lifetime), and the delivery lands
+    simulateFails = false;
+    const second = await d.confirm(record("attested", { messageHex: MESSAGE_HEX, attestationHex: ATTESTATION_HEX }));
+    assert.equal(second.status, "CONFIRMED", JSON.stringify(second));
+    if (second.status === "CONFIRMED") {
+      assert.equal(second.bridge?.stage, "delivered");
+      assert.match(second.bridge?.deliveryTx ?? "", /^[1-9A-HJ-NP-Za-km-z]{86,88}$/, "the dispatcher's own signature of the delivery it signed");
+    }
+    assert.equal(tableReads.length, 2, "the table was fetched afresh after the failure");
+    assert.deepEqual(sims, ["fail", "ok"]);
+    // and a delivery that keeps succeeding keeps its cache: a third pass reads nothing new
+    const third = await d.confirm(record("attested", { messageHex: MESSAGE_HEX, attestationHex: ATTESTATION_HEX }));
+    assert.equal(third.status, "CONFIRMED");
+    assert.equal(tableReads.length, 2, "no re-read without a failure");
   });
 
   it("attested: a record with no message or attestation is a fault, not a wait", async () => {

@@ -417,6 +417,10 @@ export class KeeperSolanaDispatcher implements SolanaDispatcher {
       if (/already in use|NonceAlreadyUsed/i.test(logs)) {
         return { status: "CONFIRMED", signature: b.burnTxHash, note: "delivered by another sender while this one was building", bridge: { ...b, stage: "delivered" } };
       }
+      // Whatever failed, the two things this process caches from chain may be what changed — a table extended
+      // after startup, a fee recipient Circle moved. Drop both so the next tick re-reads them: one read each,
+      // against a delivery that would otherwise fail until a restart (AUDIT-2026-09-25 O-8).
+      this.dropChainCaches(log, "the delivery's simulation failed");
       return { status: "FAILED", error: `the delivery would fail: ${JSON.stringify(sim.value.err)} ${logs}` };
     }
 
@@ -427,6 +431,7 @@ export class KeeperSolanaDispatcher implements SolanaDispatcher {
     } catch (e) {
       if (e instanceof AbortedError) throw e;
       log.warn("delivery sent, confirmation not seen inside the deadline", { signature, error: errMsg(e) });
+      this.dropChainCaches(log, "the delivery's send did not confirm");
       return { status: "SENT", signature: b.burnTxHash, bridge: { ...b, deliveryTx: signature } };
     }
     log.info("delivered on Solana", { signature, amount: b.deliveredAmountUsdc ?? b.amountUsdc });
@@ -438,7 +443,14 @@ export class KeeperSolanaDispatcher implements SolanaDispatcher {
     };
   }
 
-  /** The lookup table the delivery rides, fetched once and cached; null when none is configured or it is gone. */
+  /** Forget the lookup table and the fee account read from chain, so the next delivery reads both afresh. */
+  private dropChainCaches(log: Logger, why: string): void {
+    if (this.table || this.feeAta) log.info("dropped the cached lookup table and fee account — re-read on the next tick", { why });
+    this.table = null;
+    this.feeAta = null;
+  }
+
+  /** The lookup table the delivery rides, fetched and cached until a delivery fails; null when none is configured or it is gone. */
   private table: AddressLookupTableAccount | null = null;
   private async lookupTable(signal?: AbortSignal): Promise<AddressLookupTableAccount | null> {
     if (this.table) return this.table;
