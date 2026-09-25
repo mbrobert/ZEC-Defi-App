@@ -55,6 +55,8 @@ Only a message that is not the burn we made, or a transaction that reverted, end
 | 1 | Circle's fee schedule cannot be read (`/v2/burn/USDC/fees/6/5` down, 5xx, unreadable) | Sent **Fast at the ceiling** (`CCTP_MAX_FAST_FEE_BPS`, 10 bp by default); Circle degrades it to Standard itself if the ceiling is short — the reason is logged | Nothing |
 | 1 | The Fast allowance (`/v2/fastBurn/USDC/allowance`) is fresh and the amount would exhaust it | Sent **Standard** (threshold 2000, fee 0): the transfer would wait for finality anyway, so no Fast fee is paid for it — minutes, not seconds | Nothing; the reserve is what covers those minutes (§0) |
 | 1 | Circle's *Standard* minimum is above the ceiling (a fee-switch route; both routes read 0 on 2026-09-25) | REFUSED, not permanent — a burn whose `maxFee` is under that minimum reverts on chain, so it is not sent | Raise `CCTP_MAX_FAST_FEE_BPS`, or wait for the schedule to move |
+| 1 | The Base leg REFUSES for any reason above (no grant, a half-link, unreadable LP state, the schedule outside the policy) | **Answered on Solana the same tick** — the reserve, then the keeper-funded sale, inside the Solana grant; the Base refusal is carried on the record's note, logged at error when permanent (`AUDIT-2026-09-25.md` CC-2) | For a permanent refusal, whatever it names — the second grant, the recipient; the Solana side kept the position meanwhile |
+| 1 | The rung is one the owner excluded on the Solana grant (`allowed_rungs`) | REFUSED, permanent, before the Base leg is asked — the Base grant has no rung mask, so the Solana one is the owner's consent for both chains (CC-3) | The owner widens the grant if they meant to |
 | 1 | The pre-send nonce is on the record and no receipt ever was (a crash between the send and the store write) | The re-dispatch logs "a burn may already be out" and re-reads the LP state on Base before planning, so a landed burn shows as less to close | Read the log line; check the Base keeper's transactions at that nonce |
 | 2 | The three events disagree on amount or recipient | FAILED by name | **Investigate before re-running**: this means the router and Circle saw different things |
 | 2 | The receipt is not found yet | stays SENT, retried | Nothing |
@@ -94,8 +96,10 @@ running: `bridge.stage`, `burnTxHash`, `nonce`, `messageHex`, `attestationHex`, 
 
 1. **An address lookup table on Solana, created once at deploy.** Both the burn and the delivery are over the
    legacy transaction size — the delivery measured **1,264 bytes against the 1,232 limit** — so both ride v0
-   transactions. `docs/SOLANA-DEPLOY.md` carries the step; the keeper reads it as `CCTP_LOOKUP_TABLE` and
-   refuses a delivery by name without it.
+   transactions. `node solana/scripts/lookup-table.mjs` prints the 31 static addresses and the `create` /
+   `extend` commands (2026-09-25); `--verify <table> --rpc <url>` reads a table back and names what is missing.
+   `docs/SOLANA-DEPLOY.md` §2b carries the step; the keeper reads the address as `CCTP_LOOKUP_TABLE` and refuses
+   a delivery by name without it.
 2. **The second keeper grant** on any account that will use the loop (`closeLpAndBurn`, its own USDC budget).
 3. **Two keys, and the process that holds them.** The burner needs a Base key beside the Solana key. **The adapter
    exists since 2026-09-25** — `KeeperBaseBurner` (`agent/src/solana/baseBurner.ts`) over the Base keeper's

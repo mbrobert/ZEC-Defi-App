@@ -3,6 +3,45 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-25 — Three things the cross-chain keeper path got wrong, found the day it gained its adapter; the lookup table's script; a cache that outlived the table
+
+The first part of ROADMAP H3's internal wave over everything merged since 2026-09-16, read adversarially the
+same day the bridge route gained its Base burner adapter: `docs/AUDIT-2026-09-25.md`. Fix commit `35dc728`.
+CCTP = Circle's Cross-Chain Transfer Protocol; HF = health factor; LP = liquidity provision.
+
+- **CC-1, Medium, this morning's own code.** `KeeperBaseBurner` handed the Base dispatcher a record whose
+  `action` was the Solana rung's name; `planBurn` keys its close fraction on that name and knows only
+  `burn-derisk` / `burn-emergency`, so every bridge burn would have been refused as unknown — protection that
+  could not fire, behind a test that faked the Base dispatcher and never reached the planner. The record now
+  names the burn action, and the adapter is tested end to end over the **real** `KeeperDispatcher` on the mock
+  chain: one `closeLpAndBurn`, the message the router emits carrying the chooser's threshold (1000) and bound
+  (2 bp of the expected proceeds plus one unit), the receipt judged through the adapter. The defect is pinned by
+  a test that hands the planner the untranslated record.
+- **CC-2, Medium.** The monitor's resume path built its own dispatch intent — the record and the pre-send write
+  only — so a rung refused with "a Base burn is in flight, waiting" was re-dispatched the next tick with **no
+  in-flight age**, and `bridgeDecision` would have burned a second time while the first was in Circle's hands.
+  One intent builder now serves the fire path and the resume path. And a Base leg that **refuses** (no grant, a
+  half-link, unreadable LP state, Circle's schedule outside the policy) no longer dead-ends the rung until the
+  attempt cap: the Solana path answers it the same tick — the reserve, then the keeper-funded sale inside the
+  Solana grant — with the Base refusal carried on the result. A FAILED Base send is left for the receipt.
+- **CC-3, Low.** The bridge route never read the Solana grant's `allowed_rungs`; the Base grant has no rung
+  mask, so a rung the owner excluded on Solana was taken on Base. Refused permanently, by name, before the Base
+  leg is asked.
+- **The address lookup table, scripted** (`c81083c`): `node solana/scripts/lookup-table.mjs` prints the 31
+  static addresses both cross-chain transactions share — every one from `@zyo/shared`, plus klend's
+  `["lma", market]` authority derived with the recorded seed — and the `create` and three `extend` commands for
+  the founder; `--verify <table>` decodes the lookup-table program's own 56-byte layout and exits 0 / 1 / 2 for
+  complete / short (the missing named, their extends printed) / absent. It signs nothing. The runbook's §4 item
+  1 and `SOLANA-DEPLOY.md` §2b now point at it.
+- **O-8, closed the same day** (`89e14dd`): the dispatcher cached the lookup table and Circle's fee account for
+  the process lifetime, so a table extended after startup — which the founder's first devnet run will do, chunk
+  by chunk — failed every delivery until a restart. A failed delivery now drops both caches and the next tick
+  re-reads them. Two observations to `BACKLOG.md` §1b (O-9 the allowance tested on the need, O-10 a permanent
+  Base refusal not escalated on its own).
+- Tests: keeper **337 → 348** / 66 → 68 suites (`solana-dispatch-bridge.test.ts` new; `base-burner.test.ts`,
+  `solana-monitor.test.ts` and `bridge-stages.test.ts` extended); Solana seams **14 → 22** (`lookup-table.test.mjs`).
+  ABI seam and IDL seam unchanged.
+
 ## 2026-09-25 — Perps D2: the venue adapter and the short's health on chain, four D0b items closed read-only, and the founder's testnet script
 
 BUILD-PLAN Stream D's first code, against the design of the same day (`PERPS-DESIGN-2026-09-25.md`). HF = health

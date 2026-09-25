@@ -58,14 +58,21 @@ delivery measured **1,264 bytes against the 1,232 limit** on localnet — so bot
 address lookup table. One table, created once, covering Kamino's context and Circle's accounts.
 
 ```bash
+# read-only: the exact 31 addresses and the commands below, filled in
+node solana/scripts/lookup-table.mjs --rpc <url>
 # the authority may be the deployer key; the table is public data and holds no funds
 solana address-lookup-table create --authority <KEY>
-solana address-lookup-table extend <TABLE> --addresses <up to ~12 per call, repeated>
+solana address-lookup-table extend <TABLE> --addresses <twelve per call, three calls — the script prints them>
+# then, a slot or two later
+node solana/scripts/lookup-table.mjs --verify <TABLE> --rpc <url>     # exit 0 = complete, 1 = short (says which), 2 = absent
 ```
 
-The addresses are the ones `docs/VERIFIED-SOLANA-FACTS.md` Addenda 3 and 4 record (the two CCTP programs, the
-token messenger, minter, local token, the domain-6 remote messenger, the transmitter, the token pair, the
-custody account, Circle's fee token account) plus Kamino's market context. Record the table in
+The addresses are every static account of the burn and the delivery — the ones `docs/VERIFIED-SOLANA-FACTS.md`
+Addenda 3 and 4 record (the two CCTP programs, the token messenger, minter, local token, the domain-6 remote
+messenger, the transmitter, the token pair, the custody account, Circle's fee token account, both event
+authorities) plus Kamino's market context and its `["lma", market]` authority — listed by the script from
+`@zyo/shared`, never typed here (2026-09-25). Per-user and per-message accounts ride as static keys and are not
+in the table; the script's header says which. Record the table in
 `DEPLOYMENTS.md` and set it for the keeper as `CCTP_LOOKUP_TABLE`; **without it the keeper refuses a delivery
 by name** rather than sending a transaction that cannot land. A table extension takes a slot or two to become
 usable — extend, then wait, then use.

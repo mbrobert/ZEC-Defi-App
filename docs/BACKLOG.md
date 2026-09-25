@@ -26,6 +26,13 @@ Add to it from a pass; remove from it when the thing is done, naming the commit.
 | **O-7** | At one requirement the reserve is short by the tick's overshoot on nearly every rung-2 event: R lifts 1.40 → 1.46 exactly, the keeper finds HF a little under 1.40, the requirement at that HF is a little over R, and a cross-chain top-up is requested for the difference (`agent/src/solana/dispatcher.ts`) | Found by the reserve model (`docs/MODEL-RESERVE-2026-09-19.md` §5 item 4), where "bridge needed" equals "rung 2 reached" at k = 1. Not a safety defect — the rung repaid what it had — and the fix is a product choice between a top-up threshold in the keeper and a reserve of 1.25 R at the wizard; either is one line, and both belong with the founder's decision on the multiple, not before it |
 | **O-6** | The reserve is checked at burn time only; the owner may withdraw it immediately afterwards (`solana/…/deposit_for_burn.rs`) | This is the documented design — `transfer_out` is the always-exit path and must never be gated. The keeper reports the shortfall. Recorded so no later reader mistakes it for an omission |
 
+## 1b · The cross-chain keeper path, from `AUDIT-2026-09-25.md`
+
+| # | What | Why it waits |
+|---|---|---|
+| **O-9** | `chooseCctpFinality` tests the allowance against the *need*, which is the floor of what an emergency burn sends (everything) (`agent/src/solana/baseBurner.ts`) | Documented where it is decided; the cost of being wrong is one Fast fee on a transfer Circle degrades to Standard anyway. The exact amount is not known until `planBurn` has priced the ids |
+| **O-10** | A permanent Base refusal (no `closeLpAndBurn` grant, a half-link) is logged and carried on the record's note, but escalated as `grant-misconfigured` only when the Solana path also refuses permanently | The owner learns from the record; a notifier event from the dispatcher is a small change that belongs with the two-key process, which is what makes the Base leg real |
+
 ## 2 · The ladder and the entry record, from Part 3
 
 | # | What | Why it waits |
