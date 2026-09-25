@@ -9734,6 +9734,2058 @@
         }
       ]
     },
+    "HyperliquidPerpVenue": {
+      "name": "HyperliquidPerpVenue",
+      "functions": {
+        "BASE_DOMAIN()": {
+          "selector": "0x6fbdca25",
+          "stateMutability": "view",
+          "outputs": "uint32"
+        },
+        "CCTP_MESSENGER()": {
+          "selector": "0x3ee4e060",
+          "stateMutability": "view",
+          "outputs": "address"
+        },
+        "CCTP_STANDARD_FINALITY()": {
+          "selector": "0xb7e071a8",
+          "stateMutability": "view",
+          "outputs": "uint32"
+        },
+        "CORE_WRITER()": {
+          "selector": "0x27c37b3d",
+          "stateMutability": "view",
+          "outputs": "address"
+        },
+        "DEFAULT_RESERVE_MULTIPLE_BPS()": {
+          "selector": "0x988b86bc",
+          "stateMutability": "view",
+          "outputs": "uint256"
+        },
+        "MAX_CCTP_FEE_BPS()": {
+          "selector": "0x49e4bece",
+          "stateMutability": "view",
+          "outputs": "uint256"
+        },
+        "MAX_LEVERAGE()": {
+          "selector": "0x9b45ec97",
+          "stateMutability": "view",
+          "outputs": "uint8"
+        },
+        "MAX_MARK_ORACLE_DEVIATION_BPS()": {
+          "selector": "0xa8ea92b9",
+          "stateMutability": "view",
+          "outputs": "uint256"
+        },
+        "MAX_NOTIONAL_E6()": {
+          "selector": "0xff14f9cb",
+          "stateMutability": "view",
+          "outputs": "uint256"
+        },
+        "MAX_SLIPPAGE_BPS()": {
+          "selector": "0xe229cd76",
+          "stateMutability": "view",
+          "outputs": "uint256"
+        },
+        "MIN_ENTRY_MARGIN_BPS()": {
+          "selector": "0xf97f0af8",
+          "stateMutability": "view",
+          "outputs": "uint256"
+        },
+        "PERP_ASSET()": {
+          "selector": "0xea18fd94",
+          "stateMutability": "view",
+          "outputs": "uint32"
+        },
+        "SZ_DECIMALS()": {
+          "selector": "0x35c5bc54",
+          "stateMutability": "view",
+          "outputs": "uint8"
+        },
+        "USDC()": {
+          "selector": "0x89a30271",
+          "stateMutability": "view",
+          "outputs": "address"
+        },
+        "USDC_ADAPTER()": {
+          "selector": "0x087d9c11",
+          "stateMutability": "view",
+          "outputs": "address"
+        },
+        "USDC_EVM_DECIMALS()": {
+          "selector": "0x952309a9",
+          "stateMutability": "view",
+          "outputs": "uint8"
+        },
+        "USDC_TOKEN_INDEX()": {
+          "selector": "0x5e3dcdab",
+          "stateMutability": "view",
+          "outputs": "uint64"
+        },
+        "USDC_WEI_DECIMALS()": {
+          "selector": "0xaee25f00",
+          "stateMutability": "view",
+          "outputs": "uint8"
+        },
+        "addMargin(uint64)": {
+          "selector": "0x79819116",
+          "stateMutability": "nonpayable",
+          "outputs": ""
+        },
+        "baseRecipient(address)": {
+          "selector": "0xcee7d709",
+          "stateMutability": "view",
+          "outputs": "bytes32"
+        },
+        "burnToBase(uint256,uint256)": {
+          "selector": "0x51649fc8",
+          "stateMutability": "nonpayable",
+          "outputs": "uint256"
+        },
+        "clearPerpGrant()": {
+          "selector": "0x98749eb4",
+          "stateMutability": "nonpayable",
+          "outputs": ""
+        },
+        "entryOf(address)": {
+          "selector": "0x58bb388a",
+          "stateMutability": "view",
+          "outputs": "uint32,uint32,uint64,uint64,uint40"
+        },
+        "fundCore(uint256,uint256)": {
+          "selector": "0xb1d07a26",
+          "stateMutability": "nonpayable",
+          "outputs": ""
+        },
+        "health(address)": {
+          "selector": "0xe2d8ebee",
+          "stateMutability": "view",
+          "outputs": "bool,int64,uint64,int64,uint256,uint256,uint256,uint256"
+        },
+        "ladderOf(address)": {
+          "selector": "0xd784c11e",
+          "stateMutability": "view",
+          "outputs": "(uint32[4],uint32[4])"
+        },
+        "minEntryDistanceBps()": {
+          "selector": "0x64006a16",
+          "stateMutability": "view",
+          "outputs": "uint256"
+        },
+        "mmrBps()": {
+          "selector": "0x1ea5c5e5",
+          "stateMutability": "view",
+          "outputs": "uint256"
+        },
+        "open((uint64,uint16,uint40))": {
+          "selector": "0xd32a49e2",
+          "stateMutability": "nonpayable",
+          "outputs": "uint32,uint32"
+        },
+        "perpGrantOf(address)": {
+          "selector": "0xaa78754f",
+          "stateMutability": "view",
+          "outputs": "(address,uint40,uint40,uint40,uint8,uint64,uint64,uint16,uint64,uint64,uint256)"
+        },
+        "protect(uint8,uint64,uint64)": {
+          "selector": "0xd6789fa6",
+          "stateMutability": "nonpayable",
+          "outputs": ""
+        },
+        "reduce(uint64,uint16,uint40)": {
+          "selector": "0x2ff4f725",
+          "stateMutability": "nonpayable",
+          "outputs": ""
+        },
+        "reserveMultipleBps(address)": {
+          "selector": "0x0edd808e",
+          "stateMutability": "view",
+          "outputs": "uint256"
+        },
+        "setBaseRecipient(bytes32)": {
+          "selector": "0x3ccd74c2",
+          "stateMutability": "nonpayable",
+          "outputs": ""
+        },
+        "setPerpGrant(address,uint40,uint40,uint8,uint64,uint64,uint16)": {
+          "selector": "0x5b916151",
+          "stateMutability": "nonpayable",
+          "outputs": ""
+        },
+        "setReserveMultipleBps(uint256)": {
+          "selector": "0x5c33bbb3",
+          "stateMutability": "nonpayable",
+          "outputs": ""
+        },
+        "withdrawToEvm(uint64,uint64)": {
+          "selector": "0x63307148",
+          "stateMutability": "nonpayable",
+          "outputs": ""
+        }
+      },
+      "events": {
+        "BaseRecipientSet(address,bytes32)": {
+          "topic0": "0x8f2787046677fb124d6e2f717a4ff9d6030b857d40173cbd1212209c41284831",
+          "indexed": [
+            true,
+            false
+          ]
+        },
+        "BurnedToBase(address,uint256,bytes32,uint256)": {
+          "topic0": "0xc2abc20055fc57c0dd1334c9f5d1cf820a599afe3ae018fd93fc63bdc07bb866",
+          "indexed": [
+            true,
+            false,
+            false,
+            false
+          ]
+        },
+        "CoreFunded(address,uint256,uint256)": {
+          "topic0": "0xb0f927992888724a0116141c376ab75b6d1413608b6b6c3c0598f2920bd1ac4e",
+          "indexed": [
+            true,
+            false,
+            false
+          ]
+        },
+        "EntryCleared(address)": {
+          "topic0": "0x4ed4029da83144a86a91cb67d70c0b384bd77937347ea351eb5f749600fe165b",
+          "indexed": [
+            true
+          ]
+        },
+        "EntryRecorded(address,uint32,uint32,uint64,uint64)": {
+          "topic0": "0x28b0ab477de8695eee9f7da3d530a13cbbefddeef9c2d68617fa5889233be842",
+          "indexed": [
+            true,
+            false,
+            false,
+            false,
+            false
+          ]
+        },
+        "MarginAdded(address,uint64)": {
+          "topic0": "0x01d40e3ae8d91e0e3e56712ede5afca958f914ac39661b7bcbd75450d2c5a54c",
+          "indexed": [
+            true,
+            false
+          ]
+        },
+        "PerpGrantCleared(address)": {
+          "topic0": "0x148392b8ab0e9b09b2a8723db973da5d9167a57017152cbb2717680d4b095029",
+          "indexed": [
+            true
+          ]
+        },
+        "PerpGrantSet(address,address,uint40,uint40,uint8,uint64,uint64,uint16)": {
+          "topic0": "0x34d824022a5dbafdaddfc40a7a34684d204b2f5eceb7ab4754f03de6a474de3b",
+          "indexed": [
+            true,
+            true,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false
+          ]
+        },
+        "Protected(address,address,uint8,uint32,uint64,uint64)": {
+          "topic0": "0xbe999ce8fc5b52a2e66a2a53b6f056a67509bddad393b1fc05ad6488779351a5",
+          "indexed": [
+            true,
+            true,
+            false,
+            false,
+            false,
+            false
+          ]
+        },
+        "ReserveMultipleSet(address,uint256)": {
+          "topic0": "0x7907f230165c2b4f1cdb311e599492ea5717c1be8072d6d166b36ba9d8de35c7",
+          "indexed": [
+            true,
+            false
+          ]
+        },
+        "ShortOpened(address,uint64,uint64,uint32,uint32,uint64)": {
+          "topic0": "0x76391277e98ff4db66a9bb34dafc4b0593f32f9c533bc3a2f6ad45ae1d4bc13e",
+          "indexed": [
+            true,
+            false,
+            false,
+            false,
+            false,
+            false
+          ]
+        },
+        "ShortReduced(address,uint64,uint64)": {
+          "topic0": "0xbefef208dd4eb613220e27676ca0cb6bbffc227b2227c6faef866391855d8b23",
+          "indexed": [
+            true,
+            false,
+            false
+          ]
+        },
+        "WithdrawnToEvm(address,uint64,uint64)": {
+          "topic0": "0xf92222ccd4d64067b82f0fbfdca3a30181ba1c1b8518c639b3e672480eb82e0f",
+          "indexed": [
+            true,
+            false,
+            false
+          ]
+        }
+      },
+      "errors": {
+        "AccountValueNotPositive(int64)": {
+          "selector": "0x801a65c3"
+        },
+        "CrossChainDisabled()": {
+          "selector": "0x8ecd0542"
+        },
+        "EntryDistanceTooLow(uint256,uint256)": {
+          "selector": "0xa26fb1b9"
+        },
+        "EntryTooThinForLadder(uint256)": {
+          "selector": "0x7a977b8b"
+        },
+        "ExitDistanceTooLow(uint256,uint256)": {
+          "selector": "0xca9f55be"
+        },
+        "Expired(uint256)": {
+          "selector": "0xf80dbaea"
+        },
+        "GrantEpochStale(uint256,uint256)": {
+          "selector": "0x206e4d88"
+        },
+        "GrantExpired(uint40)": {
+          "selector": "0xa315d173"
+        },
+        "InvalidConfig()": {
+          "selector": "0x35be3ac8"
+        },
+        "InvalidGrant()": {
+          "selector": "0x6893f052"
+        },
+        "MarkOracleDeviation(uint64,uint64,uint256)": {
+          "selector": "0x40ad0e1a"
+        },
+        "MaxFeeNotBelowAmount(uint256,uint256)": {
+          "selector": "0x78b7d035"
+        },
+        "MaxFeeTooLarge(uint256,uint256)": {
+          "selector": "0x7e66d4ce"
+        },
+        "NoBaseRecipient(address)": {
+          "selector": "0xdc8d975e"
+        },
+        "NoEntry()": {
+          "selector": "0x2f659e44"
+        },
+        "NoPosition()": {
+          "selector": "0xabf0f034"
+        },
+        "NotAShort(int64)": {
+          "selector": "0x3fa34ecf"
+        },
+        "NotGrantedKeeper(address)": {
+          "selector": "0xed706916"
+        },
+        "NotKeeperPath()": {
+          "selector": "0xb8054948"
+        },
+        "NotOwnerPath()": {
+          "selector": "0x130bbd58"
+        },
+        "NothingToDo()": {
+          "selector": "0x5c52a868"
+        },
+        "NotionalOverCap(uint256,uint256)": {
+          "selector": "0xcfcc2fe0"
+        },
+        "OtherPositionsOpen(uint64,uint256)": {
+          "selector": "0x42b7f12f"
+        },
+        "PositionOpen(int64)": {
+          "selector": "0xd17ee755"
+        },
+        "PrecompileReadFailed(address)": {
+          "selector": "0xb85e067c"
+        },
+        "ReduceBudgetExceeded(uint64,uint64)": {
+          "selector": "0x9f133e4c"
+        },
+        "ReduceExceedsPosition(uint64,uint64)": {
+          "selector": "0x3115be87"
+        },
+        "ReduceNotAllowedAtRung(uint8)": {
+          "selector": "0xbc60c11f"
+        },
+        "ReserveShort(uint256,uint256)": {
+          "selector": "0xcfe90308"
+        },
+        "RungNotAllowed(uint8)": {
+          "selector": "0xbe1dd456"
+        },
+        "RungNotCrossed(uint8,uint32,uint32)": {
+          "selector": "0x8e7cea79"
+        },
+        "SlippageTooLarge(uint256,uint256)": {
+          "selector": "0x1cd85d59"
+        },
+        "TopUpBudgetExceeded(uint64,uint64)": {
+          "selector": "0x0637ddef"
+        },
+        "UsdcShort(uint256,uint256)": {
+          "selector": "0xfa82ac0c"
+        },
+        "VenueParamsChanged(uint8,uint8)": {
+          "selector": "0x0fe8440e"
+        },
+        "ZeroAddress()": {
+          "selector": "0xd92e233d"
+        },
+        "ZeroAmount()": {
+          "selector": "0x1f2a2005"
+        },
+        "ZeroNotional()": {
+          "selector": "0x96bafbfd"
+        }
+      },
+      "abi": [
+        {
+          "type": "constructor",
+          "inputs": [
+            {
+              "name": "c",
+              "type": "tuple",
+              "internalType": "struct HyperliquidPerpVenue.Config",
+              "components": [
+                {
+                  "name": "coreWriter",
+                  "type": "address",
+                  "internalType": "address"
+                },
+                {
+                  "name": "usdc",
+                  "type": "address",
+                  "internalType": "address"
+                },
+                {
+                  "name": "usdcAdapter",
+                  "type": "address",
+                  "internalType": "address"
+                },
+                {
+                  "name": "cctpMessenger",
+                  "type": "address",
+                  "internalType": "address"
+                },
+                {
+                  "name": "perpAsset",
+                  "type": "uint32",
+                  "internalType": "uint32"
+                },
+                {
+                  "name": "szDecimals",
+                  "type": "uint8",
+                  "internalType": "uint8"
+                },
+                {
+                  "name": "maxLeverage",
+                  "type": "uint8",
+                  "internalType": "uint8"
+                },
+                {
+                  "name": "usdcTokenIndex",
+                  "type": "uint64",
+                  "internalType": "uint64"
+                },
+                {
+                  "name": "usdcWeiDecimals",
+                  "type": "uint8",
+                  "internalType": "uint8"
+                },
+                {
+                  "name": "usdcEvmDecimals",
+                  "type": "uint8",
+                  "internalType": "uint8"
+                },
+                {
+                  "name": "baseDomain",
+                  "type": "uint32",
+                  "internalType": "uint32"
+                },
+                {
+                  "name": "minEntryMarginBps",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                },
+                {
+                  "name": "maxNotionalE6",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                },
+                {
+                  "name": "maxMarkOracleDeviationBps",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                },
+                {
+                  "name": "defaultReserveMultipleBps",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                }
+              ]
+            }
+          ],
+          "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "BASE_DOMAIN",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint32",
+              "internalType": "uint32"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "CCTP_MESSENGER",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "address",
+              "internalType": "contract ITokenMessengerV2"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "CCTP_STANDARD_FINALITY",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint32",
+              "internalType": "uint32"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "CORE_WRITER",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "address",
+              "internalType": "contract ICoreWriter"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "DEFAULT_RESERVE_MULTIPLE_BPS",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "MAX_CCTP_FEE_BPS",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "MAX_LEVERAGE",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint8",
+              "internalType": "uint8"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "MAX_MARK_ORACLE_DEVIATION_BPS",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "MAX_NOTIONAL_E6",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "MAX_SLIPPAGE_BPS",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "MIN_ENTRY_MARGIN_BPS",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "PERP_ASSET",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint32",
+              "internalType": "uint32"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "SZ_DECIMALS",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint8",
+              "internalType": "uint8"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "USDC",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "address",
+              "internalType": "contract IERC20"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "USDC_ADAPTER",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "address",
+              "internalType": "contract IHyperCoreUsdcAdapter"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "USDC_EVM_DECIMALS",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint8",
+              "internalType": "uint8"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "USDC_TOKEN_INDEX",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint64",
+              "internalType": "uint64"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "USDC_WEI_DECIMALS",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint8",
+              "internalType": "uint8"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "addMargin",
+          "inputs": [
+            {
+              "name": "usdcE6",
+              "type": "uint64",
+              "internalType": "uint64"
+            }
+          ],
+          "outputs": [],
+          "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "baseRecipient",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "recipient",
+              "type": "bytes32",
+              "internalType": "bytes32"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "burnToBase",
+          "inputs": [
+            {
+              "name": "amount",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "maxFee",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "burned",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "clearPerpGrant",
+          "inputs": [],
+          "outputs": [],
+          "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "entryOf",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "distanceBps",
+              "type": "uint32",
+              "internalType": "uint32"
+            },
+            {
+              "name": "hfBps",
+              "type": "uint32",
+              "internalType": "uint32"
+            },
+            {
+              "name": "sz",
+              "type": "uint64",
+              "internalType": "uint64"
+            },
+            {
+              "name": "reserveE6",
+              "type": "uint64",
+              "internalType": "uint64"
+            },
+            {
+              "name": "at",
+              "type": "uint40",
+              "internalType": "uint40"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "fundCore",
+          "inputs": [
+            {
+              "name": "toSpotE6",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "toPerpE6",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "outputs": [],
+          "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "health",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "hasPosition",
+              "type": "bool",
+              "internalType": "bool"
+            },
+            {
+              "name": "szi",
+              "type": "int64",
+              "internalType": "int64"
+            },
+            {
+              "name": "markRaw",
+              "type": "uint64",
+              "internalType": "uint64"
+            },
+            {
+              "name": "accountValueE6",
+              "type": "int64",
+              "internalType": "int64"
+            },
+            {
+              "name": "ntlE6",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "distanceBps",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "hfBps",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "spotE6",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "ladderOf",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "",
+              "type": "tuple",
+              "internalType": "struct PerpHealthLib.Ladder",
+              "components": [
+                {
+                  "name": "hf",
+                  "type": "uint32[4]",
+                  "internalType": "uint32[4]"
+                },
+                {
+                  "name": "disarm",
+                  "type": "uint32[4]",
+                  "internalType": "uint32[4]"
+                }
+              ]
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "minEntryDistanceBps",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "mmrBps",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "open",
+          "inputs": [
+            {
+              "name": "p",
+              "type": "tuple",
+              "internalType": "struct HyperliquidPerpVenue.OpenParams",
+              "components": [
+                {
+                  "name": "sz",
+                  "type": "uint64",
+                  "internalType": "uint64"
+                },
+                {
+                  "name": "maxSlippageBps",
+                  "type": "uint16",
+                  "internalType": "uint16"
+                },
+                {
+                  "name": "deadline",
+                  "type": "uint40",
+                  "internalType": "uint40"
+                }
+              ]
+            }
+          ],
+          "outputs": [
+            {
+              "name": "distanceBps",
+              "type": "uint32",
+              "internalType": "uint32"
+            },
+            {
+              "name": "hfBps",
+              "type": "uint32",
+              "internalType": "uint32"
+            }
+          ],
+          "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "perpGrantOf",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "",
+              "type": "tuple",
+              "internalType": "struct HyperliquidPerpVenue.PerpGrant",
+              "components": [
+                {
+                  "name": "keeper",
+                  "type": "address",
+                  "internalType": "address"
+                },
+                {
+                  "name": "expiry",
+                  "type": "uint40",
+                  "internalType": "uint40"
+                },
+                {
+                  "name": "period",
+                  "type": "uint40",
+                  "internalType": "uint40"
+                },
+                {
+                  "name": "periodStart",
+                  "type": "uint40",
+                  "internalType": "uint40"
+                },
+                {
+                  "name": "allowedRungs",
+                  "type": "uint8",
+                  "internalType": "uint8"
+                },
+                {
+                  "name": "topUpUsdcPerPeriod",
+                  "type": "uint64",
+                  "internalType": "uint64"
+                },
+                {
+                  "name": "reduceSzPerPeriod",
+                  "type": "uint64",
+                  "internalType": "uint64"
+                },
+                {
+                  "name": "maxSlippageBps",
+                  "type": "uint16",
+                  "internalType": "uint16"
+                },
+                {
+                  "name": "topUpSpent",
+                  "type": "uint64",
+                  "internalType": "uint64"
+                },
+                {
+                  "name": "reduceSpent",
+                  "type": "uint64",
+                  "internalType": "uint64"
+                },
+                {
+                  "name": "epoch",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                }
+              ]
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "protect",
+          "inputs": [
+            {
+              "name": "rung",
+              "type": "uint8",
+              "internalType": "uint8"
+            },
+            {
+              "name": "topUpE6",
+              "type": "uint64",
+              "internalType": "uint64"
+            },
+            {
+              "name": "reduceSz",
+              "type": "uint64",
+              "internalType": "uint64"
+            }
+          ],
+          "outputs": [],
+          "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "reduce",
+          "inputs": [
+            {
+              "name": "sz",
+              "type": "uint64",
+              "internalType": "uint64"
+            },
+            {
+              "name": "maxSlippageBps",
+              "type": "uint16",
+              "internalType": "uint16"
+            },
+            {
+              "name": "deadline",
+              "type": "uint40",
+              "internalType": "uint40"
+            }
+          ],
+          "outputs": [],
+          "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "reserveMultipleBps",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "multipleBps",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "setBaseRecipient",
+          "inputs": [
+            {
+              "name": "recipient",
+              "type": "bytes32",
+              "internalType": "bytes32"
+            }
+          ],
+          "outputs": [],
+          "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "setPerpGrant",
+          "inputs": [
+            {
+              "name": "keeper",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "expiry",
+              "type": "uint40",
+              "internalType": "uint40"
+            },
+            {
+              "name": "period",
+              "type": "uint40",
+              "internalType": "uint40"
+            },
+            {
+              "name": "allowedRungs",
+              "type": "uint8",
+              "internalType": "uint8"
+            },
+            {
+              "name": "topUpUsdcPerPeriod",
+              "type": "uint64",
+              "internalType": "uint64"
+            },
+            {
+              "name": "reduceSzPerPeriod",
+              "type": "uint64",
+              "internalType": "uint64"
+            },
+            {
+              "name": "maxSlippageBps",
+              "type": "uint16",
+              "internalType": "uint16"
+            }
+          ],
+          "outputs": [],
+          "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "setReserveMultipleBps",
+          "inputs": [
+            {
+              "name": "multipleBps",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "outputs": [],
+          "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "withdrawToEvm",
+          "inputs": [
+            {
+              "name": "perpToSpotE6",
+              "type": "uint64",
+              "internalType": "uint64"
+            },
+            {
+              "name": "spotToEvmE6",
+              "type": "uint64",
+              "internalType": "uint64"
+            }
+          ],
+          "outputs": [],
+          "stateMutability": "nonpayable"
+        },
+        {
+          "type": "event",
+          "name": "BaseRecipientSet",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "recipient",
+              "type": "bytes32",
+              "indexed": false,
+              "internalType": "bytes32"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "event",
+          "name": "BurnedToBase",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            },
+            {
+              "name": "recipient",
+              "type": "bytes32",
+              "indexed": false,
+              "internalType": "bytes32"
+            },
+            {
+              "name": "maxFee",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "event",
+          "name": "CoreFunded",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "toSpotE6",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            },
+            {
+              "name": "toPerpE6",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "event",
+          "name": "EntryCleared",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "event",
+          "name": "EntryRecorded",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "distanceBps",
+              "type": "uint32",
+              "indexed": false,
+              "internalType": "uint32"
+            },
+            {
+              "name": "hfBps",
+              "type": "uint32",
+              "indexed": false,
+              "internalType": "uint32"
+            },
+            {
+              "name": "sz",
+              "type": "uint64",
+              "indexed": false,
+              "internalType": "uint64"
+            },
+            {
+              "name": "reserveE6",
+              "type": "uint64",
+              "indexed": false,
+              "internalType": "uint64"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "event",
+          "name": "MarginAdded",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "usdcE6",
+              "type": "uint64",
+              "indexed": false,
+              "internalType": "uint64"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "event",
+          "name": "PerpGrantCleared",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "event",
+          "name": "PerpGrantSet",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "keeper",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "expiry",
+              "type": "uint40",
+              "indexed": false,
+              "internalType": "uint40"
+            },
+            {
+              "name": "period",
+              "type": "uint40",
+              "indexed": false,
+              "internalType": "uint40"
+            },
+            {
+              "name": "allowedRungs",
+              "type": "uint8",
+              "indexed": false,
+              "internalType": "uint8"
+            },
+            {
+              "name": "topUpUsdcPerPeriod",
+              "type": "uint64",
+              "indexed": false,
+              "internalType": "uint64"
+            },
+            {
+              "name": "reduceSzPerPeriod",
+              "type": "uint64",
+              "indexed": false,
+              "internalType": "uint64"
+            },
+            {
+              "name": "maxSlippageBps",
+              "type": "uint16",
+              "indexed": false,
+              "internalType": "uint16"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "event",
+          "name": "Protected",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "keeper",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "rung",
+              "type": "uint8",
+              "indexed": false,
+              "internalType": "uint8"
+            },
+            {
+              "name": "hfBps",
+              "type": "uint32",
+              "indexed": false,
+              "internalType": "uint32"
+            },
+            {
+              "name": "topUpE6",
+              "type": "uint64",
+              "indexed": false,
+              "internalType": "uint64"
+            },
+            {
+              "name": "reduceSz",
+              "type": "uint64",
+              "indexed": false,
+              "internalType": "uint64"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "event",
+          "name": "ReserveMultipleSet",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "multipleBps",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "event",
+          "name": "ShortOpened",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "sz",
+              "type": "uint64",
+              "indexed": false,
+              "internalType": "uint64"
+            },
+            {
+              "name": "markRaw",
+              "type": "uint64",
+              "indexed": false,
+              "internalType": "uint64"
+            },
+            {
+              "name": "distanceBps",
+              "type": "uint32",
+              "indexed": false,
+              "internalType": "uint32"
+            },
+            {
+              "name": "hfBps",
+              "type": "uint32",
+              "indexed": false,
+              "internalType": "uint32"
+            },
+            {
+              "name": "reserveE6",
+              "type": "uint64",
+              "indexed": false,
+              "internalType": "uint64"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "event",
+          "name": "ShortReduced",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "sz",
+              "type": "uint64",
+              "indexed": false,
+              "internalType": "uint64"
+            },
+            {
+              "name": "intendedRemaining",
+              "type": "uint64",
+              "indexed": false,
+              "internalType": "uint64"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "event",
+          "name": "WithdrawnToEvm",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "perpToSpotE6",
+              "type": "uint64",
+              "indexed": false,
+              "internalType": "uint64"
+            },
+            {
+              "name": "spotToEvmE6",
+              "type": "uint64",
+              "indexed": false,
+              "internalType": "uint64"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "error",
+          "name": "AccountValueNotPositive",
+          "inputs": [
+            {
+              "name": "accountValue",
+              "type": "int64",
+              "internalType": "int64"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "CrossChainDisabled",
+          "inputs": []
+        },
+        {
+          "type": "error",
+          "name": "EntryDistanceTooLow",
+          "inputs": [
+            {
+              "name": "distanceBps",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "floorBps",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "EntryTooThinForLadder",
+          "inputs": [
+            {
+              "name": "hfBps",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "ExitDistanceTooLow",
+          "inputs": [
+            {
+              "name": "distanceBps",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "floorBps",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "Expired",
+          "inputs": [
+            {
+              "name": "deadline",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "GrantEpochStale",
+          "inputs": [
+            {
+              "name": "grantEpoch",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "accountEpoch",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "GrantExpired",
+          "inputs": [
+            {
+              "name": "expiry",
+              "type": "uint40",
+              "internalType": "uint40"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "InvalidConfig",
+          "inputs": []
+        },
+        {
+          "type": "error",
+          "name": "InvalidGrant",
+          "inputs": []
+        },
+        {
+          "type": "error",
+          "name": "MarkOracleDeviation",
+          "inputs": [
+            {
+              "name": "mark",
+              "type": "uint64",
+              "internalType": "uint64"
+            },
+            {
+              "name": "oracle",
+              "type": "uint64",
+              "internalType": "uint64"
+            },
+            {
+              "name": "deviationBps",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "MaxFeeNotBelowAmount",
+          "inputs": [
+            {
+              "name": "maxFee",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "MaxFeeTooLarge",
+          "inputs": [
+            {
+              "name": "maxFee",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "cap",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "NoBaseRecipient",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "internalType": "address"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "NoEntry",
+          "inputs": []
+        },
+        {
+          "type": "error",
+          "name": "NoPosition",
+          "inputs": []
+        },
+        {
+          "type": "error",
+          "name": "NotAShort",
+          "inputs": [
+            {
+              "name": "szi",
+              "type": "int64",
+              "internalType": "int64"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "NotGrantedKeeper",
+          "inputs": [
+            {
+              "name": "keeper",
+              "type": "address",
+              "internalType": "address"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "NotKeeperPath",
+          "inputs": []
+        },
+        {
+          "type": "error",
+          "name": "NotOwnerPath",
+          "inputs": []
+        },
+        {
+          "type": "error",
+          "name": "NothingToDo",
+          "inputs": []
+        },
+        {
+          "type": "error",
+          "name": "NotionalOverCap",
+          "inputs": [
+            {
+              "name": "ntlE6",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "capE6",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "OtherPositionsOpen",
+          "inputs": [
+            {
+              "name": "ntlPos",
+              "type": "uint64",
+              "internalType": "uint64"
+            },
+            {
+              "name": "ntlE6",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "PositionOpen",
+          "inputs": [
+            {
+              "name": "szi",
+              "type": "int64",
+              "internalType": "int64"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "PrecompileReadFailed",
+          "inputs": [
+            {
+              "name": "precompile",
+              "type": "address",
+              "internalType": "address"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "ReduceBudgetExceeded",
+          "inputs": [
+            {
+              "name": "wanted",
+              "type": "uint64",
+              "internalType": "uint64"
+            },
+            {
+              "name": "remaining",
+              "type": "uint64",
+              "internalType": "uint64"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "ReduceExceedsPosition",
+          "inputs": [
+            {
+              "name": "wanted",
+              "type": "uint64",
+              "internalType": "uint64"
+            },
+            {
+              "name": "size",
+              "type": "uint64",
+              "internalType": "uint64"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "ReduceNotAllowedAtRung",
+          "inputs": [
+            {
+              "name": "rung",
+              "type": "uint8",
+              "internalType": "uint8"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "ReserveShort",
+          "inputs": [
+            {
+              "name": "heldE6",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "requiredE6",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "RungNotAllowed",
+          "inputs": [
+            {
+              "name": "rung",
+              "type": "uint8",
+              "internalType": "uint8"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "RungNotCrossed",
+          "inputs": [
+            {
+              "name": "rung",
+              "type": "uint8",
+              "internalType": "uint8"
+            },
+            {
+              "name": "hfBps",
+              "type": "uint32",
+              "internalType": "uint32"
+            },
+            {
+              "name": "thresholdBps",
+              "type": "uint32",
+              "internalType": "uint32"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "SlippageTooLarge",
+          "inputs": [
+            {
+              "name": "bps",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "cap",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "TopUpBudgetExceeded",
+          "inputs": [
+            {
+              "name": "wanted",
+              "type": "uint64",
+              "internalType": "uint64"
+            },
+            {
+              "name": "remaining",
+              "type": "uint64",
+              "internalType": "uint64"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "UsdcShort",
+          "inputs": [
+            {
+              "name": "asked",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "held",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "VenueParamsChanged",
+          "inputs": [
+            {
+              "name": "szDecimals",
+              "type": "uint8",
+              "internalType": "uint8"
+            },
+            {
+              "name": "maxLeverage",
+              "type": "uint8",
+              "internalType": "uint8"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "ZeroAddress",
+          "inputs": []
+        },
+        {
+          "type": "error",
+          "name": "ZeroAmount",
+          "inputs": []
+        },
+        {
+          "type": "error",
+          "name": "ZeroNotional",
+          "inputs": []
+        }
+      ]
+    },
     "IOilskinAccount": {
       "name": "IOilskinAccount",
       "functions": {

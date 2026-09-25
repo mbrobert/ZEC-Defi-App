@@ -229,3 +229,121 @@ contract address is credited on HyperCore by the system-address transfer; USDC's
 address; the leverage a fresh contract account carries at its first order; Circle's CCTP V2 contracts on
 HyperEVM and the 6→19 / 19→6 fees; what a backstop liquidation leaves; a test that action 7 and action 13 do
 what the table says from a contract.
+
+## 7 · Addendum (2026-09-25 22:29–22:41 UTC) · HyperEVM read by `eth_call`: the `position` struct decoded against a live position, USDC's two contracts and the adapter between them, Circle's CCTP V2 on chain 999, and the venue's liquidation rule against its own numbers
+
+Read for D2 (`docs/PERPS-DESIGN-2026-09-25.md`), read-only: `cast call`, `cast code`, `cast storage`, `cast logs`,
+`cast tx` / `cast receipt` at `https://rpc.hyperliquid.xyz/evm` (chain 999, blocks 46,887,589 → 46,888,179), the
+venue's `info` API at the same moments, Circle's fee API and USDC address page, two function selectors named by
+openchain. No transaction was constructed or signed. Raw bodies, word by word: `docs/research/hyperevm-reads-2026-09-25.json`.
+The code carries them in `packages/shared/src/perps.ts` (`HYPERLIQUID`, `HYPERCORE_PRECOMPILES`) and
+`contracts/src/interfaces/IHyperCore.sol`; `packages/shared/test/perps.test.ts` pins every decode to the raw bytes
+beside the API's number.
+
+### 7.1 The `position` struct, decoded from chain against the API at the same second — D0b item 2 CLOSED
+
+A trader found through `recentTrades` (`0x7717a7a245d9f950e586822b8c9b46863ed7bd7e`), read by `0x…0800` with
+`abi.encode(user, uint16 214)` at EVM block **46,887,687** (22:31:19.99Z) and by `clearinghouseState` at 22:31:19.32Z:
+
+| Word | Raw | Decoded | The API |
+|---|---|---|---|
+| 0 | `0xff…ebc8` | **szi −5,176** (int64, 10^szDecimals) = −51.76 ZEC | `"szi": "-51.76"` ✔ — negative for a short |
+| 1 | `0x…128020c765` | **entryNtl 79,459,043,173** (uint64, 10^6 USDC) = 79,459.04 | `entryPx` 1535.1438 × 51.76 = 79,459.04 ✔ |
+| 2 | 0 | isolatedRawUsd 0 | cross ✔ |
+| 3 | `0x…0a` | leverage **10** | `"leverage": {"type": "cross", "value": 10}` ✔ |
+| 4 | 0 | isIsolated false | ✔ |
+
+**`(int64 szi, uint64 entryNtl, int64 isolatedRawUsd, uint32 leverage, bool isIsolated)` is a chain fact**, no longer
+[secondary]. Five words, not six: the 2026-09-14 "six words of zero" was an address with no position.
+
+### 7.2 Four more precompiles answer, and the two known ones re-read (new)
+
+| Precompile | Input | Raw (same user, same block) | Decoded | The API |
+|---|---|---|---|---|
+| `0x…0801` spotBalance | `(user, uint64 0)` | (154,956,382, 0, 0) | **10^8 (`weiDecimals`)**: 1.54956382 USDC | `spotClearinghouseState` USDC `total` "1.54956382" ✔ |
+| `0x…0803` withdrawable | `(user)` | 1,510,976,428,420 | **10^6**: 1,510,976.43 | 1,509,018.63 two seconds earlier on a $31 M book |
+| `0x…080f` accountMarginSummary | `(uint32 0, user)` | (8,326,374,359,126; 6,611,248,254,435; 31,173,438,173,085; 26,393,270,272,055) | **`(int64 accountValue, uint64 marginUsed, uint64 ntlPos, int64 rawUsd)`, 10^6** | `crossMarginSummary` (8,325,817.57; 6,611,180.02; 31,173,296.86; 26,392,911.07) — each within 0.01 % |
+| `0x…080f` for HLP `0xdfc2…d303` | `(0, HLP)` | marginUsed 477,867,397; ntlPos 0 | 477.867397 | `marginSummary.totalMarginUsed` "477.867397" ✔ — the dex-0 summary; `marginUsed` is INITIAL margin |
+| `0x…080a` perpAssetInfo | `(uint32 214)` | dynamic tuple | **("ZEC", marginTableId 52, szDecimals 2, maxLeverage 10, onlyIsolated false)** | `meta` ✔ |
+| `0x…080c` tokenInfo | `(uint32 0)` | dynamic tuple | **("USDC", spots [], 0, deployer 0x0, evmContract `0x6b9e…0a24`, szDecimals 8, weiDecimals 8, evmExtraWeiDecimals −2)** | `spotMeta.tokens[0]` ✔ |
+| `0x…0809` l1BlockNumber | `()` | 1,161,147,635 | HyperCore's block at EVM block 46,887,665 | — |
+| `0x…0810` coreUserExists | `(address)` | HLP **1**; CoreWriter `0x3333…` **1**; the CCTP messenger contract **0** | a contract that has never touched HyperCore does not exist there | — |
+| `0x…0806` / `0x…0807` | `(uint32 214)` | 15,393,742 / 15,387,700 at 22:31:15Z; 15,389,417 at 22:31:19Z | 10^4 (facts §4) | `markPx` 1538.8 a second apart |
+
+So the keeper's account value comes from one read (`accountMarginSummary`), the venue's parameters from another
+(`perpAssetInfo`), and neither needs the API.
+
+### 7.3 USDC on HyperEVM: two contracts, and the adapter between them — D0b item 4's addresses CLOSED
+
+- **Circle's USDC on HyperEVM is `0xb88339CB7199b77E23DB6E890353E22632Ba630f`** — Circle's USDC address page
+  (mainnet table, read 2026-09-25) AND `TokenMinterV2.getLocalToken(6, Base USDC)` on chain 999 both say so.
+  `symbol()` / `name()` "USDC", `decimals()` 6, `version()` "2", `totalSupply()` **6,944,496,887.764888**,
+  `isMinter(TokenMinterV2)` true, `burnLimitsPerMessage` 10,000,000 USDC; a ZeppelinOS-style proxy (implementation
+  slot `0x003f…e4f8`, admin `0x178d…5080`), `masterMinter` `0xf21c…4a73`. **Testnet**: `0x2B3370eE501B4a559b57D449569354196457D8Ab` (Circle's testnet table).
+- **HyperCore token 0's `evmContract` is `0x6b9e773128f453f5c2c60935ee2de2cbc5390a24`**, a different contract: an
+  EIP-1967 proxy whose bytecode is identical to Circle's CCTP proxies (implementation `0x7537…0da3`, admin `0x8e66…fb92`),
+  which **holds 674,761,062.16 of Circle's USDC**, answers `token()` = `0xb883…630f`, `paused()` false, `owner()`
+  `0x438a…9EAC`, and whose `decimals()` / `symbol()` / `name()` / `totalSupply()` / `balanceOf()` **revert** at every
+  block tried. Its implementation's dispatch table carries 39 selectors; named: `deposit(uint256,uint32)` `0x2b2dfd2c`,
+  `transfer(address,uint256)`, `token()`, `pause()` / `unpause()` / `paused()` / `pauser()`, `owner()` / `pendingOwner()`
+  / `acceptOwnership()` / `transferOwnership(address)`. It is not an ERC-20 to read; it is the **adapter** between
+  Circle's USDC and HyperCore's.
+- **How USDC gets onto HyperCore — one live transaction**, `0xeaf2e1166485c59aca942954dda46e8773fa016488c4b7e87c91e8b00fc6acb9`
+  (block 46,887,881): user `0xc0e3…8DA0` called `deposit(70,014,653, 0)` — 70.014653 USDC (6 decimals), destination
+  dex 0. The receipt's logs, in order: (1) Circle USDC `Transfer(user → adapter)`; (2) adapter
+  `Transfer(adapter → 0x2000000000000000000000000000000000000000)` — the linked contract's Transfer to token 0's
+  system address, which HyperCore credits; (3) **CoreWriter `RawAction(adapter, data)`** with
+  `data = 0x01 000000d` + `abi.encode(destination = user, subAccount = 0, sourceDex = 0xffffffff, destinationDex = 0,
+  token = 0, wei = 7,001,465,300)` — **70.014653 × 10^8**, so USDC's `wei` is 10^8 and the adapter sends from ITS
+  spot to the USER's chosen dex; (4) an adapter event `0xf5e9…a99d(user)` with (7,001,465,300, 0). **The CoreWriter
+  encoding rule (version byte 1, three-byte action id, ABI words) and action 13's tuple are therefore read from chain.**
+  A second shape, tx `0x1141…9286`: a third-party contract approved and called the adapter's plain
+  `transfer(0x2000…0000, 904,455,231)`; no CoreWriter action; the L1 credits the sender from the linked Transfer.
+  In 300 blocks: 31 deposit-shaped Transfers, **0 from the system address** — the way back was not observed.
+- Token 0's system address `0x2000…0000` has no code and holds none of Circle's USDC (the adapter is the escrow).
+  The `RawAction` event's signature, from openchain: `RawAction(address,bytes)`, topic
+  `0x8c7f585fb295f7eb1e6aeb8fba61b23a4fe60beda405f0045073b185c74412e3`.
+
+### 7.4 Circle's CCTP V2 on HyperEVM — D0b item 5 CLOSED for the contracts; the fees read
+
+At block 46,887,589 (22:29:44Z): **TokenMessengerV2 `0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d`, MessageTransmitterV2
+`0x81D40F21F12A8F0E3252Bccb954D722d4c464B64`, TokenMinterV2 `0xfd78EE919681417d192449715b2594ab58f5D002`** — Base's own
+addresses, each with code. `localDomain()` **19**, `version()` 1, `paused()` false; `messageBodyVersion()` 1;
+`localMessageTransmitter()` and `localMinter()` name the other two; `remoteTokenMessengers(6)` = Base's messenger;
+`getLocalToken(6, Base USDC)` = `0xb883…630f`; `tokenController()` `0x9418…E9D0`. On Base (`mainnet.base.org`,
+22:35:58Z) `remoteTokenMessengers(19)` = the same messenger address. Fees at 22:29:54Z: `/v2/burn/USDC/fees/6/19`
+Fast **1.3 bp** / Standard 0; `/19/6` both 0; `fastBurn` allowance 53,948,803.04 USDC (§6's correction, 9f2b36e).
+
+### 7.5 The venue's liquidation rule against its own `liquidationPx` — design §4 VERIFIED
+
+For every trader in `recentTrades(ZEC)` holding a ZEC position, `liq = P − side × (A − MM) / |s| / (1 − l × side)`
+with `l = 1 / (2 × maxLeverage)`, `A` = `crossMarginSummary.accountValue`, and `MM` summed over the account's cross
+positions from each coin's margin table (the tier formula quoted in §6; 116 coins carry no table and fall back to
+`1 / (2 × maxLeverage)` — ZEC has table 52, exact), against the API's `liquidationPx` at 22:31–22:36Z:
+
+| User | Positions | szi | A | MM | Venue `liquidationPx` | Formula | Diff |
+|---|---|---|---|---|---|---|---|
+| `0x330e…` | **1** | **−13.95** | 19,747 | 1,080 | **2,822.13** | **2,822.13** | **−0.000 %** — a single-position cross short, the product's own shape; up-move 82.3 % |
+| `0x639b…` | 2 | −0.01 | 756 | 1 | 73,474.87 | 73,474.77 | −0.000 % |
+| `0x63f6…` | 95 | −1.11 | 83,678 | 7,490 | 66,916.95 | 66,916.85 | −0.000 % |
+| `0x5c60…` | 12 | −0.08 | 694 | 90 | 8,735.43 | 8,735.33 | −0.001 % |
+| `0xf5d8…` | 26 | −14.46 | 1,391,514 | 25,062 | 91,546.62 | 91,546.52 | −0.000 % |
+
+Every short matches to 0.001 %. Longs return `null` (read as 0) where the formula says the position cannot be
+liquidated, and one 3× long disagreed — longs are outside the design (§11). The distance the keeper runs on is the
+venue's own number.
+
+### 7.6 D0b after today
+
+| Item (design §2) | State |
+|---|---|
+| 1 · the limit-order bytes | **OPEN — testnet.** The encoding RULE is from chain (7.3); action 1's TUPLE is still the page's. `scripts/perps-d0b-testnet.mjs` step `order`: one IOC sell, the fill read back through `0x…0800` |
+| 2 · the `position` struct | **CLOSED** (7.1) |
+| 3 · a contract credited on HyperCore | **OPEN.** `coreUserExists` says a never-touched contract does not exist there; the script's `--to <address>` step sends 1 USDC to one and reads back |
+| 4 · USDC's contract, system address, action 7, a fresh account's leverage | **addresses CLOSED** (7.3); action 7's `ntl` unit (step `class`), the adapter's spot dex (step `fund`: `deposit(x, uint32.max)` is inferred from action 13's convention, not observed), the leverage at a first fill (step `order`) — **OPEN** |
+| 5 · CCTP V2 on HyperEVM and the fees | **CLOSED** (7.4) |
+| 6 · what a liquidation leaves | **OPEN** — by hand, one liquidated testnet position |
+| 7 · tier 0 only under the cap | recorded (D8: $25,000 ≪ $20 M) |
+
+What the code rests on beyond a read, after today: action 1's and action 7's parameter tuples **[doc]**, and the
+adapter's spot dex **[inferred]**. Everything else in `perps.ts` and `IHyperCore.sol` is a chain or API read.

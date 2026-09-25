@@ -17,3 +17,4 @@ export * from "./zecForms.js";
 export * from "./zecRoutes.js";
 export * from "./zecExit.js";
 export * from "./cctp.js";
+export * from "./perps.js";

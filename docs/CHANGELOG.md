@@ -3,6 +3,46 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-25 — Perps D2: the venue adapter and the short's health on chain, four D0b items closed read-only, and the founder's testnet script
+
+BUILD-PLAN Stream D's first code, against the design of the same day (`PERPS-DESIGN-2026-09-25.md`). HF = health
+factor; CCTP = Circle's Cross-Chain Transfer Protocol; ABI = application binary interface.
+
+- **Read before written** (`VERIFIED-PERPS-FACTS-2026-09-14.md` §7, raw in `docs/research/hyperevm-reads-2026-09-25.json`;
+  nothing signed): the `position` precompile's five words decoded against a live ZEC short and the API at the same
+  second (D0b item 2 closed — `szi` negative for a short, `entryNtl` in 10^6); four more precompiles that answer —
+  `accountMarginSummary` (the account value in one read), `perpAssetInfo` (margin table 52 and the size decimals on
+  chain), `tokenInfo`, `coreUserExists`; **USDC has two contracts on HyperEVM** — Circle's `0xb883…630f` (Circle's
+  page and the CCTP minter agree) and HyperCore token 0's linked `0x6b9e…0a24`, an adapter holding 674.76 M USDC whose
+  `deposit(uint256,uint32)` pulls Circle USDC, emits the linked `Transfer` to the system address and hands the wei
+  (10^8) to the caller's dex through a CoreWriter `sendAsset` — all read from one live transaction, which also fixes
+  the CoreWriter encoding rule and action 13's tuple from chain (item 4's addresses closed); Circle's CCTP V2
+  contracts on HyperEVM at Base's addresses with `localDomain() = 19` (item 5 closed); and the venue's own
+  cross-margin liquidation formula reproduced its `liquidationPx` for every short sampled to 0.001 % (design §4
+  verified against the venue's numbers, not its prose).
+- **Built:** `packages/shared/src/perps.ts` — the venue facts, the CoreWriter encoders and precompile decoders (each
+  refusing what it cannot decode), the short's distance and equivalent HF in integers, the ladder in distance terms,
+  the top-up / reduce / reserve identities, the funding history's statistics (19 tests, the decodes pinned to the raw
+  bytes beside the API). `contracts/src/libraries/PerpHealthLib.sol` — the shared ladder derivation in Solidity, value
+  for value with `ladderBpsFor`, and the distance ↔ HF mapping. `contracts/src/libraries/HyperCoreLib.sol` — the only
+  code that knows HyperCore's byte layouts. `contracts/src/venues/HyperliquidPerpVenue.sol` — `OilskinAccount`
+  unchanged as the account, the venue its one peripheral: `fundCore` / `open` / `addMargin` / `reduce` /
+  `withdrawToEvm` / `burnToBase` on the owner path, each re-recording the entry (D9), and `protect(rung, topUp,
+  reduceSz)` on the keeper path inside a `PerpGrant` (rungs allowed, top-up and reduce budgets per period, slippage,
+  the account's `grantEpoch` so `revokeAll` kills it too), refusing by name a rung the live equivalent HF has not
+  crossed, a reduce at the top-up rung, a second position on the same HyperCore account, a venue whose parameters
+  moved, a mark that disagrees with the oracle, a precompile that does not answer. 20 Foundry tests against
+  `MockCoreWriter` and `vm.etch`ed precompile doubles (`test/mocks/MockHyperCore.sol`), every number produced by the
+  TypeScript twin first. `scripts/perps-d0b-testnet.mjs` — the D0b gate as a script the founder runs on chain 998 with
+  a throwaway key: the order bytes, action 7's unit, the adapter's spot dex, a fresh account's leverage, a contract's
+  first credit, each recorded raw.
+- **Finding, for the founder's §10 item 4:** the 1× reserve is the top-up from EXACTLY the repay rung to its disarm;
+  a +10 % move in one tick lands 243 bps past the rung and the top-up to disarm is 1.38× the reserve. The venue
+  refuses the shortfall by name (`ReserveShort`) and the keeper's policy must top up what the reserve holds.
+- **Still a page's word:** action 1's and action 7's parameter tuples; the adapter's spot destination is inferred.
+  Nothing is deployed; the first run of the script is the founder's.
+- Suites: shared **160** (141 + 19); the ABI seam regenerated for the venue; contracts and web counts in `TESTING.md`.
+
 ## 2026-09-25 — The perps design (D1): a short's distance to liquidation as an equivalent health factor, so the ladder stays one ladder
 
 BUILD-PLAN Stream D's first step after the facts, and the piece §4 calls "the one with no precedent in the tree":

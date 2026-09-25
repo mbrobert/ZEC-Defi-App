@@ -1275,11 +1275,21 @@ must say the keeper can sell ZEC, and how much; the program's upgrade authority
 goes to a Squads multisig at deploy, and until that handover a single deployer
 key holds it.
 
-## 23 · Perps module: a ZEC short on Hyperliquid (design stage, 2026-09-25)
+## 23 · Perps module: a ZEC short on Hyperliquid (design 2026-09-25; D2 built the same day, nothing deployed)
 
-Nothing of this module is built; the risks are recorded now because the design
-(`PERPS-DESIGN-2026-09-25.md`) and the copy it specifies depend on them. Every
-number is from `VERIFIED-PERPS-FACTS-2026-09-14.md` (§6 read live 2026-09-25).
+Nothing of this module is deployed. The venue adapter, its libraries and their
+tests exist (D2, `HyperliquidPerpVenue.sol`); the facts still taken from a page
+are named in `VERIFIED-PERPS-FACTS-2026-09-14.md` §7.6 and the testnet script
+that closes them is the founder's to run. Every number is from that facts file
+(§6–§7 read live 2026-09-25).
+
+**Risk — a one-tick jump overshoots the reserve.** The reserve on HyperCore is
+sized as the top-up from exactly the repay rung to its disarm (1× by default).
+A move that lands past the rung in one tick — +10 % on the test's scene puts the
+position 243 bps beyond it — needs 1.38× that reserve to reach disarm. The venue
+refuses the shortfall by name (`ReserveShort`) rather than sending a transfer
+HyperCore would silently drop; the keeper tops up what the reserve holds and
+re-arms; the multiple is the founder's (design §10 item 4).
 
 **Risk — the short is liquidated by a rise.** Every other position Oilskin
 protects dies when collateral falls; this one dies when ZEC goes up, and ZEC

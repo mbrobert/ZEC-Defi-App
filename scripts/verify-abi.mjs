@@ -39,6 +39,7 @@ const CONTRACTS = [
   "SlipstreamPoolSwapAdapter",
   "StrategyRouter",
   "PythOracleAdapter",
+  "HyperliquidPerpVenue",
   "IOilskinAccount",
   "ICollateralVenue",
   "ILpVenue",

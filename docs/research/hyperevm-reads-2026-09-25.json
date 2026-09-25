@@ -1,0 +1,553 @@
+{
+ "readAtIso": "2026-09-25T22:29:44Z to 2026-09-25T22:40:38Z",
+ "how": "Read-only: cast call / eth_call at https://rpc.hyperliquid.xyz/evm (chain 999), cast code, cast storage, cast logs, cast tx/receipt; POST https://api.hyperliquid.xyz/info (spotMeta, clearinghouseState, spotClearinghouseState, recentTrades, meta, metaAndAssetCtxs); GET https://iris-api.circle.com/v2/burn/USDC/fees/{src}/{dst} and /v2/fastBurn/USDC/allowance; Circle's USDC address page and Hyperliquid's HyperEVM pages fetched for the two testnet endpoints. No transaction was constructed or signed. Every value below is the raw answer and, where the API answered at the same moment, the API's number beside it.",
+ "chain": {
+  "chainId": 999,
+  "blockAtStart": 46887589,
+  "blockAtEnd": 46888179
+ },
+ "cctpV2OnHyperEvm": {
+  "readAtIso": "2026-09-25T22:29:44Z",
+  "block": 46887589,
+  "tokenMessengerV2": {
+   "address": "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
+   "codeHexChars": 4353,
+   "localMessageTransmitter": "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
+   "localMinter": "0xfd78EE919681417d192449715b2594ab58f5D002",
+   "messageBodyVersion": 1,
+   "remoteTokenMessengers_6": "0x00000000000000000000000028b5a0e9c621a5badaa536219b3a228c8168cf5d"
+  },
+  "messageTransmitterV2": {
+   "address": "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
+   "codeHexChars": 4353,
+   "localDomain": 19,
+   "version": 1,
+   "paused": false
+  },
+  "tokenMinterV2": {
+   "address": "0xfd78EE919681417d192449715b2594ab58f5D002",
+   "codeHexChars": 18593,
+   "tokenController": "0x94181d7a479272A79336B9Ae8aBba7B4751fE9D0",
+   "getLocalToken_6_BaseUsdc": "0xb88339CB7199b77E23DB6E890353E22632Ba630f",
+   "burnLimitsPerMessage_0xb883": "10000000000000",
+   "burnLimitsPerMessage_0x6b9e": "0"
+  },
+  "baseSide": {
+   "readAtIso": "2026-09-25T22:35:58Z",
+   "rpc": "https://mainnet.base.org",
+   "tokenMessengerV2_remoteTokenMessengers_19": "0x00000000000000000000000028b5a0e9c621a5badaa536219b3a228c8168cf5d",
+   "tokenMinterV2_getLocalToken_19_0x6b9e": "0x0000000000000000000000000000000000000000",
+   "note": "Base's minter maps domain 19 remote USDC 0xb883... (not probed) — the 0x6b9e... adapter is not a CCTP token anywhere"
+  },
+  "circleFees": {
+   "readAtIso": "2026-09-25T22:29:54Z",
+   "6->19": [
+    {
+     "finalityThreshold": 1000,
+     "minimumFee": 1.3
+    },
+    {
+     "finalityThreshold": 2000,
+     "minimumFee": 0
+    }
+   ],
+   "19->6": [
+    {
+     "finalityThreshold": 1000,
+     "minimumFee": 0
+    },
+    {
+     "finalityThreshold": 2000,
+     "minimumFee": 0
+    }
+   ],
+   "fastBurnAllowanceUsdc": 53948803.038718,
+   "feeUnit": "basis points",
+   "note": "Fast is offered INTO HyperEVM (6->19 threshold 1000 at 1.3 bp, the Base -> Solana schedule); OUT of it both thresholds price at 0 and Circle's supported-blockchains table marks Fast N/A for HyperEVM as a source — the way back is Standard only (facts §6, corrected 22:31 UTC)"
+  }
+ },
+ "usdc": {
+  "circleUsdc": {
+   "address": "0xb88339CB7199b77E23DB6E890353E22632Ba630f",
+   "source": "developers.circle.com/stablecoins/usdc-contract-addresses (HyperEVM mainnet row), and TokenMinterV2.getLocalToken(6, Base USDC) on chain 999",
+   "readAtIso": "2026-09-25T22:37:05Z",
+   "symbol": "USDC",
+   "name": "USDC",
+   "decimals": 6,
+   "totalSupply": "6944496887764888",
+   "version": "2",
+   "proxyImplementationSlotZos": "0x003f73f58ca78880da3642c5cb71d7459b3fe4f8",
+   "proxyAdminSlotZos": "0x178d71a698e96f26dd0336a624b7c37a120b5080",
+   "masterMinter": "0xf21ce1A17C97462B780006044Bf57a19Ac464a73",
+   "isMinter_cctpTokenMinterV2": true,
+   "testnetAddress": "0x2B3370eE501B4a559b57D449569354196457D8Ab",
+   "testnetSource": "Circle's page, testnet table, 2026-09-25"
+  },
+  "hyperCoreToken0": {
+   "source": "spotMeta.tokens[0] (22:29:56Z) and precompile 0x80c tokenInfo(0) (22:31:15Z)",
+   "name": "USDC",
+   "index": 0,
+   "szDecimals": 8,
+   "weiDecimals": 8,
+   "evmContract": "0x6b9e773128f453f5c2c60935ee2de2cbc5390a24",
+   "evmExtraWeiDecimals": -2,
+   "tokenId": "0x6d1e7cde53ba9467b783cb7c530ce054",
+   "isCanonical": true,
+   "tokenInfoRaw": "0x000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000140000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006b9e773128f453f5c2c60935ee2de2cbc5390a2400000000000000000000000000000000000000000000000000000000000000080000000000000000000000000000000000000000000000000000000000000008fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe000000000000000000000000000000000000000000000000000000000000000455534443000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "linkedAdapter0x6b9e": {
+   "address": "0x6b9e773128f453f5c2c60935ee2de2cbc5390a24",
+   "readAtIso": "2026-09-25T22:32:36Z to 22:39:19Z",
+   "proxyCodeIdenticalToCctpProxies": true,
+   "eip1967Implementation": "0x7537af00779cc053a696e47ebd451b5bc4790da3",
+   "eip1967Admin": "0x8e66c6ac847f06b9502fa2512435a62005f5fb92",
+   "implementationCodeHexChars": 35875,
+   "token": "0xb88339CB7199b77E23DB6E890353E22632Ba630f",
+   "paused": false,
+   "owner": "0x438aA6Cea4d8a153c35c6bD1E4B6adCfdF869EAC",
+   "circleUsdcHeld": "674761062161021",
+   "erc20ReadsRevert": [
+    "decimals()",
+    "symbol()",
+    "name()",
+    "totalSupply()",
+    "balanceOf(address)"
+   ],
+   "selectorsInImplementation": [
+    "0d39c3fc",
+    "0e721e6e",
+    "108438e0",
+    "11f2b0dc",
+    "2ab60045",
+    "2b2dfd2c",
+    "38a63183",
+    "3c1072d0",
+    "3f4ba83a",
+    "46117830",
+    "4c5bd546",
+    "554bab3c",
+    "5c975abb",
+    "6ddde35e",
+    "79ba5097",
+    "7b5c63cf",
+    "820b3e1e",
+    "8456cb59",
+    "8da5cb5b",
+    "9fd0506d",
+    "a7917af3",
+    "a9059cbb",
+    "b2118a8d",
+    "b49595b7",
+    "b7a42b92",
+    "b8e2e3d4",
+    "c0cfc00d",
+    "c23c545a",
+    "d004283e",
+    "d26b3e26",
+    "da6d4994",
+    "e26f7d23",
+    "e30c3978",
+    "ea031649",
+    "eb42696a",
+    "eeb97d18",
+    "f2fde38b",
+    "f8f1b507",
+    "fc0c546a"
+   ],
+   "namedSelectors": {
+    "2b2dfd2c": "deposit(uint256,uint32) [openchain]",
+    "a9059cbb": "transfer(address,uint256)",
+    "fc0c546a": "token()",
+    "9fd0506d": "pauser() [openchain]",
+    "5c975abb": "paused()",
+    "8da5cb5b": "owner()",
+    "3f4ba83a": "unpause()",
+    "8456cb59": "pause()",
+    "79ba5097": "acceptOwnership()",
+    "e30c3978": "pendingOwner()",
+    "f2fde38b": "transferOwnership(address)"
+   }
+  },
+  "systemAddressToken0": {
+   "address": "0x2000000000000000000000000000000000000000",
+   "code": "none",
+   "rule": "docs: first byte 0x20, remaining bytes the token index big-endian (facts §6 / HyperEVM transfers page)",
+   "circleUsdcBalance": "0"
+  },
+  "liveDepositObserved": {
+   "tx": "0xeaf2e1166485c59aca942954dda46e8773fa016488c4b7e87c91e8b00fc6acb9",
+   "block": 46887881,
+   "blockTimestamp": "0x6ab6f6f6",
+   "from": "0xc0e330226EAC3D1a47C91f1D9bae525e5fB28DA0",
+   "to": "0x6B9E773128f453f5c2C60935Ee2DE2CBc5390A24",
+   "input": "0x2b2dfd2c00000000000000000000000000000000000000000000000000000000042c56bd0000000000000000000000000000000000000000000000000000000000000000",
+   "decodedInput": "deposit(amount = 70014653 (70.014653 USDC, 6 decimals), destinationDex = 0)",
+   "logs": [
+    "Circle USDC Transfer(from = user 0xc0e3..., to = adapter 0x6b9e..., 70014653)",
+    "adapter Transfer(from = adapter 0x6b9e..., to = system 0x2000...0000, 70014653) — the linked-contract Transfer HyperCore credits",
+    "CoreWriter RawAction(user = adapter 0x6b9e..., data = 0x0100000d + abi.encode(destination = user 0xc0e3..., subAccount = 0, sourceDex = 0xffffffff (spot), destinationDex = 0, token = 0, wei = 7001465300)) — 7001465300 = 70.014653 × 10^8, so USDC wei on HyperCore is 10^8 and the adapter sent from its own spot to the user's dex 0",
+    "adapter event 0xf5e9b71b...(user) data (7001465300, 0)"
+   ],
+   "rawActionDataHex": "0x0100000d000000000000000000000000c0e330226eac3d1a47c91f1d9bae525e5fb28da0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ffffffff0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001a151e1d4",
+   "coreWriterRawActionTopic0": "0x8c7f585fb295f7eb1e6aeb8fba61b23a4fe60beda405f0045073b185c74412e3",
+   "coreWriterRawActionSignature": "RawAction(address,bytes) [openchain]"
+  },
+  "liveDirectTransferObserved": {
+   "tx": "0x114181072f998c819e88fa3e76f9d3b5e7f0892c599c3acb6f27d85c894e9286",
+   "block": 46887887,
+   "from": "0x671Dc405059051bA0D2F2aEe0e80f30467fa636b",
+   "to": "0x08F24AF334e5681d0C242336E1d962c86025e67c (a third-party contract)",
+   "logs": [
+    "Circle USDC Approval(0x08f2... -> adapter)",
+    "Circle USDC Transfer(0x08f2... -> adapter, 904455231)",
+    "adapter Transfer(0x08f2... -> system 0x2000...0000, 904455231)",
+    "0x08f2... event 0x1601e65d...(0x671d...)"
+   ],
+   "note": "the adapter's own transfer(to = system address, amount) path: no CoreWriter action; the L1 credits the sender from the linked Transfer. Spot or perp destination not visible on the EVM side — D0b."
+  },
+  "adapterLogs300Blocks": {
+   "fromBlock": 46887879,
+   "toBlock": 46888179,
+   "depositShapedLogs": 31,
+   "withdrawalShapedLogs": 0
+  }
+ },
+ "precompiles": {
+  "readAtIso": "2026-09-25T22:31:15Z to 22:31:19Z",
+  "evmBlock": 46887687,
+  "markPx_0x806_ZEC214": {
+   "raw": "0x0000000000000000000000000000000000000000000000000000000000eae3ce",
+   "value": 15393742,
+   "note": "22:31:15Z; scaling 10^4 (facts §4)"
+  },
+  "oraclePx_0x807_ZEC214": {
+   "raw": "0x0000000000000000000000000000000000000000000000000000000000eacc34",
+   "value": 15387700
+  },
+  "l1BlockNumber_0x809": {
+   "raw": "0x000000000000000000000000000000000000000000000000000000004534b4f3",
+   "value": 1161147635
+  },
+  "perpAssetInfo_0x80a_214": {
+   "raw": "0x000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000340000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000035a45430000000000000000000000000000000000000000000000000000000000",
+   "decoded": {
+    "coin": "ZEC",
+    "marginTableId": 52,
+    "szDecimals": 2,
+    "maxLeverage": 10,
+    "onlyIsolated": false
+   },
+   "api": "meta: szDecimals 2, maxLeverage 10, marginTableId 52"
+  },
+  "accountMarginSummary_0x80f_dex0_HLP": {
+   "user": "0xdfc24b077bc1425ad1dea75bcb6f8158e10df303",
+   "raw": "0x00000000000000000000000000000000000000000000000000002753b36a3b58000000000000000000000000000000000000000000000000000000001c7bad85000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002753b36a3b58",
+   "decoded": {
+    "accountValue": "43239959291736",
+    "marginUsed": "477867397",
+    "ntlPos": "0",
+    "rawUsd": "43239959291736"
+   },
+   "api_22_29_58Z": {
+    "crossMarginSummary": {
+     "accountValue": "43239959.2917390019",
+     "totalNtlPos": "0.0",
+     "totalRawUsd": "43239959.2917390019",
+     "totalMarginUsed": "0.0"
+    },
+    "marginSummary_totalMarginUsed": "477.867397"
+   },
+   "note": "10^6 USDC; marginUsed matches marginSummary.totalMarginUsed (477.867397), i.e. the perp dex 0 summary"
+  },
+  "coreUserExists_0x810": {
+   "HLP_0xdfc2": true,
+   "cctpTokenMessenger_0x28b5": false,
+   "coreWriter_0x3333": true
+  },
+  "liveZecShort": {
+   "user": "0x7717a7a245d9f950e586822b8c9b46863ed7bd7e",
+   "apiTime": "2026-09-25T22:31:19.317Z",
+   "evmBlock": 46887687,
+   "evmTime": "2026-09-25T22:31:19.994Z",
+   "apiPosition": {
+    "coin": "ZEC",
+    "szi": "-51.76",
+    "leverage": {
+     "type": "cross",
+     "value": 10
+    },
+    "entryPx": "1535.1438",
+    "positionValue": "79648.288",
+    "unrealizedPnl": "-189.244827",
+    "liquidationPx": "94111.8684867152",
+    "marginUsed": "7964.8288",
+    "maxLeverage": 10
+   },
+   "apiCrossMarginSummary": {
+    "accountValue": "8325817.5748300003",
+    "totalNtlPos": "31173296.8643600009",
+    "totalRawUsd": "26392911.0691040009",
+    "totalMarginUsed": "6611180.016365"
+   },
+   "apiWithdrawable": "1509018.63466",
+   "apiSpotUsdc": {
+    "total": "1.54956382",
+    "hold": "0.0",
+    "entryNtl": "0.0"
+   },
+   "position_0x800_raw": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffebc8000000000000000000000000000000000000000000000000000000128020c7650000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000000000000000000000000000000000000000000",
+   "position_decoded": {
+    "words": 5,
+    "szi": -5176,
+    "entryNtl": 79459043173,
+    "isolatedRawUsd": 0,
+    "leverage": 10,
+    "isIsolated": false,
+    "note": "szi in 10^szDecimals (2): -51.76 ✔; entryNtl in 10^6 USDC: 79459.043173 = 1535.1438 × 51.76 ✔; struct (int64 szi, uint64 entryNtl, int64 isolatedRawUsd, uint32 leverage, bool isIsolated) CONFIRMED from chain against the API at the same second — five words, not the six of the 2026-09-14 zero read"
+   },
+   "spotBalance_0x801_raw": "0x00000000000000000000000000000000000000000000000000000000093c725e00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "spotBalance_decoded": {
+    "total": 154956382,
+    "hold": 0,
+    "entryNtl": 0,
+    "note": "10^8 (weiDecimals 8): 1.54956382 ✔"
+   },
+   "withdrawable_0x803_raw": "0x0000000000000000000000000000000000000000000000000000015fcd369984",
+   "withdrawable_decoded": {
+    "value": 1510976428420,
+    "note": "10^6: 1,510,976.43 vs API 1,509,018.63 two seconds apart on a $31 M book"
+   },
+   "accountMarginSummary_0x80f_raw": "0x00000000000000000000000000000000000000000000000000000792a2960056000000000000000000000000000000000000000000000000000006034d1a8de300000000000000000000000000000000000000000000000000001c5a21b56f9d00000000000000000000000000000000000000000000000000001801297fc037",
+   "accountMarginSummary_decoded": {
+    "accountValue": 8326374359126,
+    "marginUsed": 6611248254435,
+    "ntlPos": 31173438173085,
+    "rawUsd": 26393270272055,
+    "note": "struct (int64 accountValue, uint64 marginUsed, uint64 ntlPos, int64 rawUsd), 10^6 USDC, each within 0.01 % of the API's cross summary read two seconds earlier"
+   },
+   "markPx_0x806_raw": "0x0000000000000000000000000000000000000000000000000000000000ead2e9",
+   "markPx_decoded": 15389417,
+   "apiMarkPx_sameSecond": "1538.8",
+   "apiOraclePx": "1538.2"
+  }
+ },
+ "liquidationFormulaCheck": {
+  "note": "The venue's documented cross-margin rule liq = P − side × (A − MM) / |s| / (1 − l × side) with l = 1/(2 × maxLeverage) and MM summed over the account's cross positions, against the API's own liquidationPx. Every SHORT sampled matches to 0.001 % (rows with szi < 0); for longs the API returns null/0 where the formula says the position cannot be liquidated, and longs are out of the design (§11).",
+  "readAtIso": "2026-09-25T22:36:03.555Z",
+  "how": "POST https://api.hyperliquid.xyz/info meta, metaAndAssetCtxs, recentTrades(ZEC), clearinghouseState(user) for each user in the recent trades; formula from hyperliquid docs /trading/liquidations quoted in VERIFIED-PERPS-FACTS §6",
+  "zecMeta": {
+   "szDecimals": 2,
+   "name": "ZEC",
+   "maxLeverage": 10,
+   "marginTableId": 52,
+   "index": 214
+  },
+  "marginTable52": {
+   "description": "tiered 10x (2)",
+   "marginTiers": [
+    {
+     "lowerBound": "0.0",
+     "maxLeverage": 10
+    },
+    {
+     "lowerBound": "20000000.0",
+     "maxLeverage": 5
+    }
+   ]
+  },
+  "rows": [
+   {
+    "user": "0x330e4c08a52ced70a718be6ed8841f1f53863ac1",
+    "positions": 1,
+    "szi": "-13.95",
+    "entryPx": "1545.2326",
+    "leverageType": "cross",
+    "leverageValue": 10,
+    "accountValue": 19746.716396,
+    "maintenanceTotal": 1079.5207500000001,
+    "mark": 1547.7,
+    "venueLiquidationPx": 2822.1287862093,
+    "formulaLiquidationPx": 2822.128786209251,
+    "relDiffPct": -1.7402718875103716e-12,
+    "upMoveToLiqPct": 82.34339899265044,
+    "apiTime": "2026-09-25T22:36:00.721Z"
+   },
+   {
+    "user": "0xf060d5dc903c6bc774b2636923a67491f0586cd9",
+    "positions": 71,
+    "szi": "3.04",
+    "entryPx": "1568.2701",
+    "leverageType": "cross",
+    "leverageValue": 10,
+    "accountValue": 10267.089884,
+    "maintenanceTotal": 5139.681127266668,
+    "mark": 1547.7,
+    "venueLiquidationPx": 0,
+    "formulaLiquidationPx": -227.71854457525365,
+    "relDiffPct": null,
+    "upMoveToLiqPct": -114.71335172031102,
+    "apiTime": "2026-09-25T22:36:00.921Z"
+   },
+   {
+    "user": "0x639bd9255907cb915a117c7a82e31e516d2bf05b",
+    "positions": 2,
+    "szi": "-0.01",
+    "entryPx": "1547.7",
+    "leverageType": "cross",
+    "leverageValue": 10,
+    "accountValue": 756.313627,
+    "maintenanceTotal": 1.0794000000000001,
+    "mark": 1547.7,
+    "venueLiquidationPx": 73474.8692380952,
+    "formulaLiquidationPx": 73474.76923809522,
+    "relDiffPct": -0.0001361009567130594,
+    "upMoveToLiqPct": 4647.352150810572,
+    "apiTime": "2026-09-25T22:36:01.253Z"
+   },
+   {
+    "user": "0x9fb650952785e58685b20483981532569a09311c",
+    "positions": 2,
+    "szi": "6.07",
+    "entryPx": "1531.9761",
+    "leverageType": "cross",
+    "leverageValue": 3,
+    "accountValue": 4770.891203,
+    "maintenanceTotal": 961.254085,
+    "mark": 1547.7,
+    "venueLiquidationPx": 100.1108223359,
+    "formulaLiquidationPx": 887.0501919708663,
+    "relDiffPct": 786.0682304602025,
+    "upMoveToLiqPct": -42.68590864050744,
+    "apiTime": "2026-09-25T22:36:01.481Z"
+   },
+   {
+    "user": "0x25773676902085225ae5751075e4161369334897",
+    "positions": 28,
+    "szi": "58.16",
+    "entryPx": "1536.6306",
+    "leverageType": "cross",
+    "leverageValue": 10,
+    "accountValue": 3065858.271967,
+    "maintenanceTotal": 235069.8766709125,
+    "mark": 1547.7,
+    "venueLiquidationPx": 0,
+    "formulaLiquidationPx": -49686.434425832325,
+    "relDiffPct": null,
+    "upMoveToLiqPct": -3310.340145107729,
+    "apiTime": "2026-09-25T22:36:01.682Z"
+   },
+   {
+    "user": "0x7b666af4f977342446f43f02268b48dd081181e0",
+    "positions": 2,
+    "szi": "0.11",
+    "entryPx": "1543.4909",
+    "leverageType": "cross",
+    "leverageValue": 10,
+    "accountValue": 32611.3007,
+    "maintenanceTotal": 16292.955399999999,
+    "mark": 1547.7,
+    "venueLiquidationPx": 0,
+    "formulaLiquidationPx": -154608.714354067,
+    "relDiffPct": null,
+    "upMoveToLiqPct": -10089.579011052982,
+    "apiTime": "2026-09-25T22:36:01.876Z"
+   },
+   {
+    "user": "0x63f6411ca61733af716c9a50a56a84ea38a0af59",
+    "positions": 95,
+    "szi": "-1.11",
+    "entryPx": "1537.2936",
+    "leverageType": "cross",
+    "leverageValue": 10,
+    "accountValue": 83678.005212,
+    "maintenanceTotal": 7490.265846212502,
+    "mark": 1547.7,
+    "venueLiquidationPx": 66916.9457700558,
+    "formulaLiquidationPx": 66916.84574499141,
+    "relDiffPct": -0.00014947643415823785,
+    "upMoveToLiqPct": 4223.631565871384,
+    "apiTime": "2026-09-25T22:36:02.079Z"
+   },
+   {
+    "user": "0x5c60eafbad8be9e34cf1badc37e148beda751b99",
+    "positions": 12,
+    "szi": "-0.08",
+    "entryPx": "1557.7125",
+    "leverageType": "cross",
+    "leverageValue": 3,
+    "accountValue": 694.096806,
+    "maintenanceTotal": 90.33585909583333,
+    "mark": 1547.7,
+    "venueLiquidationPx": 8735.4303690476,
+    "formulaLiquidationPx": 8735.330320287698,
+    "relDiffPct": -0.0011453214744585373,
+    "upMoveToLiqPct": 464.4072055493764,
+    "apiTime": "2026-09-25T22:36:02.483Z"
+   },
+   {
+    "user": "0x8fb661545816bcb561f280c4501591643c454667",
+    "positions": 4,
+    "szi": "19.66",
+    "entryPx": "1541.7051",
+    "leverageType": "cross",
+    "leverageValue": 10,
+    "accountValue": 420202.691299,
+    "maintenanceTotal": 30930.7294279875,
+    "mark": 1547.7,
+    "venueLiquidationPx": 0,
+    "formulaLiquidationPx": -19294.617388821145,
+    "relDiffPct": null,
+    "upMoveToLiqPct": -1346.6639134729694,
+    "apiTime": "2026-09-25T22:36:02.685Z"
+   },
+   {
+    "user": "0xf5d81a135f756ca16544e53c20fc20643ec3ad53",
+    "positions": 26,
+    "szi": "-14.46",
+    "entryPx": "1547.7379",
+    "leverageType": "cross",
+    "leverageValue": 3,
+    "accountValue": 1391514.34391,
+    "maintenanceTotal": 25062.215799704165,
+    "mark": 1547.7,
+    "venueLiquidationPx": 91546.6229016663,
+    "formulaLiquidationPx": 91546.52290129062,
+    "relDiffPct": -0.00010923436879313232,
+    "upMoveToLiqPct": 5815.004387238523,
+    "apiTime": "2026-09-25T22:36:02.889Z"
+   },
+   {
+    "user": "0x9180028028274ceb3e338bfc644824ee36238714",
+    "positions": 1,
+    "szi": "0.17",
+    "entryPx": "1532.5314",
+    "leverageType": "cross",
+    "leverageValue": 10,
+    "accountValue": 26.3279,
+    "maintenanceTotal": 13.1563,
+    "mark": 1547.7,
+    "venueLiquidationPx": 0,
+    "formulaLiquidationPx": 1466.1421052631579,
+    "relDiffPct": null,
+    "upMoveToLiqPct": -5.269619095227897,
+    "apiTime": "2026-09-25T22:36:03.086Z"
+   },
+   {
+    "user": "0x7570206ce9891ba4106be650e07ffb94df7ca8ec",
+    "positions": 70,
+    "szi": "1.51",
+    "entryPx": "1549.3442",
+    "leverageType": "cross",
+    "leverageValue": 3,
+    "accountValue": 139349.795551,
+    "maintenanceTotal": 10271.49170972917,
+    "mark": 1547.7,
+    "venueLiquidationPx": 0,
+    "formulaLiquidationPx": -88433.68992071859,
+    "relDiffPct": null,
+    "upMoveToLiqPct": -5813.878007412198,
+    "apiTime": "2026-09-25T22:36:03.284Z"
+   }
+  ]
+ }
+}
