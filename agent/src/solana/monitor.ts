@@ -22,7 +22,7 @@ import { eventNow, type KeeperEvent, type Notifier } from "../notify/notifier.js
 import { AbortedError, DeadlineError, withDeadline } from "../services/deadline.js";
 import { DuplicateIdError, isFatalStoreError, KeeperStore, type AccountRecord, type DispatchRecord } from "../store/keeperStore.js";
 import type { TickHandle } from "../watchdog.js";
-import type { SolanaDispatcher, SolanaDispatchResult } from "./dispatcher.js";
+import type { SolanaDispatcher, SolanaDispatchIntent, SolanaDispatchResult } from "./dispatcher.js";
 import type { PairView } from "./pair.js";
 import type { DiscoveredSolanaAccount, SolanaReader } from "./reader.js";
 import { evaluateSolana, type SolanaValuation, type SolanaValuationParams } from "./valuation.js";
@@ -254,7 +254,7 @@ export class SolanaMonitor {
       let result: SolanaDispatchResult;
       try {
         result = await withDeadline(`resume ${rec.key}`, this.d.config.dispatchDeadlineMs, handle.signal, () =>
-          rec.status === "SENT" ? this.d.dispatcher.confirm(rec, handle.signal) : this.d.dispatcher.dispatch({ record: rec, persistBeforeSend: this.preSend(rec) }, handle.signal)
+          rec.status === "SENT" ? this.d.dispatcher.confirm(rec, handle.signal) : this.d.dispatcher.dispatch(this.dispatchIntent(rec, l), handle.signal)
         );
       } catch (e) {
         if (e instanceof AbortedError || handle.signal.aborted) throw e;
@@ -383,21 +383,7 @@ export class SolanaMonitor {
     let result: SolanaDispatchResult;
     try {
       result = await withDeadline(`dispatch ${record.key}`, this.d.config.dispatchDeadlineMs, handle.signal, () =>
-        this.d.dispatcher.dispatch(
-          {
-            record,
-            persistBeforeSend: this.preSend(record),
-            persistBeforeBurn: this.preSendBurn(record),
-            onGrantRead: (g) => {
-              void this.bookkeep(rec.account, { grant: { target: rec.account, selector: `rungs:${g.allowedRungs.toString(2)}`, active: g.live, allowCallback: true, expiry: g.expiry, checkedAt: this.now().toISOString() } }, l);
-            },
-            onPairRead: (p) => {
-              void this.bookkeep(rec.account, { crossChain: this.pairRecord(p) }, l);
-            },
-            inFlightAgeS: this.bridgeInFlightAgeS(rec.account),
-          },
-          handle.signal
-        )
+        this.d.dispatcher.dispatch(this.dispatchIntent(record, l), handle.signal)
       );
     } catch (e) {
       if (e instanceof AbortedError || handle.signal.aborted) throw e;
@@ -466,6 +452,28 @@ export class SolanaMonitor {
       if (youngest === null || age < youngest) youngest = age;
     }
     return youngest;
+  }
+
+  /**
+   * Everything a dispatch is handed, built ONE way for the fire path and the resume path alike. Until
+   * 2026-09-25 the resume path built its own intent with the record and the pre-send write only — no in-flight
+   * age, no pair hook, no pre-burn write — so a rung refused with "a Base burn is in flight, waiting" was
+   * re-dispatched on the next tick with no in-flight guard at all and could burn a second time
+   * (AUDIT-2026-09-25 CC-2). The record is the dispatch record; the account is its `account`.
+   */
+  private dispatchIntent(record: Disp, l: Logger): SolanaDispatchIntent {
+    return {
+      record,
+      persistBeforeSend: this.preSend(record),
+      persistBeforeBurn: this.preSendBurn(record),
+      onGrantRead: (g) => {
+        void this.bookkeep(record.account, { grant: { target: record.account, selector: `rungs:${g.allowedRungs.toString(2)}`, active: g.live, allowCallback: true, expiry: g.expiry, checkedAt: this.now().toISOString() } }, l);
+      },
+      onPairRead: (p) => {
+        void this.bookkeep(record.account, { crossChain: this.pairRecord(p) }, l);
+      },
+      inFlightAgeS: this.bridgeInFlightAgeS(record.account),
+    };
   }
 
   /** The Base twin of `preSend`: the Base keeper's nonce and the ids the burn closes, on disk before the broadcast. */

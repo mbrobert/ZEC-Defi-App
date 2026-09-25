@@ -44,14 +44,25 @@ export interface KeeperBaseBurnerDeps {
 }
 
 /**
- * A Solana record as the Base dispatcher must see it: the Base account in `account`, the Base hash (if any) in
- * `txHash`. Everything else — key, episode, action, attempts, bridge — is the same record.
+ * The Base action a Solana rung's action becomes: `planBurn` keys its close fraction on `record.action` and
+ * knows only "burn-derisk" (two thirds) and "burn-emergency" (everything) — a record still carrying the
+ * Solana name ("derisk", "emergency-unwind") is refused as an unknown action, which is what the first version
+ * of this adapter would have done on every burn (AUDIT-2026-09-25 CC-1).
  */
-export function toBaseRecord(record: SolanaDispatchRecord, baseAccount: Address): DispatchRecord {
+export function burnActionOf(solanaAction: string): "burn-derisk" | "burn-emergency" {
+  return solanaAction === "emergency-unwind" || solanaAction === "burn-emergency" ? "burn-emergency" : "burn-derisk";
+}
+
+/**
+ * A Solana record as the Base dispatcher must see it: the Base account in `account`, the BURN action in
+ * `action`, the Base hash (if any) in `txHash`. Everything else — key, episode, rung, attempts, bridge — is
+ * the same record.
+ */
+export function toBaseRecord(record: SolanaDispatchRecord, baseAccount: Address, action: "burn-derisk" | "burn-emergency" = burnActionOf(record.action)): DispatchRecord {
   const { txHash: _solanaTx, ...rest } = record;
   void _solanaTx;
   // The generic record is the same shape on both chains; only the id and hash codecs differ, hence the cast.
-  const out = { ...rest, account: baseAccount.toLowerCase() as Address } as DispatchRecord;
+  const out = { ...rest, account: baseAccount.toLowerCase() as Address, action } as DispatchRecord;
   if (record.bridge?.burnTxHash) out.txHash = record.bridge.burnTxHash as Hex;
   return out;
 }
@@ -78,7 +89,7 @@ export class KeeperBaseBurner implements BaseBurner {
     log.info("finality chosen", { path: choice.path, minFinalityThreshold: choice.minFinalityThreshold, maxFeeBps: choice.maxFeeBps, reason: choice.reason, notes: inputs.notes });
 
     const intent: BurnIntent = {
-      record: toBaseRecord(record, baseAccount),
+      record: toBaseRecord(record, baseAccount, input.action),
       usdcNeeded: input.usdcNeeded,
       expectedRecipient: input.expectedRecipient,
       collateralAssetForProbe: this.d.collateralAssetForProbe,

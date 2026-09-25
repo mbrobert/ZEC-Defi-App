@@ -13,7 +13,16 @@ import { Keypair } from "@solana/web3.js";
 import { CCTP_FINALITY_POLICY_DEFAULTS, CCTP_IRIS } from "@zyo/shared";
 import type { BurnIntent, BurnResult } from "../src/dispatch/types.js";
 import type { DispatchRecord } from "../src/store/keeperStore.js";
-import { KeeperBaseBurner, toBaseRecord } from "../src/solana/baseBurner.js";
+import { KeeperBaseBurner, burnActionOf, toBaseRecord } from "../src/solana/baseBurner.js";
+import { createWalletClient, getAddress, type Hex } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import { base as baseChain } from "viem/chains";
+import { HF_LADDER, decodeCctpBurnMessageV2 } from "@zyo/shared";
+import { GRANT_SELECTORS } from "../src/abi/oilskin.js";
+import { KeeperDispatcher } from "../src/dispatch/keeperDispatcher.js";
+import { AaveReader, aaveAddressesFromShared, reserveSpecsFromShared } from "../src/services/chain.js";
+import { ACCOUNT_A, CBBTC as CBBTC_FIXTURE, USDC, newMockChain } from "./fixtures.js";
+import { MockOilskin } from "./mockOilskin.js";
 import { CircleFeeClient } from "../src/solana/circleFees.js";
 import type { SolanaDispatchRecord } from "../src/solana/dispatcher.js";
 import { Logger, memorySink } from "../src/log.js";
@@ -68,18 +77,107 @@ function rig(opts: { base?: ReturnType<typeof fakeBase>; fees?: CircleFeeClient 
 const input = (over: Partial<Parameters<KeeperBaseBurner["dispatch"]>[0]> = {}): Parameters<KeeperBaseBurner["dispatch"]>[0] => ({ record: solanaRecord(), baseAccount: BASE, expectedRecipient: RECIPIENT, usdcNeeded: 4_500_000_000n, action: "burn-derisk", ...over });
 
 describe("toBaseRecord", () => {
-  it("swaps the Solana PDA for the Base account (lowercased, as Base records are keyed) and lifts the burn hash into txHash; everything else is the same record", () => {
+  it("swaps the Solana PDA for the Base account (lowercased, as Base records are keyed), names the BURN action, and lifts the burn hash into txHash; everything else is the same record", () => {
     const rec = solanaRecord({ txHash: "5" + "1".repeat(87), bridge: { chain: "base", stage: "burn-sent", burnTxHash: BURN_TX, amountUsdc: "0" } });
     const out = toBaseRecord(rec, BASE);
     assert.equal(out.account, BASE.toLowerCase());
     assert.equal(out.txHash, BURN_TX, "the Base hash, not the Solana signature");
     assert.equal(out.key, rec.key);
     assert.equal(out.episode, 1);
-    assert.equal(out.action, "derisk");
+    assert.equal(out.action, "burn-derisk", "planBurn keys its fraction on this name (AUDIT-2026-09-25 CC-1)");
+    assert.equal(out.rung, "derisk");
     assert.equal(out.disarmHf, 1.4);
     assert.deepEqual(out.bridge, rec.bridge);
     const fresh = toBaseRecord(solanaRecord(), BASE);
     assert.equal(fresh.txHash, undefined, "no burn yet: no hash");
+    assert.equal(toBaseRecord(solanaRecord({ action: "emergency-unwind" }), BASE).action, "burn-emergency");
+    assert.equal(toBaseRecord(solanaRecord(), BASE, "burn-emergency").action, "burn-emergency", "an explicit action wins");
+  });
+
+  it("burnActionOf: the Solana rung's action name becomes the Base burn's; anything that is not the emergency is the de-risk fraction", () => {
+    assert.equal(burnActionOf("emergency-unwind"), "burn-emergency");
+    assert.equal(burnActionOf("burn-emergency"), "burn-emergency");
+    assert.equal(burnActionOf("derisk"), "burn-derisk");
+    assert.equal(burnActionOf("burn-derisk"), "burn-derisk");
+  });
+});
+
+// ------------------------------------------------------------------ the adapter over the REAL Base dispatcher
+
+const ROUTER = getAddress("0x2000000000000000000000000000000000000001");
+const LP_VENUE = getAddress("0x2000000000000000000000000000000000000002");
+const KEY = ("0x" + "42".repeat(32)) as Hex;
+const KEEPER_BASE = privateKeyToAccount(KEY).address;
+const POOL_A = ("0x" + "aa".repeat(32)) as Hex;
+const SQRT_P = 5_000_000_000_000_000_000_000_000_000n;
+const CFG = { deadlineMs: 500, bandToleranceBps: 100, bandMaxToleranceBps: 500, txDeadlineS: 120, priceMaxAgeS: 3 * 3600, oracleDeviationBps: 300, hfToleranceBps: 100, swapMaxSlippageBps: 100, maxValueProbes: 24, grantExpiryWarnS: 7 * 86_400 };
+
+/** The burn test's rig: an LP-only Base account on the mock chain, with the burn grant and the linked recipient. */
+async function baseRig() {
+  const chain = newMockChain();
+  const oil = new MockOilskin(chain, { router: ROUTER, lpVenue: LP_VENUE });
+  oil.install([ACCOUNT_A]);
+  oil.poolPrices.set(POOL_A, SQRT_P);
+  const client = chain.publicClient();
+  const wallet = createWalletClient({ account: privateKeyToAccount(KEY), chain: baseChain, transport: chain.transport() });
+  const reader = new AaveReader(client, aaveAddressesFromShared(), reserveSpecsFromShared(), { deadlineMs: 500 });
+  const sink = memorySink();
+  const notifier = { failures: 0, channels: ["test"], hasPersonChannel: true, deliver: async () => ({ personReached: true }) };
+  const dispatcher = new KeeperDispatcher({ client, wallet, keeper: KEEPER_BASE, router: ROUTER, lpVenue: LP_VENUE, usdc: USDC, reader, ladder: HF_LADDER, log: new Logger(sink.sink, "debug"), config: CFG, now: () => new Date(Number(chain.nowS) * 1000), notifier });
+  oil.setPositions(ACCOUNT_A, [{ id: 1n, poolId: POOL_A }, { id: 2n, poolId: POOL_A }]);
+  oil.defaultCloseYield = { usdc: 2_000_000_000n, other: 0n };
+  oil.usdcBalances.set(ACCOUNT_A.toLowerCase(), 150_000_000n);
+  oil.solanaRecipients.set(ACCOUNT_A.toLowerCase(), RECIPIENT);
+  oil.grant(KEEPER_BASE, ROUTER, GRANT_SELECTORS["StrategyRouter.closeLpAndBurn"], {});
+  return { chain, oil, dispatcher, sink };
+}
+
+describe("KeeperBaseBurner over the real KeeperDispatcher (mock chain)", () => {
+  it("AUDIT-2026-09-25 CC-1: a Solana record for a linked pair becomes ONE closeLpAndBurn with the chosen finality, and the receipt is judged on the Base account the bridge record carries", async () => {
+    const b = await baseRig();
+    const burner = new KeeperBaseBurner({ base: b.dispatcher, fees: fees(), policy: CCTP_FINALITY_POLICY_DEFAULTS, collateralAssetForProbe: CBBTC_FIXTURE, log: new Logger(memorySink().sink, "debug") });
+    const out = await burner.dispatch(input({ baseAccount: ACCOUNT_A, action: "burn-emergency", usdcNeeded: 3_000_000_000n }));
+    assert.equal(out.status, "SENT", JSON.stringify(out));
+    if (out.status !== "SENT") return;
+    assert.equal(out.bridge?.stage, "burn-sent");
+    assert.equal(out.bridge?.baseAccount, ACCOUNT_A);
+    assert.equal(out.bridge?.minFinalityThreshold, 1000);
+    assert.equal(out.bridge?.maxFeeBps, 2);
+    const exec = b.oil.executed.filter((e) => e.mutate);
+    assert.equal(exec.length, 1, "one burn was sent");
+    assert.deepEqual(exec[0]!.calls.map((c) => c.selector), [GRANT_SELECTORS["StrategyRouter.closeLpAndBurn"]]);
+    assert.equal(b.oil.usdcBalances.get(ACCOUNT_A.toLowerCase()), 0n, "the emergency fraction: everything the close produced plus the idle balance was burned");
+    // the receipt, judged through the adapter on the Base account the bridge record carries
+    const rec = solanaRecord({ status: "SENT", attempts: 1, bridge: out.bridge });
+    const c = await burner.confirm(rec);
+    assert.equal(c.status, "CONFIRMED", JSON.stringify(c));
+    if (c.status !== "CONFIRMED") return;
+    assert.equal(c.bridge?.stage, "burn-confirmed");
+    assert.equal(c.bridge?.amountUsdc, (4_000_000_000n + 150_000_000n).toString());
+    assert.equal(c.bridge?.baseAccount, ACCOUNT_A, "kept across the stage change");
+    assert.equal(c.bridge?.minFinalityThreshold, 1000);
+    const m = decodeCctpBurnMessageV2(Uint8Array.from(Buffer.from(c.bridge!.messageHex!.slice(2), "hex")));
+    assert.equal(m.body.amount, 4_150_000_000n);
+    assert.equal("0x" + Buffer.from(m.body.mintRecipient).toString("hex"), RECIPIENT);
+    // the finality and the fee bound the chooser picked are what the router was asked for (the mock echoes the call into the message)
+    assert.equal(m.minFinalityThreshold, 1000, "Fast, from Circle's recorded schedule");
+    assert.equal(m.body.maxFee, (4_150_000_000n * 2n + 9_999n) / 10_000n + 1n, "2 bp of the expected 4,150 USDC, rounded up, plus one unit — never the 1 bp a floored 1.3 would have been");
+  });
+
+  it("the defect, pinned: the Base dispatcher refuses a record that still carries the Solana rung's action name — which is what every bridge burn would have been before the translation", async () => {
+    const b = await baseRig();
+    const untranslated = { ...toBaseRecord(solanaRecord(), ACCOUNT_A), action: "derisk" };
+    const res = await b.dispatcher.dispatchBurn({ record: untranslated, usdcNeeded: 1_000_000_000n, expectedRecipient: RECIPIENT, collateralAssetForProbe: CBBTC_FIXTURE, maxFeeBps: 2, minFinalityThreshold: 1000 });
+    assert.equal(res.status, "REFUSED");
+    if (res.status === "REFUSED") assert.match(res.reason, /unknown burn action derisk/);
+    assert.equal(b.oil.executed.filter((e) => e.mutate).length, 0, "nothing was sent");
+    // and the de-risk translation reaches the planner: two thirds, not everything
+    const burner = new KeeperBaseBurner({ base: b.dispatcher, fees: null, policy: CCTP_FINALITY_POLICY_DEFAULTS, collateralAssetForProbe: CBBTC_FIXTURE, log: new Logger(memorySink().sink, "debug") });
+    const out = await burner.dispatch(input({ baseAccount: ACCOUNT_A, action: "burn-derisk", usdcNeeded: 1_000_000_000n }));
+    assert.equal(out.status, "SENT", JSON.stringify(out));
+    const call = b.oil.executed.filter((e) => e.mutate)[0]!;
+    assert.deepEqual(call.calls.map((c) => c.selector), [GRANT_SELECTORS["StrategyRouter.closeLpAndBurn"]]);
+    assert.ok(b.oil.positions.get(ACCOUNT_A.toLowerCase())!.length >= 1, "a de-risk leaves LP behind; an emergency would have closed both ids");
   });
 });
 

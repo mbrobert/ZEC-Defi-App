@@ -199,13 +199,25 @@ export class KeeperSolanaDispatcher implements SolanaDispatcher {
     });
     log.info("route", { route: decision.route, reason: decision.reason, pair: pair.status, baseAccount: pair.baseAccount });
     if (decision.route === "wait") return { status: "REFUSED", reason: decision.reason };
+    // What the Base leg said when it would not act, carried onto whatever the Solana path then does.
+    let baseRefusal: string | undefined;
     if (decision.route === "bridge" && pair.baseAccount) {
       if (needed === 0n) return { status: "SUPERSEDED", reason: "nothing is needed to reach the disarm level" };
+      // The owner's per-rung consent lives on the Solana grant (`allowed_rungs`); the Base grant has no rung
+      // mask. A rung the owner excluded is not taken on Base either (AUDIT-2026-09-25 CC-3).
+      if ((grant.allowedRungs & (1 << rungIx)) === 0) return { status: "REFUSED", permanent: true, reason: `rung ${rungIx} not allowed by the grant — the Base leg is not taken for a rung the owner excluded` };
       const r = await this.d.baseBurner!.dispatch(
         { record, baseAccount: pair.baseAccount, expectedRecipient: pair.expectedRecipient, usdcNeeded: needed, action: record.action === "emergency-unwind" ? "burn-emergency" : "burn-derisk", persistBeforeSend: intent.persistBeforeBurn },
         signal
       );
-      return this.mapBurn(r);
+      if (r.status !== "REFUSED") return this.mapBurn(r);
+      // The Base leg cannot act (no grant, a half-link, unreadable LP state, Circle's schedule outside the
+      // policy…): the reserve and the keeper-funded sale are what stand in for it, THIS tick, inside the Solana
+      // grant — not a record that retries the same refusal until the attempt cap while the position sits
+      // unprotected (AUDIT-2026-09-25 CC-2). A FAILED Base send is different: it may have gone out, and the
+      // persisted nonce and the receipt settle it before anything else acts.
+      baseRefusal = `Base leg refused${r.permanent ? " (permanent — the owner must act)" : ""}: ${r.reason}`;
+      log[r.permanent ? "error" : "warn"]("the Base leg refused — the single-chain path answers this rung", { reason: r.reason, permanent: r.permanent ?? false });
     }
 
     // 4. Size the Solana action.
@@ -219,8 +231,8 @@ export class KeeperSolanaDispatcher implements SolanaDispatcher {
       saleDiscountBps: this.d.saleDiscountBps,
       marginBps: this.d.planMarginBps,
     });
-    if (plan.kind === "refused") return { status: "REFUSED", permanent: plan.permanent, reason: plan.reason };
-    log.info("plan", { kind: plan.kind, repayUsdc: plan.repayUsdc.toString(), keeperUsdcIn: plan.keeperUsdcIn.toString(), sellZec: plan.sellZec.toString(), expectedHf: plan.expectedHf.toFixed(4), note: plan.note });
+    if (plan.kind === "refused") return { status: "REFUSED", permanent: plan.permanent, reason: baseRefusal ? `${baseRefusal}; then on Solana: ${plan.reason}` : plan.reason };
+    log.info("plan", { kind: plan.kind, repayUsdc: plan.repayUsdc.toString(), keeperUsdcIn: plan.keeperUsdcIn.toString(), sellZec: plan.sellZec.toString(), expectedHf: plan.expectedHf.toFixed(4), note: plan.note, afterBaseRefusal: baseRefusal ?? null });
 
     // 4. Build, sign, simulate, persist, send, confirm.
     const keys = {
@@ -261,12 +273,13 @@ export class KeeperSolanaDispatcher implements SolanaDispatcher {
     } catch (e) {
       if (e instanceof AbortedError) throw e;
       // It may still land: leave SENT for confirm() to settle.
-      log.warn("sent, confirmation not seen inside the deadline", { signature, error: errMsg(e) });
+      log.warn("sent, confirmation not seen inside the deadline", { signature, error: errMsg(e), afterBaseRefusal: baseRefusal ?? null });
       return { status: "SENT", signature };
     }
     log.info("confirmed", { signature });
     let note: string | undefined;
     if (plan.sellZec > 0n) note = await this.collect(account, log, signal);
+    if (baseRefusal) note = `${baseRefusal}; answered on Solana${note ? ` (${note})` : ""}`;
     return { status: "CONFIRMED", signature, note };
   }
 

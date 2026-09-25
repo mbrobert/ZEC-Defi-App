@@ -528,6 +528,42 @@ describe("the cross-chain pair on the Solana monitor (D6 / A5.2)", () => {
     await r.close();
   });
 
+  it("AUDIT-2026-09-25 CC-2: a rung refused while a burn is in flight is RESUMED with the in-flight age, the pair hook and the pre-burn write — the resume path builds the same intent the fire path does", async () => {
+    const r = await rig();
+    const id = r.world.add(10n * ONE_ZEC, debtForHf(10n * ONE_ZEC, 1000, 1.63), 0n);
+    await r.tick();
+    r.world.zecUsd = priceAt(between(R.derisk, R.emergency));
+    // first firing: answered on Base; the burn is confirmed but not yet delivered, so it is IN FLIGHT
+    r.fake.script.push((intent) => {
+      intent.onPairRead?.(linked);
+      return { status: "CONFIRMED", signature: BASE_HASH, bridge: { chain: "base", stage: "burn-confirmed", burnTxHash: BASE_HASH, amountUsdc: "1000000000", recipient: linked.expectedRecipient, baseAccount: linked.baseAccount } };
+    });
+    await r.tick();
+    // the rung re-arms (confirmed, not cleared) and fires again; the dispatcher says WAIT
+    r.fake.script.push((intent) => {
+      assert.ok(typeof intent.inFlightAgeS === "number", "the fire path always carried the age");
+      return { status: "REFUSED", reason: "a Base burn is in flight (5 s old; stall window 1800 s) — waiting for delivery" };
+    });
+    await r.tick();
+    const refused = r.store.listDispatches({ account: id }).find((d) => d.status === "REFUSED");
+    assert.ok(refused, "the wait is recorded as a non-permanent refusal, which the resume path retries");
+    // next tick the RESUME path re-dispatches that record: before the fix it was handed the record and the
+    // pre-send write only — no in-flight age — and bridgeDecision would have said "bridge" a second time
+    let resumed: SolanaDispatchIntent | undefined;
+    r.fake.script.push((intent) => {
+      resumed = intent;
+      return { status: "REFUSED", reason: "still waiting" };
+    });
+    const t = await r.tick();
+    assert.equal(t.resumed, 1, "the refused record was resumed, not re-fired");
+    assert.ok(resumed, "the dispatcher was asked");
+    assert.ok(typeof resumed!.inFlightAgeS === "number" && resumed!.inFlightAgeS >= 0, `the resumed intent carries the in-flight age, got ${String(resumed!.inFlightAgeS)}`);
+    assert.equal(typeof resumed!.persistBeforeBurn, "function", "and the pre-burn write");
+    assert.equal(typeof resumed!.onPairRead, "function", "and the pair hook");
+    assert.equal(typeof resumed!.onGrantRead, "function", "and the grant hook");
+    await r.close();
+  });
+
   it("the store refuses a malformed bridge or pair record", async () => {
     const r = await rig();
     const id = r.world.add(10n * ONE_ZEC, debtForHf(10n * ONE_ZEC, 1000, 1.63), 0n);
