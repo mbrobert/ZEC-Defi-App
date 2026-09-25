@@ -311,8 +311,10 @@ At block 46,887,589 (22:29:44Z): **TokenMessengerV2 `0x28b5a0e9C621a5BadaA536219
 addresses, each with code. `localDomain()` **19**, `version()` 1, `paused()` false; `messageBodyVersion()` 1;
 `localMessageTransmitter()` and `localMinter()` name the other two; `remoteTokenMessengers(6)` = Base's messenger;
 `getLocalToken(6, Base USDC)` = `0xb883…630f`; `tokenController()` `0x9418…E9D0`. On Base (`mainnet.base.org`,
-22:35:58Z) `remoteTokenMessengers(19)` = the same messenger address. Fees at 22:29:54Z: `/v2/burn/USDC/fees/6/19`
-Fast **1.3 bp** / Standard 0; `/19/6` both 0; `fastBurn` allowance 53,948,803.04 USDC (§6's correction, 9f2b36e).
+22:35:58Z) `remoteTokenMessengers(19)` = the same messenger address. The fee schedule is §6's read (22:31 UTC, commit
+9f2b36e): Fast into HyperEVM at 1.3 bp, Standard only out of it. This session's own earlier `curl` of the same two
+endpoints at 22:29:54Z returned the same rows, and a `fastBurn` allowance of 53,948,803.04 USDC — recorded in the
+research JSON as a second, independent read, not as the source of §6's numbers.
 
 ### 7.5 The venue's liquidation rule against its own `liquidationPx` — design §4 VERIFIED
 
