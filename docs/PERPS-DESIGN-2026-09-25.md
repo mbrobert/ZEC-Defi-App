@@ -1,4 +1,4 @@
-# Perps module — design (D1, drafted 2026-09-25; nothing built)
+# Perps module — design (D1, drafted 2026-09-25; D2 built the same day, nothing deployed)
 
 **Status: a design for the founder to read, BUILD-PLAN Stream D step D1.** Founder's decisions D12 and D13
 (2026-09-14): perps is in beta and Hyperliquid is the venue. This document is the piece BUILD-PLAN §4 calls
@@ -153,6 +153,29 @@ struct PerpGrant { address keeper; uint40 expiry; uint40 period; uint40 periodSt
 **The entry record**: `entryDistanceBps` (§4) and `entrySz`, written by every owner action that moves size or
 margin (D9), never by `protect` (the keeper does not mark its own homework). `MAX_LADDER_ENTRY_HF` and
 `MIN_LADDER_ENTRY_HF` apply to the *equivalent* HF (§4) exactly as on the other two chains.
+
+**As built (D2, 2026-09-25 — `contracts/src/venues/HyperliquidPerpVenue.sol`, 20 Foundry tests; the facts it rests on
+in `VERIFIED-PERPS-FACTS-2026-09-14.md` §7).** `OilskinAccount` deploys unchanged; the venue is its one peripheral,
+so the table above names the design and this paragraph names the code. Owner path: `fundCore(toSpotE6, toPerpE6)` —
+Circle's USDC, already minted into the account by CCTP, goes onto HyperCore through token 0's adapter (`deposit`, spot
+for the reserve, perp dex 0 for the margin) as its own step, so that `open` reads the balances on HyperCore before it
+acts rather than assuming a credit that lands seconds later; `open(sz, band, deadline)` takes the margin as the perp
+balance already there, computes `d₀` and the reserve from live reads, and sends the IOC sell; `addMargin`; `reduce`
+(`sz` = the whole position closes it and clears the record); `withdrawToEvm(perpToSpotE6, spotToEvmE6)` — actions 7
+and 13 in one call, gated on the floor and the reserve while the short is open — and then `burnToBase(amount,
+maxFee)` as a later transaction, because the USDC reaches the EVM side seconds after; `setBaseRecipient`,
+`setReserveMultipleBps`, `setPerpGrant` / `clearPerpGrant`. Keeper path: `protect(rung, topUpE6, reduceSz)` — rung 1
+top-up only, rungs 2–3 top-up and/or reduce, the reduce budget applying at the emergency rung too (a budget of zero is
+Advanced's "may not close" twin); the `PerpGrant` records the account's `grantEpoch`, so `revokeAll` kills it as well.
+**One position per account is enforced, not assumed:** both paths read `accountMarginSummary(0, account).ntlPos`
+beside the ZEC position's own notional and refuse by name (`OtherPositionsOpen`) when the account carries anything
+else — a second perp opened through the hatch would share the account value and make `d` a fiction, so every rung
+stops rather than act on it. The same reads refuse a venue whose `szDecimals` or `maxLeverage` moved
+(`VenueParamsChanged`), a mark beyond the deployed deviation from the oracle (`MarkOracleDeviation`), and a
+precompile that does not answer or does not decode (`PrecompileReadFailed`). The floor (margin per unit of notional,
+§10 item 1), the beta notional cap (D8), the deviation bound and the default reserve multiple are deploy-time
+immutables: a change is a redeploy, and there is no owner. Still taken from a page: action 1's and action 7's
+parameter tuples; inferred: the adapter's spot dex — `scripts/perps-d0b-testnet.mjs` (§2).
 
 ## 4 · Health of a short, and the ladder — the piece with no precedent
 
