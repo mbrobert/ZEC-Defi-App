@@ -3,6 +3,54 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-25 — The keeper chooses Fast or Standard from Circle's live numbers, and the Base burner adapter exists
+
+`CROSSCHAIN-RUNBOOK-2026-09-13.md` §5's open item and `ROADMAP.md` §1's item 4: *"the keeper sends whatever
+threshold the caller passes; nothing yet chooses Fast when the Fast allowance is exhausted."* Now it does, and the
+piece that will carry the choice into a real burn — the adapter between the Solana dispatcher's "bridge" route and
+the Base keeper's `dispatchBurn` — exists, so what the founder's two-key process has to build is the Base wallet and
+nothing else. CCTP = Circle's Cross-Chain Transfer Protocol; bp = basis point.
+
+- **The reads, recorded.** Circle's fee schedule and Fast allowance re-read live at 21:58 UTC (`/v2/burn/USDC/fees/6/5`
+  1.3 bp Fast / 0 Standard, `/5/6` 1 bp / 0 — unchanged from 2026-09-12 — and an allowance of $54.4 M stamped with
+  Circle's own time), verbatim in `docs/research/cctp-fees-2026-09-25.json`; the response schema from Circle's API
+  reference and the one documented rule the choice rests on — *"If fees increase, your Fast Transfers may be degraded
+  to Standard Transfers when the provided maxFee is below the required threshold"* — in `VERIFIED-SOLANA-FACTS.md`
+  **Addendum 5**, with what a real transfer would still have to settle.
+- **The choice, pure, in shared** (`parseCctpFeeResponse`, `parseCctpAllowanceResponse`, `chooseCctpFinality`,
+  `CCTP_FINALITY_POLICY_DEFAULTS`): Fast at Circle's minimum plus headroom (1.3 bp → a 2 bp bound) under a ceiling;
+  Standard when a fresh allowance figure says the amount cannot be Fast, or when Fast's minimum is above the
+  ceiling; a refusal when the *Standard* minimum is above the ceiling, because that burn reverts on chain; and an
+  unreadable schedule sends Fast at the ceiling, because Circle degrades a Fast request it cannot honour rather than
+  failing it. The asymmetry is the whole design: a wrong Standard costs a protective rung minutes, a wrong Fast
+  costs at most the bound. The bound is rounded **up** to the whole basis point the contracts take — `planBurn`
+  floors its bps, so a 1.3 bp fee handed over as-is would have been a 1 bp `maxFee`, and Circle would have quietly
+  turned every Fast burn into a Standard one.
+- **The keeper's side** (`agent/src/solana/`): `CircleFeeClient` (the two bounded GETs, every network shape
+  classified `unavailable` — a read that did not happen is a null the chooser has a rule for, never a failed rung);
+  `KeeperBaseBurner`, the adapter; four config knobs with defaults that need no setting (`CCTP_MAX_FAST_FEE_BPS`
+  10, `CCTP_FEE_HEADROOM_PCT` 50, `CCTP_ALLOWANCE_HEADROOM_PCT` 10, `CCTP_ALLOWANCE_MAX_AGE_S` 300 — runbook §4
+  item 5). The bridge record carries the threshold and the bound the burn was sent with.
+- **What building the adapter found**, none of it able to lose or lock funds (`ROADMAP.md` rule 3):
+  1. The `BaseBurner` seam handed the Base dispatcher the *Solana* record, whose `account` is the PDA; `dispatchBurn`
+     reads `solanaRecipient(record.account)` and matches `BurnedToSolana` on it, so every burn would have been a
+     permanent "not a linked pair" refusal — nothing moved, nothing protected. The adapter hands over a record
+     naming the Base account and writes that account onto the bridge record, so a later tick's `confirm` can judge
+     the receipt without re-reading the pair; a bridge record without one is refused by name.
+  2. The Solana path had no pre-send write for a Base burn: the Base dispatcher's `persistBeforeSend` was simply not
+     given, so a crash between the broadcast and the store write would have re-dispatched a second burn with no
+     trace of the first. The hook now rides the intent (`persistBeforeBurn`), the monitor writes the Base nonce and
+     the closed ids on disk before the send — the same rule as C-MED-1 on Base — and a re-dispatch of such a record
+     says "a burn may already be out" and re-reads the LP state before planning.
+  3. The flooring above.
+- Tests: shared **132 → 141** (the parsers on the recorded bodies, every rule of the chooser, the rounding);
+  keeper **319 → 337** / 61 → 66 suites (`circle-fees.test.ts`, `base-burner.test.ts`, `solana-config.test.ts`; the
+  monitor pins the pre-burn write on disk and the store's validation of the new bridge fields); ABI seam 123 / 123
+  and IDL seam 77 / 77 unchanged.
+- **Not done, and named:** the process that holds a Base key beside the Solana one (the founder's — runbook §4
+  item 3 says exactly what it constructs), and one real transfer, which is also what would show what Circle
+  charges on a Fast request it degrades for the allowance (Addendum 5, open item 1).
+
 ## 2026-09-20 — The web's Solana library signs on localnet for the first time, and finds three things
 
 B5's last item: "a wallet-driven run on localnet." No browser and no real key — `web/test/localnet/open.test.ts`

@@ -66,15 +66,34 @@ export interface SolanaDispatchIntent {
   onPairRead?: (p: PairView) => void;
   /** Age (s) of the youngest Base burn still in flight for this account, or null (the monitor reads the store). */
   inFlightAgeS?: number | null;
+  /**
+   * For a rung answered on Base: persist the Base keeper's nonce and the ids the plan closes BEFORE the burn is
+   * broadcast — the twin of the Base monitor's own pre-send write (audit C-MED-1). A crash between the send and
+   * the store write then shows on resume as "a burn may already be out", and the re-dispatch re-sizes against
+   * the LP state the first burn left rather than closing another slice (2026-09-25).
+   */
+  persistBeforeBurn?: (info: { nonce?: number; closeIds: bigint[] }) => Promise<void>;
 }
 
 /**
  * The Base side of a paired account's rung (SOLANA-ARCHITECTURE §14.6–14.7): closes the Base leg and burns
- * USDC home. Injected — a process holding a Base key wires `KeeperDispatcher.dispatchBurn`; Stream C's
- * two-key process is where that happens in production. Absent = the single-chain path for every rung.
+ * USDC home. Injected — `KeeperBaseBurner` (`baseBurner.ts`) is the adapter over `KeeperDispatcher.dispatchBurn`
+ * that chooses Fast or Standard from Circle's live schedule; a process holding a Base key beside the Solana
+ * one constructs it and hands it to `runSolanaKeeper`. Absent = the single-chain path for every rung.
  */
 export interface BaseBurner {
-  dispatch(input: { record: SolanaDispatchRecord; baseAccount: Address; expectedRecipient: `0x${string}`; usdcNeeded: bigint; action: "burn-derisk" | "burn-emergency" }, signal?: AbortSignal): Promise<BurnResult>;
+  dispatch(
+    input: {
+      record: SolanaDispatchRecord;
+      baseAccount: Address;
+      expectedRecipient: `0x${string}`;
+      usdcNeeded: bigint;
+      action: "burn-derisk" | "burn-emergency";
+      /** Forwarded to the Base dispatcher's own pre-send write; absent = nothing is persisted before the broadcast. */
+      persistBeforeSend?: (info: { nonce?: number; closeIds: bigint[] }) => Promise<void>;
+    },
+    signal?: AbortSignal
+  ): Promise<BurnResult>;
   confirm(record: SolanaDispatchRecord, signal?: AbortSignal): Promise<BurnResult>;
 }
 
@@ -182,7 +201,10 @@ export class KeeperSolanaDispatcher implements SolanaDispatcher {
     if (decision.route === "wait") return { status: "REFUSED", reason: decision.reason };
     if (decision.route === "bridge" && pair.baseAccount) {
       if (needed === 0n) return { status: "SUPERSEDED", reason: "nothing is needed to reach the disarm level" };
-      const r = await this.d.baseBurner!.dispatch({ record, baseAccount: pair.baseAccount, expectedRecipient: pair.expectedRecipient, usdcNeeded: needed, action: record.action === "emergency-unwind" ? "burn-emergency" : "burn-derisk" }, signal);
+      const r = await this.d.baseBurner!.dispatch(
+        { record, baseAccount: pair.baseAccount, expectedRecipient: pair.expectedRecipient, usdcNeeded: needed, action: record.action === "emergency-unwind" ? "burn-emergency" : "burn-derisk", persistBeforeSend: intent.persistBeforeBurn },
+        signal
+      );
       return this.mapBurn(r);
     }
 

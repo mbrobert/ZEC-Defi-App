@@ -178,9 +178,13 @@ every slice.
 attestation client, the delivery instruction, the resumable stage machine and the five-step runbook with each
 failure handled are in (`CROSSCHAIN-RUNBOOK-2026-09-13.md`; keeper 310, localnet 36). **Not done:** end-to-end
 on Solana devnet ↔ Base Sepolia — which is also what would measure Circle's "~8 seconds"; reserve sizing from
-the Monte Carlo; choosing Fast versus Standard when the Fast allowance is exhausted; and the two-key process
-itself, which is the founder's call (a Base key beside the Solana key). Inputs recorded: fees 1 bp / 1.3 bp,
-the shared Fast allowance, the domain ids (Addendum 1), every receive account (Addendum 4).
+the Monte Carlo (modelled 2026-09-19, the multiple still the founder's); and the two-key process itself, which is
+the founder's call (a Base key beside the Solana key). **Done 2026-09-25:** choosing Fast versus Standard — the
+keeper reads Circle's schedule and allowance at every send (`chooseCctpFinality` in shared, `CircleFeeClient` and
+the `KeeperBaseBurner` adapter in `agent/src/solana/`; `VERIFIED-SOLANA-FACTS.md` Addendum 5), and the adapter
+that the two-key process will hand to `runSolanaKeeper` exists, so what the founder's process has to build is
+the wallet and nothing else. Inputs recorded: fees 1 bp / 1.3 bp, the shared Fast allowance, the domain ids
+(Addendum 1, re-read Addendum 5), every receive account (Addendum 4).
 
 **Stream D — perps, delta-neutral "earn funding on your ZEC" (HyperEVM)** — **new 2026-09-14, D12/D13.**
 Nothing is built. The facts are read and the architecture is decided; the order below is the one the Solana

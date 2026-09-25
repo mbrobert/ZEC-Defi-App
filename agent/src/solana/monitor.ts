@@ -387,6 +387,7 @@ export class SolanaMonitor {
           {
             record,
             persistBeforeSend: this.preSend(record),
+            persistBeforeBurn: this.preSendBurn(record),
             onGrantRead: (g) => {
               void this.bookkeep(rec.account, { grant: { target: rec.account, selector: `rungs:${g.allowedRungs.toString(2)}`, active: g.live, allowCallback: true, expiry: g.expiry, checkedAt: this.now().toISOString() } }, l);
             },
@@ -465,6 +466,13 @@ export class SolanaMonitor {
       if (youngest === null || age < youngest) youngest = age;
     }
     return youngest;
+  }
+
+  /** The Base twin of `preSend`: the Base keeper's nonce and the ids the burn closes, on disk before the broadcast. */
+  private preSendBurn(rec: Disp): (info: { nonce?: number; closeIds: bigint[] }) => Promise<void> {
+    return async (info) => {
+      await this.d.store.updateDispatch(rec.key, { sentNonce: info.nonce, closeIds: info.closeIds.map(String) }, this.now());
+    };
   }
 
   private preSend(rec: Disp): (info: { signature: string }) => Promise<void> {

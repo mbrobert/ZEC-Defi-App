@@ -52,6 +52,10 @@ Only a message that is not the burn we made, or a transaction that reverted, end
 | 1 | The router records a different Solana recipient than the Solana account expects | REFUSED, permanent; escalates | The owner sets the recipient; a half-link is never bridged |
 | 1 | Circle's denylist names the account | The simulation reverts by name; FAILED | Nothing on our side — it is Circle's list |
 | 1 | Gas spike / sequencer lag | FAILED, retried with the same key; the nonce is persisted before the send | Nothing, unless it exhausts the attempt cap |
+| 1 | Circle's fee schedule cannot be read (`/v2/burn/USDC/fees/6/5` down, 5xx, unreadable) | Sent **Fast at the ceiling** (`CCTP_MAX_FAST_FEE_BPS`, 10 bp by default); Circle degrades it to Standard itself if the ceiling is short — the reason is logged | Nothing |
+| 1 | The Fast allowance (`/v2/fastBurn/USDC/allowance`) is fresh and the amount would exhaust it | Sent **Standard** (threshold 2000, fee 0): the transfer would wait for finality anyway, so no Fast fee is paid for it — minutes, not seconds | Nothing; the reserve is what covers those minutes (§0) |
+| 1 | Circle's *Standard* minimum is above the ceiling (a fee-switch route; both routes read 0 on 2026-09-25) | REFUSED, not permanent — a burn whose `maxFee` is under that minimum reverts on chain, so it is not sent | Raise `CCTP_MAX_FAST_FEE_BPS`, or wait for the schedule to move |
+| 1 | The pre-send nonce is on the record and no receipt ever was (a crash between the send and the store write) | The re-dispatch logs "a burn may already be out" and re-reads the LP state on Base before planning, so a landed burn shows as less to close | Read the log line; check the Base keeper's transactions at that nonce |
 | 2 | The three events disagree on amount or recipient | FAILED by name | **Investigate before re-running**: this means the router and Circle saw different things |
 | 2 | The receipt is not found yet | stays SENT, retried | Nothing |
 | 3 | `status: pending_confirmations` | stays SENT, retried; the reason Circle gives is logged | Nothing — Standard-path transfers wait for Base finality |
@@ -93,11 +97,23 @@ running: `bridge.stage`, `burnTxHash`, `nonce`, `messageHex`, `attestationHex`, 
    transactions. `docs/SOLANA-DEPLOY.md` carries the step; the keeper reads it as `CCTP_LOOKUP_TABLE` and
    refuses a delivery by name without it.
 2. **The second keeper grant** on any account that will use the loop (`closeLpAndBurn`, its own USDC budget).
-3. **Two keys in one process.** The burner needs a Base key beside the Solana key. Nothing in the repository
-   wires that today: `runSolanaKeeper` takes a `baseBurner` and is given none, so a linked pair's rungs 3–4
-   take the single-chain path until the founder decides how those two keys live together.
+3. **Two keys, and the process that holds them.** The burner needs a Base key beside the Solana key. **The adapter
+   exists since 2026-09-25** — `KeeperBaseBurner` (`agent/src/solana/baseBurner.ts`) over the Base keeper's
+   `dispatchBurn` / `confirmBurn`: it hands the Base dispatcher a record that names the *Base* account (a Solana
+   record's `account` is the PDA, which would have made every burn a permanent "not a linked pair" refusal),
+   chooses Fast or Standard from Circle's live schedule, and forwards the pre-send write. What is still not in
+   the repository is the process: something that constructs a `KeeperDispatcher` with a Base wallet, wraps it in
+   `KeeperBaseBurner` with a `CircleFeeClient`, and hands it to `runSolanaKeeper` as `baseBurner`. How those two
+   keys live together — one process, two, a signer service — is the founder's decision; until it is made, a
+   linked pair's rungs 3–4 take the single-chain path.
 4. **`BASE_RPC_URL` and `BASE_ROUTER_ADDRESS`** for the pair read, and `CCTP_ATTESTATION_URL` if pointing at
-   Circle's sandbox rather than mainnet.
+   Circle's sandbox rather than mainnet (the fee client reads the same base).
+5. **The Fast-versus-Standard policy**, four variables with defaults that need no setting: `CCTP_MAX_FAST_FEE_BPS`
+   (the most Circle may take, integer basis points; **10**), `CCTP_FEE_HEADROOM_PCT` (over Circle's published
+   minimum, so a fee that moves between the read and the attestation does not turn seconds into minutes; **50**,
+   making 1.3 bp a 2 bp bound), `CCTP_ALLOWANCE_HEADROOM_PCT` (the share of the Fast pool a burn must leave;
+   **10**) and `CCTP_ALLOWANCE_MAX_AGE_S` (an allowance figure older than this, by Circle's own `lastUpdated`,
+   cannot downgrade a transfer; **300**). The rule itself is `chooseCctpFinality` in `packages/shared`.
 
 ## 5 · What is still not proven
 
@@ -112,5 +128,10 @@ running: `bridge.stage`, `burnTxHash`, `nonce`, `messageHex`, `attestationHex`, 
   spent on two thirds of paths and five reserves cut the share of paths on which ZEC is sold from 39 % to 21 %,
   while a lower entry (HF 2.2) cuts it to 15 % at one reserve. **The multiple is the founder's decision; the rule
   in code is unchanged.**
-- **Fast versus Standard.** The keeper sends whatever threshold the caller passes. Nothing yet *chooses* Fast
-  when the Fast allowance is exhausted, or falls back to Standard automatically.
+- **Fast versus Standard — chosen since 2026-09-25, not yet observed.** The keeper reads Circle's fee schedule
+  and Fast allowance at every send and chooses (§4 item 5; `VERIFIED-SOLANA-FACTS.md` Addendum 5 for the reads
+  and the documented rule): Fast at Circle's minimum plus headroom under the ceiling; Standard when a fresh
+  allowance figure says the amount cannot be Fast, or when Fast's minimum is above the ceiling; a refusal when
+  the *Standard* minimum is above the ceiling, because that burn would revert. What one real transfer would
+  still settle: what Circle charges on a Fast request it degrades for the allowance (Addendum 5's open item 1),
+  and the "~8 seconds".

@@ -1,0 +1,26 @@
+{
+  "readAtIso": "2026-09-25T21:58:40Z",
+  "how": "curl -s -H 'accept: application/json' <url>, unauthenticated, from the founder's Mac; bodies verbatim",
+  "reads": [
+    {
+      "url": "https://iris-api.circle.com/v2/burn/USDC/fees/6/5",
+      "route": "Base (domain 6) -> Solana (domain 5): the protective burn the keeper sends",
+      "body": [{"finalityThreshold":1000,"minimumFee":1.3},{"finalityThreshold":2000,"minimumFee":0}]
+    },
+    {
+      "url": "https://iris-api.circle.com/v2/burn/USDC/fees/5/6",
+      "route": "Solana (domain 5) -> Base (domain 6): the deploy direction the web will sign",
+      "body": [{"finalityThreshold":1000,"minimumFee":1},{"finalityThreshold":2000,"minimumFee":0}]
+    },
+    {
+      "url": "https://iris-api.circle.com/v2/fastBurn/USDC/allowance",
+      "route": "one pool shared by every Fast route",
+      "body": {"allowance":54436850.827264,"lastUpdated":"2026-09-25T21:58:40.744Z"}
+    }
+  ],
+  "schema": {
+    "source": "https://developers.circle.com/api-reference/cctp/all/get-burn-usdc-fees and .../get-fast-burn-usdc-allowance, read 2026-09-25",
+    "minimumFee": "Minimum fees for the transfer, expressed in basis points (bps). For example, 1 = 0.01%.",
+    "allowance": "The current USDC Fast Burn allowance remaining, in full units of USDC up to 6 decimals."
+  }
+}

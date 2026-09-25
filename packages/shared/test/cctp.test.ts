@@ -221,3 +221,148 @@ test("parseAttestationResponse: pending and not-found are distinguished, so a ke
   assert.equal(n.kind, "pending");
   if (n.kind === "pending") assert.equal(n.delayReason, "waiting for finality");
 });
+
+// ---------------------------------------------------------------------------
+// Circle's fee and allowance API, and the Fast-versus-Standard choice (2026-09-25)
+// ---------------------------------------------------------------------------
+
+import {
+  CCTP_FAST_BURN_ALLOWANCE_PATH,
+  CCTP_FINALITY_POLICY_DEFAULTS,
+  assertCctpFinalityPolicy,
+  cctpFeeBoundBps,
+  cctpFeePath,
+  chooseCctpFinality,
+  parseCctpAllowanceResponse,
+  parseCctpFeeResponse,
+} from "../dist/index.js";
+
+const feesRecorded = JSON.parse(readFileSync(new URL("../../../docs/research/cctp-fees-2026-09-25.json", import.meta.url), "utf8")) as {
+  readAtIso: string;
+  reads: { url: string; body: unknown }[];
+};
+const recordedBody = (path: string) => feesRecorded.reads.find((r) => r.url.endsWith(path))!.body;
+
+test("the fee and allowance paths are Circle's, and refuse a non-domain", () => {
+  assert.equal(cctpFeePath(CCTP_DOMAINS.base, CCTP_DOMAINS.solana), "/v2/burn/USDC/fees/6/5");
+  assert.equal(cctpFeePath(CCTP_DOMAINS.solana, CCTP_DOMAINS.base), "/v2/burn/USDC/fees/5/6");
+  assert.equal(CCTP_FAST_BURN_ALLOWANCE_PATH, "/v2/fastBurn/USDC/allowance");
+  assert.throws(() => cctpFeePath(-1, 5), RangeError);
+  assert.throws(() => cctpFeePath(6, 1.5), RangeError);
+  // the recorded reads were made at exactly these paths
+  for (const p of ["/v2/burn/USDC/fees/6/5", "/v2/burn/USDC/fees/5/6", CCTP_FAST_BURN_ALLOWANCE_PATH]) assert.ok(feesRecorded.reads.some((r) => r.url.endsWith(p)), p);
+});
+
+test("the recorded live answers parse: Base → Solana 1.3 bp Fast / 0 Standard, Solana → Base 1 bp / 0 — the same fees as the 2026-09-12 snapshot — and the allowance with Circle's own timestamp", () => {
+  const toSolana = parseCctpFeeResponse(recordedBody("/fees/6/5"));
+  assert.deepEqual(toSolana, { fastMinFeeBps: 1.3, standardMinFeeBps: 0 });
+  assert.equal(toSolana.fastMinFeeBps, CCTP_FEES_2026_09_12.baseToSolanaFastMinFeeBps, "no drift on this route in thirteen days");
+  const toBase = parseCctpFeeResponse(recordedBody("/fees/5/6"));
+  assert.deepEqual(toBase, { fastMinFeeBps: 1, standardMinFeeBps: 0 });
+  assert.equal(toBase.fastMinFeeBps, CCTP_FEES_2026_09_12.solanaToBaseFastMinFeeBps);
+  const allowance = parseCctpAllowanceResponse(recordedBody(CCTP_FAST_BURN_ALLOWANCE_PATH));
+  assert.equal(allowance.allowanceUsdc, 54_436_850.827264);
+  assert.equal(allowance.lastUpdatedIso, "2026-09-25T21:58:40.744Z");
+  assert.ok(allowance.allowanceUsdc > CCTP_FEES_2026_09_12.fastBurnAllowanceUsd, "the shared pool grew since the 2026-09-12 read; the snapshot is a drift marker, never a live number");
+});
+
+test("malformed fee and allowance answers are refused, never guessed at", () => {
+  assert.throws(() => parseCctpFeeResponse({}), /not an array/);
+  assert.throws(() => parseCctpFeeResponse([{ finalityThreshold: 1000, minimumFee: 1 }]), /both the Fast .* and the Standard/);
+  assert.throws(() => parseCctpFeeResponse([{ finalityThreshold: 1000, minimumFee: -1 }, { finalityThreshold: 2000, minimumFee: 0 }]), /not a fee/);
+  assert.throws(() => parseCctpFeeResponse([{ finalityThreshold: 1000, minimumFee: "1" }, { finalityThreshold: 2000, minimumFee: 0 }]), /not a fee/);
+  assert.throws(() => parseCctpFeeResponse([{ finalityThreshold: 1500, minimumFee: 1 }, { finalityThreshold: 2000, minimumFee: 0 }]), /does not know: 1500/);
+  assert.throws(() => parseCctpFeeResponse([null, { finalityThreshold: 2000, minimumFee: 0 }]), /not an object/);
+  assert.throws(() => parseCctpAllowanceResponse(null), /not an object/);
+  assert.throws(() => parseCctpAllowanceResponse({ allowance: "54436850" }), /not an amount/);
+  assert.throws(() => parseCctpAllowanceResponse({ allowance: -1 }), /not an amount/);
+  assert.deepEqual(parseCctpAllowanceResponse({ allowance: 5 }), { allowanceUsdc: 5, lastUpdatedIso: null }, "a missing timestamp is null, not a refusal — the chooser then refuses to downgrade on it");
+  assert.deepEqual(parseCctpAllowanceResponse({ allowance: 5, lastUpdated: "yesterday" }), { allowanceUsdc: 5, lastUpdatedIso: null });
+});
+
+test("the fee bound rounds UP to the whole basis point the contracts take, after the headroom: 1.3 bp → 2, 1 → 2, 0 → 0, 2 → 3, 1.2 → 2; and with no headroom 1.3 → 2, 1 → 1", () => {
+  assert.equal(cctpFeeBoundBps(1.3, 50), 2);
+  assert.equal(cctpFeeBoundBps(1, 50), 2);
+  assert.equal(cctpFeeBoundBps(0, 50), 0);
+  assert.equal(cctpFeeBoundBps(2, 50), 3, "2 × 1.5 is exactly 3, not 4");
+  assert.equal(cctpFeeBoundBps(1.2, 50), 2);
+  assert.equal(cctpFeeBoundBps(1.3, 0), 2, "planBurn floors its bps: a bound of 1 for a 1.3 bp fee would be degraded to Standard by Circle");
+  assert.equal(cctpFeeBoundBps(1, 0), 1);
+  assert.throws(() => cctpFeeBoundBps(-1, 50), RangeError);
+});
+
+test("the policy defaults are what the doc says, and a bad policy is refused by name", () => {
+  assert.deepEqual(CCTP_FINALITY_POLICY_DEFAULTS, { maxFastFeeBps: 10, feeHeadroomPct: 50, allowanceHeadroomPct: 10, allowanceMaxAgeS: 300 });
+  assertCctpFinalityPolicy(CCTP_FINALITY_POLICY_DEFAULTS);
+  assert.throws(() => assertCctpFinalityPolicy({ ...CCTP_FINALITY_POLICY_DEFAULTS, maxFastFeeBps: 1.5 }), /maxFastFeeBps/);
+  assert.throws(() => assertCctpFinalityPolicy({ ...CCTP_FINALITY_POLICY_DEFAULTS, maxFastFeeBps: 10_000 }), /maxFastFeeBps/);
+  assert.throws(() => assertCctpFinalityPolicy({ ...CCTP_FINALITY_POLICY_DEFAULTS, feeHeadroomPct: -1 }), /feeHeadroomPct/);
+  assert.throws(() => assertCctpFinalityPolicy({ ...CCTP_FINALITY_POLICY_DEFAULTS, allowanceHeadroomPct: 100 }), /allowanceHeadroomPct/);
+  assert.throws(() => assertCctpFinalityPolicy({ ...CCTP_FINALITY_POLICY_DEFAULTS, allowanceMaxAgeS: 0 }), /allowanceMaxAgeS/);
+});
+
+test("chooseCctpFinality on the recorded numbers: Fast at a 2 bp bound, threshold 1000, the allowance named", () => {
+  const fees = parseCctpFeeResponse(recordedBody("/fees/6/5"));
+  const allowance = { allowanceUsdc: 54_436_850.827264, ageS: 3 };
+  const c = chooseCctpFinality({ amountUsdc: 4_500_000_000n, fees, allowance, policy: CCTP_FINALITY_POLICY_DEFAULTS });
+  assert.equal(c.kind, "send");
+  if (c.kind !== "send") return;
+  assert.equal(c.path, "fast");
+  assert.equal(c.minFinalityThreshold, CCTP_FINALITY.fast);
+  assert.equal(c.maxFeeBps, 2);
+  assert.match(c.reason, /Fast: Circle's minimum 1\.3 bp, bound 2 bp/);
+  assert.match(c.reason, /allowance 54436850\.83 USDC covers 4500\.00/);
+});
+
+test("chooseCctpFinality: an unreadable schedule sends Fast at the ceiling and says why; the allowance alone never decides", () => {
+  const c = chooseCctpFinality({ amountUsdc: 1_000_000n, fees: null, allowance: { allowanceUsdc: 0, ageS: 1 }, policy: CCTP_FINALITY_POLICY_DEFAULTS });
+  assert.equal(c.kind, "send");
+  if (c.kind !== "send") return;
+  assert.equal(c.path, "fast");
+  assert.equal(c.maxFeeBps, 10, "the ceiling, because nothing tighter is known");
+  assert.match(c.reason, /could not be read: Fast at the 10 bp ceiling/);
+});
+
+test("chooseCctpFinality: a Standard minimum above the ceiling is a REFUSAL (the burn would revert on chain), a Fast minimum above it is Standard", () => {
+  const refused = chooseCctpFinality({ amountUsdc: 1_000_000n, fees: { fastMinFeeBps: 30, standardMinFeeBps: 20 }, allowance: null, policy: CCTP_FINALITY_POLICY_DEFAULTS });
+  assert.equal(refused.kind, "refuse");
+  if (refused.kind === "refuse") assert.match(refused.reason, /Standard minimum is 20 bp \(30 bp with 50 % headroom\), above the 10 bp ceiling/);
+  const std = chooseCctpFinality({ amountUsdc: 1_000_000n, fees: { fastMinFeeBps: 8, standardMinFeeBps: 0 }, allowance: null, policy: CCTP_FINALITY_POLICY_DEFAULTS });
+  assert.equal(std.kind, "send");
+  if (std.kind !== "send") return;
+  assert.equal(std.path, "standard");
+  assert.equal(std.minFinalityThreshold, CCTP_FINALITY.standard);
+  assert.equal(std.maxFeeBps, 0);
+  assert.match(std.reason, /Fast minimum 8 bp is 12 bp with 50 % headroom, above the 10 bp ceiling/);
+  // exactly at the ceiling is allowed
+  const edge = chooseCctpFinality({ amountUsdc: 1_000_000n, fees: { fastMinFeeBps: 6.6, standardMinFeeBps: 0 }, allowance: null, policy: CCTP_FINALITY_POLICY_DEFAULTS });
+  assert.equal(edge.kind === "send" && edge.path, "fast", "6.6 × 1.5 = 9.9 → 10 bp, the ceiling itself");
+});
+
+test("chooseCctpFinality: a fresh allowance the amount would exhaust sends Standard; a stale one, an absent timestamp's age, or an unsized amount cannot downgrade", () => {
+  const fees = { fastMinFeeBps: 1.3, standardMinFeeBps: 0 };
+  const policy = CCTP_FINALITY_POLICY_DEFAULTS;
+  // 1,000 USDC against a pool of 1,100 with 10 % kept back: usable 990 → Standard
+  const short = chooseCctpFinality({ amountUsdc: 1_000_000_000n, fees, allowance: { allowanceUsdc: 1_100, ageS: 10 }, policy });
+  assert.equal(short.kind === "send" && short.path, "standard");
+  if (short.kind === "send") assert.match(short.reason, /1000\.00 USDC exceeds the usable Fast allowance 990\.00 of 1100\.00 \(10 % kept back, figure 10 s old\)/);
+  // 989 USDC fits
+  const fits = chooseCctpFinality({ amountUsdc: 989_000_000n, fees, allowance: { allowanceUsdc: 1_100, ageS: 10 }, policy });
+  assert.equal(fits.kind === "send" && fits.path, "fast");
+  // the same shortfall on a figure six minutes old: not trusted to downgrade
+  const stale = chooseCctpFinality({ amountUsdc: 1_000_000_000n, fees, allowance: { allowanceUsdc: 1_100, ageS: 360 }, policy });
+  assert.equal(stale.kind === "send" && stale.path, "fast");
+  if (stale.kind === "send") assert.match(stale.reason, /allowance figure 360 s old, past 300 s — not trusted to downgrade/);
+  // no timestamp at all (ageS null): the figure is used as-is — Circle sends one on every answer, and its absence was already made null by the parser
+  const noAge = chooseCctpFinality({ amountUsdc: 1_000_000_000n, fees, allowance: { allowanceUsdc: 1_100, ageS: null }, policy });
+  assert.equal(noAge.kind === "send" && noAge.path, "standard", "an ageless figure is still a figure; only a known-old one is distrusted");
+  // amount not yet sized: Fast, with the allowance named for the log
+  const unsized = chooseCctpFinality({ amountUsdc: null, fees, allowance: { allowanceUsdc: 1_100, ageS: 10 }, policy });
+  assert.equal(unsized.kind === "send" && unsized.path, "fast");
+  if (unsized.kind === "send") assert.match(unsized.reason, /amount not yet sized/);
+  // an exhausted allowance and a Fast fee above the ceiling both say Standard, and the allowance is the reason named first
+  const both = chooseCctpFinality({ amountUsdc: 1_000_000_000n, fees: { fastMinFeeBps: 8, standardMinFeeBps: 0 }, allowance: { allowanceUsdc: 1_100, ageS: 10 }, policy });
+  assert.equal(both.kind === "send" && both.path, "standard");
+  if (both.kind === "send") assert.match(both.reason, /exceeds the usable Fast allowance/);
+  assert.throws(() => chooseCctpFinality({ amountUsdc: -1n, fees, allowance: null, policy }), RangeError);
+});

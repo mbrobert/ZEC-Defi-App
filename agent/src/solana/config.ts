@@ -9,7 +9,7 @@
  */
 import { isAbsolute } from "node:path";
 import { PublicKey } from "@solana/web3.js";
-import { CCTP_IRIS, SOLANA_CLUSTER } from "@zyo/shared";
+import { CCTP_FINALITY_POLICY_DEFAULTS, CCTP_IRIS, SOLANA_CLUSTER, assertCctpFinalityPolicy, type CctpFinalityPolicy } from "@zyo/shared";
 import { ConfigError, readRaw } from "../config.js";
 
 export interface SolanaKeeperConfig {
@@ -55,6 +55,12 @@ export interface SolanaKeeperConfig {
   attestationBaseUrl: string;
   /** The address lookup table a CCTP delivery rides (created at deploy); absent = deliveries are refused by name. */
   cctpLookupTable?: PublicKey;
+  /**
+   * The Fast-versus-Standard policy the Base burner applies from Circle's live fee schedule and allowance
+   * (shared `chooseCctpFinality`, 2026-09-25): the fee ceiling, the headroom over Circle's minimum, the share of
+   * the allowance a burn must leave, and how old an allowance figure may be before it cannot downgrade.
+   */
+  cctpFinality: CctpFinalityPolicy;
 }
 
 export const SOLANA_CONFIG_DEFAULTS = {
@@ -77,6 +83,7 @@ export const SOLANA_CONFIG_DEFAULTS = {
   logLevel: "info" as const,
   bridgeStallS: 1800,
   attestationBaseUrl: CCTP_IRIS.mainnet,
+  cctpFinality: CCTP_FINALITY_POLICY_DEFAULTS,
 } as const;
 
 function num(env: NodeJS.ProcessEnv, name: string, dflt: number, opts: { min?: number; max?: number; integer?: boolean } = {}): number {
@@ -173,6 +180,18 @@ export function loadSolanaConfig(env: NodeJS.ProcessEnv = process.env): SolanaKe
   }
   if (baseRouterRaw !== undefined && !/^0x[0-9a-fA-F]{40}$/.test(baseRouterRaw)) throw new ConfigError("BASE_ROUTER_ADDRESS", "is not an EVM address");
 
+  const cctpFinality: CctpFinalityPolicy = {
+    maxFastFeeBps: num(env, "CCTP_MAX_FAST_FEE_BPS", SOLANA_CONFIG_DEFAULTS.cctpFinality.maxFastFeeBps, { min: 0, max: 9999, integer: true }),
+    feeHeadroomPct: num(env, "CCTP_FEE_HEADROOM_PCT", SOLANA_CONFIG_DEFAULTS.cctpFinality.feeHeadroomPct, { min: 0 }),
+    allowanceHeadroomPct: num(env, "CCTP_ALLOWANCE_HEADROOM_PCT", SOLANA_CONFIG_DEFAULTS.cctpFinality.allowanceHeadroomPct, { min: 0, max: 99 }),
+    allowanceMaxAgeS: num(env, "CCTP_ALLOWANCE_MAX_AGE_S", SOLANA_CONFIG_DEFAULTS.cctpFinality.allowanceMaxAgeS, { min: 1, integer: true }),
+  };
+  try {
+    assertCctpFinalityPolicy(cctpFinality);
+  } catch (e) {
+    throw new ConfigError("CCTP_MAX_FAST_FEE_BPS", `(with CCTP_FEE_HEADROOM_PCT / CCTP_ALLOWANCE_HEADROOM_PCT / CCTP_ALLOWANCE_MAX_AGE_S) ${e instanceof Error ? e.message : String(e)}`);
+  }
+
   return {
     rpcUrl,
     programId,
@@ -202,6 +221,7 @@ export function loadSolanaConfig(env: NodeJS.ProcessEnv = process.env): SolanaKe
     bridgeStallS: num(env, "BRIDGE_STALL_S", SOLANA_CONFIG_DEFAULTS.bridgeStallS, { min: 60, integer: true }),
     attestationBaseUrl: attestationUrl,
     cctpLookupTable: pubkey(env, "CCTP_LOOKUP_TABLE"),
+    cctpFinality,
   };
 }
 
@@ -222,5 +242,6 @@ export function describeSolanaConfig(c: SolanaKeeperConfig): Record<string, unkn
     basePair: c.baseRpcUrl ? { router: c.baseRouterAddress, bridgeStallS: c.bridgeStallS } : "not read (no BASE_RPC_URL)",
     attestation: c.attestationBaseUrl,
     cctpLookupTable: c.cctpLookupTable?.toBase58() ?? "none (deliveries refused by name)",
+    cctpFinality: c.cctpFinality,
   };
 }

@@ -71,6 +71,15 @@ export interface BridgeInfo {
   deliveryTx?: string;
   /** What actually arrived: the burn less the fee Circle executed. */
   deliveredAmountUsdc?: string;
+  /**
+   * The Base `OilskinAccount` the burn was made from (checksummed). A Solana record's `account` is the Solana
+   * PDA, so without this the receipt could not be judged on a later tick — set by the Base burner adapter at
+   * dispatch (`agent/src/solana/baseBurner.ts`, 2026-09-25).
+   */
+  baseAccount?: string;
+  /** The finality the burn asked Circle for (1000 Fast / 2000 Standard) and the fee bound it carried, bps — chosen at send time from Circle's live schedule. */
+  minFinalityThreshold?: number;
+  maxFeeBps?: number;
 }
 
 /**

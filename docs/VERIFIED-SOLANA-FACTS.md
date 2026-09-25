@@ -567,3 +567,43 @@ decoder reproduces Circle's own numbers on that message exactly — nonce, both 
 1. A delivery actually executed (no Solana-bound Oilskin burn exists yet); the localnet spec mocks the
    transmitter because an attestation needs Circle's attester keys.
 2. Circle's Fast Transfer wall-clock time (Addendum 1's open item stands).
+
+## Addendum 5 (2026-09-25 21:58:40 UTC) · Circle's fee and allowance API re-read, the response schema, and the documented degrade rule
+
+Read for the keeper's Fast-versus-Standard choice (`CROSSCHAIN-RUNBOOK-2026-09-13.md` §5's open item), with
+`curl`, unauthenticated, from the founder's Mac; the three bodies are recorded verbatim in
+`docs/research/cctp-fees-2026-09-25.json` and parsed by `packages/shared` (`parseCctpFeeResponse`,
+`parseCctpAllowanceResponse`) under test. CCTP = Circle's Cross-Chain Transfer Protocol; bp = basis point.
+
+| Endpoint (`https://iris-api.circle.com`) | Body, verbatim | Meaning |
+|---|---|---|
+| `/v2/burn/USDC/fees/6/5` (Base → Solana, the protective burn) | `[{"finalityThreshold":1000,"minimumFee":1.3},{"finalityThreshold":2000,"minimumFee":0}]` | Fast **1.3 bp**, Standard **0** — unchanged from Addendum 1's read of 2026-09-12 |
+| `/v2/burn/USDC/fees/5/6` (Solana → Base, the deploy direction) | `[{"finalityThreshold":1000,"minimumFee":1},{"finalityThreshold":2000,"minimumFee":0}]` | Fast **1 bp**, Standard **0** — unchanged |
+| `/v2/fastBurn/USDC/allowance` | `{"allowance":54436850.827264,"lastUpdated":"2026-09-25T21:58:40.744Z"}` | **$54,436,850.83** (Addendum 1: $53,140,871.26 on 2026-09-12); Circle stamps the figure with its own time |
+
+**The schema, from Circle's API reference (read 2026-09-25).** `minimumFee`: *"Minimum fees for the transfer,
+expressed in basis points (bps). For example, 1 = 0.01%."* `allowance`: *"The current USDC Fast Burn allowance
+remaining, in full units of USDC up to 6 decimals."* `lastUpdated`: an ISO 8601 UTC timestamp. The fee endpoint
+may also carry an optional `forwardFee` object when asked with `?forward=true`; the keeper does not ask for it.
+
+**The rule the keeper's choice rests on, from Circle's CCTP fees page** (`developers.circle.com/cctp/concepts/fees`,
+read 2026-09-25, under "Maximum fee parameter"): *"Insufficient fees: If fees increase, your Fast Transfers may be
+degraded to Standard Transfers when the provided `maxFee` is below the required threshold."* And under "Standard
+Transfer fee switch": *"Some blockchains support a Standard Transfer fee switch, which enables enforcing a minimum
+fee during a CCTP Standard Transfer."* From the technical guide (`/cctp/technical-guide`, "Defined finality
+thresholds"): *"Any `minFinalityThreshold` value below 1000 is treated as 1000"* and *"any value above 1000 is
+treated as 2000."* So the asymmetry the code follows: asking for Fast with a bound Circle cannot honour costs
+seconds-to-minutes, never a revert; asking for Standard when Fast was possible costs minutes on a protective rung;
+and a `maxFee` under a route's Standard minimum is the one shape that reverts on chain (a fee-switch route; both
+Oilskin routes read 0 today). `docs/research/cctp-fees-2026-09-25.json` carries the schema sentences beside the bodies.
+
+### Not verified by this addendum (probe before code depends on it)
+
+1. **What Circle charges on a Fast request it degrades to Standard because the *allowance* is exhausted** — the
+   fees page names the insufficient-`maxFee` case as a cause of degradation; it does not say whether a transfer
+   degraded for the allowance is charged the Fast fee it asked for or the Standard fee. The keeper therefore sends
+   Standard itself when a fresh allowance figure says the amount cannot be Fast (shared `chooseCctpFinality`),
+   rather than rely on the answer. One real degraded transfer would settle it.
+2. Whether either Oilskin route ever turns its Standard fee switch on — the schedule is re-read at every send, so a
+   non-zero Standard minimum is handled, but it has not been seen.
+3. Circle's Fast Transfer wall-clock time (Addendum 1's open item stands; nothing has crossed a chain for real).

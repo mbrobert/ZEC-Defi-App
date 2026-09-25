@@ -251,6 +251,11 @@ export interface DispatchRecord<Id extends string = Address, Tx extends string =
     attestationHex?: string;
     deliveryTx?: string;
     deliveredAmountUsdc?: string;
+    /** The Base account the burn was made from — what `confirmBurn` judges the receipt against (2026-09-25). */
+    baseAccount?: string;
+    /** The finality asked of Circle (1000 / 2000) and the fee bound, bps, as chosen at send time. */
+    minFinalityThreshold?: number;
+    maxFeeBps?: number;
   };
 }
 
@@ -425,6 +430,9 @@ export function validateState<Id extends string = Address, Tx extends string = H
       if (!b || typeof b !== "object" || b.chain !== "base" || !stages.includes(String(b.stage)) || typeof b.burnTxHash !== "string" || !/^\d+$/.test(String(b.amountUsdc))) {
         throw new StoreError(`dispatch ${d.key}: bridge malformed`);
       }
+      if (b.baseAccount !== undefined && !(typeof b.baseAccount === "string" && /^0x[0-9a-fA-F]{40}$/.test(b.baseAccount))) throw new StoreError(`dispatch ${d.key}: bridge.baseAccount malformed`);
+      if (b.minFinalityThreshold !== undefined && !(b.minFinalityThreshold === 1000 || b.minFinalityThreshold === 2000)) throw new StoreError(`dispatch ${d.key}: bridge.minFinalityThreshold malformed`);
+      if (b.maxFeeBps !== undefined && !isNonNegInt(b.maxFeeBps)) throw new StoreError(`dispatch ${d.key}: bridge.maxFeeBps malformed`);
     }
     if (d.txHash !== undefined && !(typeof d.txHash === "string" && codec.isTxHash(d.txHash))) {
       throw new StoreError(`dispatch ${d.key}: txHash malformed`);

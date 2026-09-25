@@ -48,9 +48,9 @@ RFP packages are written and re-measured at the current tree (`16cf235`,
    Solana-only path), the address lookup table both cross-chain transactions need
    (the delivery measured 1,264 bytes against the 1,232 legacy limit), and the run
    end to end on devnet ↔ Sepolia. Valve date **2026-11-13** (§3).
-4. **Two questions behind that loop that are not code.** Nothing yet *chooses*
-   Fast over Standard when the Fast allowance is exhausted
-   (`docs/CROSSCHAIN-RUNBOOK-2026-09-13.md` §5). The reserve — the rung-2
+4. **One question behind that loop that is not code** (it was two: the keeper
+   *chooses* Fast or Standard from Circle's live schedule and allowance since
+   2026-09-25, `docs/CROSSCHAIN-RUNBOOK-2026-09-13.md` §4 item 5). The reserve — the rung-2
    requirement, 4.11 % of the debt at a 1.625 entry — **was modelled against
    ZEC's real price history on 2026-09-19** (`docs/MODEL-RESERVE-2026-09-19.md`):
    on the bridge's timescale it is not the constraint, the multiple buys little,

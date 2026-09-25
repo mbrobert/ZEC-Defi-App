@@ -495,6 +495,39 @@ describe("the cross-chain pair on the Solana monitor (D6 / A5.2)", () => {
     await r.close();
   });
 
+  it("a rung answered on Base persists the Base keeper's nonce and the closed ids BEFORE the burn's result is recorded, and the bridge keeps the Base account and the finality it was sent with (2026-09-25)", async () => {
+    const r = await rig();
+    const id = r.world.add(10n * ONE_ZEC, debtForHf(10n * ONE_ZEC, 1000, 1.63), 0n);
+    await r.tick();
+    r.world.zecUsd = priceAt(between(R.derisk, R.emergency));
+    let onDiskAtSend: { sentNonce?: number; closeIds?: string[]; status: string } | undefined;
+    r.fake.script.push(async (intent) => {
+      intent.onPairRead?.(linked);
+      // what the Base dispatcher does right before it broadcasts
+      await intent.persistBeforeBurn?.({ nonce: 7, closeIds: [1n, 3n] });
+      const s = JSON.parse(await readFile(r.path, "utf8"));
+      onDiskAtSend = s.dispatches.find((x: { account: string }) => x.account === id);
+      return { status: "SENT", signature: BASE_HASH, bridge: { chain: "base", stage: "burn-sent", burnTxHash: BASE_HASH, amountUsdc: "0", recipient: linked.expectedRecipient, baseAccount: linked.baseAccount, minFinalityThreshold: 1000, maxFeeBps: 2 } };
+    });
+    const t = await r.tick();
+    const mine = t.outcomes.find((o) => o.account === id)!;
+    assert.equal(mine.dispatch?.status, "SENT", JSON.stringify(mine));
+    assert.ok(onDiskAtSend, "the hook ran");
+    assert.equal(onDiskAtSend!.sentNonce, 7, "the Base nonce was on disk before the dispatcher returned");
+    assert.deepEqual(onDiskAtSend!.closeIds, ["1", "3"]);
+    assert.equal(onDiskAtSend!.status, "PENDING", "still pending at that moment: the result had not been recorded");
+    const s = JSON.parse(await readFile(r.path, "utf8"));
+    const d = s.dispatches.find((x: { account: string }) => x.account === id);
+    assert.equal(d.status, "SENT");
+    assert.equal(d.sentNonce, 7);
+    assert.deepEqual(d.bridge, { chain: "base", stage: "burn-sent", burnTxHash: BASE_HASH, amountUsdc: "0", recipient: linked.expectedRecipient, baseAccount: linked.baseAccount, minFinalityThreshold: 1000, maxFeeBps: 2 });
+    // the store validates the new fields by name
+    await assert.rejects(r.store.mutate((st) => { st.dispatches.find((x) => x.account === id)!.bridge!.baseAccount = "nope"; }), /bridge\.baseAccount malformed/);
+    await assert.rejects(r.store.mutate((st) => { st.dispatches.find((x) => x.account === id)!.bridge!.minFinalityThreshold = 1500; }), /bridge\.minFinalityThreshold malformed/);
+    await assert.rejects(r.store.mutate((st) => { st.dispatches.find((x) => x.account === id)!.bridge!.maxFeeBps = -1; }), /bridge\.maxFeeBps malformed/);
+    await r.close();
+  });
+
   it("the store refuses a malformed bridge or pair record", async () => {
     const r = await rig();
     const id = r.world.add(10n * ONE_ZEC, debtForHf(10n * ONE_ZEC, 1000, 1.63), 0n);

@@ -18,11 +18,11 @@ MC = Monte Carlo.
 | Contracts (Foundry) | `cd contracts && forge test` | **435 passed / 0 failed / 13 skipped** (448 total), 39 suites |
 | Contracts, fork | `FORK_URL=<Base archive RPC> FORK_BLOCK=51222568 forge test --match-path test/fork/BaseFork.t.sol -vv`, then `scripts/check-cbzec-b20.sh <Base RPC> 51222568` | **13 / 13** |
 | Root ABI seam | `node scripts/verify-abi.mjs` | **444** selectors / topics / errors across 19 contracts |
-| Shared | `npm test -w @zyo/shared` | **132** |
+| Shared | `npm test -w @zyo/shared` | **141** |
 | Solana, seams | `npm test -w @zyo/solana` | **14** |
 | Solana, program unit | `cd solana && cargo test --manifest-path programs/oilskin/Cargo.toml` | **12** |
 | Solana, localnet | `bash solana/scripts/localnet.sh` (terminal 1) · `cd solana && anchor test --skip-build --skip-local-validator` (terminal 2) | **36 passing / 0 failing** |
-| Keeper | `npm test -w @zyo/agent` | **319 tests / 61 suites**, plus its own ABI seam **123 / 123** and the IDL seam **77 / 77** |
+| Keeper | `npm test -w @zyo/agent` | **337 tests / 66 suites**, plus its own ABI seam **123 / 123** and the IDL seam **77 / 77** |
 | Yield | `npm test -w @zyo/yield` | **194** |
 | Web, unit | `npm test -w @zyo/web` | **212** |
 | Web, e2e | `cd web && npx playwright test` | **24 passed / 0 failed / 6 skipped** |
@@ -139,7 +139,7 @@ USDC would have permanently bricked the protocol. The Handler now has a
 and `test_handlerPathsAreLive` proves every path is reachable. Treat any
 invariant whose Handler cannot reach the forbidden state as decoration.
 
-## Keeper (`agent/test`, 29 test files)
+## Keeper (`agent/test`, 32 test files)
 
 `npm test` runs `tsc`, then `scripts/verify-abi.mjs` (**75 checks**: selectors,
 output layouts, event indexed layout, error declarations on the right contract,

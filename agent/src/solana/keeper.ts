@@ -40,7 +40,10 @@ export interface SolanaRunOptions {
   pair?: PairReader | null;
   /**
    * The Base burner for linked pairs at rungs 3–4 (A5.2). Nothing in this process builds one: it needs a Base
-   * signing key beside the Solana one, and that two-key process is Stream C's. Absent = single-chain rungs.
+   * signing key beside the Solana one, and how those two keys live together is the founder's decision. The
+   * adapter itself exists — `KeeperBaseBurner` (`baseBurner.ts`) over `KeeperDispatcher.dispatchBurn`, choosing
+   * Fast or Standard from Circle's live schedule under `config.cctpFinality` — so the process that holds both
+   * keys constructs one and hands it in here. Absent = single-chain rungs.
    */
   baseBurner?: BaseBurner | null;
   /** Test hook: Circle's attestation service (the production one is built from CCTP_ATTESTATION_URL). */
@@ -128,7 +131,7 @@ export async function runSolanaKeeper(env: NodeJS.ProcessEnv, opts: SolanaRunOpt
     log.info("cross-chain pairs read from Base", { router: config.baseRouterAddress });
   }
   const baseBurner = opts.baseBurner ?? null;
-  if (!baseBurner) log.info("no Base burner: rungs 3–4 of a linked pair take the single-chain path (Stream C wires the two-key process)");
+  if (!baseBurner) log.info("no Base burner: rungs 3–4 of a linked pair take the single-chain path (a process holding a Base key constructs KeeperBaseBurner and hands it to runSolanaKeeper)");
   // Circle's attestation service. Read-only and unauthenticated; it is asked only about burns this keeper made.
   const attestation = opts.attestation ?? new CircleAttestationClient({ baseUrl: config.attestationBaseUrl, deadlineMs: config.rpcDeadlineMs, log });
 

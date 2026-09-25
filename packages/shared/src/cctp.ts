@@ -322,6 +322,166 @@ export const CCTP_IRIS = {
   testnet: "https://iris-api-sandbox.circle.com",
 } as const;
 
+// ---------------------------------------------------------------------------
+// Circle's fee and allowance API, and the Fast-versus-Standard choice (CROSSCHAIN-RUNBOOK §5, closed 2026-09-25)
+// ---------------------------------------------------------------------------
+
+/**
+ * `GET /v2/burn/USDC/fees/{sourceDomain}/{destDomain}` — the minimum fee per finality threshold. Circle's API
+ * reference (read 2026-09-25): "Minimum fees for the transfer, expressed in basis points (bps). For example,
+ * 1 = 0.01%." Recorded live in `docs/research/cctp-fees-2026-09-25.json`.
+ */
+export function cctpFeePath(sourceDomain: number, destDomain: number): string {
+  for (const [name, d] of [["sourceDomain", sourceDomain], ["destDomain", destDomain]] as const) {
+    if (!Number.isInteger(d) || d < 0) throw new RangeError(`${name} must be a domain id, got ${String(d)}`);
+  }
+  return `/v2/burn/USDC/fees/${sourceDomain}/${destDomain}`;
+}
+
+/** `GET /v2/fastBurn/USDC/allowance` — "The current USDC Fast Burn allowance remaining, in full units of USDC up to 6 decimals." */
+export const CCTP_FAST_BURN_ALLOWANCE_PATH = "/v2/fastBurn/USDC/allowance";
+
+/** Circle's published minimum fee for each path, basis points of the amount burned (fractional: 1.3 bp is a real value). */
+export interface CctpFeeSchedule {
+  fastMinFeeBps: number;
+  standardMinFeeBps: number;
+}
+
+const isFeeBps = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0 && v < 10_000;
+
+/**
+ * Parse the fee endpoint's answer. Both thresholds must be present and well-formed: a schedule with one of them
+ * missing is not a schedule the keeper can choose from, and is refused rather than guessed at.
+ */
+export function parseCctpFeeResponse(body: unknown): CctpFeeSchedule {
+  if (!Array.isArray(body)) throw new RangeError("Circle's fee answer is not an array");
+  let fast: number | undefined;
+  let standard: number | undefined;
+  for (const row of body as unknown[]) {
+    const r = row as { finalityThreshold?: unknown; minimumFee?: unknown } | null;
+    if (!r || typeof r !== "object") throw new RangeError("Circle's fee answer holds a row that is not an object");
+    if (!isFeeBps(r.minimumFee)) throw new RangeError(`Circle's fee answer holds a minimumFee that is not a fee: ${String(r.minimumFee)}`);
+    if (r.finalityThreshold === CCTP_FINALITY.fast) fast = r.minimumFee;
+    else if (r.finalityThreshold === CCTP_FINALITY.standard) standard = r.minimumFee;
+    else throw new RangeError(`Circle's fee answer names a finality threshold this code does not know: ${String(r.finalityThreshold)}`);
+  }
+  if (fast === undefined || standard === undefined) throw new RangeError("Circle's fee answer does not carry both the Fast (1000) and the Standard (2000) minimum");
+  return { fastMinFeeBps: fast, standardMinFeeBps: standard };
+}
+
+export interface CctpFastBurnAllowance {
+  /** Full units of USDC. */
+  allowanceUsdc: number;
+  /** Circle's own timestamp of the figure, ISO 8601; null when absent or unparsable. */
+  lastUpdatedIso: string | null;
+}
+
+export function parseCctpAllowanceResponse(body: unknown): CctpFastBurnAllowance {
+  const r = body as { allowance?: unknown; lastUpdated?: unknown } | null;
+  if (!r || typeof r !== "object") throw new RangeError("Circle's allowance answer is not an object");
+  if (typeof r.allowance !== "number" || !Number.isFinite(r.allowance) || r.allowance < 0) throw new RangeError(`Circle's allowance answer holds an allowance that is not an amount: ${String(r.allowance)}`);
+  const lastUpdatedIso = typeof r.lastUpdated === "string" && Number.isFinite(Date.parse(r.lastUpdated)) ? r.lastUpdated : null;
+  return { allowanceUsdc: r.allowance, lastUpdatedIso };
+}
+
+/**
+ * The operator's bounds on the choice. Every number here is a product setting, not a chain fact — the
+ * defaults below are the founder's to change (`CCTP_MAX_FAST_FEE_BPS` and friends in the Solana keeper's env).
+ */
+export interface CctpFinalityPolicy {
+  /** The most the keeper will ever let Circle take, integer basis points of the amount burned. */
+  maxFastFeeBps: number;
+  /**
+   * Headroom over Circle's published minimum, in percent of that minimum. Circle's docs (concepts/fees, read
+   * 2026-09-25): "If fees increase, your Fast Transfers may be degraded to Standard Transfers when the provided
+   * maxFee is below the required threshold." The headroom is what keeps a fee that moved between the read and
+   * the attestation from turning seconds into minutes.
+   */
+  feeHeadroomPct: number;
+  /** The share of the Fast allowance a burn must leave behind, percent, before the keeper stops asking for Fast. */
+  allowanceHeadroomPct: number;
+  /** An allowance figure older than this, by Circle's own `lastUpdated`, is not trusted to downgrade a transfer. */
+  allowanceMaxAgeS: number;
+}
+
+/**
+ * Defaults, and why: the ceiling is 10 bp — one tenth of a percent, above every fee Circle has published on
+ * this route (1.3 bp Fast, 0 Standard, read 2026-09-12 and 2026-09-25) and small beside the rung it protects;
+ * 50 % headroom turns 1.3 bp into a 2 bp bound; the burn must leave a tenth of the pool; and an allowance
+ * figure five minutes old is history (the pool moved ≈ $630 K in 51 minutes on 2026-09-12).
+ */
+export const CCTP_FINALITY_POLICY_DEFAULTS: CctpFinalityPolicy = { maxFastFeeBps: 10, feeHeadroomPct: 50, allowanceHeadroomPct: 10, allowanceMaxAgeS: 300 };
+
+export function assertCctpFinalityPolicy(p: CctpFinalityPolicy): void {
+  if (!Number.isInteger(p.maxFastFeeBps) || p.maxFastFeeBps < 0 || p.maxFastFeeBps >= 10_000) throw new RangeError(`maxFastFeeBps must be an integer in [0, 10000), got ${String(p.maxFastFeeBps)}`);
+  if (!Number.isFinite(p.feeHeadroomPct) || p.feeHeadroomPct < 0) throw new RangeError(`feeHeadroomPct must be ≥ 0, got ${String(p.feeHeadroomPct)}`);
+  if (!Number.isFinite(p.allowanceHeadroomPct) || p.allowanceHeadroomPct < 0 || p.allowanceHeadroomPct >= 100) throw new RangeError(`allowanceHeadroomPct must be in [0, 100), got ${String(p.allowanceHeadroomPct)}`);
+  if (!Number.isFinite(p.allowanceMaxAgeS) || p.allowanceMaxAgeS <= 0) throw new RangeError(`allowanceMaxAgeS must be > 0, got ${String(p.allowanceMaxAgeS)}`);
+}
+
+/** Circle's fee with the policy's headroom on top, rounded UP to the whole basis point the contracts take. */
+export function cctpFeeBoundBps(minFeeBps: number, headroomPct: number): number {
+  if (!isFeeBps(minFeeBps)) throw new RangeError(`minFeeBps must be a fee, got ${String(minFeeBps)}`);
+  // Round to a millionth of a basis point first so 1.3 × 1.5 (= 1.9500000000000002) and 2 × 1.5 (= 3) both land where arithmetic says.
+  const withHeadroom = Math.round((minFeeBps * (100 + headroomPct) * 1e6) / 100) / 1e6;
+  return Math.ceil(withHeadroom);
+}
+
+export interface CctpFinalityInput {
+  /** What must cross, USDC base units (6 decimals); null when the size is not known before the plan is made. */
+  amountUsdc: bigint | null;
+  /** Circle's schedule for this route, or null when it could not be read. */
+  fees: CctpFeeSchedule | null;
+  /** The shared Fast allowance and how old Circle's figure is, or null when it could not be read. */
+  allowance: { allowanceUsdc: number; ageS: number | null } | null;
+  policy: CctpFinalityPolicy;
+}
+
+export type CctpFinalityChoice =
+  | { kind: "send"; path: "fast" | "standard"; minFinalityThreshold: typeof CCTP_FINALITY.fast | typeof CCTP_FINALITY.standard; maxFeeBps: number; reason: string }
+  | { kind: "refuse"; reason: string };
+
+/**
+ * Fast or Standard, decided from Circle's live numbers (BUILD-PLAN D6; CROSSCHAIN-RUNBOOK §5's open item,
+ * closed 2026-09-25). The asymmetry the rules follow: choosing Standard by mistake costs a protective rung
+ * *minutes*; choosing Fast by mistake costs at most the fee bound, because Circle itself degrades a Fast
+ * request it cannot honour to Standard (the sentence quoted on `feeHeadroomPct`). So Fast is the default and
+ * Standard is chosen only on evidence — a fee above the ceiling, or a fresh allowance figure the amount would
+ * exhaust. A schedule that cannot be read sends Fast at the ceiling; a Standard minimum above the ceiling is a
+ * refusal, because a burn whose `maxFee` is under that minimum reverts on chain rather than degrading.
+ */
+export function chooseCctpFinality(input: CctpFinalityInput): CctpFinalityChoice {
+  const { policy, fees, allowance, amountUsdc } = input;
+  assertCctpFinalityPolicy(policy);
+  if (amountUsdc !== null && amountUsdc < 0n) throw new RangeError("amountUsdc must be ≥ 0");
+  if (!fees) {
+    return { kind: "send", path: "fast", minFinalityThreshold: CCTP_FINALITY.fast, maxFeeBps: policy.maxFastFeeBps, reason: `Circle's fee schedule could not be read: Fast at the ${policy.maxFastFeeBps} bp ceiling (Circle degrades to Standard on its own if that is short)` };
+  }
+  const standardBound = cctpFeeBoundBps(fees.standardMinFeeBps, policy.feeHeadroomPct);
+  if (standardBound > policy.maxFastFeeBps) {
+    return { kind: "refuse", reason: `Circle's Standard minimum is ${fees.standardMinFeeBps} bp (${standardBound} bp with ${policy.feeHeadroomPct} % headroom), above the ${policy.maxFastFeeBps} bp ceiling — a burn under it reverts on chain; raise CCTP_MAX_FAST_FEE_BPS or wait` };
+  }
+  const fastBound = cctpFeeBoundBps(fees.fastMinFeeBps, policy.feeHeadroomPct);
+  const standard = (why: string): CctpFinalityChoice => ({ kind: "send", path: "standard", minFinalityThreshold: CCTP_FINALITY.standard, maxFeeBps: standardBound, reason: `Standard (source-chain finality, ${fees.standardMinFeeBps} bp): ${why}` });
+
+  let allowanceNote: string;
+  if (!allowance) allowanceNote = "allowance unread";
+  else if (allowance.ageS !== null && allowance.ageS > policy.allowanceMaxAgeS) allowanceNote = `allowance figure ${Math.round(allowance.ageS)} s old, past ${policy.allowanceMaxAgeS} s — not trusted to downgrade`;
+  else if (amountUsdc === null) allowanceNote = `allowance ${allowance.allowanceUsdc.toFixed(2)} USDC, amount not yet sized`;
+  else {
+    const amount = Number(amountUsdc) / 1e6;
+    const usable = allowance.allowanceUsdc * (1 - policy.allowanceHeadroomPct / 100);
+    if (amount > usable) {
+      return standard(`${amount.toFixed(2)} USDC exceeds the usable Fast allowance ${usable.toFixed(2)} of ${allowance.allowanceUsdc.toFixed(2)} (${policy.allowanceHeadroomPct} % kept back${allowance.ageS !== null ? `, figure ${Math.round(allowance.ageS)} s old` : ""}) — Fast would wait for finality anyway`);
+    }
+    allowanceNote = `allowance ${allowance.allowanceUsdc.toFixed(2)} USDC covers ${amount.toFixed(2)}`;
+  }
+  if (fastBound > policy.maxFastFeeBps) {
+    return standard(`Circle's Fast minimum ${fees.fastMinFeeBps} bp is ${fastBound} bp with ${policy.feeHeadroomPct} % headroom, above the ${policy.maxFastFeeBps} bp ceiling`);
+  }
+  return { kind: "send", path: "fast", minFinalityThreshold: CCTP_FINALITY.fast, maxFeeBps: fastBound, reason: `Fast: Circle's minimum ${fees.fastMinFeeBps} bp, bound ${fastBound} bp with ${policy.feeHeadroomPct} % headroom under the ${policy.maxFastFeeBps} bp ceiling; ${allowanceNote}` };
+}
+
 /** `GET /v2/messages/{sourceDomain}?transactionHash=…` — every message a burn transaction produced. */
 export function attestationPathByTx(sourceDomain: number, txHash: string): string {
   if (!Number.isInteger(sourceDomain) || sourceDomain < 0) throw new RangeError(`sourceDomain must be a domain id, got ${String(sourceDomain)}`);
