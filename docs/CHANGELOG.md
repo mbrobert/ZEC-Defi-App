@@ -12,8 +12,9 @@ built. HF = health factor; CCTP = Circle's Cross-Chain Transfer Protocol.
 - **Two facts read today changed the shape** (`VERIFIED-PERPS-FACTS-2026-09-14.md` §6, raw bodies in
   `docs/research/hyperliquid-zec-2026-09-25.json`): Hyperliquid's `meta` now carries the margin tables, and ZEC's
   table 52 is "tiered 10x (2)" — 10× to $20 M notional, 5× above, so the maintenance margin is **5 %** for every
-  beta-sized position (D0b's third item, settled); and Circle lists **HyperEVM as CCTP V2 domain 19, Standard
-  Transfer only** — every crossing is minutes, which is why the design keeps a reserve on HyperCore rather than
+  beta-sized position (D0b's third item, settled); and Circle lists **HyperEVM as CCTP V2 domain 19** — Fast inbound from
+  Base at 1.3 bp, Standard only on the way back (read both ways at 22:31 UTC, after a peer session's read caught the
+  first draft saying Standard in both directions) — which is why the design keeps a reserve on HyperCore rather than
   bridging at a rung. CoreWriter's action table (quoted whole) has **no action that sets leverage or moves isolated
   margin**, so the account runs **cross margin with one position** and tops up through action 7. ZEC itself went
   **+44.1 % in the twelve days** between the two reads — on a 2× short that is the whole distance to liquidation.

@@ -1322,9 +1322,11 @@ user's coins to check against (facts §1–§2).
 over $100,000 of notional are liquidated 20 % at a time, changing the size under
 the keeper's feet; D8's $25,000 cap keeps beta positions under both.
 
-**Risk — the money moves slowly.** HyperEVM is CCTP domain 19 with Standard
-Transfer only: every crossing to or from the user's Base account is minutes.
-The reserve on HyperCore exists because a rung cannot wait for one; the hatch
+**Risk — the money moves slowly one way.** HyperEVM is CCTP domain 19: inbound
+from the user's Base account may be Fast (seconds, 1.3 bp) when Circle's
+allowance allows, but the way back is Standard only — minutes — and a rung's
+top-up needs USDC already on HyperCore in any case.
+The reserve on HyperCore exists because a rung cannot wait for a crossing; the hatch
 can always empty the reserve (the same honesty as BACKLOG O-6), and the keeper
 reports the shortfall.
 

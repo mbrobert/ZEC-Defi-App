@@ -205,7 +205,12 @@ $0.50 of margin per dollar of notional that is the whole distance to liquidation
   deposit address shown"*; *"You can also transfer USDC from other chains via CCTP."*
 - **Circle** (`developers.circle.com/cctp/cctp-supported-blockchains`, read 2026-09-25): **HyperEVM is CCTP V2
   domain 19** — Standard Transfer supported, **Fast Transfer "N/A"**, upfront fees and the forwarding service
-  supported. (The full domain list read that day: 0 Ethereum · 1 Avalanche · 2 OP · 3 Arbitrum · 5 Solana · 6
+  supported. **The fee endpoint, read 22:31:40 UTC, says what "N/A" means:** `GET https://iris-api.circle.com/v2/burn/USDC/fees/6/19`
+  → `[{"finalityThreshold":1000,"minimumFee":1.3},{"finalityThreshold":2000,"minimumFee":0}]` — **Fast is offered
+  INTO HyperEVM at 1.3 bp**, the Base → Solana schedule; `GET …/fees/19/6` →
+  `[{"finalityThreshold":1000,"minimumFee":0},{"finalityThreshold":2000,"minimumFee":0}]` — **out of HyperEVM both
+  thresholds are priced at 0**, consistent with a source chain on which Fast is not available (a first draft of the
+  design read "N/A" as both directions; a parallel session's read of the same endpoint caught it). (The full domain list read that day: 0 Ethereum · 1 Avalanche · 2 OP · 3 Arbitrum · 5 Solana · 6
   Base · 7 Polygon · 9 Aptos · 10 Unichain · 11 Linea · 12 Codex · 13 Sonic · 14 World Chain · 15 Monad · 16 Sei
   · 17 BNB · 18 XDC · **19 HyperEVM** · 21 Ink · 22 Plume · 25 Starknet · 26 Arc · 27 Stellar · 28 EDGE · 29
   Injective · 30 Morph · 31 Pharos · 32 Cronos · 33 Plasma · 37 X Layer.)

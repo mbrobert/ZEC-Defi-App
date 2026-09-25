@@ -40,7 +40,7 @@ and today's (§2), which on a 2× short is most of the distance to liquidation i
    │  the SAME account contract shape as OilskinAccount on Base: exec / execAsKeeper / grant / revoke,
    │  reentrancy guard, the peripheral rule; plus a PerpGrant and an entry record (§3)
    │
-   ├─ USDC in:  Base OilskinAccount ─CCTP domain 6→19 (Standard only)─▶ this account (HyperEVM USDC)
+   ├─ USDC in:  Base OilskinAccount ─CCTP domain 6→19 (Fast 1.3 bp, or Standard)─▶ this account (HyperEVM USDC)
    │            ─ERC-20 transfer to USDC's system address─▶ HyperCore spot balance of THIS address
    │            ─CoreWriter 7 "USD class transfer"─▶ HyperCore perp balance   (§6)
    │
@@ -49,7 +49,7 @@ and today's (§2), which on a 2× short is most of the distance to liquidation i
    │
    ├─ reads: precompiles 0x800 position · 0x801 spot balance · 0x803 withdrawable · 0x806 mark · 0x807 oracle
    │
-   └─ USDC out: CoreWriter 13 "send asset" ─▶ HyperEVM ─CCTP 19→6─▶ the user's Base OilskinAccount
+   └─ USDC out: CoreWriter 13 "send asset" ─▶ HyperEVM ─CCTP 19→6 (Standard only)─▶ the user's Base OilskinAccount
 
  keeper (agent/, a third chain adapter): reads the precompiles + an independent price, values the short as an
  EQUIVALENT HF (§4), runs the SAME shared ladder, and acts through execAsKeeper inside the PerpGrant:
@@ -77,7 +77,7 @@ persist before send, confirm by reading the world). The three things that are ne
 | CoreWriter | `0x3333…3333`, 544 bytes of code, `sendRawAction(bytes)` `0x17938e13` in its dispatch table; **the position belongs to the calling contract** | `cast code`, 2026-09-14 |
 | Read precompiles | `0x…0806` mark and `0x…0807` oracle match the API to the last digit; `0x…0800` `position(address,uint16)` returns six words and does not revert | 2026-09-14 |
 | HyperEVM | chain id **999**, `https://rpc.hyperliquid.xyz/evm` | 2026-09-14 |
-| CCTP | **HyperEVM is CCTP V2 domain 19** — Standard Transfer ✅, **Fast Transfer N/A**, upfront fees ✅, forwarding ✅ | Circle's supported-blockchains page, 2026-09-25 |
+| CCTP | **HyperEVM is CCTP V2 domain 19.** As a **destination** Fast is offered: `/v2/burn/USDC/fees/6/19` → Fast **1.3 bp**, Standard 0 (the Base → Solana schedule). As a **source** it is Standard only: the supported-chains table marks Fast "N/A" and `/v2/burn/USDC/fees/19/6` prices both thresholds at 0 | Circle's supported-blockchains page and fee endpoint, 2026-09-25 22:31 UTC (facts §6) |
 
 **Read from Hyperliquid's documentation, quoted in facts §6 [doc]** — the rules the health model uses:
 maintenance margin is *"half of the initial margin at max leverage"*, so **5 % of notional** in table 52's
@@ -241,7 +241,9 @@ account as `mintRecipient` (a 20-byte address left-padded, the Base form). That 
 `setPerpRecipient(account)` (owner, 20 bytes, checked to be a clone of the perp factory by address derivation
 where possible — Base cannot verify HyperEVM state, so this is the same O-4 shape as the Solana recipient, and
 the UI derives it) and a `burnToPerp(amount, maxFee, minFinalityThreshold)` under the same `CrossChainDisabled`
-guard. **HyperEVM has no Fast Transfer**: every crossing is Standard, minutes, fee 0 today [to read]. The
+guard. **Inbound may be Fast** — 6→19 prices Fast at 1.3 bp and Standard at 0, the same schedule as Base → Solana, so
+the keeper's `chooseCctpFinality` applies unchanged; **the way back is Standard only** — 19→6 prices both thresholds at
+0 and HyperEVM as a source waits for its own finality, minutes (both read 2026-09-25 22:31 UTC, facts §6). The
 arrival on HyperEVM is a plain `receiveMessage` any relayer may send (Stream C's delivery, on an EVM chain
 this time — simpler than Solana's); then the account moves the USDC to HyperCore (system-address transfer) and
 into the perp balance (action 7) in its `open`.
@@ -250,8 +252,8 @@ into the perp balance (action 7) in its `open`.
 19→6 to the user's Base account. Three signatures if the user drives it; one owner instruction on the account
 does the first two, the burn is the third.
 
-**The reserve.** The top-up rung needs USDC that is *already on HyperCore* — a crossing takes minutes and the
-rung exists because minutes are too long. So the account holds a **spot-balance reserve**: USDC sitting in the
+**The reserve.** The top-up rung needs USDC that is *already on HyperCore* — an inbound crossing is seconds at
+best, minutes when Fast is short, and then two more hops on HyperEVM; the rung exists because none of that is zero. So the account holds a **spot-balance reserve**: USDC sitting in the
 HyperCore spot balance, never in the perp balance (where it would already be counted as margin and buy
 nothing at the rung), sized as the Solana reserve is: the top-up the rung-2 crossing requires at the chosen
 entry, `k ×` that amount (Advanced may set `k`; Simple takes the default), refused short at `open` and at
@@ -308,7 +310,7 @@ reserve, the keeper's last action, the exit hatch (`close` then `withdrawToBase`
    refuses to act when a read does not decode.
 7. **Backstop liquidation keeps the maintenance margin**; partial liquidation over $100 k notional changes the
    size under the keeper's feet (the reader re-reads before every plan).
-8. **A third key, a third chain to be down on**, and no Fast Transfer to it.
+8. **A third key, a third chain to be down on**, and no Fast Transfer *from* it — money comes back in minutes.
 9. **Beta caps apply**: D8's $25,000 per user keeps every position in margin tier 0 and under the partial-
    liquidation size.
 
