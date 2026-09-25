@@ -1,0 +1,1793 @@
+{
+ "readAtIso": {
+  "meta": "2026-09-25T22:16:56Z",
+  "metaAndAssetCtxs": "2026-09-25T22:17:36Z",
+  "fundingHistory": "2026-09-25T22:17:37Z"
+ },
+ "how": "POST https://api.hyperliquid.xyz/info with {\"type\":\"meta\"}, {\"type\":\"metaAndAssetCtxs\"}, {\"type\":\"fundingHistory\",\"coin\":\"ZEC\",\"startTime\":1789340400000}; unauthenticated; bodies verbatim for ZEC, the rest of the universe omitted",
+ "meta": {
+  "universeSize": 234,
+  "collateralToken": 0,
+  "zecIndex": 214,
+  "zec": {
+   "szDecimals": 2,
+   "name": "ZEC",
+   "maxLeverage": 10,
+   "marginTableId": 52
+  },
+  "marginTable52": [
+   52,
+   {
+    "description": "tiered 10x (2)",
+    "marginTiers": [
+     {
+      "lowerBound": "0.0",
+      "maxLeverage": 10
+     },
+     {
+      "lowerBound": "20000000.0",
+      "maxLeverage": 5
+     }
+    ]
+   }
+  ]
+ },
+ "zecAssetCtx": {
+  "funding": "0.0000125",
+  "openInterest": "504883.46",
+  "prevDayPx": "1537.7",
+  "dayNtlVlm": "551357900.5939992666",
+  "premium": "0.0003327266",
+  "oraclePx": "1532.79",
+  "markPx": "1533.3",
+  "midPx": "1533.35",
+  "impactPxs": [
+   "1533.3",
+   "1533.4"
+  ],
+  "dayBaseVlm": "351900.0900000003"
+ },
+ "fundingHistoryZec": {
+  "samples": 288,
+  "firstIso": "2026-09-13T23:00:00Z",
+  "lastIso": "2026-09-25T22:00:00Z",
+  "stats": {
+   "meanAnnualisedPct": 13.55,
+   "medianAnnualisedPct": 10.95,
+   "minAnnualisedPct": -24.02,
+   "maxAnnualisedPct": 147.24,
+   "negativeHours": 12,
+   "realisedPctOverWindow": 0.446
+  },
+  "rows": [
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000082488",
+    "premium": "-0.0004340095",
+    "time": 1789340400023
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0002548357",
+    "time": 1789344000068
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0003224224",
+    "time": 1789347600018
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0001426885",
+    "time": 1789351200022
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000127204",
+    "time": 1789354800024
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0000135026",
+    "time": 1789358400022
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0000368399",
+    "time": 1789362000040
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0001996194",
+    "time": 1789365600057
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0001727779",
+    "time": 1789369200040
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.000019047",
+    "time": 1789372800034
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0001716926",
+    "time": 1789376400007
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0001903206",
+    "time": 1789380000021
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000270487",
+    "time": 1789383600121
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0001382327",
+    "time": 1789387200046
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0003584309",
+    "time": 1789390800014
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0003628795",
+    "time": 1789394400028
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0001818111",
+    "time": 1789398000030
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000513956",
+    "time": 1789401600030
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000377932",
+    "time": 1789405200041
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0000016326",
+    "time": 1789408800060
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0005122298",
+    "time": 1789412400016
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000181088",
+    "premium": "0.0006448702",
+    "time": 1789416000079
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0005475702",
+    "time": 1789419600027
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0002384208",
+    "time": 1789423200047
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0001892456",
+    "time": 1789426800132
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000947195",
+    "time": 1789430400024
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000148883",
+    "time": 1789434000042
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0001827169",
+    "time": 1789437600052
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000406323",
+    "time": 1789441200097
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000689599",
+    "time": 1789444800037
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0000743066",
+    "time": 1789448400016
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0000160194",
+    "time": 1789452000003
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0000154467",
+    "time": 1789455600083
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000516328",
+    "time": 1789459200008
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0002124356",
+    "time": 1789462800049
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000582918",
+    "time": 1789466400030
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000459665",
+    "time": 1789470000036
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0002645679",
+    "time": 1789473600039
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0003443824",
+    "time": 1789477200117
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000120321",
+    "premium": "-0.0004037429",
+    "time": 1789480800005
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000028317",
+    "premium": "-0.0004773464",
+    "time": 1789484400050
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0001829676",
+    "time": 1789488000014
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.000010184",
+    "premium": "-0.0004185281",
+    "time": 1789491600014
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0002102413",
+    "time": 1789495200017
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0002221326",
+    "time": 1789498800047
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0001222122",
+    "time": 1789502400033
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0000321998",
+    "time": 1789506000077
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000527166",
+    "time": 1789509600043
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000764583",
+    "time": 1789513200062
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000098562",
+    "time": 1789516800021
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000072302",
+    "time": 1789520400024
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.000196262",
+    "time": 1789524000058
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0001429697",
+    "time": 1789527600035
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0000502721",
+    "time": 1789531200018
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000382853",
+    "time": 1789534800004
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0002400528",
+    "time": 1789538400081
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.000034328",
+    "time": 1789542000026
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0002851638",
+    "time": 1789545600035
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0002998884",
+    "time": 1789549200091
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0002366962",
+    "time": 1789552800004
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0001222875",
+    "time": 1789556400029
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0000595983",
+    "time": 1789560000079
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0000801357",
+    "time": 1789563600018
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0000864483",
+    "time": 1789567200013
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0003888746",
+    "time": 1789570800012
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000059802",
+    "premium": "-0.0004521584",
+    "time": 1789574400037
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000329724",
+    "time": 1789578000112
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0002137621",
+    "time": 1789581600011
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000312094",
+    "premium": "0.0007496755",
+    "time": 1789585200054
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0001663632",
+    "time": 1789588800091
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000651195",
+    "time": 1789592400031
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0002176985",
+    "time": 1789596000002
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "-0.0000225085",
+    "premium": "-0.0006800681",
+    "time": 1789599600022
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000010779",
+    "premium": "-0.0004913765",
+    "time": 1789603200048
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0002230059",
+    "time": 1789606800065
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0003164618",
+    "time": 1789610400031
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000029619",
+    "premium": "-0.0004763047",
+    "time": 1789614000045
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "-0.0000274225",
+    "premium": "-0.0007193796",
+    "time": 1789617600038
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "-0.0000002392",
+    "premium": "-0.0005019136",
+    "time": 1789621200068
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0001374479",
+    "time": 1789624800010
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0001998384",
+    "time": 1789628400016
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000110557",
+    "premium": "-0.0004115542",
+    "time": 1789632000011
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000007523",
+    "premium": "-0.0004939819",
+    "time": 1789635600001
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000016588",
+    "premium": "-0.0004867294",
+    "time": 1789639200041
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0002846457",
+    "time": 1789642800058
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000091006",
+    "premium": "-0.000427195",
+    "time": 1789646400058
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "-0.0000052751",
+    "premium": "-0.0005422005",
+    "time": 1789650000018
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "-0.0000246785",
+    "premium": "-0.0006974279",
+    "time": 1789653600029
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "-0.0000193513",
+    "premium": "-0.0006548103",
+    "time": 1789657200000
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000058642",
+    "premium": "-0.0004530866",
+    "time": 1789660800021
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "-0.0000125591",
+    "premium": "-0.0006004731",
+    "time": 1789664400089
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0002950254",
+    "time": 1789668000043
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000062876",
+    "premium": "-0.000449699",
+    "time": 1789671600007
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0003184917",
+    "time": 1789675200068
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000067835",
+    "premium": "-0.0004457322",
+    "time": 1789678800016
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "-0.00000406",
+    "premium": "-0.0005324802",
+    "time": 1789682400006
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000002293",
+    "premium": "-0.0004981658",
+    "time": 1789686000018
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "-0.0000063124",
+    "premium": "-0.0005504993",
+    "time": 1789689600005
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "-0.0000004475",
+    "premium": "-0.0005035802",
+    "time": 1789693200106
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0003030423",
+    "time": 1789696800015
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0002073317",
+    "time": 1789700400050
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0000194762",
+    "time": 1789704000030
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0002792115",
+    "time": 1789707600009
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0001497841",
+    "time": 1789711200035
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000849678",
+    "time": 1789714800058
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000622368",
+    "time": 1789718400019
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.000131354",
+    "time": 1789722000028
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0001390368",
+    "time": 1789725600041
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0003054039",
+    "time": 1789729200059
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0002216982",
+    "time": 1789732800005
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000280675",
+    "time": 1789736400054
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0000886847",
+    "time": 1789740000014
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0003619886",
+    "time": 1789743600019
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0001851571",
+    "time": 1789747200023
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000329552",
+    "time": 1789750800033
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000305379",
+    "time": 1789754400069
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000077192",
+    "time": 1789758000083
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0000320925",
+    "time": 1789761600036
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.000050156",
+    "time": 1789765200033
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0002271253",
+    "time": 1789768800024
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0001552501",
+    "time": 1789772400009
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000144952",
+    "premium": "0.0006159614",
+    "time": 1789776000048
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0004618395",
+    "time": 1789779600049
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0004206524",
+    "time": 1789783200035
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0003311627",
+    "time": 1789786800051
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0003124337",
+    "time": 1789790400012
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.000011817",
+    "premium": "-0.0004054637",
+    "time": 1789794000045
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0003786781",
+    "time": 1789797600067
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0001670455",
+    "time": 1789801200050
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0001754054",
+    "time": 1789804800095
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0001292778",
+    "time": 1789808400016
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0002639151",
+    "time": 1789812000053
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000913223",
+    "time": 1789815600055
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000934054",
+    "time": 1789819200053
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0001744337",
+    "time": 1789822800026
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000299674",
+    "time": 1789826400022
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000617709",
+    "time": 1789830000035
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0002457082",
+    "time": 1789833600032
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.000173632",
+    "time": 1789837200015
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0003285982",
+    "time": 1789840800037
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0003626084",
+    "time": 1789844400030
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0001704997",
+    "time": 1789848000021
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0002782278",
+    "time": 1789851600054
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "-0.0000097448",
+    "premium": "-0.0005779583",
+    "time": 1789855200034
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0003934619",
+    "time": 1789858800052
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0002014878",
+    "time": 1789862400057
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000501838",
+    "time": 1789866000055
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0002278366",
+    "time": 1789869600005
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.000378961",
+    "time": 1789873200039
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0003725155",
+    "time": 1789876800051
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "-0.0000089511",
+    "premium": "-0.0005716092",
+    "time": 1789880400014
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0003505369",
+    "time": 1789884000017
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.00020735",
+    "time": 1789887600013
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000827213",
+    "time": 1789891200021
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000770721",
+    "time": 1789894800064
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0001012834",
+    "time": 1789898400052
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000747251",
+    "time": 1789902000044
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0000427584",
+    "time": 1789905600043
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.000305365",
+    "time": 1789909200064
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0002660742",
+    "time": 1789912800025
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0001415963",
+    "time": 1789916400037
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0002438582",
+    "time": 1789920000035
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0004518623",
+    "time": 1789923600004
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000365161",
+    "premium": "0.0007921291",
+    "time": 1789927200038
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.000053341",
+    "premium": "0.0009267281",
+    "time": 1789930800013
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000767823",
+    "premium": "0.0011142586",
+    "time": 1789934400046
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0001680845",
+    "premium": "0.0018446757",
+    "time": 1789938000056
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000578301",
+    "premium": "0.000962641",
+    "time": 1789941600032
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0001197818",
+    "premium": "0.0014582542",
+    "time": 1789945200033
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000936542",
+    "premium": "0.0012492336",
+    "time": 1789948800072
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0001494831",
+    "premium": "0.0016958647",
+    "time": 1789952400054
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000941498",
+    "premium": "0.0012531981",
+    "time": 1789956000032
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000551176",
+    "premium": "0.0009409404",
+    "time": 1789959600007
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.000061668",
+    "premium": "0.0009933439",
+    "time": 1789963200070
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.000055032",
+    "premium": "0.0009402558",
+    "time": 1789966800008
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000612503",
+    "premium": "0.0009900022",
+    "time": 1789970400040
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.000016513",
+    "premium": "0.0006321042",
+    "time": 1789974000047
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0005072988",
+    "time": 1789977600069
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000158915",
+    "premium": "0.0006271322",
+    "time": 1789981200073
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0003529127",
+    "time": 1789984800022
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0003116641",
+    "time": 1789988400040
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0003568654",
+    "time": 1789992000012
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0005779505",
+    "time": 1789995600016
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0003750268",
+    "time": 1789999200050
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0003341842",
+    "time": 1790002800016
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0000903206",
+    "time": 1790006400108
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.000079762",
+    "time": 1790010000083
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000479738",
+    "time": 1790013600013
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0000271985",
+    "time": 1790017200031
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000054787",
+    "time": 1790020800056
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.000112177",
+    "time": 1790024400050
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0001639026",
+    "time": 1790028000000
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0002974958",
+    "time": 1790031600034
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0003686535",
+    "time": 1790035200028
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0004836252",
+    "time": 1790038800043
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0003697717",
+    "time": 1790042400020
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0005646259",
+    "time": 1790046000012
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.000599271",
+    "time": 1790049600050
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000183482",
+    "premium": "0.0006467854",
+    "time": 1790053200001
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0005772249",
+    "time": 1790056800032
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0005550751",
+    "time": 1790060400019
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0003176375",
+    "time": 1790064000012
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0002229837",
+    "time": 1790067600013
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0001556773",
+    "time": 1790071200001
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0001697875",
+    "time": 1790074800014
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0005405006",
+    "time": 1790078400053
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000188089",
+    "premium": "0.0006504714",
+    "time": 1790082000080
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0004712661",
+    "time": 1790085600059
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0004682766",
+    "time": 1790089200000
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000423155",
+    "premium": "0.000838524",
+    "time": 1790092800071
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000190105",
+    "premium": "0.000652084",
+    "time": 1790096400085
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000320493",
+    "premium": "0.0007563945",
+    "time": 1790100000057
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0002379123",
+    "time": 1790103600072
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0005244835",
+    "time": 1790107200040
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0005604805",
+    "time": 1790110800004
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000356361",
+    "premium": "0.0007850887",
+    "time": 1790114400062
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000628112",
+    "premium": "0.0010024898",
+    "time": 1790118000027
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0005055916",
+    "time": 1790121600031
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000645551",
+    "time": 1790125200061
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0000593965",
+    "time": 1790128800025
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000111274",
+    "time": 1790132400051
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000111091",
+    "time": 1790136000024
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0001520627",
+    "time": 1790139600009
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0002863628",
+    "time": 1790143200005
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.000017635",
+    "time": 1790146800002
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0002753",
+    "time": 1790150400033
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0001652806",
+    "time": 1790154000065
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0000014971",
+    "time": 1790157600062
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0001119884",
+    "time": 1790161200047
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0003895683",
+    "time": 1790164800030
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0002222549",
+    "time": 1790168400050
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0004222776",
+    "time": 1790172000043
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0004390114",
+    "time": 1790175600003
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0001876032",
+    "time": 1790179200048
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0003292533",
+    "time": 1790182800005
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0002766911",
+    "time": 1790186400074
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0001101264",
+    "time": 1790190000015
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0000097098",
+    "time": 1790193600071
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0002356892",
+    "time": 1790197200118
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0003730368",
+    "time": 1790200800015
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0002164116",
+    "time": 1790204400039
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0001244673",
+    "time": 1790208000045
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0001980606",
+    "time": 1790211600025
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0002944855",
+    "time": 1790215200029
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000550801",
+    "time": 1790218800001
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0000025054",
+    "time": 1790222400038
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0000662231",
+    "time": 1790226000007
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0001139052",
+    "time": 1790229600061
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.000139512",
+    "time": 1790233200056
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0001199543",
+    "time": 1790236800017
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0001842158",
+    "time": 1790240400034
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0002234439",
+    "time": 1790244000011
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0003938073",
+    "time": 1790247600045
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0002507829",
+    "time": 1790251200065
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0004104993",
+    "time": 1790254800003
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.000511628",
+    "time": 1790258400035
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000142238",
+    "premium": "0.0006137906",
+    "time": 1790262000014
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000202117",
+    "premium": "0.0006616938",
+    "time": 1790265600030
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000362449",
+    "premium": "0.0007899592",
+    "time": 1790269200058
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000558626",
+    "premium": "0.0009469005",
+    "time": 1790272800058
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000411904",
+    "premium": "0.0008295236",
+    "time": 1790276400018
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.000023341",
+    "premium": "0.000686728",
+    "time": 1790280000054
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0003153063",
+    "time": 1790283600088
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0003919775",
+    "time": 1790287200013
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0001044639",
+    "time": 1790290800038
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0004360641",
+    "time": 1790294400076
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0005651476",
+    "time": 1790298000027
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0005225469",
+    "time": 1790301600059
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.000556232",
+    "time": 1790305200086
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0004117914",
+    "time": 1790308800036
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0004328258",
+    "time": 1790312400040
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0003838488",
+    "time": 1790316000121
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0004452256",
+    "time": 1790319600043
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0005521922",
+    "time": 1790323200066
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.000028405",
+    "premium": "0.0007272399",
+    "time": 1790326800051
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0004823467",
+    "time": 1790330400040
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0005535723",
+    "time": 1790334000005
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000348994",
+    "premium": "0.0007791952",
+    "time": 1790337600040
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0003858571",
+    "time": 1790341200017
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0005415877",
+    "time": 1790344800040
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0004178437",
+    "time": 1790348400042
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0001718851",
+    "time": 1790352000015
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.000116868",
+    "time": 1790355600045
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000567135",
+    "time": 1790359200046
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "-0.0000349214",
+    "time": 1790362800061
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0001515197",
+    "time": 1790366400094
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0003389332",
+    "time": 1790370000019
+   },
+   {
+    "coin": "ZEC",
+    "fundingRate": "0.0000125",
+    "premium": "0.0001783093",
+    "time": 1790373600065
+   }
+  ]
+ }
+}

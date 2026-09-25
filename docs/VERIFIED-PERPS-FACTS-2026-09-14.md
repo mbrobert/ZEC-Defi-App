@@ -134,3 +134,93 @@ chains **via CCTP** — the same Circle protocol the cross-chain loop already us
 **Not yet verified:** the Hyperliquid deposit address and its CCTP domain id, whether a deposit credits a
 contract address the same way it credits an externally owned account, and the minimum deposit. Each must be
 read before code depends on it.
+
+## 6 · Addendum (2026-09-25 22:16–22:18 UTC) · the margin table decoded, twelve more days of funding, the venue's own margining rules, and CCTP's HyperEVM domain
+
+Read for the D1 design (`docs/PERPS-DESIGN-2026-09-25.md`), the same way as §2–§4: the venue's own API,
+unauthenticated, and the venue's own documentation quoted verbatim where a rule is taken from a page. The raw
+bodies for ZEC are in `docs/research/hyperliquid-zec-2026-09-25.json`.
+
+### The API, `POST https://api.hyperliquid.xyz/info`
+
+| Read | Value | Time |
+|---|---|---|
+| `meta` — ZEC | index **214** of 234, `{"szDecimals": 2, "name": "ZEC", "maxLeverage": 10, "marginTableId": 52}` — unchanged since 2026-09-13 | 22:16:56Z |
+| `meta.marginTables[52]` | **`{"description": "tiered 10x (2)", "marginTiers": [{"lowerBound": "0.0", "maxLeverage": 10}, {"lowerBound": "20000000.0", "maxLeverage": 5}]}`** — §4's "margin table behind marginTableId: 52", now read rather than assumed: 10× up to $20 M notional, 5× above | 22:16:56Z |
+| `meta.collateralToken` | **0** (USDC) | 22:16:56Z |
+| `metaAndAssetCtxs` — ZEC | mark **1,533.30**, oracle **1,532.79**, mid 1,533.35, previous-day price 1,537.70, open interest **504,883.46 ZEC ≈ $774 M** at the mark, 24-hour notional volume **$551,357,900**, funding **0.0000125/h = +10.95 %/yr** to shorts, premium 0.00033 | 22:17:36Z |
+| `fundingHistory`, ZEC, from 2026-09-13T23:00Z | **288 hourly samples to 2026-09-25T22:00Z (12.0 d)**: mean **+13.55 %/yr**, median +10.95 %, min **−24.02 %**, max **+147.24 %**, negative in **12 / 288 = 4.2 %** of hours, realised 0.446 % over the window ≈ +13.55 %/yr | 22:17:37Z |
+
+**ZEC moved from $1,063.80 (2026-09-13T23:52Z) to $1,533.30 — +44.1 % in twelve days.** On a short with
+$0.50 of margin per dollar of notional that is the whole distance to liquidation (design §4).
+
+### The rules, quoted from Hyperliquid's documentation (`hyperliquid.gitbook.io/hyperliquid-docs`, read 2026-09-25)
+
+- **Margining** (`/trading/margining`): *"The margin required to open a position is position_size × mark_price /
+  leverage."* *"The maintenance margin is currently set to half of the initial margin at max leverage."* *"Cross
+  margin is the default, which allows for maximal capital efficiency by sharing collateral between all other
+  cross margin positions."* *"Isolated margin is also supported, which allows an asset's collateral to be
+  constrained to that asset."* *"The leverage of an existing position can be increased without closing the
+  position."* *"Unrealized pnl for cross margin positions will automatically be available as initial margin for
+  new positions, while isolated positions will apply unrealized pnl as additional margin for the open position."*
+  *"Unrealized pnl can be withdrawn from isolated positions or cross account, but only if the remaining margin is
+  at least 10% of the total notional position value of all open positions."*
+- **Margin tiers** (`/trading/margin-tiers`): *"maintenance_margin = notional_position_value ×
+  maintenance_margin_rate − maintenance_deduction"*; *"maintenance_margin_rate(tier = n) = (Initial Margin Rate at
+  Maximum leverage at tier n) / 2"*; *"maintenance_deduction(tier = 0) = 0"*, and for tier n the previous
+  deduction plus *"notional_position_lower_bound(tier = n) × (maintenance_margin_rate(tier = n) −
+  maintenance_margin_rate(tier = n − 1))"* — so ZEC's rate is **5 % under $20 M notional, 10 % above**, continuous.
+- **Liquidations** (`/trading/liquidations`): *"A liquidation event occurs when a trader's positions move against
+  them to the point where the account equity falls below the maintenance margin."* *"When the account equity drops
+  below maintenance margin, the positions are first attempted to be entirely closed by sending market orders to
+  the book."* *"If the account equity drops below 2/3 of the maintenance margin without successful liquidation
+  through the book, a backstop liquidation happens through the liquidator vault."* *"During backstop liquidation,
+  the maintenance margin is not returned to the user."* *"Liquidations use the mark price, which combines external
+  CEX prices with Hyperliquid's book state."* *"For liquidatable positions larger than 100k USDC (10k USDC on
+  testnet for easier testing), only 20% of the position will be sent as a market liquidation order to the book."*
+  **`liq_price = price − side × margin_available / position_size / (1 − l × side)`**, *"side = 1 for long and −1
+  for short"*, *"margin_available (cross) = account_value − maintenance_margin_required"*, *"margin_available
+  (isolated) = isolated_margin − maintenance_margin_required"*, *"l = 1 / MAINTENANCE_LEVERAGE"*.
+- **Funding** (`/trading/funding`): *"The funding rate on Hyperliquid is paid every hour"*, on
+  *"position_size × oracle_price × funding_rate"*; *"Funding Rate (F) = Average Premium Index (P) + clamp
+  (interest rate − Premium Index (P), −0.0005, 0.0005)"*, the interest rate *"predetermined at 0.01% every 8
+  hours"*; *"Funding on Hyperliquid is capped at 4%/hour"*; *"The funding rate is added or subtracted from the
+  balance of contract holders at the funding interval."*
+- **CoreWriter** (`/for-developers/hyperevm/interacting-with-hypercore`): encoding *"Byte 1: Encoding version"*
+  (version 1), *"Bytes 2-4: Action ID"* big-endian; limit order **id 1** `(asset, isBuy, limitPx, sz, reduceOnly,
+  encodedTif, cloid)` as `(uint32, bool, uint64, uint64, bool, uint8, uint128)` with *"limitPx and sz should be
+  sent as 10^8 × the human readable value"*; *"Order actions and vault transfers sent from CoreWriter are delayed
+  onchain for a few seconds."* The action table, as the page lists it: 1 limit order · 2 vault transfer · 3 token
+  delegate · 4 staking deposit · 5 staking withdraw · 6 spot send · **7 USD class transfer `(ntl, toPerp)` as
+  `(uint64, bool)`** · 8 finalize EVM contract · 9 add API wallet · 10 cancel by oid · 11 cancel by cloid · 12
+  approve builder fee · **13 send asset `(destination, subAccount, source_dex, destination_dex, token, wei)`** ·
+  15 borrow/lend operation · 16 set abstraction · 17 outcome operation. **No action sets leverage or moves
+  isolated margin.** *"The precompile addresses start at 0x0000000000000000000000000000000000000800."*
+- **Transfers** (`/for-developers/hyperevm/hypercore-less-than-greater-than-hyperevm-transfers`): *"Transferring
+  tokens from HyperEVM to HyperCore can be done using an ERC20 transfer with the corresponding system address as
+  the destination."* *"The tokens are credited to the Core based on the emitted Transfer from the linked contract."*
+  *"Transferring tokens from HyperCore to HyperEVM can be done using a sendAsset action (or via the frontend) with
+  the corresponding system address as the destination."*
+- **Deposits** (`/onboarding/how-to-start-trading`): *"You can send USDC on Arbitrum/Ethereum/Base/Polygon to the
+  deposit address shown"*; *"You can also transfer USDC from other chains via CCTP."*
+- **Circle** (`developers.circle.com/cctp/cctp-supported-blockchains`, read 2026-09-25): **HyperEVM is CCTP V2
+  domain 19** — Standard Transfer supported, **Fast Transfer "N/A"**, upfront fees and the forwarding service
+  supported. (The full domain list read that day: 0 Ethereum · 1 Avalanche · 2 OP · 3 Arbitrum · 5 Solana · 6
+  Base · 7 Polygon · 9 Aptos · 10 Unichain · 11 Linea · 12 Codex · 13 Sonic · 14 World Chain · 15 Monad · 16 Sei
+  · 17 BNB · 18 XDC · **19 HyperEVM** · 21 Ink · 22 Plume · 25 Starknet · 26 Arc · 27 Stellar · 28 EDGE · 29
+  Injective · 30 Morph · 31 Pharos · 32 Cronos · 33 Plasma · 37 X Layer.)
+
+### From secondary sources only — NOT the venue's own file
+
+The `position` precompile's struct, **`int64 szi; uint64 entryNtl; int64 isolatedRawUsd; uint32 leverage; bool
+isIsolated`**, is quoted by two developer guides (Chainstack, Ambit Labs) from Hyperliquid's `L1Read.sol`, which
+the docs attach as a file this read could not open. Six words were read from `0x…0800` on 2026-09-14 and none
+decoded. It stays **[secondary]** until a real position is decoded on testnet.
+
+### Still not verified (the D0b gate, `PERPS-DESIGN-2026-09-25.md` §2)
+
+The limit-order bytes on testnet; the `position` struct from the primary file or a live decode; whether a
+contract address is credited on HyperCore by the system-address transfer; USDC's HyperEVM contract and system
+address; the leverage a fresh contract account carries at its first order; Circle's CCTP V2 contracts on
+HyperEVM and the 6→19 / 19→6 fees; what a backstop liquidation leaves; a test that action 7 and action 13 do
+what the table says from a contract.

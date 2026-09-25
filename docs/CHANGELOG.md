@@ -3,6 +3,38 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-25 — The perps design (D1): a short's distance to liquidation as an equivalent health factor, so the ladder stays one ladder
+
+BUILD-PLAN Stream D's first step after the facts, and the piece §4 calls "the one with no precedent in the tree":
+`docs/PERPS-DESIGN-2026-09-25.md`, written before any code, for the founder to read (D1's own gate). Nothing is
+built. HF = health factor; CCTP = Circle's Cross-Chain Transfer Protocol.
+
+- **Two facts read today changed the shape** (`VERIFIED-PERPS-FACTS-2026-09-14.md` §6, raw bodies in
+  `docs/research/hyperliquid-zec-2026-09-25.json`): Hyperliquid's `meta` now carries the margin tables, and ZEC's
+  table 52 is "tiered 10x (2)" — 10× to $20 M notional, 5× above, so the maintenance margin is **5 %** for every
+  beta-sized position (D0b's third item, settled); and Circle lists **HyperEVM as CCTP V2 domain 19, Standard
+  Transfer only** — every crossing is minutes, which is why the design keeps a reserve on HyperCore rather than
+  bridging at a rung. CoreWriter's action table (quoted whole) has **no action that sets leverage or moves isolated
+  margin**, so the account runs **cross margin with one position** and tops up through action 7. ZEC itself went
+  **+44.1 % in the twelve days** between the two reads — on a 2× short that is the whole distance to liquidation.
+- **The unprecedented piece, answered in one mapping.** The venue's own `liq_price` formula gives a short's up-move
+  to liquidation `d`; a borrow at health factor HF dies on a fall of `1 − 1/HF`; so the short's **equivalent HF is
+  `1 / (1 − d)`** and `packages/shared`'s `ladderFor`, `hysteresisFor`, D10's cap and the 1.05 floor run on it
+  unchanged — the emergency rung is a **4.76 % move** on either kind of position, which is what the seconds of
+  CoreWriter delay are for. The slider is the up-move ↔ the margin, both ways, with Sheltered at L = 1.5 (58.7 %)
+  and Expert at L = 2 (42.9 %) as marks; the floor is proposed at L = 2 and is the founder's.
+- **What else the design fixes:** the account (`OilskinAccount`'s shape with a `PerpGrant` in the Solana grant's
+  shape, because nothing leaves the account and what must be bounded is how much of the short the keeper may
+  close); the keeper's one instruction `protect(rung, topUp, reduceSz)` judged by the next read, not the sending
+  receipt; USDC in and out through the user's Base account as the hub (one router change: a perp recipient and a
+  burn to domain 19); the reserve in the HyperCore spot balance; the screen with the measured funding history and
+  never a rate; nine module-specific risks; the test plan in the Solana module's order with **testnet as the
+  localnet** (a forked HyperEVM cannot run the precompiles); seven decisions for the founder (§10); and a
+  seven-item D0b gate (§2) that no encoder, valuation or rung is written before.
+- **Named and not built:** the Kamino-funded composition — a loan and a short with opposite liquidation directions,
+  each leg's gain the other's rescue over the CCTP rail — is v1.1 (§6).
+- No suite changed; the tree's counts are the previous entry's.
+
 ## 2026-09-25 — The keeper chooses Fast or Standard from Circle's live numbers, and the Base burner adapter exists
 
 `CROSSCHAIN-RUNBOOK-2026-09-13.md` §5's open item and `ROADMAP.md` §1's item 4: *"the keeper sends whatever

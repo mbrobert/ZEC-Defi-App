@@ -1275,6 +1275,63 @@ must say the keeper can sell ZEC, and how much; the program's upgrade authority
 goes to a Squads multisig at deploy, and until that handover a single deployer
 key holds it.
 
+## 23 · Perps module: a ZEC short on Hyperliquid (design stage, 2026-09-25)
+
+Nothing of this module is built; the risks are recorded now because the design
+(`PERPS-DESIGN-2026-09-25.md`) and the copy it specifies depend on them. Every
+number is from `VERIFIED-PERPS-FACTS-2026-09-14.md` (§6 read live 2026-09-25).
+
+**Risk — the short is liquidated by a rise.** Every other position Oilskin
+protects dies when collateral falls; this one dies when ZEC goes up, and ZEC
+rose **44.1 % between 2026-09-13 and 2026-09-25**. Under the venue's own rule
+(maintenance margin 5 % of notional in ZEC's tier, liquidation at the mark) a
+short with $0.50 of margin per dollar of notional is liquidated on a 42.9 %
+rise; with $0.20, on 14.3 %. The mitigation is the design's §4: the up-move to
+liquidation expressed as an equivalent health factor, the shared ladder run on
+it, the keeper's top-up from a reserve held on HyperCore, a reduce of a third,
+a close at the emergency rung — and a floor on what may be opened at all,
+proposed at $0.50 per dollar. What it does not mitigate: a rise faster than the
+seconds a CoreWriter action takes to land, and a book too thin to fill a
+reduce-only order at the band.
+
+**Risk — delta-neutral is asserted, not enforced.** Oilskin cannot see the ZEC
+the short is meant to hedge. A user who sells that ZEC holds a naked short and
+every screen after the first says so.
+
+**Risk — funding is a measured history, not a rate, and it flips.** Paid to
+shorts in about 96 % of the 1,028 hours read across three windows, at realised
+paces of +10.7 % to +22.4 % annualised; negative in 3–5 % of hours, as low as
+−64 % annualised in one hour, as high as +241 %. Negative funding drains the
+account balance hourly with no price move; the ladder catches it as a slow fall
+in the distance. The copy shows the windows, the extremes and the negative
+hours, and never a projection (`web/lib/copy.ts` will refuse "yield").
+
+**Risk — the venue's system contracts are the venue's.** CoreWriter and the
+read precompiles are Hyperliquid's and upgradeable by Hyperliquid; the encoding
+the account signs and the layout the keeper decodes are pinned by test and a
+read that does not decode stops every rung (fail closed). CoreWriter order
+actions are "delayed onchain for a few seconds" (the venue's words); the
+emergency rung's 4.76 % floor is what those seconds are for.
+
+**Risk — one venue, one price.** The independent price check is the venue's own
+API against its own precompile — a check that the precompile is honest, not that
+the venue is right. There is no second ZEC perp anywhere that does not hold the
+user's coins to check against (facts §1–§2).
+
+**Risk — a backstop liquidation keeps the maintenance margin**, and positions
+over $100,000 of notional are liquidated 20 % at a time, changing the size under
+the keeper's feet; D8's $25,000 cap keeps beta positions under both.
+
+**Risk — the money moves slowly.** HyperEVM is CCTP domain 19 with Standard
+Transfer only: every crossing to or from the user's Base account is minutes.
+The reserve on HyperCore exists because a rung cannot wait for one; the hatch
+can always empty the reserve (the same honesty as BACKLOG O-6), and the keeper
+reports the shortfall.
+
+**Risk — a third key and a third chain.** The keeper needs a HyperEVM key
+beside its Base and Solana keys; how they live together is the founder's
+decision (`CROSSCHAIN-RUNBOOK-2026-09-13.md` §4).
+
 ## Trust assumptions, in one list
 
 1. The user's wallet key. It owns the account; a lost or stolen key is a lost
