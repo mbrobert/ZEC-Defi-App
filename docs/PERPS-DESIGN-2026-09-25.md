@@ -1,4 +1,4 @@
-# Perps module — design (D1, drafted 2026-09-25; D2 built the same day, nothing deployed)
+# Perps module — design (D1, drafted 2026-09-25; D2 built the same day, D4 on 2026-09-26; nothing deployed)
 
 **Status: a design for the founder to read, BUILD-PLAN Stream D step D1.** Founder's decisions D12 and D13
 (2026-09-14): perps is in beta and Hyperliquid is the venue. This document is the piece BUILD-PLAN §4 calls
@@ -255,6 +255,49 @@ and the position card shows the last 24 hours of funding paid or received, signe
 The keeper key on HyperEVM is a **third key**; the process question of `CROSSCHAIN-RUNBOOK-2026-09-13.md` §4
 item 3 gets a third leg and is still the founder's.
 
+**As built (D4, 2026-09-26 — `agent/src/perps/`, 45 tests; the table above names the design and this paragraph
+names the code).** `reader.ts`: the seven precompile reads `protect` makes (`position`, `spotBalance`,
+`withdrawable`, `markPx`, `oraclePx`, `perpAssetInfo`, `accountMarginSummary`), by `eth_call` at one block, decoded by
+`packages/shared` and each failure recorded by name, never defaulted; `entryOf` and both grants (the account's
+`Permission` on (venue, `protect`) and the venue's `PerpGrant`); the independent mark from the venue's own
+`metaAndAssetCtxs`, the coin checked by name at the index. `valuation.ts`: NO_POSITION / OK / UNKNOWN with rules
+P0–P5 (a read that did not decode; a moved venue parameter; mark against oracle beyond the venue's own bound; the
+API's mark against the precompile's, fresh and within `PERPS_ORACLE_DEVIATION_BPS`; a long or an isolated
+position; a second position on the account); a non-positive account value with a short open is a distance of
+zero, not unknown. `policy.ts`: **the reserve first at every rung** — a top-up keeps the hedge whole and a reduce
+does not (§9 item 6) — then, at the de-risk rung, the smallest reduce that reaches the disarm level plus the plan
+margin, capped at `PERPS_DERISK_FRACTION_BPS` (a third) and the grant's budget; at the close rung the whole short
+under the reduce budget with the reserve beside it; every reduce sized for the worst fill the grant's band allows
+(the shortfall is realised out of the account value the distance is read from); every clamp named; a top-up-only
+grant refused by the owner's choice, not as an exhausted budget. `dispatcher.ts`: the world re-checked at the head,
+both grants judged as `protect` judges them (active, unexpired, `allowCallback`; this keeper, unexpired, the
+account's current epoch; the budgets after the period roll), the plan, a simulation of `execAsKeeper([protect])`
+whose revert is classified by the venue's own error name (`NotGrantedKeeper` / `GrantExpired` / `GrantEpochStale` /
+`RungNotAllowed` / `NoEntry` and the account's `NotGranted` / `NotActivePeripheral` permanent; `RungNotCrossed` /
+`NoPosition` superseding; the budgets, `ReserveShort`, `ReduceExceedsPosition`, `OtherPositionsOpen` transient;
+`VenueParamsChanged` / `MarkOracleDeviation` / `PrecompileReadFailed` failed), the nonce AND the intent persisted
+on the record before the broadcast (`DispatchRecord.perp`: the rung, `topUpE6`, `reduceSz`, the size and the spot
+reserve the plan was made against), and `confirm` that reads the receipt, waits **`PERPS_ACTION_DELAY_BLOCKS`
+(ten by default — the keeper's margin over the venue's "a few seconds", not a chain fact)** and then re-reads the
+position and the reserve: the size moved by `reduceSz` and the spot balance by `topUpE6`, or they did not, and
+the record says which. An IOC that did not fill is CONFIRMED and said — a rung that re-arms and re-plans, not a
+failure — and the budget the venue charged for it is said too. `monitor.ts`: the Base tick order with discovery
+from the factory's logs and the persisted cursor, each account's ladder from `entryOf` through `perpLadderFor`,
+the confirmed-but-ineffective re-arm bounded per rung (the owner told once at the cap; the close rung never
+gives up), the notify copy "your short is N % from liquidation; ZEC is at $P". `keeper.ts`: the chain id and
+the venue's immutables checked against the shared facts before a store is touched (fatal on chain 999, said on
+998), observe-only without `KEEPER_PERPS_PRIVATE_KEY`, the third key a viem account and never referenced again;
+`HYPEREVM_RPC_URL`, `HYPEREVM_CHAIN_ID` (999 | 998), `PERPS_VENUE_ADDRESS`, `PERPS_FACTORY_ADDRESS`,
+`PERPS_STORE_PATH`, `PERPS_DISCOVERY_FROM_BLOCK`, `PERPS_PRICE_SOURCE` (`api` | `precompile-only`, the latter
+testnet-only and loud), `PERPS_INFO_API_URL`, `PERPS_INDEPENDENT_MAX_AGE_S`, `PERPS_ORACLE_DEVIATION_BPS`,
+`PERPS_ACTION_DELAY_BLOCKS`, `PERPS_DERISK_FRACTION_BPS`, `KEEPER_PLAN_MARGIN_BPS`, the poll / deadline /
+watchdog / notify timings, `NOTIFY_WEBHOOK_URL`; `npm run dev:perps -w @zyo/agent`. Funding accrual has no
+module: it moves the account value the distance is read from, and the ladder catches it as §4 says. **Two
+findings for D7** (`RISKS.md` §23): (1) `protect` charges the grant's budgets when the EVM transaction lands,
+before HyperCore has acted, so a reduce-only IOC the book does not fill spends reduce budget and moves nothing —
+a thin book can exhaust a period's budget without closing anything; (2) whether a third is the right de-risk
+fraction is the keeper's question, not the venue's, and the adversarial pass must answer it.
+
 ## 6 · USDC in and out, and the reserve (D5)
 
 **In.** The user's Base `OilskinAccount` is the hub it already is for the cross-chain loop: USDC there — the
@@ -393,7 +436,7 @@ built later); portfolio margin; anything on Base's perps venues (there is no ZEC
 | D1 | this document | **the founder has read it and answered §10** |
 | D2 | §3 — the account, the venue adapter, the router's two functions | Foundry green, ABI regenerated |
 | D3 | §3's adapter against testnet | the D0b bytes accepted live |
-| D4 | §4–§5 — the equivalent HF, the shared ladder, the keeper path | ladder replay green; testnet rungs observed |
+| D4 | §4–§5 — the equivalent HF, the shared ladder, the keeper path (**built 2026-09-26**, §5 "as built") | ladder replay green (45 keeper tests on the scene); testnet rungs observed (D3, the founder's) |
 | D5 | §6 — CCTP 6↔19, the reserve | one crossing each way on Base Sepolia ↔ HyperEVM testnet |
 | D6 | §7 — the wizard, the measured history, the position page | Playwright; banned words green |
 | D7 | §9 item 6 | `docs/AUDIT-<date>.md` |

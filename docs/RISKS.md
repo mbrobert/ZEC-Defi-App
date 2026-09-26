@@ -1344,6 +1344,26 @@ reports the shortfall.
 beside its Base and Solana keys; how they live together is the founder's
 decision (`CROSSCHAIN-RUNBOOK-2026-09-13.md` §4).
 
+**Risk — an order that does not fill still costs budget (found building D4,
+2026-09-26).** `protect` charges the grant's reduce and top-up budgets when the
+EVM transaction lands, before HyperCore has acted; a reduce-only IOC the book
+does not fill at the band spends reduce budget and moves nothing. The keeper
+judges every action by a later read (`PERPS_ACTION_DELAY_BLOCKS`, ten by
+default) and confirms an unfilled order as what it is, so the rung re-arms and
+re-plans — three re-fires for the acting rungs, unbounded for the close — and
+the budget spent is said to the owner each time. A budget sized for one action
+per period can therefore be exhausted by a thin book without a unit of the short
+closing. The wizard's plain-words grant (D6) must say so, and D7 asks whether the
+venue should charge on what a later read shows instead.
+
+**Risk — the keeper's reduce un-hedges.** Design §9 item 6 asks whether the
+keeper can make the hedge worse than doing nothing. The plan's order is the
+answer so far: the reserve first at every rung, size only for what the reserve
+does not reach, capped at a third (`PERPS_DERISK_FRACTION_BPS`), the whole short
+only at the close rung, every reduce sized for the worst fill the grant's band
+allows. Whether a third is the right fraction is D7's to answer adversarially; it
+is a keeper knob, not a venue rule.
+
 ## Trust assumptions, in one list
 
 1. The user's wallet key. It owns the account; a lost or stolen key is a lost

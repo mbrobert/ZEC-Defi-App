@@ -13,7 +13,8 @@
     "verify-abi": "node scripts/verify-abi.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "dev:solana": "tsx src/solana/index.ts",
-    "verify-solana-idl": "node scripts/verify-solana-idl.mjs"
+    "verify-solana-idl": "node scripts/verify-solana-idl.mjs",
+    "dev:perps": "tsx src/perps/index.ts"
   },
   "dependencies": {
     "@zyo/shared": "*",

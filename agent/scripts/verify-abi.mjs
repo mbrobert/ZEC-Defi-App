@@ -34,6 +34,9 @@ const {
   KEEPER_SELECTORS,
   GRANT_SELECTORS,
   KEEPER_GRANT_SHAPE,
+  hyperliquidPerpVenueAbi,
+  PERP_GRANT_SELECTORS,
+  PERP_KEEPER_GRANT_SHAPE,
 } = await import(join(agentRoot, "dist", "src", "abi", "oilskin.js"));
 const { aavePoolAbi, aavePoolDataProviderAbi, aaveOracleAbi, chainlinkAggregatorAbi } = await import(
   join(agentRoot, "dist", "src", "abi", "aave.js")
@@ -130,6 +133,9 @@ compare("AaveV3Venue", aaveVenueAbi, loadArtifact("AaveV3Venue"));
 // interface by that one mutability letter; the reader encodes through the interface either way.)
 compare("ICollateralVenue", collateralVenueAbi, loadArtifact("ICollateralVenue"));
 compare("MorphoBlueVenue", collateralVenueAbi, loadArtifact("MorphoBlueVenue"));
+// The perps keeper (BUILD-PLAN Stream D step D4, 2026-09-26): the venue's views, its one root call and every
+// refusal `protect` can raise, so a simulated revert decodes to its real name.
+compare("HyperliquidPerpVenue", hyperliquidPerpVenueAbi, loadArtifact("HyperliquidPerpVenue"));
 
 // Grant selectors: the keeper refuses to act unless grantOf(keeper, target, selector) is active
 // for exactly these; a drift here would make every dispatch REFUSED (or worse, check the wrong grant).
@@ -161,6 +167,28 @@ checks += 1;
 if (KEEPER_GRANT_SHAPE?.selector !== GRANT_SELECTORS["StrategyRouter.unwind"] || KEEPER_GRANT_SHAPE?.allowCallback !== true) {
   failures += 1;
   console.log("verify-abi: FAIL KEEPER_GRANT_SHAPE must name unwind with allowCallback=true (the router acts back on the account)");
+}
+
+// The perps keeper's own root call: exactly one selector (`protect`), and a grant shape that carries
+// `allowCallback` (the venue acts back on the account through `execFromPeripheral`).
+checks += 1;
+const perpKeys = Object.keys(PERP_GRANT_SELECTORS ?? {}).sort();
+if (JSON.stringify(perpKeys) !== JSON.stringify(["HyperliquidPerpVenue.protect"])) {
+  failures += 1;
+  console.log(`verify-abi: FAIL PERP_GRANT_SELECTORS must be exactly {HyperliquidPerpVenue.protect}, got ${JSON.stringify(perpKeys)}`);
+}
+checks += 1;
+{
+  const item = hyperliquidPerpVenueAbi.find((x) => x.type === "function" && x.name === "protect");
+  const expected = toFunctionSelector(sig(item));
+  if (PERP_GRANT_SELECTORS["HyperliquidPerpVenue.protect"] !== expected) {
+    failures += 1;
+    console.log(`verify-abi: FAIL PERP_GRANT_SELECTORS.protect = ${PERP_GRANT_SELECTORS["HyperliquidPerpVenue.protect"]}, ABI says ${expected}`);
+  }
+  if (PERP_KEEPER_GRANT_SHAPE?.selector !== expected || PERP_KEEPER_GRANT_SHAPE?.allowCallback !== true) {
+    failures += 1;
+    console.log("verify-abi: FAIL PERP_KEEPER_GRANT_SHAPE must name protect with allowCallback=true");
+  }
 }
 
 // Selectors the keeper hard-codes for grant checks must equal the ABI's.

@@ -3,6 +3,39 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-26 — The keeper's perps path (Stream D, D4): the short's distance read where `protect` reads it, the reserve before any reduce, and an order judged by what landed
+
+BUILD-PLAN Stream D step D4, against `docs/PERPS-DESIGN-2026-09-25.md` §4–§5 (its §5 "as built" paragraph is
+the record). Nothing is deployed and nothing was signed. HF = health factor; IOC = immediate-or-cancel.
+
+- **`agent/src/perps/`** — config, reader, valuation, policy, dispatcher, monitor, keeper; `npm run dev:perps -w
+  @zyo/agent`. The reader makes the seven precompile reads `HyperliquidPerpVenue.protect` makes, by `eth_call` at
+  ONE block, decoded by shared and each failure recorded by name; the valuation is fail-closed P0–P5 (a read that
+  did not decode, a moved venue parameter, mark against oracle beyond the venue's own bound, the venue's API mark
+  against the precompile's, a long or an isolated position, a second position on the account) and reads a wiped
+  account value as distance zero — every rung fires — not as unknown. Each account's ladder derives from the
+  venue's `entryOf` through shared `perpLadderFor` (D9).
+- **The plan puts the reserve first at every rung.** A top-up keeps the hedge whole and a reduce does not (design
+  §9 item 6), so size is closed only for what the reserve cannot reach: the smallest reduce that reaches the
+  disarm level plus the margin, capped at a third of the short (`PERPS_DERISK_FRACTION_BPS`) and the grant's
+  budget, the whole short at the close rung, every reduce sized for the worst fill the grant's band allows. Every
+  clamp is named; a top-up-only grant is refused by the owner's choice, not as an exhausted budget.
+- **An action is judged by a later read, never by the receipt.** The dispatcher persists the nonce AND the intent
+  (`DispatchRecord.perp`: what was asked, the size and reserve it was asked against) before the broadcast;
+  `confirm` waits `PERPS_ACTION_DELAY_BLOCKS` (ten by default) after the receipt and re-reads the position and the
+  spot reserve. An IOC that did not fill is CONFIRMED and said — the rung re-arms and re-plans, bounded per rung
+  with the owner told once at the cap, the close rung never giving up. A simulated revert is classified by the
+  venue's own error name: permanent when only the owner clears it, superseding when the world moved, transient
+  when a budget or the reserve binds.
+- **Two findings for D7** (`RISKS.md` §23): `protect` charges the grant's budgets on the EVM receipt, so an IOC
+  the book does not fill spends reduce budget and moves nothing — a thin book can exhaust a period; and whether a
+  third is the right de-risk fraction is a keeper knob the adversarial pass must answer.
+- **Proof:** 45 keeper tests on the Foundry suite's scene (distance 4350 bps / HF 1.7699 at the open, the sizing
+  numbers 67 and 104 reproduced, RISKS §23's 1.38×) over a behavioural HyperEVM fake driven through real viem —
+  keeper 348 → **393** / 80 suites; the keeper's ABI seam 123 → **167** with the venue's fragment diffed against
+  its artifact and `PERP_GRANT_SELECTORS` pinned to exactly `protect` with `allowCallback`. Every other suite
+  unchanged (`docs/STATUS.md`).
+
 ## 2026-09-25 — Three things the cross-chain keeper path got wrong, found the day it gained its adapter; the lookup table's script; a cache that outlived the table
 
 The first part of ROADMAP H3's internal wave over everything merged since 2026-09-16, read adversarially the

@@ -676,3 +676,150 @@ export const KEEPER_GRANT_SHAPE = {
   selector: GRANT_SELECTORS["StrategyRouter.unwind"],
   allowCallback: true,
 } as const;
+
+// ---------------------------------------------------------------------------
+// HyperliquidPerpVenue — the perps keeper's one root call and the views it reads (BUILD-PLAN Stream D,
+// step D4, 2026-09-26). Transcribed from contracts/src/venues/HyperliquidPerpVenue.sol; `scripts/verify-abi.mjs`
+// diffs every item against contracts/out/HyperliquidPerpVenue.sol/HyperliquidPerpVenue.json.
+// ---------------------------------------------------------------------------
+
+/** `PerpGrant` as `perpGrantOf` returns it (design §3). */
+export const perpGrantStruct = {
+  type: "tuple",
+  components: [
+    { name: "keeper", type: "address" },
+    { name: "expiry", type: "uint40" },
+    { name: "period", type: "uint40" },
+    { name: "periodStart", type: "uint40" },
+    { name: "allowedRungs", type: "uint8" },
+    { name: "topUpUsdcPerPeriod", type: "uint64" },
+    { name: "reduceSzPerPeriod", type: "uint64" },
+    { name: "maxSlippageBps", type: "uint16" },
+    { name: "topUpSpent", type: "uint64" },
+    { name: "reduceSpent", type: "uint64" },
+    { name: "epoch", type: "uint256" },
+  ],
+} as const;
+
+export const hyperliquidPerpVenueAbi = [
+  // ---- deploy-time immutables the keeper cross-checks against the shared facts at startup
+  { type: "function", name: "PERP_ASSET", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint32" }] },
+  { type: "function", name: "SZ_DECIMALS", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint8" }] },
+  { type: "function", name: "MAX_LEVERAGE", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint8" }] },
+  { type: "function", name: "USDC_TOKEN_INDEX", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint64" }] },
+  { type: "function", name: "USDC_WEI_DECIMALS", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint8" }] },
+  { type: "function", name: "USDC_EVM_DECIMALS", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint8" }] },
+  { type: "function", name: "MAX_MARK_ORACLE_DEVIATION_BPS", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
+  { type: "function", name: "MIN_ENTRY_MARGIN_BPS", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
+  { type: "function", name: "MAX_NOTIONAL_E6", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
+  { type: "function", name: "DEFAULT_RESERVE_MULTIPLE_BPS", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
+  { type: "function", name: "mmrBps", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
+  { type: "function", name: "minEntryDistanceBps", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
+  // ---- per-account records
+  {
+    type: "function",
+    name: "entryOf",
+    stateMutability: "view",
+    inputs: [{ name: "account", type: "address" }],
+    outputs: [
+      { name: "distanceBps", type: "uint32" },
+      { name: "hfBps", type: "uint32" },
+      { name: "sz", type: "uint64" },
+      { name: "reserveE6", type: "uint64" },
+      { name: "at", type: "uint40" },
+    ],
+  },
+  { type: "function", name: "perpGrantOf", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ name: "", ...perpGrantStruct }] },
+  { type: "function", name: "reserveMultipleBps", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ name: "multipleBps", type: "uint256" }] },
+  { type: "function", name: "baseRecipient", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ name: "recipient", type: "bytes32" }] },
+  {
+    type: "function",
+    name: "health",
+    stateMutability: "view",
+    inputs: [{ name: "account", type: "address" }],
+    outputs: [
+      { name: "hasPosition", type: "bool" },
+      { name: "szi", type: "int64" },
+      { name: "markRaw", type: "uint64" },
+      { name: "accountValueE6", type: "int64" },
+      { name: "ntlE6", type: "uint256" },
+      { name: "distanceBps", type: "uint256" },
+      { name: "hfBps", type: "uint256" },
+      { name: "spotE6", type: "uint256" },
+    ],
+  },
+  // ---- the keeper's one instruction
+  {
+    type: "function",
+    name: "protect",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "rung", type: "uint8" },
+      { name: "topUpE6", type: "uint64" },
+      { name: "reduceSz", type: "uint64" },
+    ],
+    outputs: [],
+  },
+  // ---- events the keeper reads back
+  {
+    type: "event",
+    name: "Protected",
+    inputs: [
+      { name: "account", type: "address", indexed: true },
+      { name: "keeper", type: "address", indexed: true },
+      { name: "rung", type: "uint8", indexed: false },
+      { name: "hfBps", type: "uint32", indexed: false },
+      { name: "topUpE6", type: "uint64", indexed: false },
+      { name: "reduceSz", type: "uint64", indexed: false },
+    ],
+  },
+  {
+    type: "event",
+    name: "EntryRecorded",
+    inputs: [
+      { name: "account", type: "address", indexed: true },
+      { name: "distanceBps", type: "uint32", indexed: false },
+      { name: "hfBps", type: "uint32", indexed: false },
+      { name: "sz", type: "uint64", indexed: false },
+      { name: "reserveE6", type: "uint64", indexed: false },
+    ],
+  },
+  { type: "event", name: "EntryCleared", inputs: [{ name: "account", type: "address", indexed: true }] },
+  // ---- every refusal `protect` can raise, so a simulation decodes to its real name
+  { type: "error", name: "NotKeeperPath", inputs: [] },
+  { type: "error", name: "NoPosition", inputs: [] },
+  { type: "error", name: "NoEntry", inputs: [] },
+  { type: "error", name: "VenueParamsChanged", inputs: [{ name: "szDecimals", type: "uint8" }, { name: "maxLeverage", type: "uint8" }] },
+  { type: "error", name: "MarkOracleDeviation", inputs: [{ name: "mark", type: "uint64" }, { name: "oracle", type: "uint64" }, { name: "deviationBps", type: "uint256" }] },
+  { type: "error", name: "OtherPositionsOpen", inputs: [{ name: "ntlPos", type: "uint64" }, { name: "ntlE6", type: "uint256" }] },
+  { type: "error", name: "ReserveShort", inputs: [{ name: "heldE6", type: "uint256" }, { name: "requiredE6", type: "uint256" }] },
+  { type: "error", name: "ReduceExceedsPosition", inputs: [{ name: "wanted", type: "uint64" }, { name: "size", type: "uint64" }] },
+  { type: "error", name: "NotGrantedKeeper", inputs: [{ name: "keeper", type: "address" }] },
+  { type: "error", name: "GrantExpired", inputs: [{ name: "expiry", type: "uint40" }] },
+  { type: "error", name: "GrantEpochStale", inputs: [{ name: "grantEpoch", type: "uint256" }, { name: "accountEpoch", type: "uint256" }] },
+  { type: "error", name: "RungNotAllowed", inputs: [{ name: "rung", type: "uint8" }] },
+  { type: "error", name: "RungNotCrossed", inputs: [{ name: "rung", type: "uint8" }, { name: "hfBps", type: "uint32" }, { name: "thresholdBps", type: "uint32" }] },
+  { type: "error", name: "ReduceNotAllowedAtRung", inputs: [{ name: "rung", type: "uint8" }] },
+  { type: "error", name: "TopUpBudgetExceeded", inputs: [{ name: "wanted", type: "uint64" }, { name: "remaining", type: "uint64" }] },
+  { type: "error", name: "ReduceBudgetExceeded", inputs: [{ name: "wanted", type: "uint64" }, { name: "remaining", type: "uint64" }] },
+  { type: "error", name: "NothingToDo", inputs: [] },
+  { type: "error", name: "PrecompileReadFailed", inputs: [{ name: "precompile", type: "address" }] },
+  { type: "error", name: "NotAShort", inputs: [{ name: "szi", type: "int64" }] },
+  { type: "error", name: "ZeroNotional", inputs: [] },
+  { type: "error", name: "EntryTooThinForLadder", inputs: [{ name: "hfBps", type: "uint256" }] },
+] as const;
+
+/**
+ * The perps keeper's ONE root call, under its own `Permission` on (venue, `protect`) — a separate process
+ * from the Base keeper with a separate key, so this is a separate set from `GRANT_SELECTORS` and the
+ * verifier keeps the Base set at exactly two.
+ */
+export const PERP_GRANT_SELECTORS = {
+  "HyperliquidPerpVenue.protect": toFunctionSelector("protect(uint8,uint64,uint64)"),
+} as const;
+
+/** The `Permission` the perps wizard must issue: `protect`, with `allowCallback` — the venue acts back on the account through `execFromPeripheral`. */
+export const PERP_KEEPER_GRANT_SHAPE = {
+  selector: PERP_GRANT_SELECTORS["HyperliquidPerpVenue.protect"],
+  allowCallback: true,
+} as const;

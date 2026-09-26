@@ -22,7 +22,7 @@ MC = Monte Carlo.
 | Solana, seams | `npm test -w @zyo/solana` | **22** |
 | Solana, program unit | `cd solana && cargo test --manifest-path programs/oilskin/Cargo.toml` | **12** |
 | Solana, localnet | `bash solana/scripts/localnet.sh` (terminal 1) · `cd solana && anchor test --skip-build --skip-local-validator` (terminal 2) | **36 passing / 0 failing** |
-| Keeper | `npm test -w @zyo/agent` | **348 tests / 68 suites**, plus its own ABI seam **123 / 123** and the IDL seam **77 / 77** |
+| Keeper | `npm test -w @zyo/agent` | **393 tests / 80 suites**, plus its own ABI seam **167 / 167** and the IDL seam **77 / 77** (2026-09-26: the perps path, +45; the venue's fragment on the seam) |
 | Yield | `npm test -w @zyo/yield` | **194** |
 | Web, unit | `npm test -w @zyo/web` | **212** |
 | Web, e2e | `cd web && npx playwright test` | **24 passed / 0 failed / 6 skipped** |
@@ -140,7 +140,7 @@ USDC would have permanently bricked the protocol. The Handler now has a
 and `test_handlerPathsAreLive` proves every path is reachable. Treat any
 invariant whose Handler cannot reach the forbidden state as decoration.
 
-## Keeper (`agent/test`, 33 test files)
+## Keeper (`agent/test`, 39 test files)
 
 `npm test` runs `tsc`, then `scripts/verify-abi.mjs` (**75 checks**: selectors,
 output layouts, event indexed layout, error declarations on the right contract,
@@ -196,6 +196,30 @@ dispatcher (an end-to-end repay SENT → CONFIRMED with `repaid > 0`), a
 disagreement between the venue's health factor and the keeper's own feeds is
 UNKNOWN in both directions, and the startup probe is fatal only for a venue that
 does not answer the interface.
+
+The perps keeper path (BUILD-PLAN Stream D step D4, 2026-09-26; `docs/PERPS-DESIGN-2026-09-25.md` §5 "as
+built") is five files and a fixture (+**45**, keeper 348 → **393**; the ABI seam 123 → **167**, with
+`HyperliquidPerpVenue`'s fragment diffed against its artifact and `PERP_GRANT_SELECTORS` pinned to exactly
+`protect` with `allowCallback`). The fixture (`perpsFixtures.ts`) is the Foundry suite's scene — 5.00 ZEC against
+$3,900 at the 2026-09-25 mark, then +10 / +20 / +40 % — and a behavioural HyperEVM fake on `MockChain`: the seven
+precompiles, the venue's views, and each account running a faithful miniature of `protect` on `execAsKeeper` that
+reverts with the venue's own ABI-encoded error names and, on a signed raw transaction, charges the grant's budgets
+and queues the CoreWriter action until the test lets it land. `perps-config.test.ts` (5: every variable by name,
+the key never described, the delay and fraction knobs bounded); `perps-valuation.test.ts` (12: the open at
+distance **4350 bps / HF 1.7699** value for value with the Solidity; +10 / +20 / +40 % under the account's own
+top-up / de-risk / close rungs; the live 2026-09-25 read of a many-position account refused as P5
+`OtherPositionsOpen`; P0–P5 each by name; a wiped account value is distance 0, not UNKNOWN);
+`perps-policy.test.ts` (11: the Foundry sizing numbers 67 and 104 reproduced; RISKS §23's 1.38× — the reserve
+binds and says so; the reserve first at the de-risk rung; the fraction and the budgets clamp by name; the close
+rung; the worst-fill sizing; refusals); `perps-dispatcher.test.ts` (10, real viem over the fake: the intent and the
+nonce persisted BEFORE the broadcast, the budget charged on the receipt before anything landed, `confirm` waiting
+the delay then an unfilled top-up / IOC CONFIRMED and said, a partial fill said, a reverted receipt FAILED; seven
+venue reverts classified by name; both grants judged before any simulation, a rolled period restoring the
+budget; the world check; the notify copy; observe-only); `perps-monitor.test.ts` (7: discovery with the cursor,
+the account's ladder from the venue's entry record, PENDING on disk before the dispatcher with the rung's
+disarm level and the owner told in the perps copy, UNKNOWN streaks escalating, a CONFIRMED-but-unfilled action
+re-armed and re-planned twice then held with the owner told once while the close rung never gives up,
+NO_POSITION ending the episode, the resume path confirming a SENT record, the floor's ladder for an empty entry).
 
 ## Yield (`services/yield/test`, 19 files)
 

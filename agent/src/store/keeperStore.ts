@@ -257,6 +257,21 @@ export interface DispatchRecord<Id extends string = Address, Tx extends string =
     minFinalityThreshold?: number;
     maxFeeBps?: number;
   };
+  /**
+   * A perps record's INTENT, persisted with the nonce before the broadcast (BUILD-PLAN Stream D step D4,
+   * 2026-09-26; design §5): the rung, what `protect` was asked to move, and the size and spot reserve the
+   * plan was made against. A CoreWriter action lands on HyperCore seconds after the EVM receipt and cannot
+   * revert it, so `confirm` judges the record against THIS on a later tick — the size moved by `reduceSz`,
+   * the spot balance by `topUpE6` — never on the receipt alone. Absent on every non-perps record.
+   */
+  perp?: {
+    rung: number;
+    topUpE6: string;
+    reduceSz: string;
+    /** `position.szi` (signed, 10^szDecimals) and the spot reserve (10^6) as read when the plan was made. */
+    sziBefore: string;
+    spotE6Before: string;
+  };
 }
 
 /** One venue's book for the account at dispatch time; bigints as decimal strings (JSON). */
@@ -436,6 +451,14 @@ export function validateState<Id extends string = Address, Tx extends string = H
     }
     if (d.txHash !== undefined && !(typeof d.txHash === "string" && codec.isTxHash(d.txHash))) {
       throw new StoreError(`dispatch ${d.key}: txHash malformed`);
+    }
+    if (d.perp !== undefined) {
+      const p = d.perp as Record<string, unknown>;
+      const digits = (x: unknown) => typeof x === "string" && /^\d+$/.test(x);
+      const signed = (x: unknown) => typeof x === "string" && /^-?\d+$/.test(x);
+      if (!p || typeof p !== "object" || !isNonNegInt(p.rung) || !digits(p.topUpE6) || !digits(p.reduceSz) || !signed(p.sziBefore) || !digits(p.spotE6Before)) {
+        throw new StoreError(`dispatch ${d.key}: perp intent malformed`);
+      }
     }
     if (d.venueBooks !== undefined) {
       if (!Array.isArray(d.venueBooks)) throw new StoreError(`dispatch ${d.key}: venueBooks malformed`);
