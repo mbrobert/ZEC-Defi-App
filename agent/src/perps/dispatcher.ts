@@ -75,7 +75,7 @@ const PERMANENT_REFUSALS = new Set(["NotGranted", "NotActivePeripheral", "Callba
 /** The world moved between valuation and send: re-evaluate rather than retry the same plan. */
 const SUPERSEDING = new Set(["RungNotCrossed", "NoPosition"]);
 /** A bound that binds this tick and may not next: the plan is re-sized on the next tick. */
-const TRANSIENT_REFUSALS = new Set(["TopUpBudgetExceeded", "ReduceBudgetExceeded", "ReserveShort", "ReduceExceedsPosition", "NothingToDo", "OtherPositionsOpen"]);
+const TRANSIENT_REFUSALS = new Set(["TopUpBudgetExceeded", "ReduceBudgetExceeded", "ReserveShort", "ReduceExceedsPosition", "NothingToDo", "OtherPositionsOpen", "OrderBelowMinimum"]);
 
 function revertName(e: unknown): { name: string; args: readonly unknown[] } | null {
   if (!(e instanceof BaseError)) return null;

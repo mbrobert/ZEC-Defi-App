@@ -34,6 +34,7 @@ import {
   CORE_TIF,
   HYPERCORE_PRECOMPILES,
   HYPERLIQUID,
+  orderPxE8ForMark,
   decodeAccountMarginSummary,
   decodeCoreUserExists,
   decodePerpAssetInfo,
@@ -234,8 +235,9 @@ if (STEPS.includes("order")) {
   const mark = decodePx(await call(HYPERCORE_PRECOMPILES.markPx, encodePrecompileInput.px(zecIndex)));
   const szE8 = parseDecimalToUnits(SIZE, 8);
   const szRaw = parseDecimalToUnits(SIZE, zecMeta.szDecimals);
-  const markE8 = mark * 10n ** BigInt(8 - pxDecimals);
-  const sellPx = (markE8 * 9_950n) / 10_000n; // half a percent under the mark: an IOC sell that should fill
+  // half a percent under the mark, ROUNDED to the venue's price rule inside the band (AUDIT-2026-09-26 P-1: the
+  // unrounded mark x 0.995 carries eight figures and HyperCore rejects it, silently)
+  const sellPx = orderPxE8ForMark(mark, zecMeta.szDecimals, 50, false);
   const notionalE6 = szRaw * mark * 10n ** BigInt(6 - zecMeta.szDecimals - pxDecimals);
   if (!state.summary || state.summary.accountValue < notionalE6 / 5n) {
     record("order", { skipped: true, reason: `perp account value ${state.summary?.accountValue} is under a fifth of the notional ${notionalE6} — fund the perp balance first (step fund)` });
@@ -252,7 +254,7 @@ if (STEPS.includes("order")) {
     let afterClose = null;
     if (filled) {
       const mark2 = decodePx(await call(HYPERCORE_PRECOMPILES.markPx, encodePrecompileInput.px(zecIndex)));
-      const buyPx = (mark2 * 10n ** BigInt(8 - pxDecimals) * 10_050n) / 10_000n;
+      const buyPx = orderPxE8ForMark(mark2, zecMeta.szDecimals, 50, true);
       const size = -afterOpen.position.szi;
       const closeBytes = encodeLimitOrder({ asset: zecIndex, isBuy: true, limitPxE8: buyPx, szE8: size * 10n ** BigInt(8 - zecMeta.szDecimals), reduceOnly: true, tif: CORE_TIF.ioc });
       close = await send("limit order (buy IOC reduce-only)", HYPERLIQUID.coreWriter, encodeFunctionData({ abi: coreWriterAbi, functionName: "sendRawAction", args: [closeBytes] }));

@@ -33,8 +33,40 @@ library HyperCoreLib {
     /// @notice The perp dex the ZEC market is on — `accountMarginSummary(0, user)` is this dex's summary.
     uint32 internal constant PERP_DEX = 0;
 
+    /// @notice Hyperliquid's order price rule [doc] — "Prices can have up to 5 significant figures, but no more than
+    ///         MAX_DECIMALS − szDecimals decimal places where MAX_DECIMALS is 6 for perps … Integer prices are always
+    ///         allowed" (hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/tick-and-lot-size, read
+    ///         2026-09-26 16:33 UTC; `VERIFIED-PERPS-FACTS-2026-09-14.md` §7.7). An order whose price breaks it is
+    ///         REJECTED by HyperCore, and a rejected CoreWriter order is silent (AUDIT-2026-09-26 P-1).
+    uint256 internal constant MAX_PX_SIGNIFICANT_FIGURES = 5;
+    uint256 internal constant PERP_PX_MAX_DECIMALS = 6;
+    /// @notice The venue's minimum order value [doc]: "Order must have minimum value of $10." (the exchange-endpoint
+    ///         page's own error example, read 2026-09-26 16:33 UTC), in 10^6 USDC (AUDIT-2026-09-26 P-2).
+    uint256 internal constant MIN_ORDER_VALUE_E6 = 10_000_000;
+
     /// @notice A precompile did not answer, or answered with a shape this code does not decode. Nothing is read.
     error PrecompileReadFailed(address precompile);
+
+    // ------------------------------------------------------------------- price
+
+    /// @notice A price in 10^8 rounded to the venue's precision: at most 5 significant figures AND at most
+    ///         (6 − szDecimals) decimals, integers always allowed — DOWN, or UP when `roundUp`. The caller picks the
+    ///         direction that stays inside its band: a sell's floor rounds up, a buy's ceiling rounds down.
+    function roundOrderPxE8(uint64 pxE8, uint8 szDecimals, bool roundUp) internal pure returns (uint64) {
+        if (pxE8 == 0) return 0;
+        uint256 digits;
+        for (uint256 v = pxE8; v != 0; v /= 10) digits++;
+        // the decimals rule: a quantum of 10^(8 − (6 − szDecimals)); szDecimals ≤ 6 by the venue's constructor
+        uint256 exp = 8 - PERP_PX_MAX_DECIMALS + szDecimals;
+        // the significant-figures rule: keep the top five digits
+        if (digits > MAX_PX_SIGNIFICANT_FIGURES && digits - MAX_PX_SIGNIFICANT_FIGURES > exp) exp = digits - MAX_PX_SIGNIFICANT_FIGURES;
+        // integers are always allowed
+        if (exp > 8) exp = 8;
+        uint256 q = 10 ** exp;
+        uint256 down = (uint256(pxE8) / q) * q;
+        if (!roundUp || down == pxE8) return uint64(down);
+        return uint64(down + q);
+    }
 
     // ------------------------------------------------------------------ encode
 

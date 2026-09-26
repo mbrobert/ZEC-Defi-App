@@ -395,7 +395,7 @@ contract HyperliquidPerpVenueTest is Test {
         _open();
         assertEq(coreWriter.count(), 1);
         assertEq(coreWriter.senders(0), address(acct), "the position belongs to the ACCOUNT's address on HyperCore");
-        assertEq(coreWriter.actions(0), h.order(ZEC, false, 153_124_699_150, 500_000_000, false, HyperCoreLib.TIF_IOC));
+        assertEq(coreWriter.actions(0), h.order(ZEC, false, 153_130_000_000, 500_000_000, false, HyperCoreLib.TIF_IOC), "the sell's floor: mark x 0.995 = 1531.24699 rounded UP to five figures, 1531.3 (AUDIT-2026-09-26 P-1)");
         (uint32 d, uint32 hf, uint64 sz, uint64 reserve, uint40 at) = _entry();
         assertEq(d, D0);
         assertEq(hf, HF0);
@@ -484,8 +484,8 @@ contract HyperliquidPerpVenueTest is Test {
         _open();
         _scene(MARK, A0, NTL);
         _owner(abi.encodeCall(HyperliquidPerpVenue.reduce, (100, 50, uint40(block.timestamp + 600))));
-        // the buy is shaded UP by the band: mark × 1.005 in 10^8, size 1.00 ZEC
-        assertEq(coreWriter.actions(1), h.order(ZEC, true, 154_663_640_850, 100_000_000, true, HyperCoreLib.TIF_IOC));
+        // the buy is shaded UP by the band then rounded DOWN to the venue's precision: 1546.6 in 10^8, size 1.00 ZEC
+        assertEq(coreWriter.actions(1), h.order(ZEC, true, 154_660_000_000, 100_000_000, true, HyperCoreLib.TIF_IOC), "the buy's ceiling: mark x 1.005 = 1546.63641 rounded DOWN to 1546.6");
         (uint32 d,, uint64 sz,,) = _entry();
         assertEq(sz, 400);
         assertEq(d, h.distance(A0, h.ntl(-400, MARK, SZ_DEC), MMR));
@@ -650,7 +650,7 @@ contract HyperliquidPerpVenueTest is Test {
         _scene(MARK_20, A_20, NTL_20);
         _protect(keeper, PerpHealthLib.RUNG_DERISK, 0, 104);
         // the buy is shaded up by the GRANT's band (50 bps), reduce-only, IOC: mark × 1.005 in 10^8, 1.04 ZEC
-        assertEq(coreWriter.actions(1), h.order(ZEC, true, 185_596_365_000, 104_000_000, true, HyperCoreLib.TIF_IOC));
+        assertEq(coreWriter.actions(1), h.order(ZEC, true, 185_590_000_000, 104_000_000, true, HyperCoreLib.TIF_IOC), "1855.96365 rounded DOWN to 1855.9");
         vm.expectRevert(abi.encodeWithSelector(HyperliquidPerpVenue.ReduceBudgetExceeded.selector, 100, 96));
         _protect(keeper, PerpHealthLib.RUNG_DERISK, 0, 100);
         // a top-up is allowed at the derisk rung too
@@ -664,7 +664,7 @@ contract HyperliquidPerpVenueTest is Test {
         vm.expectRevert(abi.encodeWithSelector(HyperliquidPerpVenue.ReduceExceedsPosition.selector, 501, SZ));
         _protect(keeper, PerpHealthLib.RUNG_EMERGENCY, 0, 501);
         _protect(keeper, PerpHealthLib.RUNG_EMERGENCY, 0, SZ);
-        assertEq(coreWriter.actions(3), h.order(ZEC, true, 216_529_099_200, 500_000_000, true, HyperCoreLib.TIF_IOC));
+        assertEq(coreWriter.actions(3), h.order(ZEC, true, 216_520_000_000, 500_000_000, true, HyperCoreLib.TIF_IOC), "2165.290992 rounded DOWN to 2165.2");
         // Advanced's sell-budget-of-zero twin: rungs 3–4 can only top up
         _owner(abi.encodeCall(HyperliquidPerpVenue.setPerpGrant, (keeper, uint40(block.timestamp + 30 days), 1 days, 0x0E, 1_000e6, 0, 50)));
         vm.expectRevert(abi.encodeWithSelector(HyperliquidPerpVenue.ReduceBudgetExceeded.selector, 1, 0));

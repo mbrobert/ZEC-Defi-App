@@ -349,3 +349,19 @@ venue's own number.
 
 What the code rests on beyond a read, after today: action 1's and action 7's parameter tuples **[doc]**, and the
 adapter's spot dex **[inferred]**. Everything else in `perps.ts` and `IHyperCore.sol` is a chain or API read.
+
+### 7.7 Addendum (2026-09-26 16:33 UTC) · The venue's order rules, from its own documentation — [doc], found by the D7 pass
+
+Read with `curl` from `hyperliquid.gitbook.io/hyperliquid-docs` (the page's own "last updated" says a year ago):
+
+| Rule | Page | Text, verbatim |
+|---|---|---|
+| Order price precision | `for-developers/api/tick-and-lot-size` | "Prices can have up to 5 significant figures, but no more than MAX_DECIMALS − szDecimals decimal places where MAX_DECIMALS is 6 for perps and 8 for spot. Integer prices are always allowed, regardless of the number of significant figures. E.g. 123456 is a valid price even though 12345.6 is not." Examples: "1234.5 is valid but 1234.56 is not"; "0.001234 is valid, but 0.0012345 is not"; "If szDecimals = 1, 0.01234 is valid but 0.012345 is not" |
+| Order size precision | the same page | "Sizes are rounded to the szDecimals of that asset. For example, if szDecimals = 3 then 1.001 is a valid size but 1.0001 is not." |
+| Minimum order value | `for-developers/api/exchange-endpoint` (a response example) | `"error":"Order must have minimum value of $10."` |
+
+What this changed (AUDIT-2026-09-26 P-1 / P-2): the venue's `_toE8Px` rounds a shaded mark to the rule inside the
+band (`HyperCoreLib.roundOrderPxE8`; shared `roundOrderPxE8` / `orderPxE8ForMark`), and an order under $10 is refused
+by name (`OrderBelowMinimum`) rather than sent. The precompile's mark (10^(6 − szDecimals), e.g. 1538.9417) is NOT a
+valid order price by itself. Still **[doc]** until D3 observes an accepted order: the rule's text, and whether HyperCore
+rounds or rejects (the page says a price that breaks the rule is invalid; the script now never sends one).

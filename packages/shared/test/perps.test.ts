@@ -26,6 +26,12 @@ import {
   decodeWithdrawable,
   distanceBpsForHfBps,
   encodeLimitOrder,
+  isValidOrderPxE8,
+  minOrderSzRaw,
+  MIN_ORDER_VALUE_E6,
+  orderPxE8ForMark,
+  orderSzE8,
+  roundOrderPxE8,
   encodePrecompileInput,
   encodeSendAsset,
   encodeUsdClassTransfer,
@@ -197,6 +203,44 @@ test("action 1 [doc] and action 7 [doc] follow the same rule: version, three-byt
   assert.throws(() => encodeLimitOrder({ asset: 214, isBuy: true, limitPxE8: 1n, szE8: 1n, reduceOnly: true, tif: 4 as never }), /tif/);
   assert.throws(() => encodeUsdClassTransfer(0n, true), /ntl/);
   assert.throws(() => encodeSendAsset({ destination: "0x12", sourceDex: 0, destinationDex: 0, token: 0, wei: 1n }), /address/);
+});
+
+test("the venue's price rule [doc] (AUDIT-2026-09-26 P-1): the page's own examples, the D2 suite's four prices rejected and their inside-the-band roundings, and the keeper's minimum size", () => {
+  // "1234.5 is valid but 1234.56 is not"; "0.001234 is valid, but 0.0012345 is not"; szDecimals 1: "0.01234 valid, 0.012345 not"; "123456 is valid even though 12345.6 is not"
+  assert.equal(isValidOrderPxE8(123_450_000_000n, 2), true);
+  assert.equal(isValidOrderPxE8(123_456_000_000n, 2), false);
+  assert.equal(roundOrderPxE8(123_456_000_000n, 2, false), 123_450_000_000n);
+  assert.equal(roundOrderPxE8(123_456_000_000n, 2, true), 123_460_000_000n);
+  assert.equal(isValidOrderPxE8(123_400n, 0), true);
+  assert.equal(isValidOrderPxE8(123_450n, 0), false);
+  assert.equal(isValidOrderPxE8(1_234_000n, 1), true);
+  assert.equal(isValidOrderPxE8(1_234_500n, 1), false);
+  assert.equal(isValidOrderPxE8(123_456n * 10n ** 8n, 2), true);
+  assert.equal(isValidOrderPxE8(1_234_560_000_000n, 2), false);
+  assert.equal(roundOrderPxE8(1_234_560_000_000n, 2, true), 12_346n * 10n ** 8n);
+  // the precompile's own mark is not a valid order price; the four prices D2 pinned were all invalid
+  assert.equal(isValidOrderPxE8(15_389_417n * 10_000n, 2), false);
+  for (const bad of [153_124_699_150n, 154_663_640_850n, 185_596_365_000n, 216_529_099_200n]) assert.equal(isValidOrderPxE8(bad, 2), false, String(bad));
+  // the venue's rule, value for value with HyperliquidPerpVenue._toE8Px after the fix
+  assert.equal(orderPxE8ForMark(15_389_417n, 2, 50, false), 153_130_000_000n, "the open's sell floor: 1531.24699 rounded UP to 1531.3");
+  assert.equal(orderPxE8ForMark(15_389_417n, 2, 50, true), 154_660_000_000n, "a buy's ceiling: 1546.63641 rounded DOWN to 1546.6");
+  assert.equal(orderPxE8ForMark(18_467_300n, 2, 50, true), 185_590_000_000n);
+  assert.equal(orderPxE8ForMark(21_545_184n, 2, 50, true), 216_520_000_000n);
+  assert.equal(orderSzE8(500n, 2), 500_000_000n);
+  // every rounding is valid, within one quantum, in the asked direction — a sweep, not a fuzz
+  for (let px = 1n; px < 10n ** 17n; px = px * 7n + 3n) {
+    for (const szDec of [0, 1, 2, 3]) {
+      const down = roundOrderPxE8(px, szDec, false);
+      const up = roundOrderPxE8(px, szDec, true);
+      assert.ok(down <= px && px <= up);
+      assert.ok(isValidOrderPxE8(down, szDec) && isValidOrderPxE8(up, szDec));
+      assert.ok(up - down === 0n || (up - down).toString().replace(/0+$/, "") === "1", `one quantum: ${px} ${szDec} ${up - down}`);
+    }
+  }
+  // the $10 minimum as a size: at $1,538.9417 one raw (0.01 ZEC) is $15.39 — one raw; at $400 it is three
+  assert.equal(MIN_ORDER_VALUE_E6, 10_000_000n);
+  assert.equal(minOrderSzRaw(15_389_417n, 2), 1n);
+  assert.equal(minOrderSzRaw(4_000_000n, 2), 3n);
 });
 
 test("decimal strings are parsed exactly and formatted back — no float in the money path", () => {

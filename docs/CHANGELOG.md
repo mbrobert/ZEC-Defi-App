@@ -3,6 +3,32 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-26 — Every order the perps venue sent would have been rejected: the D7 pass's first wave, and its fix
+
+`docs/AUDIT-2026-09-26.md` — the adversarial read of D2, D4 and D5 the model policy reserves the stronger model for,
+done the day the keeper path and the rail landed. Regression file `contracts/test/audit-regressions/PerpOrderPrice.t.sol`.
+
+- **P-1, High.** `HyperliquidPerpVenue._toE8Px` shaded the precompile's eight-figure mark by the band and sent that as
+  the IOC's limit price (1538.9417 × 0.995 = 1531.24699150). Hyperliquid's own page — read 2026-09-26, quoted in
+  `VERIFIED-PERPS-FACTS` §7.7 — allows five significant figures and 6 − szDecimals decimals: HyperCore rejects such an
+  order, and a rejected CoreWriter order is silent. No `open`, no `reduce`, no keeper reduce could ever have filled on
+  the real venue; the D0b script built the same prices, so D3's run would have read "did not fill" without the
+  reason. Fixed: `HyperCoreLib.roundOrderPxE8` rounds INSIDE the band (a sell's floor up, a buy's ceiling down), the
+  shared twin `roundOrderPxE8` / `orderPxE8ForMark` / `orderSzE8` pins it value for value, the script uses it, the four
+  pinned prices moved (1531.3 / 1546.6 / 1855.9 / 2165.2).
+- **P-2, Low.** Neither the venue nor the keeper knew the venue's $10 minimum order value (the exchange-endpoint
+  page's own error example). The venue refuses `OrderBelowMinimum(valueE6, minimumE6)` by name in `open`, `reduce`
+  and `protect`; the keeper's plan lifts a de-risk reduce to the minimum size when the fraction and the budget allow,
+  drops it and says why when they do not, and at the close rung says when the whole short is under it; the dispatcher
+  classifies the error as transient.
+- **Re-read, no change:** the two D4 findings (the budget charged on the receipt; the fraction) stay with the
+  founder and D6. Five observations recorded (the order of two CoreWriter actions in one transaction; a fill versus a
+  liquidation at confirm; the entry record before the fill; the recipient check's dependence on the deploy; the
+  adapter's pause).
+- **Proof:** contracts 464 → **469** / 42 suites (the fuzz in the regression file included); shared 160 → **161**;
+  keeper 393 → **395** / 81 suites, its ABI seam 167 → **168**; the root ABI bundle 542 → **543** and the web's
+  generated file re-synced (web 212). The pass over D6 is still owed before the freeze.
+
 ## 2026-09-26 — The perps rail's Base half (Stream D, D5): the account burns its margin to its own HyperEVM account, checked by derivation where Base can check it
 
 BUILD-PLAN Stream D step D5, against `docs/PERPS-DESIGN-2026-09-25.md` §6 (its §6 "as built" paragraph and

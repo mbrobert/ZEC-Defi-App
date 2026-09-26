@@ -803,6 +803,7 @@ export const hyperliquidPerpVenueAbi = [
   { type: "error", name: "TopUpBudgetExceeded", inputs: [{ name: "wanted", type: "uint64" }, { name: "remaining", type: "uint64" }] },
   { type: "error", name: "ReduceBudgetExceeded", inputs: [{ name: "wanted", type: "uint64" }, { name: "remaining", type: "uint64" }] },
   { type: "error", name: "NothingToDo", inputs: [] },
+  { type: "error", name: "OrderBelowMinimum", inputs: [{ name: "valueE6", type: "uint256" }, { name: "minimumE6", type: "uint256" }] },
   { type: "error", name: "PrecompileReadFailed", inputs: [{ name: "precompile", type: "address" }] },
   { type: "error", name: "NotAShort", inputs: [{ name: "szi", type: "int64" }] },
   { type: "error", name: "ZeroNotional", inputs: [] },

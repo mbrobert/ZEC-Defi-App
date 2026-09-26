@@ -134,6 +134,66 @@ export const CORE_PERP_DEX = 0;
 /** Action 1's `limitPx` and `sz` are 10^8 × the human value [doc] — NOT the precompiles' 10^(6 − szDecimals). */
 export const CORE_ORDER_SCALE_DECIMALS = 8;
 
+/**
+ * The venue's order rules [doc] (hyperliquid.gitbook.io/hyperliquid-docs, read 2026-09-26 16:33 UTC; facts §7.7):
+ * "Prices can have up to 5 significant figures, but no more than MAX_DECIMALS − szDecimals decimal places where
+ * MAX_DECIMALS is 6 for perps … Integer prices are always allowed" (tick-and-lot-size), and "Order must have minimum
+ * value of $10." (the exchange-endpoint page's own error example). HyperCore REJECTS an order that breaks either,
+ * and a rejected CoreWriter order is silent — AUDIT-2026-09-26 P-1 / P-2. `HyperCoreLib` is the Solidity twin.
+ */
+export const HYPERLIQUID_ORDER_RULES = { maxSignificantFigures: 5, perpPxMaxDecimals: 6, minOrderValueUsd: 10 } as const;
+/** The minimum order value in 10^6 USDC. */
+export const MIN_ORDER_VALUE_E6 = 10_000_000n;
+
+/**
+ * A price in 10^8 rounded to the venue's precision — at most 5 significant figures AND at most (6 − szDecimals)
+ * decimals, integers always allowed — DOWN, or UP when `roundUp`. The caller picks the direction that stays inside
+ * its band: a sell's floor rounds up, a buy's ceiling rounds down (`HyperCoreLib.roundOrderPxE8`, value for value).
+ */
+export function roundOrderPxE8(pxE8: bigint, szDecimals: number, roundUp: boolean): bigint {
+  assertSmallInt(szDecimals, "szDecimals", 0, 6);
+  if (typeof pxE8 !== "bigint" || pxE8 < 0n) throw new RangeError(`pxE8 must be a non-negative bigint, got ${String(pxE8)}`);
+  if (pxE8 === 0n) return 0n;
+  const digits = pxE8.toString().length;
+  let exp = 8 - HYPERLIQUID_ORDER_RULES.perpPxMaxDecimals + szDecimals;
+  if (digits > HYPERLIQUID_ORDER_RULES.maxSignificantFigures && digits - HYPERLIQUID_ORDER_RULES.maxSignificantFigures > exp) exp = digits - HYPERLIQUID_ORDER_RULES.maxSignificantFigures;
+  if (exp > 8) exp = 8;
+  const q = 10n ** BigInt(exp);
+  const down = (pxE8 / q) * q;
+  return !roundUp || down === pxE8 ? down : down + q;
+}
+
+/** Whether HyperCore accepts `pxE8` as an order price: unchanged by rounding down. */
+export function isValidOrderPxE8(pxE8: bigint, szDecimals: number): boolean {
+  return roundOrderPxE8(pxE8, szDecimals, false) === pxE8;
+}
+
+/**
+ * The venue's own order price for a mark (`HyperliquidPerpVenue._toE8Px`): the precompile's mark in 10^8, shaded by
+ * the band — down for a sell, up for a buy — then rounded inside the band. What the D0b script sends and what the
+ * keeper expects to see in a `RawAction`.
+ */
+export function orderPxE8ForMark(markRaw: bigint, szDecimals: number, bandBps: number, isBuy: boolean): bigint {
+  assertSmallInt(bandBps, "bandBps", 0, 10_000);
+  if (markRaw <= 0n) throw new RangeError(`mark must be positive, got ${markRaw}`);
+  const scaled = markRaw * 10n ** BigInt(CORE_ORDER_SCALE_DECIMALS - perpPxDecimals(szDecimals));
+  const px = isBuy ? (scaled * BigInt(10_000 + bandBps)) / 10_000n : (scaled * BigInt(10_000 - bandBps)) / 10_000n;
+  return roundOrderPxE8(px, szDecimals, !isBuy);
+}
+
+/** A raw size (10^szDecimals) as action 1's `sz` (10^8): always a valid lot. */
+export function orderSzE8(szRaw: bigint, szDecimals: number): bigint {
+  assertSmallInt(szDecimals, "szDecimals", 0, 6);
+  if (szRaw <= 0n) throw new RangeError(`sz must be positive, got ${szRaw}`);
+  return szRaw * 10n ** BigInt(CORE_ORDER_SCALE_DECIMALS - szDecimals);
+}
+
+/** The smallest raw size whose value at `markRaw` meets the venue's $10 minimum (rounded up). */
+export function minOrderSzRaw(markRaw: bigint, szDecimals: number): bigint {
+  const unit = unitNotionalE6(markRaw, szDecimals);
+  return (MIN_ORDER_VALUE_E6 + unit - 1n) / unit;
+}
+
 // ---------------------------------------------------------------------------
 // Scalings — each pinned by test to a raw read beside the API's number
 // ---------------------------------------------------------------------------

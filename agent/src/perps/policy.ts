@@ -18,9 +18,12 @@
  * them), a position already at or above the disarm level, and a plan with nothing left to do.
  *
  * The reduce is sized for the WORST fill the grant allows: an IOC buy may fill up to `maxSlippageBps`
- * above the mark, and that shortfall is realised out of the account value the distance is measured on.
+ * above the mark, and that shortfall is realised out of the account value the distance is measured on. And it is
+ * never under the venue's $10 minimum order (AUDIT-2026-09-26 P-2): a smaller reduce is lifted to the minimum
+ * when the fraction and the budget allow, and dropped — said by name — when they do not; a whole short under the
+ * minimum cannot be closed by an order at all, and only the reserve acts.
  */
-import { MAX_SHORT_DISTANCE_BPS, distanceBpsForHfBps, equivalentHfBps, reduceForDistance, shortDistanceBps, topUpE6ForDistance, unitNotionalE6, type ShortReads } from "@zyo/shared";
+import { MAX_SHORT_DISTANCE_BPS, MIN_ORDER_VALUE_E6, distanceBpsForHfBps, equivalentHfBps, minOrderSzRaw, reduceForDistance, shortDistanceBps, topUpE6ForDistance, unitNotionalE6, type ShortReads } from "@zyo/shared";
 import type { PerpsValuation } from "./valuation.js";
 
 export type OkPerpsValuation = Extract<PerpsValuation, { kind: "OK" }>;
@@ -113,6 +116,11 @@ export function planPerpProtect(i: PerpPlanInput): PerpProtectPlan {
       if (!i.grant.reduceAllowed) notes.push("the grant allows no reduce — the owner chose top-up-only; only the reserve acts at this rung");
       else {
         reduce = reduceForDistanceWithSlippage(afterTopUp, targetD, i.grant.maxSlippageBps);
+        const minSz = minOrderSzRaw(v.markRaw, v.szDecimals);
+        if (reduce > 0n && reduce < minSz) {
+          notes.push(`lifted to the venue's $${Number(MIN_ORDER_VALUE_E6) / 1e6} minimum order: ${minSz} raw size for ${reduce}`);
+          reduce = minSz;
+        }
         const cap = (v.size * BigInt(i.deriskFractionBps)) / 10_000n;
         if (reduce > cap) {
           notes.push(`de-risk fraction binds: ${cap} of ${reduce} raw size (${(i.deriskFractionBps / 100).toFixed(2)} % of the short)`);
@@ -121,6 +129,10 @@ export function planPerpProtect(i: PerpPlanInput): PerpProtectPlan {
         if (reduce > i.grant.reduceLeft) {
           notes.push(`reduce budget binds: ${i.grant.reduceLeft} of ${reduce} raw size (the venue accepts an exhausted budget)`);
           reduce = i.grant.reduceLeft;
+        }
+        if (reduce > 0n && reduce < minSz) {
+          notes.push(`the fraction or the budget leaves ${reduce} raw size, under the venue's $${Number(MIN_ORDER_VALUE_E6) / 1e6} minimum order (${minSz}) — no reduce; only the reserve acts`);
+          reduce = 0n;
         }
       }
     }
@@ -135,6 +147,15 @@ export function planPerpProtect(i: PerpPlanInput): PerpProtectPlan {
       if (reduce > i.grant.reduceLeft) {
         notes.push(`reduce budget binds the close: ${i.grant.reduceLeft} of ${v.size} raw size (the venue accepts an exhausted budget)`);
         reduce = i.grant.reduceLeft;
+      }
+      const minSz = minOrderSzRaw(v.markRaw, v.szDecimals);
+      if (reduce > 0n && reduce < minSz) {
+        notes.push(
+          reduce === v.size
+            ? `the whole short (${v.size} raw size) is under the venue's $${Number(MIN_ORDER_VALUE_E6) / 1e6} minimum order and cannot be closed by an order; only the reserve acts`
+            : `the reduce budget leaves ${reduce} raw size, under the venue's $${Number(MIN_ORDER_VALUE_E6) / 1e6} minimum order (${minSz}) — no reduce; only the reserve acts`
+        );
+        reduce = 0n;
       }
     }
     if (topUp === 0n && reduce === 0n) {

@@ -10366,6 +10366,9 @@
         "NotionalOverCap(uint256,uint256)": {
           "selector": "0xcfcc2fe0"
         },
+        "OrderBelowMinimum(uint256,uint256)": {
+          "selector": "0x30efe987"
+        },
         "OtherPositionsOpen(uint64,uint256)": {
           "selector": "0x42b7f12f"
         },
@@ -11834,6 +11837,22 @@
             },
             {
               "name": "capE6",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "OrderBelowMinimum",
+          "inputs": [
+            {
+              "name": "valueE6",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "minimumE6",
               "type": "uint256",
               "internalType": "uint256"
             }

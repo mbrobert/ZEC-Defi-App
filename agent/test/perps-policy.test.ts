@@ -153,6 +153,44 @@ describe("rung 2 — the de-risk", () => {
   });
 });
 
+describe("the venue's $10 minimum order (AUDIT-2026-09-26 P-2)", () => {
+  // 0.10 ZEC short at $400.0000: one raw (0.01 ZEC) is $4, the minimum is three raw
+  const LOW_MARK = 4_000_000n;
+  it("a de-risk reduce under the minimum is lifted to it; when the fraction or the budget cannot reach it, no reduce and the reason said", () => {
+    // just under the de-risk rung: the plain reduce is two raw ($8)
+    const v = ok({ mark: LOW_MARK, szi: -10n, a: 10_930_000n, spotE6: 0n });
+    assert.ok(v.hfBps < rung0("derisk").hfBps && v.hfBps >= rung0("emergency").hfBps, `hf ${v.hfBps}`);
+    const plain = reduceForDistance({ accountValueE6: v.accountValueE6, szi: v.szi, markRaw: v.markRaw, szDecimals: SZ_DEC, mmrBps: MMR }, targetD("derisk"));
+    assert.ok(plain >= 1n && plain < 3n, `plain reduce ${plain}`);
+    const lifted = planPerpProtect(input(v, rung("derisk")));
+    assert.equal(lifted.kind, "protect");
+    if (lifted.kind === "protect") {
+      assert.equal(lifted.reduceSz, 3n, "three raw = $12, the smallest order the venue accepts");
+      assert.match(lifted.note ?? "", /lifted to the venue's \$10 minimum order: 3 raw size for \d/);
+    }
+    const budget = planPerpProtect(input(v, rung("derisk"), { grant: grant({ reduceLeft: 2n }) }));
+    assert.equal(budget.kind, "refused", "two raw is under the minimum and nothing else can act");
+    if (budget.kind === "refused") assert.match(budget.reason, /nothing to do after the bounds|exhausted|cannot act/);
+    const fraction = planPerpProtect(input(v, rung("derisk"), { deriskFractionBps: 2_000 }));
+    assert.equal(fraction.kind, "refused", "a fifth of ten raw is two: under the minimum");
+  });
+
+  it("a whole short under the minimum cannot be closed by an order: the close rung tops up only, and says so", () => {
+    // 0.02 ZEC ($8) against $0.80: distance 4.76 %, HF 1.05 — under the close rung
+    const v = ok({ mark: LOW_MARK, szi: -2n, a: 800_000n, spotE6: 5_000_000n });
+    assert.ok(v.hfBps < rung0("emergency").hfBps, `hf ${v.hfBps}`);
+    const p = planPerpProtect(input(v, rung("emergency")));
+    assert.equal(p.kind, "protect");
+    if (p.kind === "protect") {
+      assert.equal(p.reduceSz, 0n);
+      assert.ok(p.topUpE6 > 0n);
+      assert.match(p.note ?? "", /the whole short \(2 raw size\) is under the venue's \$10 minimum order and cannot be closed by an order; only the reserve acts/);
+    }
+    const nothing = planPerpProtect(input(ok({ mark: LOW_MARK, szi: -2n, a: 800_000n, spotE6: 0n }), rung("emergency")));
+    assert.equal(nothing.kind, "refused");
+  });
+});
+
 describe("rung 3 — the close", () => {
   it("closes the whole short and moves the reserve beside it; the expected distance is the cap once nothing is left", () => {
     const v = ok({ mark: MARK_40, a: A_40, spotE6: RESERVE0 });

@@ -192,6 +192,8 @@ contract HyperliquidPerpVenue is Peripheral {
     error TopUpBudgetExceeded(uint64 wanted, uint64 remaining);
     error ReduceBudgetExceeded(uint64 wanted, uint64 remaining);
     error NothingToDo();
+    /// @notice An order the venue's engine would refuse for its value: under $10 (`HyperCoreLib.MIN_ORDER_VALUE_E6`).
+    error OrderBelowMinimum(uint256 valueE6, uint256 minimumE6);
 
     // ------------------------------------------------------------- construction
 
@@ -320,6 +322,7 @@ contract HyperliquidPerpVenue is Peripheral {
         if (l.ms.accountValue <= 0) revert AccountValueNotPositive(l.ms.accountValue);
 
         uint256 ntl = PerpHealthLib.notionalE6(-int64(p.sz), l.mark, SZ_DECIMALS);
+        if (ntl < HyperCoreLib.MIN_ORDER_VALUE_E6) revert OrderBelowMinimum(ntl, HyperCoreLib.MIN_ORDER_VALUE_E6);
         if (ntl > MAX_NOTIONAL_E6) revert NotionalOverCap(ntl, MAX_NOTIONAL_E6);
         uint256 d = PerpHealthLib.distanceBps(int256(l.ms.accountValue), ntl, l.mmrBps);
         uint256 floor_ = minEntryDistanceBps();
@@ -367,6 +370,7 @@ contract HyperliquidPerpVenue is Peripheral {
         _short(l);
         uint64 size = uint64(uint256(-int256(l.pos.szi)));
         if (sz > size) revert ReduceExceedsPosition(sz, size);
+        _requireOrderValue(sz, l.mark);
         _sendAction(HyperCoreLib.encodeLimitOrder(PERP_ASSET, true, _toE8Px(l.mark, true, maxSlippageBps), _toE8Sz(sz), true, HyperCoreLib.TIF_IOC));
         uint64 remaining = size - sz;
         if (remaining == 0) {
@@ -542,6 +546,7 @@ contract HyperliquidPerpVenue is Peripheral {
             if (reduceSz > remaining) revert ReduceBudgetExceeded(reduceSz, remaining);
             uint64 size = uint64(uint256(-int256(l.pos.szi)));
             if (reduceSz > size) revert ReduceExceedsPosition(reduceSz, size);
+            _requireOrderValue(reduceSz, l.mark);
             g.reduceSpent += reduceSz;
             _sendAction(HyperCoreLib.encodeLimitOrder(PERP_ASSET, true, _toE8Px(l.mark, true, g.maxSlippageBps), _toE8Sz(reduceSz), true, HyperCoreLib.TIF_IOC));
         }
@@ -612,11 +617,21 @@ contract HyperliquidPerpVenue is Peripheral {
         return uint64(uint256(e6) * (10 ** uint256(USDC_WEI_DECIMALS - USDC_EVM_DECIMALS)));
     }
 
-    /// @dev A precompile mark (10^(6 − szDecimals)) to an order price (10^8), shaded by the band: down for a sell, up for a buy.
+    /// @dev A precompile mark (10^(6 − szDecimals)) to an order price (10^8), shaded by the band — down for a sell, up
+    ///      for a buy — then rounded to the venue's price precision INSIDE the band: a sell's floor up, a buy's ceiling
+    ///      down (AUDIT-2026-09-26 P-1: the unrounded price carried the mark's eight figures and HyperCore rejects a
+    ///      price over five, silently). A band narrower than one price quantum leaves no room to round inside it.
     function _toE8Px(uint64 markRaw, bool up, uint256 bandBps) internal view returns (uint64) {
         uint256 scaled = uint256(markRaw) * (10 ** uint256(8 - (6 - SZ_DECIMALS)));
         uint256 px = up ? (scaled * (BPS + bandBps)) / BPS : (scaled * (BPS - bandBps)) / BPS;
-        return uint64(px);
+        return HyperCoreLib.roundOrderPxE8(uint64(px), SZ_DECIMALS, !up);
+    }
+
+    /// @dev The venue's engine refuses an order under $10 (AUDIT-2026-09-26 P-2); refuse it here by name instead of
+    ///      sending an action that would be dropped in silence.
+    function _requireOrderValue(uint64 sz, uint64 markRaw) internal view {
+        uint256 value = PerpHealthLib.notionalE6(-int64(sz), markRaw, SZ_DECIMALS);
+        if (value < HyperCoreLib.MIN_ORDER_VALUE_E6) revert OrderBelowMinimum(value, HyperCoreLib.MIN_ORDER_VALUE_E6);
     }
 
     /// @dev A raw size (10^szDecimals) to an order size (10^8).

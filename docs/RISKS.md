@@ -1371,6 +1371,15 @@ from the same key at the same nonce on both chains makes the two account
 addresses equal. What no check reaches: an owner who records the right account
 and then loses the key to it on HyperEVM.
 
+**Risk — an order HyperCore refuses is silent (AUDIT-2026-09-26 P-1 / P-2).**
+A CoreWriter action lands seconds after the transaction and cannot revert it;
+an order whose price breaks the venue's precision rule, or whose value is under
+$10, is refused by the venue's engine with no trace on the EVM. The venue now
+rounds every price to the rule inside the band and refuses a sub-minimum order
+by name, and the keeper judges every action by a later read — but the list of
+things HyperCore refuses is the venue's documentation, read on 2026-09-26, not
+a chain read; D3's testnet run is where an accepted order is first observed.
+
 **Risk — the keeper's reduce un-hedges.** Design §9 item 6 asks whether the
 keeper can make the hedge worse than doing nothing. The plan's order is the
 answer so far: the reserve first at every rung, size only for what the reserve
