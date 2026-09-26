@@ -13,7 +13,7 @@ import {HyperliquidPerpVenue} from "../src/venues/HyperliquidPerpVenue.sol";
 import {MockERC20} from "./mocks/MockERC20.sol";
 import {MockPermit2} from "./mocks/MockPermit2.sol";
 import {MockCoreWriter, MockHyperCorePrecompile, MockUsdcAdapter} from "./mocks/MockHyperCore.sol";
-import {MockMessageTransmitterV2, MockTokenMessengerV2} from "./mocks/MockCctpV2.sol";
+import {CctpMessageV2, MockMessageTransmitterV2, MockTokenMessengerV2} from "./mocks/MockCctpV2.sol";
 
 /// @dev Exposes the two libraries so their integers can be pinned to `packages/shared` (perps.test.ts) value for value.
 contract PerpHealthHarness {
@@ -753,5 +753,85 @@ contract HyperliquidPerpVenueTest is Test {
         _grantKeeper(keeper, 0x0E, 1_000e6, 1_000);
         vm.expectRevert(abi.encodeWithSelector(HyperCoreLib.PrecompileReadFailed.selector, HyperCorePrecompiles.MARK_PX));
         _protect(keeper, PerpHealthLib.RUNG_EMERGENCY, 0, SZ);
+    }
+
+    // ---------------------------------------------------- D5: the rail in and out (2026-09-26)
+
+    /// A burn message from Base (domain 6 → 19) for the account, delivered by anyone through the transmitter.
+    function _arriveFromBase(address to, uint256 amount, uint256 fee, uint256 nonce) internal returns (bytes memory message) {
+        CctpMessageV2.Header memory hd = CctpMessageV2.Header({
+            version: 1,
+            sourceDomain: 6,
+            destinationDomain: 19,
+            nonce: bytes32(nonce),
+            sender: bytes32(uint256(uint160(address(messenger)))),
+            recipient: CctpMessageV2.toBytes32(address(messenger)),
+            destinationCaller: bytes32(0),
+            minFinalityThreshold: 1000,
+            finalityThresholdExecuted: 1000
+        });
+        CctpMessageV2.BurnBody memory b = CctpMessageV2.BurnBody({
+            version: 1,
+            burnToken: CctpMessageV2.toBytes32(address(usdc)),
+            mintRecipient: CctpMessageV2.toBytes32(to),
+            amount: amount,
+            messageSender: CctpMessageV2.toBytes32(makeAddr("alice-base-account")),
+            maxFee: fee,
+            feeExecuted: fee,
+            expirationBlock: block.number + 7200,
+            hookData: ""
+        });
+        message = CctpMessageV2.encode(hd, b);
+        vm.prank(makeAddr("anyone-who-delivers"));
+        transmitter.receiveMessage(message, hex"01");
+    }
+
+    /// The arrival (design §6 "In"): a Base burn to domain 19 with the account as `mintRecipient` is delivered by
+    /// anyone and mints Circle's USDC into the account with no signature from it, less Circle's executed fee (1.3 bp
+    /// Fast); a replay is refused; `fundCore` then moves it onto HyperCore — spot for the reserve, perp for the margin.
+    function test_receiveMessage_fromBase_mintsToTheAccountAndFundCoreMovesItOntoHyperCore() public {
+        uint256 before = usdc.balanceOf(address(acct));
+        uint256 supply = usdc.totalSupply();
+        uint256 fee = 650_000; // 1.3 bp of 5,000 USDC
+        bytes memory m = _arriveFromBase(address(acct), 5_000e6, fee, 1);
+        assertEq(usdc.balanceOf(address(acct)), before + 5_000e6 - fee, "amount less Circle's executed fee lands in the account");
+        assertEq(usdc.balanceOf(circleFees), fee);
+        assertEq(usdc.totalSupply(), supply + 5_000e6, "minted, not moved");
+        vm.prank(makeAddr("anyone-who-delivers"));
+        vm.expectRevert(abi.encodeWithSelector(MockMessageTransmitterV2.NonceUsed.selector, bytes32(uint256(1))));
+        transmitter.receiveMessage(m, hex"01");
+        // onto HyperCore: the reserve to spot, the rest to the perp dex, through token 0's adapter
+        uint256 toSpot = RESERVE0;
+        uint256 toPerp = 5_000e6 - fee - toSpot;
+        _owner(abi.encodeCall(HyperliquidPerpVenue.fundCore, (toSpot, toPerp)));
+        (address from0, uint256 amount0, uint32 dex0) = adapter.deposits(0);
+        (address from1, uint256 amount1, uint32 dex1) = adapter.deposits(1);
+        assertEq(from0, address(acct));
+        assertEq(amount0, toSpot);
+        assertEq(dex0, type(uint32).max, "spot");
+        assertEq(from1, address(acct));
+        assertEq(amount1, toPerp);
+        assertEq(dex1, 0, "the perp dex");
+        assertEq(usdc.balanceOf(address(acct)), before, "what arrived is on HyperCore; what was there before stays");
+        assertEq(usdc.allowance(address(acct), address(adapter)), 0, "approval reset");
+    }
+
+    /// The way home (design §6 "Out"): the message `burnToBase` emits is what Circle attests for Base — domain
+    /// 19 → 6, Standard (no Fast out of HyperEVM), anyone may deliver, the recorded Base account left-padded.
+    function test_burnToBase_messageIsWhatCircleAttestsForBase() public {
+        address home = makeAddr("alice-base-account");
+        _owner(abi.encodeCall(HyperliquidPerpVenue.setBaseRecipient, (bytes32(uint256(uint160(home))))));
+        _owner(abi.encodeCall(HyperliquidPerpVenue.burnToBase, (2_500e6, 0)));
+        (CctpMessageV2.Header memory hd, CctpMessageV2.BurnBody memory b) = CctpMessageV2.decode(transmitter.lastMessage());
+        assertEq(hd.sourceDomain, 19);
+        assertEq(hd.destinationDomain, 6);
+        assertEq(hd.recipient, bytes32(uint256(uint160(address(messenger)))), "Base's messenger, as registered for domain 6");
+        assertEq(hd.destinationCaller, bytes32(0), "anyone may deliver on Base");
+        assertEq(hd.minFinalityThreshold, 2000, "Standard only out of HyperEVM (facts s.7.4)");
+        assertEq(CctpMessageV2.toAddress(b.mintRecipient), home, "the recorded Base account, and no other");
+        assertEq(b.amount, 2_500e6);
+        assertEq(b.maxFee, 0);
+        assertEq(b.messageSender, CctpMessageV2.toBytes32(address(acct)));
+        assertEq(b.burnToken, CctpMessageV2.toBytes32(address(usdc)));
     }
 }

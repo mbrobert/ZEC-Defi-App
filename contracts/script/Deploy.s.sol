@@ -90,6 +90,9 @@ library BaseAddresses {
     address internal constant CCTP_MESSAGE_TRANSMITTER_V2 = 0x81D40F21F12A8F0E3252Bccb954D722d4c464B64;
     uint32 internal constant CCTP_DOMAIN_BASE = 6;
     uint32 internal constant CCTP_DOMAIN_SOLANA = 5;
+    /// @dev HyperEVM's CCTP domain: `MessageTransmitterV2.localDomain()` on chain 999 and Base's own
+    ///      `remoteTokenMessengers(19)`, both read 2026-09-25 (VERIFIED-PERPS-FACTS §7.4).
+    uint32 internal constant CCTP_DOMAIN_HYPEREVM = 19;
 }
 
 /// @title Deploy — the v1 surface on Base.
@@ -103,6 +106,10 @@ library BaseAddresses {
 ///   ENTRY_HF_FLOOR_WAD       default 1.25e18 (packages/shared ENTRY_HF_FLOOR, pinned 2026-09-12)
 ///   CCTP_TOKEN_MESSENGER_V2  default BaseAddresses (Circle's messenger; 0 turns closeLpAndBurn off)
 ///   CCTP_DOMAIN_SOLANA       default 5 (Solana's CCTP domain, VERIFIED-SOLANA-FACTS Addendum 1)
+///   CCTP_DOMAIN_HYPEREVM     default 19 (HyperEVM's CCTP domain, VERIFIED-PERPS-FACTS §7.4; 0 turns burnToPerp off)
+///   PERP_FACTORY             default 0 — the OilskinAccountFactory on HyperEVM, with
+///   PERP_ACCOUNT_IMPLEMENTATION  its IMPLEMENTATION(): together they let setPerpRecipient check a
+///                            recipient by CREATE2 derivation; both zero = unchecked (the owner's word)
 ///   REGISTRY_TIMELOCK_DELAY  default 172800 (2 days) — the IMMUTABLE delay on replacing an
 ///                            asset's venue. Bounded [1 hours, 30 days] by the registry.
 ///   MORPHO_MARKET_IDS        comma-separated bytes32 market ids for MorphoBlueVenue (default: the
@@ -162,6 +169,11 @@ contract Deploy is Script {
         ///      is off on this deployment (the router refuses the burn by name). And Solana's CCTP domain.
         address cctpTokenMessenger;
         uint32 cctpDomainSolana;
+        /// @dev HyperEVM's CCTP domain (0 = the perps rail is off) and, when the HyperEVM deployment is known, its
+        ///      account factory and implementation for the recipient derivation check (both or neither).
+        uint32 cctpDomainHyperEvm;
+        address perpFactory;
+        address perpAccountImplementation;
         /// @dev CONFIRM_BASE_MAINNET — the explicit opt-in the guard requires on chain id 8453.
         bool confirmBaseMainnet;
         /// @dev ALLOW_ANY_CHAIN — run on a non-Base chain with every address given by env (tests).
@@ -195,6 +207,8 @@ contract Deploy is Script {
     ///         transmitter's domain / the Solana route is not what was recorded: re-read before deploying.
     error CctpDrift(string what, address expected, address actual);
     error CctpDomainDrift(string what, uint32 domain);
+    /// @notice The HyperEVM factory and its implementation were given one without the other.
+    error PerpFactoryIncomplete(address factory, address implementation);
     /// @notice On mainnet the fee destination must not be the broadcasting key (audit wave 2, S-LOW-1).
     error TreasuryIsBroadcaster(address treasury);
     /// @notice On mainnet the registry owner must be a contract (a Safe), never an EOA (audit wave 2, S-LOW-1).
@@ -251,6 +265,9 @@ contract Deploy is Script {
         c.pythTwapWindow = uint32(vm.envOr("PYTH_TWAP_WINDOW", uint256(1800)));
         c.cctpTokenMessenger = vm.envOr("CCTP_TOKEN_MESSENGER_V2", BaseAddresses.CCTP_TOKEN_MESSENGER_V2);
         c.cctpDomainSolana = uint32(vm.envOr("CCTP_DOMAIN_SOLANA", uint256(BaseAddresses.CCTP_DOMAIN_SOLANA)));
+        c.cctpDomainHyperEvm = uint32(vm.envOr("CCTP_DOMAIN_HYPEREVM", uint256(BaseAddresses.CCTP_DOMAIN_HYPEREVM)));
+        c.perpFactory = vm.envOr("PERP_FACTORY", address(0));
+        c.perpAccountImplementation = vm.envOr("PERP_ACCOUNT_IMPLEMENTATION", address(0));
         c.confirmBaseMainnet = vm.envOr("CONFIRM_BASE_MAINNET", false);
         c.allowAnyChain = vm.envOr("ALLOW_ANY_CHAIN", false);
     }
@@ -341,10 +358,17 @@ contract Deploy is Script {
                 }
                 uint32 dom = IMessageTransmitterV2(t).localDomain();
                 if (dom != BaseAddresses.CCTP_DOMAIN_BASE) revert CctpDomainDrift("transmitter.localDomain", dom);
-                if (ITokenMessengerV2(c.cctpTokenMessenger).remoteTokenMessengers(c.cctpDomainSolana) == bytes32(0)) {
+                if (c.cctpDomainSolana != 0 && ITokenMessengerV2(c.cctpTokenMessenger).remoteTokenMessengers(c.cctpDomainSolana) == bytes32(0)) {
                     revert CctpDomainDrift("messenger.remoteTokenMessengers", c.cctpDomainSolana);
                 }
+                // The perps rail (D5): Base's messenger must know the route to HyperEVM (facts §7.4 read it).
+                if (c.cctpDomainHyperEvm != 0 && ITokenMessengerV2(c.cctpTokenMessenger).remoteTokenMessengers(c.cctpDomainHyperEvm) == bytes32(0)) {
+                    revert CctpDomainDrift("messenger.remoteTokenMessengers", c.cctpDomainHyperEvm);
+                }
             }
+        }
+        if ((c.perpFactory == address(0)) != (c.perpAccountImplementation == address(0))) {
+            revert PerpFactoryIncomplete(c.perpFactory, c.perpAccountImplementation);
         }
     }
 
@@ -398,7 +422,10 @@ contract Deploy is Script {
             direct,
             directSwap,
             ITokenMessengerV2(c.cctpTokenMessenger),
-            c.cctpDomainSolana
+            c.cctpDomainSolana,
+            c.cctpDomainHyperEvm,
+            c.perpFactory,
+            c.perpAccountImplementation
         );
         if (c.deployPythAdapter) {
             d.pythAdapter = new PythOracleAdapter(

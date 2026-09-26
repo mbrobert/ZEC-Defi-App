@@ -15,8 +15,12 @@
 import type { Address } from "./evm.js";
 import type { SolanaAddress } from "./solana.js";
 
-/** CCTP domain ids: the paths of Circle's fee endpoints and `MessageTransmitterV2.localDomain()` on Base. */
-export const CCTP_DOMAINS = { solana: 5, base: 6 } as const;
+/**
+ * CCTP domain ids: the paths of Circle's fee endpoints and `MessageTransmitterV2.localDomain()` on Base (6) and on
+ * HyperEVM (19 — read on chain 999 at block 46,887,589 and as Base's `remoteTokenMessengers(19)`, 2026-09-25,
+ * `VERIFIED-PERPS-FACTS-2026-09-14.md` §7.4; the rail `StrategyRouter.burnToPerp` sends a short's margin out on).
+ */
+export const CCTP_DOMAINS = { solana: 5, base: 6, hyperevm: 19 } as const;
 export type CctpDomain = (typeof CCTP_DOMAINS)[keyof typeof CCTP_DOMAINS];
 
 /** `minFinalityThreshold`: 1000 = Fast Transfer (seconds, fee-bearing), 2000 = Standard (source-chain finality, fee 0). */

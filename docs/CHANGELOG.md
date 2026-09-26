@@ -3,6 +3,35 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-09-26 — The perps rail's Base half (Stream D, D5): the account burns its margin to its own HyperEVM account, checked by derivation where Base can check it
+
+BUILD-PLAN Stream D step D5, against `docs/PERPS-DESIGN-2026-09-25.md` §6 (its §6 "as built" paragraph and
+who-signs-what table are the record). Nothing has crossed a chain; the testnet crossing is the founder's.
+
+- **`StrategyRouter.setPerpRecipient(address)` / `burnToPerp(BurnToPerpParams)`** beside the Solana pair. The
+  record is the account's own `OilskinAccount` on HyperEVM; when the router was deployed knowing the HyperEVM
+  factory and its implementation (`PERP_FACTORY`, `PERP_ACCOUNT_IMPLEMENTATION`, new immutables) the address
+  must be the one the SAME owner's account has there — an EIP-1167 clone's CREATE2 address is a pure function
+  of (factory, implementation, owner) and the factory's salt is `keccak256(abi.encode(owner))` — else
+  `PerpRecipientMismatch(given, expected)`; both zero = unchecked, the owner's word, as the Solana recipient is.
+  The burn goes to `HYPEREVM_DOMAIN` (19, `VERIFIED-PERPS-FACTS` §7.4: `localDomain()` on chain 999 and Base's
+  `remoteTokenMessengers(19)`) with the record left-padded, `destinationCaller` zero, the fee below the amount
+  and at 1 %, the approval exact and reset, Fast (offered into HyperEVM at 1.3 bp) or Standard as the caller
+  asks. **Each rail is switched by its own domain**: `closeLpAndBurn` now refuses `CrossChainDisabled` when
+  `SOLANA_DOMAIN` is 0, `burnToPerp` when `HYPEREVM_DOMAIN` is 0; a messenger needs at least one.
+- **Deploy:** `Deploy.s.sol` reads `CCTP_DOMAIN_HYPEREVM` (default 19), `PERP_FACTORY` and
+  `PERP_ACCOUNT_IMPLEMENTATION` (default 0, together or `PerpFactoryIncomplete` at the guard) and on Base
+  requires the messenger to know the route; Base Sepolia deploys with the rail off. A deploy note: a factory
+  deployed from the same key at the same nonce lands at the same address on both chains, so the user's HyperEVM
+  account address equals their Base one.
+- **HyperEVM side, unchanged and now proven:** the arrival is `receiveMessage` by anyone, minting Circle's USDC
+  into the account with no signature from it; `fundCore` (D2) moves it onto HyperCore; `burnToBase`'s message
+  decodes as Circle attests it for Base (19 → 6, Standard).
+- **Shared:** `CCTP_DOMAINS.hyperevm = 19`, and `HYPERLIQUID.cctp.domain` derives from it (one source).
+- **Proof:** `StrategyRouterPerps.t.sol` (6), `HyperliquidPerpVenue.t.sol` +2, `Deploy.t.sol` +1 — contracts 455 →
+  **464** / 41 suites; the root ABI bundle regenerated (532 → **542** entries, the router's constructor and pair)
+  and the web's generated file re-synced (web 212 green); shared 160; the keeper's ABI seam 167/167 unchanged.
+
 ## 2026-09-26 — The keeper's perps path (Stream D, D4): the short's distance read where `protect` reads it, the reserve before any reduce, and an order judged by what landed
 
 BUILD-PLAN Stream D step D4, against `docs/PERPS-DESIGN-2026-09-25.md` §4–§5 (its §5 "as built" paragraph is

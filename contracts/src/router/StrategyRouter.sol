@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import {Peripheral} from "../account/Peripheral.sol";
 import {Call, IOilskinAccount} from "../interfaces/IOilskinAccount.sol";
 import {ITokenMessengerV2} from "../interfaces/ICctpV2.sol";
@@ -65,6 +66,19 @@ contract StrategyRouter is Peripheral {
     ///         `CrossChainDisabled` by name.
     ITokenMessengerV2 public immutable CCTP_MESSENGER;
     uint32 public immutable SOLANA_DOMAIN;
+    /// @notice HyperEVM's CCTP domain — 19: `MessageTransmitterV2.localDomain()` on chain 999 and Base's own
+    ///         `remoteTokenMessengers(19)` (`VERIFIED-PERPS-FACTS-2026-09-14.md` §7.4, read 2026-09-25) — the rail
+    ///         `burnToPerp` sends a short's margin out on (BUILD-PLAN Stream D step D5;
+    ///         `PERPS-DESIGN-2026-09-25.md` §6). 0 = the perps rail is off on this deployment: `burnToPerp`
+    ///         refuses `CrossChainDisabled` by name. Each rail is switched by its own domain.
+    uint32 public immutable HYPEREVM_DOMAIN;
+    /// @notice The `OilskinAccountFactory` on HyperEVM and its account implementation, as deployed there. Base
+    ///         cannot read HyperEVM state, but an EIP-1167 clone's CREATE2 address is a pure function of
+    ///         (factory, implementation, owner), so with both known `setPerpRecipient` accepts only the address
+    ///         the SAME owner's account has on HyperEVM — a mistyped or foreign address is refused by name.
+    ///         Both zero = unchecked: the owner's word, as the Solana recipient is (BACKLOG O-4).
+    address public immutable PERP_FACTORY;
+    address public immutable PERP_ACCOUNT_IMPLEMENTATION;
 
     struct Permit2Pull {
         uint256 nonce;
@@ -159,8 +173,23 @@ contract StrategyRouter is Peripheral {
         uint256 deadline;
     }
 
+    /// @notice A short's margin out to HyperEVM (BUILD-PLAN Stream D step D5; design §6 "In"): USDC the account
+    ///         holds — its own, or delivered by the loop from a Kamino borrow — burned to the account's RECORDED
+    ///         HyperEVM account (never a parameter).
+    struct BurnToPerpParams {
+        /// @dev USDC to burn. type(uint256).max = everything the account holds.
+        uint256 amount;
+        /// @dev Circle's fee bound at delivery, USDC units; below the amount and within `MAX_CCTP_FEE_BPS`.
+        uint256 maxFee;
+        /// @dev 1000 = Fast Transfer (offered INTO HyperEVM at 1.3 bp when Circle's allowance allows), 2000 = Standard.
+        uint32 minFinalityThreshold;
+        uint256 deadline;
+    }
+
     event LpOnlyOpened(address indexed account, uint256 usdcAmount, bytes32 indexed poolId, uint256 positionId);
     event SolanaRecipientSet(address indexed account, bytes32 recipient);
+    event PerpRecipientSet(address indexed account, address indexed perpAccount);
+    event BurnedToPerp(address indexed account, uint256 amount, address indexed perpAccount, uint256 maxFee, uint32 minFinalityThreshold);
     event BurnedToSolana(
         address indexed account,
         uint256 amount,
@@ -233,6 +262,8 @@ contract StrategyRouter is Peripheral {
     error UsdcShort(uint256 asked, uint256 held);
     error CrossChainDisabled();
     error NoSolanaRecipient(address account);
+    error NoPerpRecipient(address account);
+    error PerpRecipientMismatch(address given, address expected);
     error MaxFeeNotBelowAmount(uint256 maxFee, uint256 amount);
     error MaxFeeTooLarge(uint256 maxFee, uint256 cap);
     error PoolWithoutUsdc(bytes32 poolId);
@@ -264,7 +295,10 @@ contract StrategyRouter is Peripheral {
         ILpVenue lpVenueDirect,
         ISwapAdapter swapAdapterDirect,
         ITokenMessengerV2 cctpMessenger,
-        uint32 solanaDomain
+        uint32 solanaDomain,
+        uint32 hyperEvmDomain,
+        address perpFactory,
+        address perpAccountImplementation
     ) {
         if (
             address(registry) == address(0) || address(lpVenue) == address(0)
@@ -280,10 +314,16 @@ contract StrategyRouter is Peripheral {
         USDC = usdc;
         LP_VENUE_DIRECT = lpVenueDirect;
         SWAP_DIRECT = swapAdapterDirect;
-        // A messenger without a destination domain could burn to Ethereum (domain 0) by default.
-        if (address(cctpMessenger) != address(0) && solanaDomain == 0) revert ZeroAddress();
+        // A messenger without a destination domain could burn to Ethereum (domain 0) by default; each
+        // rail then checks its OWN domain before burning.
+        if (address(cctpMessenger) != address(0) && solanaDomain == 0 && hyperEvmDomain == 0) revert ZeroAddress();
+        // The HyperEVM factory and its implementation derive an address together or not at all.
+        if ((perpFactory == address(0)) != (perpAccountImplementation == address(0))) revert ZeroAddress();
         CCTP_MESSENGER = cctpMessenger;
         SOLANA_DOMAIN = solanaDomain;
+        HYPEREVM_DOMAIN = hyperEvmDomain;
+        PERP_FACTORY = perpFactory;
+        PERP_ACCOUNT_IMPLEMENTATION = perpAccountImplementation;
     }
 
     // ------------------------------------------------------------------ open
@@ -460,6 +500,12 @@ contract StrategyRouter is Peripheral {
     ///         (`SOLANA-ARCHITECTURE.md` §14.5; the Solana program records the Base account the same way).
     mapping(address account => bytes32 recipient) public solanaRecipient;
 
+    /// @notice The account's own `OilskinAccount` on HyperEVM as CCTP's `mintRecipient` for `burnToPerp` (a
+    ///         20-byte address, left-padded on the wire — `PERPS-DESIGN-2026-09-25.md` §6), written by the owner
+    ///         through the account (`setPerpRecipient`); `burnToPerp` burns only to it. Zero = none: a burn
+    ///         reverts `NoPerpRecipient`.
+    mapping(address account => address perpAccount) public perpRecipient;
+
     // ------------------------------------------------------ cross-chain (BUILD-PLAN D6 / A5)
 
     /// @notice Record (or clear, with zero) the calling account's Solana USDC token account.
@@ -520,7 +566,7 @@ contract StrategyRouter is Peripheral {
     ///      of every token touched is unchanged.
     function closeLpAndBurn(BurnParams calldata p) external returns (uint256 usdcFromLp, uint256 burned) {
         if (p.deadline < block.timestamp) revert Expired(p.deadline);
-        if (address(CCTP_MESSENGER) == address(0)) revert CrossChainDisabled();
+        if (address(CCTP_MESSENGER) == address(0) || SOLANA_DOMAIN == 0) revert CrossChainDisabled();
         address account = msg.sender;
         bytes32 recipient = solanaRecipient[account];
         if (recipient == bytes32(0)) revert NoSolanaRecipient(account);
@@ -557,6 +603,72 @@ contract StrategyRouter is Peripheral {
 
         _assertUnchanged(USDC, beforeUsdc);
         emit BurnedToSolana(account, burned, recipient, p.maxFee, p.minFinalityThreshold, closed, failedCount, usdcFromLp);
+    }
+
+    // ------------------------------------------------- perps (BUILD-PLAN Stream D / D5)
+
+    /// @notice Record (or clear, with zero) the calling account's own `OilskinAccount` on HyperEVM — the only
+    ///         destination `burnToPerp` may name. When the HyperEVM factory and implementation are known
+    ///         (`PERP_FACTORY`, `PERP_ACCOUNT_IMPLEMENTATION`) the address must be the one the SAME owner's
+    ///         account has there — an EIP-1167 clone's CREATE2 address is a pure function of the three, and the
+    ///         factory's salt is `keccak256(abi.encode(owner))` — so a mistyped or foreign address is refused by
+    ///         name; otherwise it is the owner's word, as the Solana recipient is.
+    /// @dev Called BY the account with a plain `exec`. No product flow grants this selector to a keeper: a
+    ///      keeper grant for `burnToPerp` alone cannot move the destination.
+    function setPerpRecipient(address perpAccount) external {
+        if (perpAccount != address(0) && PERP_FACTORY != address(0)) {
+            address expected = Clones.predictDeterministicAddress(
+                PERP_ACCOUNT_IMPLEMENTATION, keccak256(abi.encode(IOilskinAccount(msg.sender).owner())), PERP_FACTORY
+            );
+            if (perpAccount != expected) revert PerpRecipientMismatch(perpAccount, expected);
+        }
+        perpRecipient[msg.sender] = perpAccount;
+        emit PerpRecipientSet(msg.sender, perpAccount);
+    }
+
+    /// @notice USDC the account holds → approve TokenMessengerV2 for exactly the amount → `depositForBurn` to
+    ///         the account's recorded HyperEVM account on domain 19 → approve zero, all as the account: a
+    ///         short's margin on its way to HyperCore (design §6 "In"). On HyperEVM the arrival is a plain
+    ///         `receiveMessage` anyone may send; the account then moves the USDC onto HyperCore with
+    ///         `HyperliquidPerpVenue.fundCore`. Fast (1000) is offered into HyperEVM when Circle's allowance
+    ///         allows; the caller reads Circle's schedule at send time — the router carries no fee number.
+    /// @dev Invariant: the deployment has a messenger AND the HyperEVM domain, and the account a recorded
+    ///      recipient; `amount = max` burns the whole balance and a fixed amount reverts `UsdcShort` when the
+    ///      account holds less; `maxFee` is below the amount AND within `MAX_CCTP_FEE_BPS` of it; the approval
+    ///      is exact and reset, so a grant's USDC budget bounds what leaves; the router's USDC is unchanged.
+    function burnToPerp(BurnToPerpParams calldata p) external returns (uint256 burned) {
+        if (p.deadline < block.timestamp) revert Expired(p.deadline);
+        if (address(CCTP_MESSENGER) == address(0) || HYPEREVM_DOMAIN == 0) revert CrossChainDisabled();
+        address account = msg.sender;
+        address recipient = perpRecipient[account];
+        if (recipient == address(0)) revert NoPerpRecipient(account);
+
+        uint256 beforeUsdc = _balance(USDC);
+        uint256 held = IERC20(USDC).balanceOf(account);
+        burned = p.amount == type(uint256).max ? held : p.amount;
+        if (burned == 0) revert ZeroAmount();
+        if (held < burned) revert UsdcShort(burned, held);
+        if (p.maxFee >= burned) revert MaxFeeNotBelowAmount(p.maxFee, burned);
+        uint256 feeCap = (burned * MAX_CCTP_FEE_BPS) / 10_000;
+        if (p.maxFee > feeCap) revert MaxFeeTooLarge(p.maxFee, feeCap);
+
+        _approveCallReset(
+            USDC,
+            address(CCTP_MESSENGER),
+            burned,
+            Call({
+                target: address(CCTP_MESSENGER),
+                value: 0,
+                data: abi.encodeCall(
+                    ITokenMessengerV2.depositForBurn,
+                    (burned, HYPEREVM_DOMAIN, bytes32(uint256(uint160(recipient))), USDC, bytes32(0), p.maxFee, p.minFinalityThreshold)
+                ),
+                callback: false
+            })
+        );
+
+        _assertUnchanged(USDC, beforeUsdc);
+        emit BurnedToPerp(account, burned, recipient, p.maxFee, p.minFinalityThreshold);
     }
 
     // -------------------------------------------------------------- internal

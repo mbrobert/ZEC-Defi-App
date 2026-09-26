@@ -4,9 +4,9 @@
      below came from running the command in its own row, on the tree named here. README.md
      carries the prose and no numbers; this file carries the numbers and no prose. -->
 
-_Generated 2026-09-26T15:59:31Z by `npm run status` on darwin-arm64, Node 22.23.2._
+_Generated 2026-09-26T16:30:54Z by `npm run status` on darwin-arm64, Node 22.23.2._
 
-**Tree:** the working tree at `162c9f9` on `main`, with **11 file(s) modified on top of it** — including this one, when it is regenerated just before a commit. Each suite ran against that tree, not against a published commit.
+**Tree:** the working tree at `daa5572` on `main`, with **20 file(s) modified on top of it** — including this one, when it is regenerated just before a commit. Each suite ran against that tree, not against a published commit.
 
 Abbreviations: ABI = application binary interface; e2e = end-to-end; HF = health factor;
 LP = liquidity provision; RPC = remote procedure call; CCTP = Circle's Cross-Chain Transfer Protocol.
@@ -15,9 +15,9 @@ LP = liquidity provision; RPC = remote procedure call; CCTP = Circle's Cross-Cha
 
 | Area | Command | Result |
 |---|---|---|
-| Contracts (Foundry) | `cd contracts && forge test` | **455 passed / 0 failed / 13 skipped** (468 total), 40 suites |
+| Contracts (Foundry) | `cd contracts && forge test` | **464 passed / 0 failed / 13 skipped** (477 total), 41 suites |
 | Contracts, fork | `FORK_URL=<Base archive RPC> forge test --match-path test/fork/BaseFork.t.sol` | not run — add `--all` |
-| Root ABI seam | `node scripts/verify-abi.mjs` | **532** selectors / topics / errors across 20 contracts |
+| Root ABI seam | `node scripts/verify-abi.mjs` | **542** selectors / topics / errors across 20 contracts |
 | Shared | `npm test -w @zyo/shared` | **160** |
 | Solana, seams | `npm test -w @zyo/solana` | **22** |
 | Solana, program unit | `cd solana && cargo test --manifest-path programs/oilskin/Cargo.toml` | not run — add `--all` |
@@ -117,7 +117,7 @@ All 61 documents beside this one, from an `ls` of `docs/` at generation time, ea
 - [`MODEL-NUMBERS-2026-09-12.md`](MODEL-NUMBERS-2026-09-12.md) — MODEL-NUMBERS — Base-first yield gate, generated 2026-09-13T02:43:16+00:00
 - [`MODEL-NUMBERS-2026-09-13.md`](MODEL-NUMBERS-2026-09-13.md) — MODEL-NUMBERS — the Base module's yield model, generated 2026-09-13T04:35:28+00:00
 - [`MODEL-RESERVE-2026-09-19.md`](MODEL-RESERVE-2026-09-19.md) — The Solana-side reserve against ZEC's own price history — a model, not a decision (2026-09-19)
-- [`PERPS-DESIGN-2026-09-25.md`](PERPS-DESIGN-2026-09-25.md) — Perps module — design (D1, drafted 2026-09-25; D2 built the same day, nothing deployed)
+- [`PERPS-DESIGN-2026-09-25.md`](PERPS-DESIGN-2026-09-25.md) — Perps module — design (D1, drafted 2026-09-25; D2 built the same day, D4 on 2026-09-26; nothing deployed)
 - [`PERPS-FEASIBILITY-2026-09-14.md`](PERPS-FEASIBILITY-2026-09-14.md) — Perps and the cross-chain loop in beta — feasibility, cost, and the trade
 - [`POOLS.md`](POOLS.md) — Pool research — blue-chip Aerodrome pools the Snuggle engine supports
 - [`PRE-AUDIT-2026-09-02.md`](PRE-AUDIT-2026-09-02.md) — Pre-audit sweep — 2026-09-02

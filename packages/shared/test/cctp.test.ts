@@ -53,6 +53,7 @@ test("the selectors and event signatures are the verified ABI's — recomputed f
 test("domains, finality thresholds and the burn cap are the recorded ones", () => {
   assert.equal(CCTP_DOMAINS.solana, 5);
   assert.equal(CCTP_DOMAINS.base, 6);
+  assert.equal(CCTP_DOMAINS.hyperevm, 19, "localDomain() on chain 999, and Base's remoteTokenMessengers(19) — facts §7.4");
   assert.equal(CCTP_FINALITY.fast, 1000);
   assert.equal(CCTP_FINALITY.standard, 2000);
   assert.equal(CCTP_BURN_LIMIT_PER_MESSAGE_USDC, 10_000_000);

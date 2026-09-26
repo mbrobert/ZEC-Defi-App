@@ -328,6 +328,48 @@ BACKLOG O-6: the hatch (`exec`) can always empty it, and the keeper reports the 
 finding (`MODEL-RESERVE-2026-09-19.md`) transfers with the sign flipped: on the bridge's timescale the reserve
 is not the constraint; the entry is.
 
+**As built (D5, 2026-09-26 — the Base half and the arrival; nothing has crossed a chain).** `StrategyRouter`
+gains the perps pair beside the Solana pair: `setPerpRecipient(address)` records the account's own HyperEVM
+`OilskinAccount` — and, when the router was deployed knowing the HyperEVM factory and its implementation
+(`PERP_FACTORY`, `PERP_ACCOUNT_IMPLEMENTATION`), refuses by name any address but the one the SAME owner's account
+has there, by the factory's own CREATE2 rule (`Clones.predictDeterministicAddress(impl, keccak256(abi.encode(owner)),
+factory)`; an EIP-1167 clone's address is a pure function of the three, so Base needs no HyperEVM state); both
+zero = unchecked, the owner's word, as the Solana recipient is. `burnToPerp(amount, maxFee, minFinalityThreshold,
+deadline)` burns the account's USDC to `HYPEREVM_DOMAIN` (19, an immutable from `VERIFIED-PERPS-FACTS` §7.4) with
+that record left-padded as `mintRecipient`, `destinationCaller` zero (anyone may deliver), the fee bounded below the
+amount and at 1 %, the approval exact and reset, Fast or Standard as the caller asks — the router carries no fee
+number. Each rail is switched by its own domain (`closeLpAndBurn` refuses `CrossChainDisabled` when `SOLANA_DOMAIN`
+is 0, `burnToPerp` when `HYPEREVM_DOMAIN` is 0); `Deploy.s.sol` reads `CCTP_DOMAIN_HYPEREVM` (default 19),
+`PERP_FACTORY` and `PERP_ACCOUNT_IMPLEMENTATION` (default 0, together or not at all) and, on Base, requires the
+messenger to know the route (`remoteTokenMessengers(19)`, which §7.4 read); Base Sepolia deploys with the rail off.
+On HyperEVM nothing changed: the arrival is `MessageTransmitterV2.receiveMessage(message, attestation)` by anyone,
+minting Circle's USDC into the account less the executed fee, then the account's `fundCore` (D2). **A deploy note
+for the founder:** a factory deployed from the same deployer key at the same nonce lands at the same address on
+both chains, and its implementation too, so the user's HyperEVM account address then EQUALS their Base account
+address — the check in `setPerpRecipient` still applies, and the web has one address to show.
+
+| Direction | Step | Chain | Signer |
+|---|---|---|---|
+| In (Base → HyperEVM) | `StrategyRouter.setPerpRecipient` — once, the account's own HyperEVM account | Base | the user's Base wallet (owner) |
+| | `StrategyRouter.burnToPerp` — the margin and the reserve, Fast when Circle's allowance allows | Base | the user's Base wallet |
+| | Circle attests (Fast ≈ seconds at 1.3 bp; Standard = Base finality) | — | — |
+| | `MessageTransmitterV2.receiveMessage` — mints to the user's HyperEVM `OilskinAccount` | HyperEVM | anyone (the web, in D6; the account signs nothing) |
+| | `HyperliquidPerpVenue.fundCore` then `open` (one `execBatch`), then the `PerpGrant` and the `Permission` | HyperEVM | the user's wallet on HyperEVM |
+| Out (HyperEVM → Base) | `HyperliquidPerpVenue.withdrawToEvm` (perp → spot → EVM), then `burnToBase` — Standard only, minutes | HyperEVM | the user's wallet |
+| | `MessageTransmitterV2.receiveMessage` — mints to the user's Base `OilskinAccount` | Base | anyone |
+| Protect | `protect(rung, topUp, reduceSz)` — the reserve already on HyperCore; nothing crosses a chain | HyperEVM | the keeper's third key under the grant |
+
+Tests: `contracts/test/StrategyRouterPerps.t.sol` (6: the unchecked and the checked record — alice's derived
+address accepted before it is deployed, bob's, an EOA and alice's Base account refused with the address expected,
+the factory then deploying exactly there; a Fast burn's message decoded as Circle attests it for HyperEVM — domain
+6 → 19, to Base's own messenger address there, the recipient left-padded, anyone may deliver — then "everything"
+Standard; every refusal by name; each rail switched by its own domain and both constructor guards; a keeper grant
+bounded by its USDC budget and unable to redirect) and two in `HyperliquidPerpVenue.t.sol` (the arrival from Base
+minting to the account with no signature from it, replay refused, `fundCore` moving it onto HyperCore spot and
+perp through the adapter; `burnToBase`'s message decoded as Circle attests it for Base — 19 → 6, Standard, the
+recorded Base account). What is left of D5 is the founder's: one crossing each way on Base Sepolia ↔ HyperEVM
+testnet with a throwaway key.
+
 **The composition nobody has to design (v1.1, not beta).** A user whose margin USDC was borrowed on Kamino
 against their ZEC holds two positions with opposite liquidation directions: ZEC down threatens the loan while
 the short *gains*; ZEC up threatens the short while the loan *gets healthier*. Each leg's gain is the other's

@@ -210,6 +210,9 @@ contract DeploySepolia is Deploy {
         // (not probed): the loop is off on this deployment and the router refuses `closeLpAndBurn` by name.
         c.cctpTokenMessenger = address(0);
         c.cctpDomainSolana = 0;
+        c.cctpDomainHyperEvm = 0;
+        c.perpFactory = address(0);
+        c.perpAccountImplementation = address(0);
         // `guardSepolia` is the guard here; the mainnet opt-ins stay off.
         c.confirmBaseMainnet = false;
         c.allowAnyChain = false;

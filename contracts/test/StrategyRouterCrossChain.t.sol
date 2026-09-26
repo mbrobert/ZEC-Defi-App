@@ -311,7 +311,7 @@ contract StrategyRouterCrossChainTest is Fixture {
         acct.execWithCallback(address(router), 0, abi.encodeCall(StrategyRouter.closeLpAndBurn, (b)));
         // a deployment without the loop refuses by name, and a messenger with no domain cannot be built
         StrategyRouter off = new StrategyRouter(
-            registry, lpVenue, swapAdapter, IPermit2(address(permit2)), address(usdc), ILpVenue(address(0)), ISwapAdapter(address(0)), ITokenMessengerV2(address(0)), 0
+            registry, lpVenue, swapAdapter, IPermit2(address(permit2)), address(usdc), ILpVenue(address(0)), ISwapAdapter(address(0)), ITokenMessengerV2(address(0)), 0, 0, address(0), address(0)
         );
         b = _burn(none, 1_000e6, 0);
         vm.prank(alice);
@@ -325,7 +325,7 @@ contract StrategyRouterCrossChainTest is Fixture {
     ///      `vm.deployCode`, which the cheatcode cannot watch directly).
     function deployRouterWithAMessengerButNoDomain() external {
         new StrategyRouter(
-            registry, lpVenue, swapAdapter, IPermit2(address(permit2)), address(usdc), ILpVenue(address(0)), ISwapAdapter(address(0)), ITokenMessengerV2(address(cctpMessenger)), 0
+            registry, lpVenue, swapAdapter, IPermit2(address(permit2)), address(usdc), ILpVenue(address(0)), ISwapAdapter(address(0)), ITokenMessengerV2(address(cctpMessenger)), 0, 0, address(0), address(0)
         );
     }
 

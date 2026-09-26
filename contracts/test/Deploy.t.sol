@@ -43,6 +43,7 @@ contract DeployTest is Fixture {
         c.registryTimelockDelay = REGISTRY_TIMELOCK;
         c.cctpTokenMessenger = address(cctpMessenger);
         c.cctpDomainSolana = CCTP_DOMAIN_SOLANA;
+        c.cctpDomainHyperEvm = CCTP_DOMAIN_HYPEREVM;
         // The fixture chain is 31337: opt in by default; the mainnet tests set what they need.
         c.allowAnyChain = true;
         c.confirmBaseMainnet = false;
@@ -192,6 +193,8 @@ contract DeployTest is Fixture {
         assertEq(d.router.USDC(), address(usdc));
         assertEq(address(d.router.CCTP_MESSENGER()), address(cctpMessenger), "the CCTP messenger, for closeLpAndBurn");
         assertEq(d.router.SOLANA_DOMAIN(), 5);
+        assertEq(d.router.HYPEREVM_DOMAIN(), 19, "the perps rail's domain (D5)");
+        assertEq(d.router.PERP_FACTORY(), address(0), "the HyperEVM factory is not known at this deploy: the recipient is the owner's word");
         assertEq(address(d.pythAdapter), address(0), "v1.1 adapter not deployed by default");
         // 2026-09-11: the direct Slipstream venue over the cbZEC/USDC pool, bound to the pool's own
         // manager and gauge, its adapter bound to the same pool, both handed to the router.
@@ -211,10 +214,19 @@ contract DeployTest is Fixture {
         Deploy.Config memory c = _config();
         c.cctpTokenMessenger = address(0);
         c.cctpDomainSolana = 0;
+        c.cctpDomainHyperEvm = 0;
         script.guard(c);
         Deploy.Deployed memory d = script.deploy(c);
         assertEq(address(d.router.CCTP_MESSENGER()), address(0));
         assertEq(d.router.SOLANA_DOMAIN(), 0);
+        assertEq(d.router.HYPEREVM_DOMAIN(), 0);
+    }
+
+    function test_guardRefusesAPerpFactoryWithoutItsImplementation() public {
+        Deploy.Config memory c = _config();
+        c.perpFactory = makeAddrView("hyperevm-factory");
+        vm.expectRevert(abi.encodeWithSelector(Deploy.PerpFactoryIncomplete.selector, c.perpFactory, address(0)));
+        script.guard(c);
     }
 
     function test_guardRequiresCodeAtANamedCctpMessenger() public {

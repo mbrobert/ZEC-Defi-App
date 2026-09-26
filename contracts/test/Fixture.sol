@@ -59,6 +59,9 @@ abstract contract Fixture is Test {
     address cctpFeeRecipient;
     uint32 constant CCTP_DOMAIN_BASE = 6;
     uint32 constant CCTP_DOMAIN_SOLANA = 5;
+    /// HyperEVM's domain and its TokenMessengerV2 — Base's own address (VERIFIED-PERPS-FACTS §7.4), left-padded.
+    uint32 constant CCTP_DOMAIN_HYPEREVM = 19;
+    bytes32 constant HYPEREVM_TOKEN_MESSENGER_B32 = 0x00000000000000000000000028b5a0e9c621a5badaa536219b3a228c8168cf5d;
     bytes32 constant SOLANA_TOKEN_MESSENGER_B32 = 0xa65fc81d0fefa8860cb3b83f089b0224be8a6687b7ae49f594c0b9b4d7e93893;
     bytes32 constant SOLANA_USDC_MINT_B32 = 0xc6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61;
     MockAave aave;
@@ -234,6 +237,7 @@ abstract contract Fixture is Test {
         cctpMessenger = new MockTokenMessengerV2(usdc, cctpTransmitter, 1, cctpFeeRecipient, 10_000_000e6);
         cctpTransmitter.setMessenger(cctpMessenger);
         cctpMessenger.addRemoteTokenMessenger(CCTP_DOMAIN_SOLANA, SOLANA_TOKEN_MESSENGER_B32);
+        cctpMessenger.addRemoteTokenMessenger(CCTP_DOMAIN_HYPEREVM, HYPEREVM_TOKEN_MESSENGER_B32);
         router = new StrategyRouter(
             registry,
             lpVenue,
@@ -243,7 +247,10 @@ abstract contract Fixture is Test {
             ILpVenue(address(directVenue)),
             ISwapAdapter(address(poolSwapAdapter)),
             ITokenMessengerV2(address(cctpMessenger)),
-            CCTP_DOMAIN_SOLANA
+            CCTP_DOMAIN_SOLANA,
+            CCTP_DOMAIN_HYPEREVM,
+            address(0),
+            address(0)
         );
     }
 

@@ -7680,6 +7680,11 @@
           "stateMutability": "view",
           "outputs": "address"
         },
+        "HYPEREVM_DOMAIN()": {
+          "selector": "0x603aa73d",
+          "stateMutability": "view",
+          "outputs": "uint32"
+        },
         "LP_VENUE()": {
           "selector": "0xbe14899f",
           "stateMutability": "view",
@@ -7697,6 +7702,16 @@
         },
         "PERMIT2()": {
           "selector": "0x6afdd850",
+          "stateMutability": "view",
+          "outputs": "address"
+        },
+        "PERP_ACCOUNT_IMPLEMENTATION()": {
+          "selector": "0xa951eaeb",
+          "stateMutability": "view",
+          "outputs": "address"
+        },
+        "PERP_FACTORY()": {
+          "selector": "0x651de557",
           "stateMutability": "view",
           "outputs": "address"
         },
@@ -7725,6 +7740,11 @@
           "stateMutability": "view",
           "outputs": "address"
         },
+        "burnToPerp((uint256,uint256,uint32,uint256))": {
+          "selector": "0x3be80aab",
+          "stateMutability": "nonpayable",
+          "outputs": "uint256"
+        },
         "closeLpAndBurn((uint256[],(uint160,uint160),(uint256,uint256,uint16,bytes),uint256,uint256,uint32,uint256))": {
           "selector": "0xc01c93d7",
           "stateMutability": "nonpayable",
@@ -7749,6 +7769,16 @@
           "selector": "0x7d24b87e",
           "stateMutability": "nonpayable",
           "outputs": "uint256"
+        },
+        "perpRecipient(address)": {
+          "selector": "0x9093b227",
+          "stateMutability": "view",
+          "outputs": "address"
+        },
+        "setPerpRecipient(address)": {
+          "selector": "0xa63fc7ce",
+          "stateMutability": "nonpayable",
+          "outputs": ""
         },
         "setSolanaRecipient(bytes32)": {
           "selector": "0xf182211c",
@@ -7778,6 +7808,16 @@
             true,
             true,
             false,
+            false,
+            false
+          ]
+        },
+        "BurnedToPerp(address,uint256,address,uint256,uint32)": {
+          "topic0": "0x9db3771e91a88fa0047f68f80216d65342901dc1de7c0f636cf751d80f14c37d",
+          "indexed": [
+            true,
+            false,
+            true,
             false,
             false
           ]
@@ -7844,6 +7884,13 @@
             false
           ]
         },
+        "PerpRecipientSet(address,address)": {
+          "topic0": "0xd7f7b725cbacd217b0261856f69d55e29d42720cbd8155256fa3d229f38c6ba8",
+          "indexed": [
+            true,
+            true
+          ]
+        },
         "SolanaRecipientSet(address,bytes32)": {
           "topic0": "0xf088ad1a8925c9f8781f8cd578a6e9acbd8581e8d9da86ec491339cd17a136fc",
           "indexed": [
@@ -7908,8 +7955,14 @@
         "MaxFeeTooLarge(uint256,uint256)": {
           "selector": "0x7e66d4ce"
         },
+        "NoPerpRecipient(address)": {
+          "selector": "0xc67c85f2"
+        },
         "NoSolanaRecipient(address)": {
           "selector": "0x6c99c2d5"
+        },
+        "PerpRecipientMismatch(address,address)": {
+          "selector": "0xa92b2ae6"
         },
         "PoolWithoutUsdc(bytes32)": {
           "selector": "0x3a20909e"
@@ -7987,6 +8040,21 @@
               "name": "solanaDomain",
               "type": "uint32",
               "internalType": "uint32"
+            },
+            {
+              "name": "hyperEvmDomain",
+              "type": "uint32",
+              "internalType": "uint32"
+            },
+            {
+              "name": "perpFactory",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "perpAccountImplementation",
+              "type": "address",
+              "internalType": "address"
             }
           ],
           "stateMutability": "nonpayable"
@@ -8000,6 +8068,19 @@
               "name": "",
               "type": "address",
               "internalType": "contract ITokenMessengerV2"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "HYPEREVM_DOMAIN",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint32",
+              "internalType": "uint32"
             }
           ],
           "stateMutability": "view"
@@ -8052,6 +8133,32 @@
               "name": "",
               "type": "address",
               "internalType": "contract IPermit2"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "PERP_ACCOUNT_IMPLEMENTATION",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "PERP_FACTORY",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "address",
+              "internalType": "address"
             }
           ],
           "stateMutability": "view"
@@ -8120,6 +8227,47 @@
             }
           ],
           "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "burnToPerp",
+          "inputs": [
+            {
+              "name": "p",
+              "type": "tuple",
+              "internalType": "struct StrategyRouter.BurnToPerpParams",
+              "components": [
+                {
+                  "name": "amount",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                },
+                {
+                  "name": "maxFee",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                },
+                {
+                  "name": "minFinalityThreshold",
+                  "type": "uint32",
+                  "internalType": "uint32"
+                },
+                {
+                  "name": "deadline",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                }
+              ]
+            }
+          ],
+          "outputs": [
+            {
+              "name": "burned",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "nonpayable"
         },
         {
           "type": "function",
@@ -8473,6 +8621,38 @@
         },
         {
           "type": "function",
+          "name": "perpRecipient",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "perpAccount",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "function",
+          "name": "setPerpRecipient",
+          "inputs": [
+            {
+              "name": "perpAccount",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "outputs": [],
+          "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
           "name": "setSolanaRecipient",
           "inputs": [
             {
@@ -8654,6 +8834,43 @@
               "type": "uint256",
               "indexed": false,
               "internalType": "uint256"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "event",
+          "name": "BurnedToPerp",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            },
+            {
+              "name": "perpAccount",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "maxFee",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+            },
+            {
+              "name": "minFinalityThreshold",
+              "type": "uint32",
+              "indexed": false,
+              "internalType": "uint32"
             }
           ],
           "anonymous": false
@@ -8894,6 +9111,25 @@
         },
         {
           "type": "event",
+          "name": "PerpRecipientSet",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            },
+            {
+              "name": "perpAccount",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+            }
+          ],
+          "anonymous": false
+        },
+        {
+          "type": "event",
           "name": "SolanaRecipientSet",
           "inputs": [
             {
@@ -9128,10 +9364,37 @@
         },
         {
           "type": "error",
+          "name": "NoPerpRecipient",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "internalType": "address"
+            }
+          ]
+        },
+        {
+          "type": "error",
           "name": "NoSolanaRecipient",
           "inputs": [
             {
               "name": "account",
+              "type": "address",
+              "internalType": "address"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "PerpRecipientMismatch",
+          "inputs": [
+            {
+              "name": "given",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "expected",
               "type": "address",
               "internalType": "address"
             }

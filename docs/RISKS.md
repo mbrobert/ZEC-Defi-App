@@ -1356,6 +1356,21 @@ per period can therefore be exhausted by a thin book without a unit of the short
 closing. The wizard's plain-words grant (D6) must say so, and D7 asks whether the
 venue should charge on what a later read shows instead.
 
+**Risk — the recipient record is the owner's word until the HyperEVM
+deployment is known (D5, 2026-09-26).** `burnToPerp` burns only to the HyperEVM
+account the owner recorded with `setPerpRecipient`, and a keeper grant on the
+burn cannot move that record. Base cannot read HyperEVM state, so whether the
+record IS the owner's account there is checked only when the router was
+deployed knowing the HyperEVM factory and its implementation
+(`PERP_FACTORY`, `PERP_ACCOUNT_IMPLEMENTATION`): then the address must be the
+one the factory's own CREATE2 rule derives for the same owner, and a mistyped
+or foreign address is refused by name. A router deployed before that
+deployment exists accepts any address, exactly as the Solana recipient does
+(BACKLOG O-4); the web derives the address and shows it, and a factory deployed
+from the same key at the same nonce on both chains makes the two account
+addresses equal. What no check reaches: an owner who records the right account
+and then loses the key to it on HyperEVM.
+
 **Risk — the keeper's reduce un-hedges.** Design §9 item 6 asks whether the
 keeper can make the hedge worse than doing nothing. The plan's order is the
 answer so far: the reserve first at every rung, size only for what the reserve
