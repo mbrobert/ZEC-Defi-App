@@ -90,8 +90,10 @@ test("instruction encoders: klend refreshes and keeper_protect carry the program
   const o = ixRefreshObligation(PK.zecReserve, [PK.zecReserve, PK.usdcReserve]);
   assert.equal(o.keys.length, 4);
   const k = PublicKey.default;
-  const p = ixKeeperProtect({ program: k, keeper: k, account: k, grant: k, obligation: k, accountZec: k, accountUsdc: k }, 2, 1_500_000_000n, 100_000_000n);
-  assert.equal(p.data.length, 25);
+  const p = ixKeeperProtect({ program: k, keeper: k, account: k, grant: k, obligation: k, accountZec: k, accountUsdc: k, keeperUsdc: k }, 2, 1_500_000_000n, 100_000_000n, 1_200_000_000n);
+  assert.equal(p.data.length, 33);
+  assert.equal(p.data.readBigUInt64LE(25), 1_200_000_000n, "the keeper's own payment is the last argument (S-PA)");
+  assert.equal(p.keys[6].isWritable, true, "keeper_usdc is writable: the program debits it");
   assert.equal(p.data[8], 2);
   assert.equal(p.data.readBigUInt64LE(9), 1_500_000_000n);
   assert.equal(p.data.readBigUInt64LE(17), 100_000_000n);

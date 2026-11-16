@@ -62,4 +62,6 @@ pub enum OilskinError {
     ReserveShort,
     #[msg("A CCTP account is not the one this program was built against")]
     WrongCctpAccount,
+    #[msg("A keeper payment is taken only for a sale and must all go to the debt")]
+    KeeperPaymentMisused,
 }

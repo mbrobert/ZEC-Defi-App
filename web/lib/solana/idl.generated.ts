@@ -2,7 +2,7 @@
 // The web's Solana encoders read this and nothing else; test/solana-idl.test.ts fails on drift from the committed IDL.
 export const OILSKIN_SOLANA_IDL = {
   "address": "Gw2UE3MixYgA8c7nLZC9UF2z3z5dWfzrFW7ESmi5Scog",
-  "sha256": "34ccbfc8609a545c871471910bea43d22e3d72c7514f3220d9648d1287ffb2ae",
+  "sha256": "166e0828eb31f54b2f7f6a74b69556474e7350f4188a42c138fc1e4b708d6d57",
   "instructions": {
     "borrow": {
       "discriminator": [
@@ -877,6 +877,12 @@ export const OILSKIN_SOLANA_IDL = {
           "address": null
         },
         {
+          "name": "keeper_usdc",
+          "writable": true,
+          "signer": false,
+          "address": null
+        },
+        {
           "name": "kamino.klend_program",
           "writable": false,
           "signer": false,
@@ -990,6 +996,10 @@ export const OILSKIN_SOLANA_IDL = {
         ],
         [
           "sell_zec",
+          "u64"
+        ],
+        [
+          "keeper_usdc_in",
           "u64"
         ]
       ]
@@ -1740,6 +1750,11 @@ export const OILSKIN_SOLANA_IDL = {
       "code": 6029,
       "name": "WrongCctpAccount",
       "msg": "A CCTP account is not the one this program was built against"
+    },
+    {
+      "code": 6030,
+      "name": "KeeperPaymentMisused",
+      "msg": "A keeper payment is taken only for a sale and must all go to the debt"
     }
   ]
 } as const;

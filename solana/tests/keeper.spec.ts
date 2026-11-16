@@ -308,7 +308,10 @@ describe("keeper agent (localnet, the real reader/dispatcher/monitor against the
     const after = await position(deriskPrice);
     expect(after.hf, "at or above de-risk's disarm level").to.be.greaterThanOrEqual(RUNGS.derisk.disarmHf);
     expect(after.ltv, "inside Kamino's 40 % cap, which binds before our level").to.be.lessThanOrEqual(KAMINO_LTV_CAP + 1e-4);
-    expect(Number(before.usdcDebt - after.usdcDebt), "every USDC the keeper paid went to the debt").to.be.closeTo(Number(paid), 10);
+    // Interest accrues on the debt between the two reads, so the fall is a hair under what was paid; how much
+    // depends on the borrow rate of the mainnet state the validator cloned (16 units of 1.77e9 on 2026-11-16,
+    // over the fixed 10 this line used to allow). One part in ten million of the debt bounds it at any sane rate.
+    expect(Number(before.usdcDebt - after.usdcDebt), "every USDC the keeper paid went to the debt").to.be.closeTo(Number(paid), Math.max(10, Number(before.usdcDebt) * 1e-7));
     expect(before.deposited - after.deposited, "the collateral released equals the ZEC collected").to.equal(collected);
     const acctZec = await getAccount(conn, accountZec, "confirmed");
     expect(acctZec.amount, "nothing released is left in the Account").to.equal(0n);

@@ -330,7 +330,7 @@ export function ixRefreshObligation(obligation: PublicKey, reserves: PublicKey[]
 
 /** Account order of `keeper_protect`, exactly as the IDL lists it (verified by scripts/verify-solana-idl.mjs). */
 export const KEEPER_PROTECT_ACCOUNT_ORDER = [
-  "keeper", "account", "grant", "obligation", "account_zec", "account_usdc",
+  "keeper", "account", "grant", "obligation", "account_zec", "account_usdc", "keeper_usdc",
   "kamino.klend_program", "kamino.lending_market", "kamino.lending_market_authority", "kamino.zec_reserve", "kamino.usdc_reserve",
   "kamino.zec_mint", "kamino.usdc_mint", "kamino.zec_liquidity_supply", "kamino.zec_collateral_mint", "kamino.zec_collateral_supply",
   "kamino.usdc_liquidity_supply", "kamino.usdc_fee_vault", "kamino.scope_prices", "kamino.farms_program", "kamino.instructions_sysvar",
@@ -345,9 +345,15 @@ export interface KeeperProtectKeys {
   obligation: PublicKey;
   accountZec: PublicKey;
   accountUsdc: PublicKey;
+  /** The keeper's own USDC token account; the instruction pulls a sale's payment from it (AUDIT-2026-11-16 S-PA). */
+  keeperUsdc: PublicKey;
 }
-export function ixKeeperProtect(k: KeeperProtectKeys, rungId: number, repayUsdc: bigint, sellZec: bigint): TransactionInstruction {
-  const data = Buffer.concat([Buffer.from(OILSKIN_IX.keeperProtect), Buffer.from([rungId]), u64le(repayUsdc), u64le(sellZec)]);
+/**
+ * `keeperUsdcIn` is moved keeper → Account INSIDE the instruction and is what the sale floor is checked against;
+ * `repayUsdc − keeperUsdcIn` comes from the Account's idle USDC. No separate transfer precedes this instruction.
+ */
+export function ixKeeperProtect(k: KeeperProtectKeys, rungId: number, repayUsdc: bigint, sellZec: bigint, keeperUsdcIn: bigint): TransactionInstruction {
+  const data = Buffer.concat([Buffer.from(OILSKIN_IX.keeperProtect), Buffer.from([rungId]), u64le(repayUsdc), u64le(sellZec), u64le(keeperUsdcIn)]);
   return new TransactionInstruction({
     programId: k.program,
     keys: [
@@ -357,6 +363,7 @@ export function ixKeeperProtect(k: KeeperProtectKeys, rungId: number, repayUsdc:
       w(k.obligation),
       w(k.accountZec),
       w(k.accountUsdc),
+      w(k.keeperUsdc),
       ro(PK.klend),
       ro(PK.market),
       ro(lendingMarketAuthority()),

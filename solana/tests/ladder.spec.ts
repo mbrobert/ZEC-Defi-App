@@ -137,11 +137,12 @@ describe("ladder (localnet, Scope mock walks the ZEC price)", () => {
       return e?.error?.errorCode?.code ?? String(e).slice(0, 200);
     }
   };
-  const protect = (rung: number, repayUsdc: bigint, sellZec: bigint, pre: any[] = []) =>
+  /** `keeperUsdcIn` is what the instruction itself pulls from the keeper's USDC account (AUDIT-2026-11-16 S-PA). */
+  const protect = (rung: number, repayUsdc: bigint, sellZec: bigint, keeperUsdcIn: bigint = 0n) =>
     program.methods
-      .keeperProtect(rung, new BN(repayUsdc.toString()), new BN(sellZec.toString()))
-      .accounts({ keeper: keeper.publicKey, account, grant: grantPda, obligation, accountZec, accountUsdc, kamino, tokenProgram: TOKEN_PROGRAM_ID } as any)
-      .preInstructions([...cu, ...pre])
+      .keeperProtect(rung, new BN(repayUsdc.toString()), new BN(sellZec.toString()), new BN(keeperUsdcIn.toString()))
+      .accounts({ keeper: keeper.publicKey, account, grant: grantPda, obligation, accountZec, accountUsdc, keeperUsdc, kamino, tokenProgram: TOKEN_PROGRAM_ID } as any)
+      .preInstructions([...cu])
       .signers([keeper])
       .rpc();
 
@@ -206,7 +207,7 @@ describe("ladder (localnet, Scope mock walks the ZEC price)", () => {
     await conn.confirmTransaction(sig, "confirmed");
     const [strangerGrant] = PublicKey.findProgramAddressSync([Buffer.from("grant"), account.toBuffer(), stranger.publicKey.toBuffer()], program.programId);
     const code = await errCode(
-      program.methods.keeperProtect(RUNG.repay, new BN(1), new BN(0)).accounts({ keeper: stranger.publicKey, account, grant: strangerGrant, obligation, accountZec, accountUsdc, kamino, tokenProgram: TOKEN_PROGRAM_ID } as any).preInstructions(cu).signers([stranger]).rpc()
+      program.methods.keeperProtect(RUNG.repay, new BN(1), new BN(0), new BN(0)).accounts({ keeper: stranger.publicKey, account, grant: strangerGrant, obligation, accountZec, accountUsdc, keeperUsdc, kamino, tokenProgram: TOKEN_PROGRAM_ID } as any).preInstructions(cu).signers([stranger]).rpc()
     );
     expect(code).to.not.equal("OK");
   });
@@ -258,7 +259,6 @@ describe("ladder (localnet, Scope mock walks the ZEC price)", () => {
     const floorFor = (y: number) => y * deriskPrice * (1 - SLIPPAGE_BPS / 10_000);
     const disarmNeeds = (y: number) => debtUsd - ((collateral - y) * deriskPrice * LT) / (RUNGS.derisk.disarmHf * HEADROOM);
     const capNeeds = (y: number) => debtUsd - (collateral - y) * deriskPrice * KAMINO_LTV_CAP;
-    const payIn = (usdc: bigint) => [createTransferInstruction(keeperUsdc, accountUsdc, keeper.publicKey, usdc)];
 
     // Below the floor, BY NAME: the floor grows with Y faster than the cap's need does, so for a large enough Y a
     // payment that lets klend release the collateral is still under the floor for that much ZEC.
@@ -267,14 +267,35 @@ describe("ladder (localnet, Scope mock walks the ZEC price)", () => {
     expect(yBelow).to.be.at.most(5, "inside the grant's 5 ZEC per period");
     const shortPay = BigInt(Math.ceil(((capNeeds(yBelow) + floorFor(yBelow)) / 2) * 1e6));
     await stamp();
-    expect(await errCode(protect(RUNG.derisk, shortPay, BigInt(yBelow) * ONE_ZEC, payIn(shortPay)))).to.equal("SaleBelowFloor");
+    expect(await errCode(protect(RUNG.derisk, shortPay, BigInt(yBelow) * ONE_ZEC, shortPay))).to.equal("SaleBelowFloor");
 
     // The sale: 1 ZEC for the largest of the three needs plus 2 % (the cap is the binding one here).
     expect(capNeeds(1), "Kamino's cap needs more than the disarm level on this market").to.be.greaterThan(disarmNeeds(1));
     salePayment = BigInt(Math.ceil(Math.max(floorFor(1), disarmNeeds(1), capNeeds(1)) * HEADROOM * 1e6));
+
+    // AUDIT-2026-11-16 S-PA: the Account still holds idle USDC it borrowed — enough to cover this repay by itself.
+    // A keeper that pays nothing in must not be able to "sell" 1 ZEC against the owner's own money.
+    expect((await getAccount(conn, accountUsdc)).amount >= salePayment, "the Account's idle USDC covers the repay").to.equal(true);
+    await stamp();
+    const idleBefore = (await getAccount(conn, accountUsdc)).amount;
+    expect(await errCode(protect(RUNG.derisk, salePayment, 1n * ONE_ZEC)), "an unpaid sale is refused by name").to.equal("SaleBelowFloor");
+    // …and so is one the keeper pays just under the floor for, topping the repay up from the owner's idle USDC to
+    // look whole: the floor is held against what the KEEPER paid, not against the repay.
+    const underFloor = BigInt(Math.floor(floorFor(1) * 0.99 * 1e6));
+    await stamp();
+    expect(await errCode(protect(RUNG.derisk, salePayment, 1n * ONE_ZEC, underFloor)), "a sale paid under the floor is refused by name").to.equal("SaleBelowFloor");
+    // A payment is taken only for a sale, and never more than is repaid.
+    await stamp();
+    expect(await errCode(protect(RUNG.derisk, salePayment, 0n, 1n))).to.equal("KeeperPaymentMisused");
+    await stamp();
+    expect(await errCode(protect(RUNG.derisk, salePayment, 1n * ONE_ZEC, salePayment + 1n))).to.equal("KeeperPaymentMisused");
+    expect((await getAccount(conn, accountUsdc)).amount, "none of the refusals moved the owner's USDC").to.equal(idleBefore);
+
     await stamp();
     const zecBefore = (await getAccount(conn, accountZec)).amount;
-    await protect(RUNG.derisk, salePayment, 1n * ONE_ZEC, payIn(salePayment));
+    const keeperUsdcBefore = (await getAccount(conn, keeperUsdc)).amount;
+    await protect(RUNG.derisk, salePayment, 1n * ONE_ZEC, salePayment);
+    expect(keeperUsdcBefore - (await getAccount(conn, keeperUsdc)).amount, "the keeper paid exactly what it named").to.equal(salePayment);
     const after = await readObligation();
     expect(after.hf).to.be.greaterThanOrEqual(RUNGS.derisk.disarmHf);
     expect(after.ltv, "released inside Kamino's cap").to.be.lessThanOrEqual(KAMINO_LTV_CAP + 1e-4);

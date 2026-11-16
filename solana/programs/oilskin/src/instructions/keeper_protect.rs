@@ -3,20 +3,24 @@
 //! Why it is shaped this way. Kamino refuses to release collateral while the obligation's LTV is above the
 //! reserve's cap (`WithdrawTooLarge`), which is exactly the state the ladder acts in — so "withdraw, sell,
 //! repay" is impossible on this venue. The order is therefore **repay first, then withdraw what the repayment
-//! earned**: the keeper puts `repay_usdc` into the Account's USDC token account beforehand (its own capital or
-//! a flash loan), this instruction repays it to Kamino, withdraws `sell_zec` of collateral into the Account's
-//! ZEC token account, and approves the keeper as SPL delegate for exactly what was withdrawn — never more —
-//! provided the USDC repaid covers that ZEC at the Scope price less the grant's slippage allowance. The
-//! keeper pulls the ZEC with a later instruction and sells it wherever it likes; the program never swaps and
-//! never touches a venue it has not been built against. With `sell_zec = 0` the same instruction is a plain
-//! repay from the Account's idle USDC.
+//! earned**: this instruction itself moves `keeper_usdc_in` from the keeper's own USDC token account into the
+//! Account's (the keeper's capital or a flash loan), repays `repay_usdc` to Kamino, withdraws `sell_zec` of
+//! collateral into the Account's ZEC token account, and approves the keeper as SPL delegate for exactly what
+//! was withdrawn — never more — provided **the keeper's own payment** covers that ZEC at the Scope price less
+//! the grant's slippage allowance. The payment is pulled here, not trusted to an earlier instruction, because
+//! a balance cannot say whose money it is: until 2026-11-16 the floor was checked against `repay_usdc`, and a
+//! keeper could repay with the owner's idle USDC and be handed collateral for it (AUDIT-2026-11-16 S-PA).
+//! `repay_usdc` may exceed `keeper_usdc_in` — the rest comes from the Account's idle USDC and earns the keeper
+//! nothing. The keeper pulls the ZEC with a later instruction and sells it wherever it likes; the program
+//! never swaps and never touches a venue it has not been built against. With `sell_zec = 0` the same
+//! instruction is a plain repay from the Account's idle USDC and takes no payment.
 //!
 //! What the chain checks that Base decides off-chain: the grant is live and the rung is allowed; the budgets
 //! are charged from the ARGUMENTS before any CPI; the refreshed health factor is actually below the named
 //! rung, and the named rung is the most severe crossed rung the grant allows; and afterwards the health
 //! factor reached the rung's disarm level or a budget is exhausted — an action that changed nothing cannot
 //! succeed. Collateral leaves Kamino only into the Account's own token account, and leaves that account only
-//! under a delegation sized by a payment already received.
+//! under a delegation sized by a payment this instruction itself received from the keeper.
 
 use crate::errors::OilskinError;
 use crate::events::KeeperProtected;
@@ -26,7 +30,7 @@ use crate::instructions::kamino_ctx::*;
 use crate::kamino;
 use crate::state::{Grant, UserAccount, ACCOUNT_SEED, GRANT_SEED};
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Approve, Token, TokenAccount};
+use anchor_spl::token::{self, Approve, Token, TokenAccount, Transfer};
 
 #[derive(Accounts)]
 pub struct KeeperProtect<'info> {
@@ -49,6 +53,9 @@ pub struct KeeperProtect<'info> {
     pub account_zec: Account<'info, TokenAccount>,
     #[account(mut, associated_token::mint = kamino::USDC_MINT, associated_token::authority = account)]
     pub account_usdc: Account<'info, TokenAccount>,
+    /// The keeper's own USDC, which a sale is paid from. Any token account the keeper signer is the authority of.
+    #[account(mut, token::mint = kamino::USDC_MINT, token::authority = keeper)]
+    pub keeper_usdc: Account<'info, TokenAccount>,
     pub kamino: KaminoCtx<'info>,
     pub token_program: Program<'info, Token>,
 }
@@ -81,7 +88,7 @@ fn sale_floor_usdc(zec_amount: u64, price_value: u64, price_exp: u64, slippage_b
     Ok(u64::try_from(num / den).map_err(|_| OilskinError::HealthOverflow)?)
 }
 
-pub fn handler(ctx: Context<KeeperProtect>, rung_id: u8, repay_usdc: u64, sell_zec: u64) -> Result<()> {
+pub fn handler(ctx: Context<KeeperProtect>, rung_id: u8, repay_usdc: u64, sell_zec: u64, keeper_usdc_in: u64) -> Result<()> {
     let clock = Clock::get()?;
     let now = clock.unix_timestamp;
     let account = &ctx.accounts.account;
@@ -95,6 +102,9 @@ pub fn handler(ctx: Context<KeeperProtect>, rung_id: u8, repay_usdc: u64, sell_z
     require!(rung_id != RUNG_ID_WARN, OilskinError::RungIsNotifyOnly);
     require!(grant.allowed_rungs & (1u8 << rung_id) != 0, OilskinError::RungNotAllowed);
     require!(repay_usdc > 0 || sell_zec > 0, OilskinError::ZeroAmount);
+    // A payment is taken only for a sale, and all of it goes to the debt (S-PA).
+    require!(keeper_usdc_in == 0 || sell_zec > 0, OilskinError::KeeperPaymentMisused);
+    require!(keeper_usdc_in <= repay_usdc, OilskinError::KeeperPaymentMisused);
 
     // 2. Period roll, then budgets charged from the ARGUMENTS before any CPI.
     grant.roll_period(now);
@@ -128,8 +138,23 @@ pub fn handler(ctx: Context<KeeperProtect>, rung_id: u8, repay_usdc: u64, sell_z
     }
     let rung = ladder[rung_id as usize];
 
-    // 4. Repay first (from the Account's USDC: idle, or what the keeper put there for this action).
+    // 4. The keeper's payment comes in HERE, from its own token account under its own signature, so the floor
+    //    below is checked against money that provably was not the owner's. Then repay (idle USDC plus that).
     let account_info = ctx.accounts.account.to_account_info();
+    if keeper_usdc_in > 0 {
+        token::transfer(
+            CpiContext::new(
+                ctx.accounts.token_program.key(),
+                Transfer {
+                    from: ctx.accounts.keeper_usdc.to_account_info(),
+                    to: ctx.accounts.account_usdc.to_account_info(),
+                    authority: ctx.accounts.keeper.to_account_info(),
+                },
+            ),
+            keeper_usdc_in,
+        )?;
+        ctx.accounts.account_usdc.reload()?;
+    }
     if repay_usdc > 0 {
         require!(ctx.accounts.account_usdc.amount >= repay_usdc, OilskinError::InsufficientUsdcToClose);
         kamino::repay(k, &account_info, &ctx.accounts.obligation, &ctx.accounts.account_usdc.to_account_info(), repay_usdc, seeds)?;
@@ -154,10 +179,11 @@ pub fn handler(ctx: Context<KeeperProtect>, rung_id: u8, repay_usdc: u64, sell_z
         sold_zec = ctx.accounts.account_zec.amount.saturating_sub(zec_before);
         require!(sold_zec <= sell_zec, OilskinError::SellBudgetExceeded);
 
-        // The floor: the USDC just repaid must cover the ZEC released at Kamino's own price, less the allowance.
+        // The floor: what the KEEPER paid in must cover the ZEC released at Kamino's own price, less the
+        // allowance. Not `repay_usdc` — part of that may be the owner's idle USDC, which buys the keeper nothing.
         let (value, exp, _slot, _ts) = kamino::read_scope_price(&k.scope_prices, kamino::ZEC_SCOPE_PRICE_INDEX)?;
         let floor = sale_floor_usdc(sold_zec, value, exp, grant.max_sell_slippage_bps)?;
-        require!(repay_usdc >= floor, OilskinError::SaleBelowFloor);
+        require!(keeper_usdc_in >= floor, OilskinError::SaleBelowFloor);
 
         token::approve(
             CpiContext::new_with_signer(

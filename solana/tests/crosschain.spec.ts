@@ -307,8 +307,11 @@ describe("cross-chain (localnet): the entry record, the Base link, deposit_for_b
       .rpc();
     const price = (1.2 * (Number(debt) / 1e6)) / (10 * LT);
     await setZecPrice(price);
+    // keeper_protect names the keeper's own USDC account even for a plain repay (AUDIT-2026-11-16 S-PA), so it must exist.
+    const keeperUsdc = getAssociatedTokenAddressSync(USDC_MINT, keeper.publicKey);
+    await provider.sendAndConfirm(new Transaction().add(createAssociatedTokenAccountIdempotentInstruction(keeper.publicKey, keeperUsdc, keeper.publicKey, USDC_MINT)), [keeper]);
     const protect = (rung: number) =>
-      program.methods.keeperProtect(rung, new BN((100n * ONE_USDC).toString()), new BN(0)).accounts({ keeper: keeper.publicKey, account, grant: grantPda, obligation, accountZec, accountUsdc, kamino, tokenProgram: TOKEN_PROGRAM_ID } as any).preInstructions(cu).signers([keeper]).rpc();
+      program.methods.keeperProtect(rung, new BN((100n * ONE_USDC).toString()), new BN(0), new BN(0)).accounts({ keeper: keeper.publicKey, account, grant: grantPda, obligation, accountZec, accountUsdc, keeperUsdc, kamino, tokenProgram: TOKEN_PROGRAM_ID } as any).preInstructions(cu).signers([keeper]).rpc();
     expect(await errCode(protect(1))).to.equal("RungUnderstated");
     await stamp();
     expect(await errCode(protect(3))).to.equal("RungNotCrossed");

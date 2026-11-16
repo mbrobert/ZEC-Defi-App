@@ -2249,7 +2249,7 @@
       "name": "keeper_protect",
       "docs": [
         "The keeper's one instruction: inside a live grant, at a crossed rung, repay from the Account's USDC and",
-        "release collateral to the keeper only against a Scope-priced payment already made."
+        "release collateral to the keeper only against a Scope-priced payment the instruction pulls from the keeper itself."
       ],
       "discriminator": [
         247,
@@ -2571,6 +2571,13 @@
           }
         },
         {
+          "name": "keeper_usdc",
+          "docs": [
+            "The keeper's own USDC, which a sale is paid from. Any token account the keeper signer is the authority of."
+          ],
+          "writable": true
+        },
+        {
           "name": "kamino",
           "accounts": [
             {
@@ -2747,6 +2754,10 @@
         },
         {
           "name": "sell_zec",
+          "type": "u64"
+        },
+        {
+          "name": "keeper_usdc_in",
           "type": "u64"
         }
       ]
@@ -4240,6 +4251,11 @@
       "code": 6029,
       "name": "WrongCctpAccount",
       "msg": "A CCTP account is not the one this program was built against"
+    },
+    {
+      "code": 6030,
+      "name": "KeeperPaymentMisused",
+      "msg": "A keeper payment is taken only for a sale and must all go to the debt"
     }
   ],
   "types": [

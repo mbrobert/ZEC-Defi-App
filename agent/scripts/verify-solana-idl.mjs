@@ -28,7 +28,7 @@ const eq = (a, b) => JSON.stringify([...a]) === JSON.stringify([...b]);
 // instruction discriminators
 const ix = (n) => idl.instructions.find((i) => i.name === n);
 check("keeper_protect discriminator", eq(L.OILSKIN_IX.keeperProtect, ix("keeper_protect").discriminator));
-check("keeper_protect args", JSON.stringify(ix("keeper_protect").args.map((a) => [a.name, a.type])) === JSON.stringify([["rung_id", "u8"], ["repay_usdc", "u64"], ["sell_zec", "u64"]]));
+check("keeper_protect args", JSON.stringify(ix("keeper_protect").args.map((a) => [a.name, a.type])) === JSON.stringify([["rung_id", "u8"], ["repay_usdc", "u64"], ["sell_zec", "u64"], ["keeper_usdc_in", "u64"]]));
 // account discriminators
 const acc = (n) => idl.accounts.find((a) => a.name === n);
 check("UserAccount discriminator", eq(L.OILSKIN_ACCOUNT.userAccount, acc("UserAccount").discriminator));
@@ -40,7 +40,7 @@ check("keeper_protect account order", JSON.stringify(order) === JSON.stringify([
 // writable/signer flags as encoded
 const { PublicKey } = await import("@solana/web3.js");
 const k = new PublicKey("11111111111111111111111111111112");
-const built = L.ixKeeperProtect({ program: k, keeper: k, account: k, grant: k, obligation: k, accountZec: k, accountUsdc: k }, 1, 1n, 0n);
+const built = L.ixKeeperProtect({ program: k, keeper: k, account: k, grant: k, obligation: k, accountZec: k, accountUsdc: k, keeperUsdc: k }, 1, 1n, 0n, 0n);
 const idlAccs = flat(ix("keeper_protect").accounts.map((a) => a)).map((n) => n);
 const flagsOf = (accs, p = "") => accs.flatMap((a) => (a.accounts ? flagsOf(a.accounts, p + a.name + ".") : [{ name: p + a.name, writable: !!a.writable, signer: !!a.signer }]));
 const idlFlags = flagsOf(ix("keeper_protect").accounts);
@@ -51,8 +51,8 @@ idlFlags.forEach((f, i) => {
   check(`keeper_protect[${i}] ${f.name} writable`, key.isWritable === f.writable, `encoded ${key.isWritable}, idl ${f.writable}`);
   check(`keeper_protect[${i}] ${f.name} signer`, key.isSigner === f.signer, `encoded ${key.isSigner}, idl ${f.signer}`);
 });
-// data layout: 8 + 1 + 8 + 8
-check("keeper_protect data length", built.data.length === 25, `${built.data.length}`);
+// data layout: 8 + 1 + 8 + 8 + 8
+check("keeper_protect data length", built.data.length === 33, `${built.data.length}`);
 // layout sizes vs IDL types
 const sizeOf = (t) => (typeof t === "string" ? { u8: 1, u16: 2, u64: 8, i64: 8, pubkey: 32 }[t] : t.array ? sizeOf(t.array[0]) * t.array[1] : NaN);
 const typeSize = (name) => 8 + idl.types.find((t) => t.name === name).type.fields.reduce((s, f) => s + sizeOf(f.type), 0);

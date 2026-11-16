@@ -171,13 +171,18 @@ the program checks is the HF Kamino would liquidate against at that slot.
 **Why it repays first and never swaps.** Kamino refuses to release collateral while the obligation's LTV is
 above the reserve's cap (`WithdrawTooLarge`), which is exactly the state the ladder acts in — so "withdraw,
 sell, repay" cannot exist on this venue, and neither can an in-program swap of collateral. The order is
-**repay first, then release what the repayment earned**: the keeper puts `repay_usdc` into the Account's USDC
-token account in the same transaction (its own capital, or a klend flash loan it repays after selling), the
-program repays it to Kamino, withdraws `sell_zec` of collateral into the Account's ZEC token account, and
-approves the keeper as SPL delegate for exactly what arrived — provided `repay_usdc` covers that ZEC at the
-Scope price (entry 430) less the grant's slippage allowance. The keeper pulls the ZEC with a later
+**repay first, then release what the repayment earned**: the instruction itself moves `keeper_usdc_in` from the
+keeper's own USDC token account into the Account's (the keeper's capital, or a klend flash loan it repays after
+selling), repays `repay_usdc` to Kamino, withdraws `sell_zec` of collateral into the Account's ZEC token account,
+and approves the keeper as SPL delegate for exactly what arrived — provided **`keeper_usdc_in`**, the keeper's
+own payment, covers that ZEC at the Scope price (entry 430) less the grant's slippage allowance. Until
+2026-11-16 the payment was a separate transfer before the instruction and the floor was held against
+`repay_usdc`, which let a keeper repay with the owner's idle USDC and take collateral for it
+(`AUDIT-2026-11-16.md` S-PA); `repay_usdc − keeper_usdc_in` may still come from idle USDC and earns the keeper
+nothing. The keeper's USDC token account is named in the instruction even for a plain repay, so a keeper key
+needs one before its first action. The keeper pulls the ZEC with a later
 instruction and sells it wherever it likes. Collateral leaves Kamino only into the Account's own token
-account, and leaves that account only under a delegation sized by a payment already received; the keeper's
+account, and leaves that account only under a delegation sized by a payment the instruction itself took from the keeper; the keeper's
 margin on a sale is bounded by the allowance the owner signed (≤ 5 %). With `sell_zec = 0` the same instruction
 is a plain repay from the Account's idle USDC.
 

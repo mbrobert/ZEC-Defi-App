@@ -7,7 +7,7 @@
  *      surfaces it to the store;
  *   3. sizes the action with `policy.ts` (repay-only from the Account's idle USDC, or a sale where the keeper
  *      pays USDC in and takes ZEC at the Scope price);
- *   4. builds ONE transaction: compute budget · [USDC keeper → Account] · keeper_protect; signs it, SIMULATES
+ *   4. builds ONE transaction: compute budget · keeper_protect (which pulls the keeper's USDC itself); signs it, SIMULATES
  *      it (a program refusal is read by name and classified — permanent when only the user can clear it),
  *      persists the signature BEFORE broadcasting, sends, and waits for confirmation inside the deadline;
  *   5. after a sale, collects the delegated ZEC into the keeper's own token account in a second transaction —
@@ -243,10 +243,11 @@ export class KeeperSolanaDispatcher implements SolanaDispatcher {
       obligation: obligationPda(account),
       accountZec: ata(account, PK.zecMint),
       accountUsdc: ata(account, PK.usdcMint),
+      keeperUsdc: ata(this.d.keeper.publicKey, PK.usdcMint),
     };
+    // The program pulls the keeper's payment itself (AUDIT-2026-11-16 S-PA): no transfer instruction precedes it.
     const tx = new Transaction().add(ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }));
-    if (plan.keeperUsdcIn > 0n) tx.add(ixSplTransfer(ata(this.d.keeper.publicKey, PK.usdcMint), keys.accountUsdc, this.d.keeper.publicKey, plan.keeperUsdcIn));
-    tx.add(ixKeeperProtect(keys, plan.rungId, plan.repayUsdc, plan.sellZec));
+    tx.add(ixKeeperProtect(keys, plan.rungId, plan.repayUsdc, plan.sellZec, plan.keeperUsdcIn));
     const { blockhash, lastValidBlockHeight } = await withDeadline("getLatestBlockhash", this.d.confirmTimeoutMs, signal, () => this.d.connection.getLatestBlockhash(this.d.commitment ?? "confirmed"));
     tx.recentBlockhash = blockhash;
     tx.feePayer = this.d.keeper.publicKey;

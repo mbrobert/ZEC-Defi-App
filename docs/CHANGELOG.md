@@ -3,6 +3,19 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-11-16 — A collateral sale on Solana is paid for inside the instruction (AUDIT-2026-11-16 S-PA, High)
+
+`keeper_protect` gained `keeper_usdc_in` and a `keeper_usdc` account: the program pulls the keeper's payment
+itself and holds the sale floor against that payment, where it used to hold it against a repay that could be
+the owner's own idle USDC. `KeeperPaymentMisused` is appended to the errors. The keeper's dispatcher drops its
+separate transfer; the IDL, the keeper's seam and the web's generated copy are re-synced. A keeper key now
+needs a USDC token account before its first action, a plain repay included.
+
+- **Proof:** localnet **36 passing** (the unpaid sale returned OK against the unchanged program first); program
+  unit 12; keeper 411 with its IDL seam; web 217; Solana seams 22; shared 161.
+- **Also:** `keeper.spec.ts`'s interest tolerance is now relative to the debt; the SBPF-version note is in the
+  audit record.
+
 ## 2026-11-16 — Seven weeks on: the chain moved, four audit passes, and the home page rebuilt around the one decision
 
 `docs/AUDIT-2026-11-16.md` and `docs/VERIFIED-BASE-FACTS.md` Addendum 18.
