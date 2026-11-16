@@ -4,9 +4,9 @@
      below came from running the command in its own row, on the tree named here. README.md
      carries the prose and no numbers; this file carries the numbers and no prose. -->
 
-_Generated 2026-09-26T16:43:58Z by `npm run status` on darwin-arm64, Node 22.23.2._
+_Generated 2026-11-16T01:37:59Z by `npm run status` on darwin-arm64, Node 22.23.2._
 
-**Tree:** the working tree at `330643f` on `main`, with **14 file(s) modified on top of it** — including this one, when it is regenerated just before a commit. Each suite ran against that tree, not against a published commit.
+**Tree:** the working tree at `1759e55` on `main` — clean. Each suite ran against that tree, not against a published commit.
 
 Abbreviations: ABI = application binary interface; e2e = end-to-end; HF = health factor;
 LP = liquidity provision; RPC = remote procedure call; CCTP = Circle's Cross-Chain Transfer Protocol.

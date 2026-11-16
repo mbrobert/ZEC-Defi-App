@@ -114,14 +114,14 @@ export default function Home() {
       <section className="card p-6">
         <h3 className="mb-2 text-[15px]">Simple or Advanced — your choice, top right</h3>
         <p className="text-[13.5px] leading-relaxed text-oil-ink2">
-          <b className="text-oil-ink">Simple</b> is the guided path: connect, pick collateral, pick a setting, take the one recommendation the live numbers support, sign — every step explained in one plain sentence, every preventable mistake caught before your wallet opens (wrong network, not enough ETH for the fee, more than you hold, a counterfeit token, a typed address). <b className="text-oil-ink">Advanced</b> is the full suite: every pool with the model&rsquo;s numbers and why it was refused, custom band width and rebalance delay, price tolerance, spot swaps via CoW, claim / unwind / keeper controls, and raw position data.
+          <b className="text-oil-ink">Simple</b> is the guided path: connect, pick collateral, pick a setting, read the forecast for each pool at its best setting, sign — every step explained in one plain sentence, every preventable mistake caught before your wallet opens (wrong network, not enough ETH for the fee, more than you hold, a counterfeit token, a typed address). <b className="text-oil-ink">Advanced</b> is the full suite: every pool at every setting with both models&rsquo; numbers, custom band width and rebalance delay, price tolerance, spot swaps via CoW, claim / unwind / keeper controls, and raw position data.
         </p>
       </section>
 
       <section className="card p-6">
         <h3 className="mb-2 text-[15px]">Honest by design</h3>
         <p className="text-[13.5px] leading-relaxed text-oil-ink2">
-          Every liquidation threshold, LTV cap and health factor on this site is computed from a live chain read — the top LTV per asset is floor(threshold ÷ entry-HF floor) and never a typed number, and the lending venue itself refuses a borrow under that floor. A pool is offered only when its emissions, net of every fee and net of the loss from the price moving, beat the live USDC borrow rate under <b className="text-oil-ink">both</b> of the models we price it with; when they disagree we do not offer it. The keeper acts only through one permission you grant on your own account, that expires, and that you can revoke. Everything it does, you can do yourself.
+          Every liquidation threshold, LTV cap and health factor on this site is computed from a live chain read — the top LTV per asset is floor(threshold ÷ entry-HF floor) and never a typed number, and the lending venue itself refuses a borrow under that floor. Every curated pool comes with a forecast: its emissions net of every fee and net of the loss from the price moving, set against the live USDC borrow rate under <b className="text-oil-ink">both</b> of the models we price it with. The forecast is shown, not enforced — you read it and acknowledge it before you deposit, including when it is negative. What is refused is refused for safety only: a stale price feed, a paused venue, a disabled asset, a borrow the pool cannot fund. The keeper acts only through one permission you grant on your own account, that expires, and that you can revoke. Everything it does, you can do yourself.
         </p>
       </section>
     </div>
