@@ -217,7 +217,7 @@ export const MORPHO_BLUE = {
    * The two listed USDC markets, read from `idToMarketParams` on 2026-09-07
    * (block 51,003,524; docs/VERIFIED-BASE-FACTS.md, Morpho addendum). Both 86 %
    * LLTV (liquidation loan-to-value), AdaptiveCurve IRM, Chainlink-fed oracles
-   * (cbBTC market: BTC/USD, no cbBTC leg). No cbZEC market exists. The
+   * (cbBTC market: BTC/USD, no cbBTC leg). A cbZEC/USDC market exists since 2026-09 (VERIFIED-BASE-FACTS Addendum 18) and is not wired here. The
    * MorphoBlueVenue is built over these; the registry still points at Aave.
    */
   marketIds: {

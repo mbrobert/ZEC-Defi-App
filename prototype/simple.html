@@ -336,7 +336,7 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
       <!-- Step 2: collateral -->
       <div class="field">
         <div class="guide small muted" style="margin-bottom:6px">This is the asset you keep: it is never sold, only borrowed against, and it comes back to your wallet when you withdraw.</div>
-        <label>2 · Collateral <span class="tt" title="What you supply to Aave v3 on Base. cbBTC and WETH are live Aave reserves with Chainlink feeds. cbZEC has no lending market on Base yet, so it cannot be collateral in v1 — it can still be swapped or LP'd (once its gauge is voted).">ⓘ</span></label>
+        <label>2 · Collateral <span class="tt" title="What you supply to Aave v3 on Base. cbBTC and WETH are live Aave reserves with Chainlink feeds. cbZEC is not enabled as collateral in v1 (a Morpho market lends against it; Oilskin has not reviewed it) — it can still be swapped or LP'd (once its gauge is voted).">ⓘ</span></label>
         <div class="seg" id="assetSeg" role="radiogroup"></div>
         <div class="small" id="assetHint" style="margin-top:7px;color:var(--ink-3)"></div>
       </div>
@@ -382,7 +382,7 @@ footer{border-top:1px solid var(--line-soft);padding:22px 0 36px;margin-top:20px
         <ol>
           <li><b>Deposit ZEC to your Coinbase account.</b> Coinbase ZEC balances are transparent addresses; a send from any Zcash balance lands there in the open.</li>
           <li><b>Choose "Send ZEC on Base"</b> and give your Base wallet address. cbZEC arrives at that address.</li>
-          <li><b>Connect that wallet here.</b> In v1 cbZEC can be swapped or LP'd; as collateral it is disabled, because no Base lending market lists it and Oilskin does not create one (decision D3).</li>
+          <li><b>Connect that wallet here.</b> In v1 cbZEC can be swapped or LP'd; as collateral it is disabled, because Oilskin has not reviewed the one Morpho market that lends against it and does not create one itself (decision D3).</li>
         </ol>
         <div class="note warn" style="margin-top:12px"><b>Before you start — three facts, stated plainly.</b>
           <ul style="margin:6px 0 0 18px">
@@ -811,7 +811,7 @@ const OIL_SHARED = Object.freeze({
   COLLATERAL_ASSETS: {
     cbBTC: { symbol: "cbBTC", enabled: true,  riskNotes: ["Custodial wrapper issued by Coinbase; issuer policy applies to the underlying BTC."] },
     WETH:  { symbol: "WETH",  enabled: true,  riskNotes: [] },
-    cbZEC: { symbol: "cbZEC", enabled: false, disabledReason: "No lending market accepts cbZEC as collateral on Base: it is not an Aave v3 reserve and no Morpho Blue market exists for it. Oilskin does not create that market itself (decision D3, 2026-09-12) — it waits for an external market to list cbZEC. ZEC holders can borrow today through the Solana lane instead.",
+    cbZEC: { symbol: "cbZEC", enabled: false, disabledReason: "Not enabled as collateral here yet. cbZEC is not an Aave v3 reserve. A Morpho Blue market on Base does lend USDC against it (read 2026-11-16, liquidation threshold 62.5%), but it is not listed in Oilskin's registry: its price oracle has not been reviewed, and Oilskin does not create a market of its own (decision D3, 2026-09-12). The Solana lane lends against bridged ZEC; that program is built and not yet deployed.",
       riskNotes: ["Custodial wrapper: cbZEC exists only because Coinbase holds the ZEC behind it, and getting in or out goes through a Coinbase account.", "B20 precompile, not a plain ERC-20: balances can rebase through a live multiplier() and transfers can be blocked, seized or paused by the issuer. Oilskin can read the multiplier and simulate a zero-amount transfer from your own address; the issuer's policy itself is not readable and can change after the read.", "The 1:1 value to ZEC is an issuer promise, not a mechanism. Decentralised-exchange depth is thin, so the two can trade apart under stress and a ZEC/USD oracle would overvalue cbZEC.", "Scammers deploy look-alike addresses sharing cbZEC's 0xb2000 vanity prefix; only the pinned address is genuine.", "Priced by Chainlink's ZEC/USD feed, which prices ZEC and not cbZEC: if the wrapper ever traded below ZEC, that feed would still quote ZEC's price and overvalue it. The on-chain oracle compares it against the Aerodrome cbZEC/USDC pool and refuses a price that has drifted too far; the feed's own aggregator has no usable circuit breaker of its own."] },
   },
   LTV_PRESET_FIXED_BPS: { p30: 3000, p40: 4000 },
@@ -1605,12 +1605,12 @@ function renderAssetSeg(){
   const p = S.pos && !S.pos.example ? S.pos : null; const cur = p ? p.asset : S.sel.asset;
   $("#assetSeg").innerHTML = ["cbBTC","WETH","cbZEC"].map(a=>{
     const lt=ltOf(a); const on=cur===a; const off = lt==null;
-    const reason = off ? "no Base market lists it · Oilskin does not create one" : `Aave LT ${(lt*100).toFixed(0)}% · top setting ${topLtvPct(a)}%`;
+    const reason = off ? "not enabled yet · Morpho market not reviewed" : `Aave LT ${(lt*100).toFixed(0)}% · top setting ${topLtvPct(a)}%`;
     return `<button type="button" class="segb${on?" on":""}${off?" off":""}" role="radio" aria-checked="${on}" data-asset="${a}" ${off||p?"disabled":""} aria-disabled="${off}" tabindex="${on||(!p&&!off&&a==="cbBTC")?0:-1}"><b>${a}</b><span class="num">${reason}</span></button>`;
   }).join("");
   $$("#assetSeg [data-asset]").forEach(b=>b.addEventListener("click",()=>{ if(b.disabled) return; dispatch({type:"selectAsset", asset:b.dataset.asset}); }));
   const r = CR.aaveReserves[cur];
-  $("#assetHint").textContent = p ? `Locked for this position: ${cur}. Withdraw fully to change collateral.` : `${cur} on Aave v3: liquidation threshold ${(r.liquidationThresholdBps/100).toFixed(0)}%, supply ${r.supplyAprPct.toFixed(3)}% APR, Chainlink feed. cbZEC: no Base lending market lists it, so collateral is disabled; it is priced by Chainlink ZEC/USD, which prices ZEC and not cbZEC.`;
+  $("#assetHint").textContent = p ? `Locked for this position: ${cur}. Withdraw fully to change collateral.` : `${cur} on Aave v3: liquidation threshold ${(r.liquidationThresholdBps/100).toFixed(0)}%, supply ${r.supplyAprPct.toFixed(3)}% APR, Chainlink feed. cbZEC: not enabled yet, so collateral is disabled; it is priced by Chainlink ZEC/USD, which prices ZEC and not cbZEC.`;
   $("#amtSuffix").textContent=cur; $("#pxAsset").textContent=cur; $("#px").textContent=usd(S.price[cur]);
   $("#amtMin").textContent=`min ${MIN_AMOUNT[cur]} ${cur} · wallet holds ${DEMO_BAL[cur]} ${cur} (demo)`;
   if(document.activeElement!==$("#amt")) $("#amt").value = S.sel.amount;

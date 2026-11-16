@@ -56,7 +56,7 @@ test("the identity both ways: 10 ZEC at the cap borrows 40 % of value at HF 1.62
   assert.equal(p.borrowUnits, BigInt(Math.round(p.borrowUsdc * 1e6)));
   assert.equal(p.fundable, p.borrowUsdc <= view.maxFundableUsdc!);
   assert.deepEqual(p.rungs.map((r) => r.id), ladderFor(1.625).map((r) => r.id));
-  assert.ok(Math.abs(solanaHfForBorrow(p.borrowUsdc * view.usdcPriceUsd!, p.collateralUsd, 6500) - 1.625) < 1e-4, "the cent floor moves the HF by less than 1e-4");
+  assert.ok(Math.abs(solanaHfForBorrow(p.borrowUsdc, p.collateralUsd, 6500, view.usdcPriceUsd ?? 1) - 1.625) < 1e-4, "the cent floor moves the HF by less than 1e-4");
   const none = planSolanaOpen({ collateralZec: 10, entryHf: Number.POSITIVE_INFINITY, view })!;
   assert.equal(none.borrowUsdc, 0);
   assert.equal(none.ltvBps, 0);
@@ -119,4 +119,14 @@ test("the route client: the path carries only positive numbers; normalisation ke
   for (const r of ["kamino_unavailable", "kamino_stale", "venue_paused", "borrow_disabled", "reserve_not_active", "oracle_stale", "oracle_out_of_band", "entry_hf_below_floor", "venue_ltv_exceeded", "pool_cannot_fund", "borrow_limit_reached", "borrow_cap_24h_reached", "utilization_limit_reached", "deposit_limit_reached"]) {
     assert.ok(solanaRefusalPlain(r).length > 20 && !/_/.test(solanaRefusalPlain(r)), r);
   }
+});
+
+test("the two slider directions are inverses when Scope prices USDC off $1 (1000.00 at 1.0001 plans 1000.00, not 999.90)", () => {
+  const v = { ...view, usdcPriceUsd: 1.0001 };
+  const p = planSolanaOpen({ collateralZec: 50, entryHf: 2, view: v })!;
+  const hf = solanaHfForBorrow(p.borrowUsdc, p.collateralUsd, v.liquidationThresholdBps!, 1.0001);
+  assert.ok(Math.abs(hf - 2) < 1e-3, `round trip HF ${hf}`);
+  const typed = solanaHfForBorrow(1000, p.collateralUsd, v.liquidationThresholdBps!, 1.0001);
+  const back = planSolanaOpen({ collateralZec: 50, entryHf: typed, view: v })!;
+  assert.ok(Math.abs(back.borrowUsdc - 1000) <= 0.01, `typed 1000.00 planned ${back.borrowUsdc}`);
 });

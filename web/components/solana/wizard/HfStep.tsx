@@ -44,7 +44,7 @@ export default function HfStep({ plan, bounds, view, entryHf, onChange, acknowle
     setBorrowDraft(null);
     if (t === null) return;
     const v = Number(t.replace(/,/g, ""));
-    if (Number.isFinite(v) && v >= 0) onChange(clampSolanaHf(solanaHfForBorrow(v, plan.collateralUsd, bounds.ltBps), bounds));
+    if (Number.isFinite(v) && v >= 0) onChange(clampSolanaHf(solanaHfForBorrow(v, plan.collateralUsd, bounds.ltBps, view.usdcPriceUsd ?? 1), bounds));
   };
   const needsAck = needsHfAcknowledgment(entryHf);
   const ackText = needsAck && plan.drawdownPct !== null ? hfAcknowledgmentText({ entryHf, collateral: "ZEC", drawdownPct: plan.drawdownPct, rungs: plan.rungs }) : "";

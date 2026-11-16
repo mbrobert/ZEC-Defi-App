@@ -75,6 +75,17 @@ export interface SolanaTickReport {
 
 const RESUMABLE = new Set<Disp["status"]>(["PENDING", "SENT", "FAILED", "REFUSED", "LOGGED_ONLY"]);
 
+/**
+ * A crossing in flight: a burn is out on Base and its USDC is not yet delivered on Solana. Such a record belongs
+ * to the stage machine (`dispatcher.confirm` → `advanceBridge`) whatever its status says — a FAILED or REFUSED
+ * there is a stage that did not advance this tick (a receipt read that timed out, Circle down, a delivery whose
+ * simulation failed), never a reason to run the rung again from scratch, which would close more LP and burn a
+ * second time while the first burn's delivery is forgotten (AUDIT 2026-11-16 H-1).
+ */
+function openBridge(d: Disp): boolean {
+  return !!d.bridge && d.bridge.stage !== "delivered";
+}
+
 function errMsg(e: unknown): string {
   return e instanceof Error ? `${e.name}: ${e.message.split("\n")[0]}` : String(e);
 }
@@ -97,6 +108,8 @@ async function mapBounded<T, R>(items: readonly T[], concurrency: number, fn: (t
 export class SolanaMonitor {
   private readonly now: () => Date;
   private views = new Map<string, DiscoveredSolanaAccount>();
+  /** Rotates the resume budget so a record that waits for ever cannot starve the ones behind it (L-2). */
+  private resumeTurn = 0;
 
   constructor(private readonly d: SolanaMonitorDeps) {
     validateLadder(d.ladder);
@@ -225,15 +238,20 @@ export class SolanaMonitor {
 
   private async resumePending(handle: TickHandle, log: Logger): Promise<number> {
     const candidates = this.d.store.listDispatches().filter((d) => RESUMABLE.has(d.status));
-    const slice = candidates.slice(0, this.d.config.maxResumePerTick);
+    // Rotated, as the Base monitor's is (AUDIT 2026-11-16 L-2): crossings waiting on Circle stay SENT for many
+    // ticks, and a fixed head of the list would take the whole budget every tick.
+    const offset = candidates.length ? this.resumeTurn++ % candidates.length : 0;
+    const slice = [...candidates.slice(offset), ...candidates.slice(0, offset)].slice(0, Math.max(1, this.d.config.maxResumePerTick));
     if (slice.length < candidates.length) log.info("resume budget reached — the rest wait for the next tick", { pending: candidates.length, resuming: slice.length });
     let n = 0;
     for (const rec of slice) {
       if (handle.signal.aborted) break;
       const l = log.child({ key: rec.key, account: rec.account });
-      // An episode that ended (account healthy again) makes the record moot.
+      // An episode that ended (account healthy again) makes the record moot — except a crossing in flight: the
+      // USDC is already burned on Base and is delivered whether or not the account still needs it (M-3).
       const acct = this.d.store.getAccount(rec.account);
-      if (acct && acct.episode !== rec.episode) {
+      const crossing = openBridge(rec);
+      if (acct && acct.episode !== rec.episode && !crossing) {
         await this.setStatus(rec, "SUPERSEDED", "episode ended before this record was resumed", l);
         continue;
       }
@@ -244,7 +262,10 @@ export class SolanaMonitor {
           await this.escalate(rec.account, [`dispatch ${rec.key} needs the owner: ${rec.error}`], rec.attempts, "grant-misconfigured");
           continue;
         }
-        if (rec.attempts >= this.d.config.maxDispatchAttempts && rec.rung !== this.lastResortRung.id) {
+        // A crossing is never abandoned for its attempt count: what is left is reading a receipt, asking Circle and
+        // delivering — idempotent, spending nothing of the user's — and abandoning it loses the burned USDC.
+        // `recordResult` escalates it once at the cap instead (H-1).
+        if (rec.attempts >= this.d.config.maxDispatchAttempts && rec.rung !== this.lastResortRung.id && !crossing) {
           await this.setStatus(rec, "ABANDONED", `gave up after ${rec.attempts} attempts: ${rec.error ?? "?"}`, l);
           l.error("dispatch ABANDONED — human intervention required", { attempts: rec.attempts, lastError: rec.error });
           await this.escalate(rec.account, [`dispatch ${rec.key} abandoned: ${rec.error ?? "?"}`], rec.attempts);
@@ -254,7 +275,7 @@ export class SolanaMonitor {
       let result: SolanaDispatchResult;
       try {
         result = await withDeadline(`resume ${rec.key}`, this.d.config.dispatchDeadlineMs, handle.signal, () =>
-          rec.status === "SENT" ? this.d.dispatcher.confirm(rec, handle.signal) : this.d.dispatcher.dispatch(this.dispatchIntent(rec, l), handle.signal)
+          rec.status === "SENT" || crossing ? this.d.dispatcher.confirm(rec, handle.signal) : this.d.dispatcher.dispatch(this.dispatchIntent(rec, l), handle.signal)
         );
       } catch (e) {
         if (e instanceof AbortedError || handle.signal.aborted) throw e;
@@ -353,7 +374,8 @@ export class SolanaMonitor {
         const key = `${rec.account}:${a.episode}:${seq}:${fire.action}`;
         if (s.dispatches.some((d) => d.key === key)) throw new DuplicateIdError("dispatch", key);
         for (const d of s.dispatches) {
-          if (d.account === rec.account && RESUMABLE.has(d.status) && d.status !== "SENT") {
+          // A crossing in flight is not superseded by a more severe rung: its burn is out and still to deliver (H-1).
+          if (d.account === rec.account && RESUMABLE.has(d.status) && d.status !== "SENT" && !openBridge(d)) {
             d.status = "SUPERSEDED";
             d.error = `superseded by ${key}`;
             d.updatedAt = nowIso;
@@ -435,7 +457,10 @@ export class SolanaMonitor {
 
   /**
    * Age in seconds of the youngest Base burn still in flight for the account — a dispatch with `bridge` whose
-   * stage is not "delivered" and whose status is SENT or CONFIRMED — or null. The dispatcher waits on it
+   * stage is not "delivered", WHATEVER its status — or null. Until AUDIT 2026-11-16 H-1 only SENT and CONFIRMED
+   * counted, so one transient FAILED on a crossing made the account look clear and the next rung burned again;
+   * an ABANDONED crossing still counts, so the account falls back to the single-chain path past the stall window
+   * rather than burning a second time inside it. The dispatcher waits on it
    * inside the stall window and falls back to the single-chain path past it (`bridgeDecision`).
    *
    * Measured from `createdAt`, the moment the rung fired. It was `updatedAt` until the 2026-09-13 audit
@@ -447,7 +472,7 @@ export class SolanaMonitor {
     const nowMs = this.now().getTime();
     let youngest: number | null = null;
     for (const d of this.d.store.listDispatches({ account })) {
-      if (!d.bridge || d.bridge.stage === "delivered" || (d.status !== "SENT" && d.status !== "CONFIRMED")) continue;
+      if (!openBridge(d)) continue;
       const age = Math.max(0, Math.floor((nowMs - Date.parse(d.createdAt)) / 1000));
       if (youngest === null || age < youngest) youngest = age;
     }
@@ -509,14 +534,21 @@ export class SolanaMonitor {
   private async recordResult(rec: Disp, result: SolanaDispatchResult, l: Logger, signal: AbortSignal): Promise<void> {
     void signal;
     const nowIso = this.now().toISOString();
-    const attempts = rec.attempts + 1;
+    const crossing = openBridge(rec);
+    // A crossing that is still waiting (on the receipt, on Circle, on a delivery's confirmation) is not an attempt:
+    // charging every poll ran a long Circle wait plus one transient failure into ABANDONED (H-1).
+    const attempts = crossing && result.status === "SENT" ? rec.attempts : rec.attempts + 1;
     const sig = "signature" in result ? result.signature : undefined;
     // A Base burn's hash is not a Solana signature: it lives in `bridge.burnTxHash` (the store checks `txHash`
     // against the Solana codec), and the dispatcher confirms a bridge record from there.
     const bridged = "bridge" in result && result.bridge ? result.bridge : undefined;
     const patch: Partial<Disp> = { attempts, updatedAt: nowIso, txHash: bridged ? rec.txHash : (sig ?? rec.txHash) };
-    if (bridged) patch.bridge = bridged;
     let escalation: string | null = null;
+    if (bridged && crossing && bridged.burnTxHash !== rec.bridge!.burnTxHash) {
+      // A different burn reported for a record already tracking one: the record keeps the FIRST (it is the one
+      // whose USDC is out and undelivered); the second is named where a person reads it (H-1).
+      escalation = `a second burn ${bridged.burnTxHash} was reported for ${rec.key}, which is already delivering ${rec.bridge!.burnTxHash} — the record keeps the first; check the second by hand`;
+    } else if (bridged) patch.bridge = bridged;
     switch (result.status) {
       case "NOTIFIED":
       case "CONFIRMED":
@@ -542,6 +574,11 @@ export class SolanaMonitor {
           patch.status = "ABANDONED";
           patch.error = `permanent: ${msg}`;
           escalation = `dispatch abandoned — retrying cannot fix this: ${msg}`;
+        } else if (crossing) {
+          // Stays open (the resume path keeps driving the stage machine); a person is told once, at the cap.
+          patch.status = result.status;
+          patch.error = msg;
+          if (attempts === this.d.config.maxDispatchAttempts) escalation = `crossing ${rec.key} (burn ${rec.bridge!.burnTxHash}, stage ${rec.bridge!.stage}) has failed ${attempts} times and stays open — the burned USDC is not delivered yet: ${msg}`;
         } else if (attempts >= this.d.config.maxDispatchAttempts) {
           patch.status = "ABANDONED";
           patch.error = `after ${attempts} attempts: ${msg}`;

@@ -19,6 +19,7 @@ import { useSolanaBorrowView, useSolanaPosition, useSolanaSession } from "@/lib/
 import { clampSolanaHf, fromUnits, openSteps, planSolanaOpen, SOLANA_WIZARD_STEPS, solanaHfBounds } from "@/lib/solana/plan";
 import { needsHfAcknowledgment } from "@/lib/wizard";
 import { accountPda } from "@/lib/solana/addresses";
+import { canSignWithView, SOLANA_STALE_VIEW_WORDS } from "@/lib/solana/sign-gate";
 
 export default function SolanaNewPositionPage() {
   return (
@@ -73,16 +74,19 @@ function SolanaWizard() {
     setAckHf(false);
     setAckLoop(false);
   };
+  // In a live session nothing is sized or signed from the offline snapshot or a stale read (both views: the plan is sized from the pool view).
+  const viewOk = canSignWithView(poolView, s.mode) && canSignWithView(view, s.mode);
   const canContinue =
     step === 0 ? ackBridged
     : step === 1 ? collateralZec > 0 && !!plan
     : step === 2 ? !!plan && (!needsHfAcknowledgment(hf) || ackHf)
     : step === 3 ? loopPlan !== null && (loopPlan.kind === "keep" || (ackLoop && loopPlan.allowed))
-    : step === 4 ? ackReview && view.allowed
+    : step === 4 ? ackReview && view.allowed && viewOk
     : false;
 
   const run = async (emit: SolanaEmit): Promise<string[]> => {
     if (!plan || !s.publicKey || !wallet.sendTransaction) throw new Error("no wallet");
+    if (!viewOk) throw new Error(SOLANA_STALE_VIEW_WORDS);
     const programId = new PublicKey(SOLANA_ENV.programId);
     const slot = await connection.getSlot("confirmed");
     const nowS = (await connection.getBlockTime(slot)) ?? Math.floor(Date.now() / 1000);
@@ -114,6 +118,9 @@ function SolanaWizard() {
         {step === 3 && plan && loopPlan && <DeployStep plan={plan} forecast={loopForecast} loading={loopLoading} choice={loop} loop={loopPlan} onChoice={onLoop} acknowledged={ackLoop} onAcknowledge={setAckLoop} />}
         {step === 4 && plan && <SolanaReviewStep plan={plan} view={view} steps={steps} loop={loopPlan} acknowledged={ackReview} onAcknowledge={setAckReview} mode={s.mode} productMode={productMode} keeperMaySell={keeperMaySell} onKeeperMaySell={setKeeperMaySell} />}
         {step === 5 && plan && <SolanaSignStep steps={steps} afterwards={loopPlan ? crossingSteps(loopPlan) : []} mode={s.mode} run={run} />}
+        {!viewOk && step >= 4 && (
+          <p className="mt-4 text-[13px] text-oil-crit" data-testid="sol-stale-view">{SOLANA_STALE_VIEW_WORDS}</p>
+        )}
         {step < 5 && (
           <div className="mt-6 flex justify-between">
             <button className="btn-ghost" onClick={() => setStep((x) => Math.max(0, x - 1))} disabled={step === 0} data-testid="sol-wizard-back">

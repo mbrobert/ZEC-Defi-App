@@ -416,6 +416,45 @@ export class KeeperDispatcher implements Dispatcher {
     return withDeadline(label, this.d.config.deadlineMs, signal, work);
   }
 
+  /**
+   * Audit M-2: a record that carries a persisted pre-send nonce may already have a transaction out under it
+   * (the send returned but the record never reached SENT). Before the world is read:
+   *   • latest > sentNonce  → that nonce is consumed (ours mined, or another dispatch's did); the world read
+   *                           that follows reflects it and sizes the replay. Proceed.
+   *   • pending > sentNonce ≥ latest → something is in flight under that nonce — possibly our first send.
+   *                           Sending again (under the next nonce) could land twice; replacing it at the same
+   *                           nonce could clobber another account's dispatch. Wait: FAILED, nothing sent.
+   *   • otherwise           → nothing under that nonce reached the node. Proceed; the send is pinned to the
+   *                           pending nonce, so a late first send can only collide with it.
+   * A read that fails is a fate that cannot be told: fail closed. Returns an error string, or null to proceed.
+   */
+  private async replayGuard(record: DispatchRecord, signal: AbortSignal | undefined, log: Logger): Promise<string | null> {
+    const sent = record.sentNonce;
+    if (sent === undefined) return null;
+    let latest: number;
+    let pending: number;
+    try {
+      latest = await this.call("getTransactionCount(latest)", signal, () => this.d.client.getTransactionCount({ address: this.d.keeper, blockTag: "latest" }));
+      pending = await this.call("getTransactionCount(pending)", signal, () => this.d.client.getTransactionCount({ address: this.d.keeper, blockTag: "pending" }));
+    } catch (e) {
+      return `a send may already be out under nonce ${sent} and its fate cannot be read (fail closed): ${errMsg(e)}`;
+    }
+    if (latest > sent) {
+      log.warn("the persisted pre-send nonce is consumed — the replay is sized by the world it re-reads", { sentNonce: sent, latest });
+      return null;
+    }
+    if (pending > sent) {
+      return `a transaction under the persisted nonce ${sent} is still unmined (latest ${latest}, pending ${pending}) — waiting for it rather than sending a second`;
+    }
+    log.warn("the persisted pre-send nonce never reached the node — the replay is pinned to it", { sentNonce: sent, pending });
+    return null;
+  }
+
+  /** The keeper's pending nonce, which every send is pinned to and persisted with (M-2). Throws if unreadable. */
+  private pendingNonce(signal?: AbortSignal): Promise<number> {
+    return this.call("getTransactionCount", signal, () => this.d.client.getTransactionCount({ address: this.d.keeper, blockTag: "pending" }));
+  }
+
   /** Chain time; falls back to the host clock only when the head cannot be read. */
   private async chainNowS(signal?: AbortSignal): Promise<bigint> {
     try {
@@ -455,6 +494,10 @@ export class KeeperDispatcher implements Dispatcher {
       log.warn("NOTIFY: health warning delivered", { rung: record.rung, hf: record.hf });
       return { status: "NOTIFIED" };
     }
+
+    // 0. A replay of a record whose send may already be out (M-2) — before the world is read.
+    const inFlight = await this.replayGuard(record, signal, log);
+    if (inFlight) return { status: "FAILED", error: inFlight };
 
     // 1. World check.
     const world = await this.worldCheck(record, intent.valuation, signal);
@@ -576,14 +619,14 @@ export class KeeperDispatcher implements Dispatcher {
     // 6. Persist what we are about to broadcast BEFORE broadcasting it — the nonce, the ids, and
     //    every book the account has right now (slice 5), which is what confirm() judges an
     //    untouched venue against. A snapshot that cannot be read is a dispatch that cannot be
-    //    judged: fail closed before the send, not after.
-    let nonce: number | undefined;
+    //    judged: fail closed before the send, not after. The nonce too (M-2): the send is pinned to
+    //    exactly the nonce persisted, and a nonce that cannot be read is a send that a replay could
+    //    not be told apart from.
+    let nonce: number;
     try {
-      nonce = await this.call("getTransactionCount", signal, () =>
-        this.d.client.getTransactionCount({ address: this.d.keeper, blockTag: "pending" })
-      );
-    } catch {
-      nonce = undefined;
+      nonce = await this.pendingNonce(signal);
+    } catch (e) {
+      return { status: "FAILED", error: `cannot read the keeper's nonce before sending (fail closed): ${errMsg(e)}` };
     }
     let venueBooks: VenueBook[] | undefined;
     try {
@@ -619,6 +662,7 @@ export class KeeperDispatcher implements Dispatcher {
           abi: keeperExecAbi,
           functionName: "execAsKeeper",
           args: [calls],
+          nonce,
           account: this.d.wallet.account,
           chain: this.d.wallet.chain,
         })
@@ -676,6 +720,10 @@ export class KeeperDispatcher implements Dispatcher {
     if (!grant.allowCallback) return { status: "REFUSED", permanent: true, reason: `grant for ${this.d.router} ${selector} has allowCallback=false — a mis-issued grant` };
     const nowS = await this.chainNowS(signal);
 
+    // 2b. A replay of a burn that may already be out (M-2) — before the LP state is read.
+    const inFlight = await this.replayGuard(record, signal, log);
+    if (inFlight) return { status: "FAILED", error: inFlight };
+
     // 3. Price the Base leg.
     let positions: PlannedPosition[];
     let pools: Map<Hex, PoolInfo>;
@@ -722,11 +770,11 @@ export class KeeperDispatcher implements Dispatcher {
       if (rv && (rv.name === "CrossChainDisabled" || rv.name === "NoSolanaRecipient")) return { status: "REFUSED", permanent: true, reason: `simulation reverted ${rv.name}: the deployment or the account cannot burn` };
       return { status: "FAILED", error: `simulation failed: ${rv ? `${rv.name}(${rv.args.join(",")})` : errMsg(e)}` };
     }
-    let nonce: number | undefined;
+    let nonce: number;
     try {
-      nonce = await this.call("getTransactionCount", signal, () => this.d.client.getTransactionCount({ address: this.d.keeper, blockTag: "pending" }));
-    } catch {
-      nonce = undefined;
+      nonce = await this.pendingNonce(signal);
+    } catch (e) {
+      return { status: "FAILED", error: `cannot read the keeper's nonce before sending (fail closed): ${errMsg(e)}` };
     }
     if (intent.persistBeforeSend) {
       try {
@@ -739,7 +787,7 @@ export class KeeperDispatcher implements Dispatcher {
     let txHash: Hex;
     try {
       txHash = await this.call("sendTransaction", signal, () =>
-        this.d.wallet.writeContract({ address: account, abi: keeperExecAbi, functionName: "execAsKeeper", args: [calls], account: this.d.wallet.account, chain: this.d.wallet.chain })
+        this.d.wallet.writeContract({ address: account, abi: keeperExecAbi, functionName: "execAsKeeper", args: [calls], nonce, account: this.d.wallet.account, chain: this.d.wallet.chain })
       );
     } catch (e) {
       const rv = revertName(e);

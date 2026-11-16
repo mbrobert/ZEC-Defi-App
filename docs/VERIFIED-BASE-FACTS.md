@@ -1161,3 +1161,114 @@ Every row is a full `probe` — none fell to `probe-short` — and the whole sta
 `getRoundData` reads** across the three feeds. Both movers now bound at 2,464 s (twice the measured
 1,232 s heartbeat) rather than at twice whatever the last five minutes happened to look like, and the
 pegged feed keeps its 172,836 s, which is what C-HIGH-2 was about.
+
+## Addendum 18 — 2026-11-16: Aerodrome became Aero and its old gauges are dead; the engine did not follow; a Morpho market lists cbZEC
+
+Read-only, `cast call` at "latest" against `https://mainnet.base.org`, blocks **58,212,481 → 58,213,735**
+(2026-11-16 12:41–12:45 UTC), plus the two primary pages named below. Nothing in this addendum has been
+built on yet; it records what the chain says now so that nothing is built on the September picture.
+
+### 1 · Aerodrome's emissions stopped on 2026-10-22 00:00 UTC
+
+Source: Aero's own upgrade hub, `https://aero.xyz/aero-upgrade/` (read 2026-11-16): "Aero launched
+2026-10-22T00:00:00Z … Aerodrome and Velodrome emissions stop at epoch flip. New AERO emissions start",
+"All gauges are deactivated and emissions have stopped", "Aerodrome and Velodrome pools stay live but
+stopped receiving emissions at launch", and no deadline is given for moving liquidity.
+
+The chain agrees. Aerodrome's Voter `0x16613524e02ad97eDfeF371bC883F2F5d6C480A5` at block 58,212,481:
+
+| Pool | Gauge (`gauges(pool)`) | `isAlive(gauge)` | `periodFinish()` | `rewardRate()` (stale) |
+|---|---|---|---|---|
+| WETH/USDC `0xb2cc224c1c9feE385f8ad6a55b4d94E92359DC59` | `0xF33a96b5932D9E9B9A0eDA447AbD8C9d48d2e0c8` | **false** | 1,792,627,200 = 2026-10-22 00:00:00 UTC | 144,862,790,194,691,137 wei/s |
+| cbZEC/USDC `0x0Fc47C17AF86078d809358db1b4db2DeBC988566` | `0x8779E34E5d38358B0cB957c553B40cC1208C81FB` | **false** | 1,792,627,200 | 87,603,976,614,180,049 wei/s |
+
+`rewardRate()` still answers a non-zero number on both; it is the last epoch's rate and nothing is
+streaming. Any reader that takes `rewardRate()` without `periodFinish() > now` overstates emissions by
+the whole amount. The yield service already applies that test at sample time and again at serve time
+(`services/yield/src/sources/gauges.ts`, `forecast.ts`, `server.ts`), so a live forecast prices these
+pools at zero emissions; the recorded demo snapshot of 2026-09-13 predates the change and does not.
+
+### 2 · Aero's contracts on Base (a separate deployment, a different gauge interface)
+
+Addresses from Aero's docs, `https://app.aero.xyz/docs/security/` (read 2026-11-16), each probed:
+
+| Contract | Address | Probe |
+|---|---|---|
+| AERO (new token) | `0x3f5bF3EdAc59d650D8fDf9657a71F2f904A3a4Ee` | code 3,513 B; `symbol()` = "AERO"; `totalSupply()` 2,143,136,240.76 |
+| Voter | `0x49d7d4f17Ec56Ef8fA04E464AF5D1A4942CC31e6` | code 22,914 B |
+| CLFactory (Base) | `0x9CB220581b91b0C83223012FE69688b92aD07a76` | code 9,547 B; `allPoolsLength()` 640; `tickSpacings()` = 1, 10, 50, 100, 150, 200, 250 |
+| NonfungiblePositionManager | `0x4857DB576eE0e45F10525eC59527BfD10beeC60b` | code 24,516 B; `factory()` = the CLFactory above |
+| SwapRouter | `0x9Ee35Bf1bd69a03c6F0393582030fCe8Bb93D418` | code 10,060 B; `factory()` = the CLFactory above |
+| CLGauge implementation | `0x89E91A960154b1ed6c093039a8F0725ab67D14E0` | Sourcify exact match, solc 0.7.6 |
+| CLPool implementation | `0x1642634C8CB1C9f1B84c9a1a08534F8c3F4E89f8` | Sourcify match, solc 0.7.6 |
+
+Pools found with `CLFactory.getPool(tokenA, tokenB, tickSpacing)` and each pool's own `gauge()`:
+
+| Pair | Spacing | Pool | Gauge | `liquidity()` / `stakedLiquidity()` |
+|---|---|---|---|---|
+| WETH/USDC | 50 | `0x4A7af46bC8aBc00048c6c7920a1488DAF568366c` | `0x46a9dCa72D78366571bE583aa69C1DC16E6889fB` | 4.416e18 / 6.335e18 |
+| WETH/USDC | 100 | `0x2A430bEbD2082d8e05D56d64DEDE8944279bbC24` | `0x14018f5AFaeCA44BB49d5036267d836723B57c91` | 1.158e18 / 1.067e18 |
+| USDC/cbBTC | 50 | `0x42609aA1E58C5dD7E5a012DC74118fFf975F0Eac` | `0x74a30B3357121a822aDB91A539F4B11b5fb7cb3F` | 4.062e12 / 3.846e12 |
+| USDC/cbBTC | 100 | `0x784E539F15Ca2D19449a6311c5dAb6cF37d8f1ba` | `0x4262b2d1415345b98E656a56c2f12cDBb1118539` | 1.418e13 / 1.414e13 |
+| WETH/cbBTC | 1 | `0xeC3c3755b9DED4a2960ef50C9b48C1694CE274C2` | `0xAbb3fb6659e05847631896cB87A6D1b8bc0c6D8C` | 4.067e17 / 4.502e17 |
+| WETH/cbBTC | 10 | `0xbB5507DaaE822ba89C4dA61BbfDf4b49a1666BAc` | `0x5b14d6D194E49330647eB4717010aDe1B1B3f8B5` | 2.588e18 / 2.232e18 |
+| **USDC/cbZEC** | 200 | `0xE7030bE388b8E247aBe0C9fa876673e83fBcBD3C` | `0xCBa7452690663D6789C0115fe889C9da85Bf8c56` | 2.582e13 / 2.581e13 |
+
+**The new gauge is not the old gauge.** `rewardRate()`, `periodFinish()` and `rewardToken()` all revert on
+every gauge above. The verified CLGauge ABI has `deposit(uint256)`, `withdraw(uint256)`,
+`emergencyWithdraw(uint256)`, `earned(address)`, `earned(address,uint256[])`,
+`claimEmissions(address,address)`, `claimEmissions(address,address,uint256[])`, `settleGauge()`,
+`stakedValues(address)`; the pool adds `rewardGrowthGlobalX128()`, `rollover()`, `settleToBlock()`,
+`unstakedFee()` and has no `rewardRate()` either. So three things in this repository do not speak to
+Aero as written: the yield service's emissions read (`SEL.rewardRate` / `SEL.periodFinish`), the
+direct venue `SlipstreamLpVenue` (built against the Aerodrome gauge), and `AerodromeSwapAdapter`
+(bound to the old SwapRouter `0xBE6D…18a5`, whose factory is the old `0x5e7B…809A`). How Aero's
+per-pool emission rate is to be read is **not established** here — it needs the CLGauge and CLPool
+sources read, not guessed.
+
+### 3 · The MaxFi/Snuggle engine has not moved to Aero
+
+Engine `0x7D27CDfBFcC878F7E7349e216d44204BFd2AFd55` at block 58,213,334: `poolIdsCount()` = **230**
+(214 on 2026-09-07). All sixteen new entries (indices 214–229) answer `factory()` =
+`0x33128a8fC17869897dcE68Ed026d694621f6FDfD` (Uniswap v3) with no reward adapter; several pair USDC or
+WETH with **cbZEC** (`0xB200…b2EC`), e.g. index 215 pool `0x97F35d1E92795327614BE000cd18cba1Be2c1931`
+(fee 3000) and index 229 pool `0x60661b315553EB81872deEA9a66d567Cf0CCd33B` (fee 3000). None names a pool
+of Aero's CLFactory `0x9CB2…7a76`.
+
+The three curated Aerodrome entries the product ships (`packages/shared/src/pools.ts`) are unchanged and
+still `active`: `0xb1830be2…37e6` → pool `0x4e962BB3889Bf030368F56810A9c96B83CB3E778`, `0x0ea72f44…72a8`
+→ `0xb2cc…DC59`, `0xc97cb5ca…c35f` → `0x70aCDF2Ad0bf2402C957154f944c19Ef4e1cbAE1`; all three pools answer
+`factory()` = the old `0x5e7BB104d84c7CB9B682AaC2F3d509f5F406809A`. **Consequence:** a deposit through
+the engine into any curated Aerodrome pool is staked in a dead gauge — no emissions, and a staked
+Slipstream position does not collect swap fees either. Until the engine lists Aero pools (or the
+product integrates Aero directly), the only engine pools that can earn anything are the Uniswap v3
+ones, which earn swap fees and have no emissions to price.
+
+### 4 · A Morpho Blue market lists cbZEC as collateral
+
+Morpho Blue `0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb`, block 58,213,735, market id
+`0xe458a501c1103ca3b256f2bcb45d223263fb34b6349d82675494ce3a94ce1327`:
+
+| Field | Value |
+|---|---|
+| `idToMarketParams` loanToken / collateralToken | USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` / cbZEC `0xB2000000000000000000008501b13360000cb2EC` |
+| oracle | `0xa3CB2d7204F47a468B82C6fAb1CA9675e9F7A272` (code 2,598 B) |
+| irm | `0x46415998764C29aB2a25CbeA6254146D50D22687` |
+| lltv | 625000000000000000 = **62.5 %** |
+| `market()` totalSupplyAssets / totalBorrowAssets | 3,936,805.64 USDC / 3,423,059.02 USDC (utilisation ≈ 86.9 %) |
+| fee | 0 |
+| oracle `price()` | 8.6796358e36; `BASE_FEED_1()` = `0xC4a161651546983083AeDDDEc5878A2eAf604890`; `BASE_FEED_2`, `QUOTE_FEED_1`, `QUOTE_FEED_2`, `BASE_VAULT` = zero; `SCALE_FACTOR()` = 1e16 |
+
+Morpho's public API (`https://api.morpho.org/graphql`, read 2026-11-16 12:45 UTC) reports the same market
+as `listed: true`, created at block 51,057,568, borrow APY 6.55 %. It also lists two small cbZEC markets:
+`0x3b82e29f…bc10` (USDC loan, lltv 77 %, ≈ $13.7k supplied) and `0xce88294a…1c4f` (WETH loan, lltv 77 %,
+≈ $1k supplied). Base's own page `https://www.base.org/markets/lending/usdc` shows cbZEC as collateral at
+62.50 %.
+
+**Not established:** who curates the market and which vaults supply it; what `BASE_FEED_1` is (it was
+not probed — whether it is the Chainlink ZEC/USD feed of Addendum 16 or something else decides whether
+the peg caveat there applies); the size a borrow can take before the 86.9 % utilisation moves the rate.
+**What it changes:** BUILD-PLAN decision D3 keeps cbZEC disabled "until a Base lending market lists it".
+One now does. Enabling cbZEC is still a registry decision for the founder and needs the oracle question
+above answered first; the statement "no Morpho Blue market exists for it" is no longer true and the
+product must stop saying it.

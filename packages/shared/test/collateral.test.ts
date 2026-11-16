@@ -109,7 +109,7 @@ test("cbZEC's disabled reason is D3's, not the superseded 'v1.1 market' claim", 
   // cbZEC/USDC market ships" — a promise decision D3 of 2026-09-12 had already reversed. Oilskin
   // does not create that market; it waits for an external one. Pin the reversal, not the wording.
   assert.doesNotMatch(reason, /Oilskin cbZEC\/USDC market ships/i);
-  assert.match(reason, /does not create that market/i);
+  assert.match(reason, /does not create (that|a) market/i);
   assert.match(reason, /D3/);
   // And it points the ZEC holder at the route that does work today rather than leaving a dead end.
   assert.match(reason, /Solana/i);

@@ -151,3 +151,30 @@ test("refusals by name: no live grant, a rung the grant excludes, an account alr
   assert.equal(aboveDisarm.kind, "refused");
   if (aboveDisarm.kind === "refused") assert.match(aboveDisarm.reason, /already at or above/);
 });
+
+test("M-1 (2026-11-16): a clamped repay never exceeds the repay budget left — the clamp is done in base units, not by a float round trip", () => {
+  // 128.000008 USDC round-trips through Number(x)/1e6·1e6 as 128000008.00000001 → ceil 128000009: one unit over
+  // the budget, which the program refuses (RepayBudgetExceeded) every tick while the position sits unprotected.
+  const repayLeft = 128_000_008n;
+  const p = planProtect(base(ok(P_REPAY, DEBT, DEBT), rung("repay"), { grant: grant({ repayLeft }) }));
+  assert.equal(p.kind, "repay-only");
+  if (p.kind === "repay-only") assert.ok(p.repayUsdc <= repayLeft, `repayUsdc ${p.repayUsdc} > repayLeft ${repayLeft}`);
+});
+
+test("M-1 (2026-11-16): a sale repays no more of the Account's idle USDC than it holds, and the whole repayment stays inside the repay budget", () => {
+  // 64.000026 USDC idle round-trips to 64000027 — one unit the Account does not have.
+  const idle = 64_000_026n;
+  const v = { ...ok(P_DERISK, DEBT, 0), idleUsdc: idle };
+  const p = planProtect(base(v, rung("derisk")));
+  assert.equal(p.kind, "sale");
+  if (p.kind === "sale") assert.ok(p.repayUsdc - p.keeperUsdcIn <= idle, `idle part ${p.repayUsdc - p.keeperUsdcIn} > idle ${idle}`);
+  // and with the repay budget binding the sale: idle + keeper's payment ≤ the budget
+  const repayLeft = 128_000_008n;
+  const b = planProtect(base(v, rung("derisk"), { grant: grant({ repayLeft }) }));
+  assert.equal(b.kind, "sale");
+  if (b.kind === "sale") {
+    assert.ok(b.repayUsdc <= repayLeft, `repayUsdc ${b.repayUsdc} > repayLeft ${repayLeft}`);
+    assert.ok(b.repayUsdc - b.keeperUsdcIn <= idle, `idle part ${b.repayUsdc - b.keeperUsdcIn} > idle ${idle}`);
+    assert.match(b.note ?? "", /repay budget binds the sale/);
+  }
+});

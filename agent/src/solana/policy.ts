@@ -52,6 +52,8 @@ export type ProtectPlan =
 const ZEC_UNIT = 1e8;
 const USDC_UNIT = 1e6;
 
+const minBig = (...xs: bigint[]): bigint => xs.reduce((a, b) => (b < a ? b : a));
+
 function hfAfter(collateralZec: number, priceUsd: number, ltBps: number, debtUsdc: number): number {
   return debtUsdc <= 0 ? Number.POSITIVE_INFINITY : (collateralZec * priceUsd * ltBps) / 10_000 / debtUsdc;
 }
@@ -89,7 +91,9 @@ export function planProtect(i: PlanInput): ProtectPlan {
   // ---- repay-only from the Account's idle USDC
   if (idle >= needUsd) {
     const repay = Math.min(needUsd, repayLeft);
-    const repayUsdc = BigInt(Math.ceil(repay * USDC_UNIT));
+    // The clamps are applied in base units (AUDIT 2026-11-16 M-1): `Number(x) / 1e6 * 1e6` overshoots by one unit
+    // for ~1 % of amounts, and one unit over the idle balance or the budget is a revert every tick.
+    const repayUsdc = minBig(BigInt(Math.ceil(repay * USDC_UNIT)), v.idleUsdc, i.grant.repayLeft);
     const note = repay < needUsd ? `repay budget binds: ${repay.toFixed(2)} of ${needUsd.toFixed(2)} USDC needed (the program accepts an exhausted budget)` : undefined;
     return { kind: "repay-only", rungId: i.rung.id, repayUsdc, keeperUsdcIn: 0n, sellZec: 0n, expectedHf: hfAfter(C, P, LT, D - repay), note };
   }
@@ -125,7 +129,11 @@ export function planProtect(i: PlanInput): ProtectPlan {
   if (X > keeperCash) return { kind: "refused", reason: `keeper capital short: the sale needs ${X.toFixed(2)} USDC, the keeper has ${keeperCash.toFixed(2)}`, permanent: false };
   if (!(Y > 0) || !(X > 0)) return { kind: "refused", reason: "nothing to sell after the bounds", permanent: false };
   const sellZec = BigInt(Math.floor(Y * ZEC_UNIT));
-  const keeperUsdcIn = BigInt(Math.ceil(X * USDC_UNIT));
-  const repayUsdc = BigInt(Math.ceil(r1 * USDC_UNIT)) + keeperUsdcIn;
+  // In base units (M-1): the idle part is never more than the Account holds nor the budget allows, and the
+  // keeper's part never more than the budget's remainder nor the keeper's own USDC.
+  const r1Units = minBig(v.idleUsdc, i.grant.repayLeft);
+  const keeperUsdcIn = minBig(BigInt(Math.ceil(X * USDC_UNIT)), i.grant.repayLeft - r1Units, i.keeperUsdc);
+  if (keeperUsdcIn <= 0n) return { kind: "refused", reason: "nothing to sell after the bounds", permanent: false };
+  const repayUsdc = r1Units + keeperUsdcIn;
   return { kind: "sale", rungId: i.rung.id, repayUsdc, keeperUsdcIn, sellZec, expectedHf: hfAfter(C - Y, P, LT, Dp - X), note };
 }

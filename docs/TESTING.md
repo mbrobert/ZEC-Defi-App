@@ -15,16 +15,16 @@ MC = Monte Carlo.
 
 | Area | Command | Counted result |
 |---|---|---|
-| Contracts (Foundry) | `cd contracts && forge test` | **469 passed / 0 failed / 13 skipped** (482 total), 42 suites (re-measured 2026-09-26: the perps rail's Base half +9, AUDIT-2026-09-26's regression file +5) |
+| Contracts (Foundry) | `cd contracts && forge test` | **477 passed / 0 failed / 13 skipped** (490 total), 44 suites (2026-11-16: AUDIT-2026-11-16 PV-1 / PV-2 regressions; before that 469 / 482 / 42) (re-measured 2026-09-26: the perps rail's Base half +9, AUDIT-2026-09-26's regression file +5) |
 | Contracts, fork | `FORK_URL=<Base archive RPC> FORK_BLOCK=51222568 forge test --match-path test/fork/BaseFork.t.sol -vv`, then `scripts/check-cbzec-b20.sh <Base RPC> 51222568` | **13 / 13** |
 | Root ABI seam | `node scripts/verify-abi.mjs` | **543** selectors / topics / errors across 20 contracts (2026-09-26: the router's perps pair and the venue's `OrderBelowMinimum`; 2026-09-25: `HyperliquidPerpVenue` added) |
 | Shared | `npm test -w @zyo/shared` | **161** (2026-09-26: the venue's order rule; 2026-09-25: 19 perps tests) |
 | Solana, seams | `npm test -w @zyo/solana` | **22** |
 | Solana, program unit | `cd solana && cargo test --manifest-path programs/oilskin/Cargo.toml` | **12** |
 | Solana, localnet | `bash solana/scripts/localnet.sh` (terminal 1) · `cd solana && anchor test --skip-build --skip-local-validator` (terminal 2) | **36 passing / 0 failing** |
-| Keeper | `npm test -w @zyo/agent` | **395 tests / 81 suites**, plus its own ABI seam **168 / 168** and the IDL seam **77 / 77** (2026-09-26: the perps path, +45, and the $10-minimum block, +2; the venue's fragment on the seam) |
+| Keeper | `npm test -w @zyo/agent` | **411 tests** (2026-11-16: AUDIT-2026-11-16 K-H1, K-M1..M3, K-L2; before that 395 tests / 81 suites), plus its own ABI seam **168 / 168** and the IDL seam **77 / 77** (2026-09-26: the perps path, +45, and the $10-minimum block, +2; the venue's fragment on the seam) |
 | Yield | `npm test -w @zyo/yield` | **194** |
-| Web, unit | `npm test -w @zyo/web` | **212** |
+| Web, unit | `npm test -w @zyo/web` | **217** (216 pass, 1 skipped; 2026-11-16: the sign gate and the Solana slider round trip) |
 | Web, e2e | `cd web && npx playwright test` | **24 passed / 0 failed / 6 skipped** |
 | Web, signed path on localnet | `bash solana/scripts/localnet.sh` (terminal 1) · `npm run test:localnet -w @zyo/web` (terminal 2) | **1** — the wizard's open and the exit hatch's close, signed by a throwaway keypair against the real program |
 | Web, e2e against Base Sepolia | `cd web && npx playwright test -c playwright.sepolia.config.ts` | **3 skipped by name** until `docs/DEPLOYMENTS.md` carries Sepolia addresses |

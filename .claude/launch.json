@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web-demo",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "export PATH=\"$HOME/.nvm/versions/node/v22.23.2/bin:$PATH\"; cd web && NEXT_PUBLIC_FORCE_DEMO=1 npx next dev -p 3112"
+      ],
+      "port": 3112
+    }
+  ]
+}

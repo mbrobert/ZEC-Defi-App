@@ -155,8 +155,12 @@ class FakeDispatcher implements SolanaDispatcher {
     const fn = this.script.shift();
     return fn ? fn(intent) : this.default(intent);
   }
+  /** Scripted answers for `confirm`, in order; empty = CONFIRMED with the record's signature. */
+  confirmScript: ((record: SolanaDispatchRecord) => Promise<SolanaDispatchResult> | SolanaDispatchResult)[] = [];
   async confirm(record: SolanaDispatchRecord): Promise<SolanaDispatchResult> {
     this.confirms.push(record);
+    const fn = this.confirmScript.shift();
+    if (fn) return fn(record);
     return { status: "CONFIRMED", signature: record.txHash! };
   }
 }
@@ -178,7 +182,7 @@ class RecordingNotifier implements Notifier {
 const CONFIG: SolanaMonitorConfig = { concurrency: 2, unknownEscalationStreak: 2, maxDispatchAttempts: 3, maxResumePerTick: 25, dispatchDeadlineMs: 5_000, maxRungRefires: 2 };
 const PARAMS: SolanaValuationParams = { priceMaxAgeS: 180, independentMaxAgeS: 120, oracleDeviationBps: 200, hfToleranceBps: 100, requireIndependent: false };
 
-async function rig(makeDispatcher?: (path: string, log: Logger, notifier: RecordingNotifier) => SolanaDispatcher) {
+async function rig(makeDispatcher?: (path: string, log: Logger, notifier: RecordingNotifier) => SolanaDispatcher, configOver: Partial<SolanaMonitorConfig> = {}) {
   const world = new FakeWorld();
   const path = freshPath();
   const store = new KeeperStore<string, string>(path, { idCodec: BASE58_ID_CODEC });
@@ -190,7 +194,7 @@ async function rig(makeDispatcher?: (path: string, log: Logger, notifier: Record
   const dispatcher: SolanaDispatcher = makeDispatcher ? makeDispatcher(path, log, notifier) : fake;
   const escalations: { account: string; reasons: string[]; streak: number }[] = [];
   const watchdog = new ProgressWatchdog({ stallMs: 10_000, backoff: { initialMs: 10, maxMs: 100, factor: 2 } });
-  const monitor = new SolanaMonitor({ reader: world.reader(), store, ladder: SOLANA_LADDER, dispatcher, log, config: CONFIG, valuationParams: PARAMS, simPayer: Keypair.generate().publicKey, notifier, onEscalate: (e) => escalations.push(e) });
+  const monitor = new SolanaMonitor({ reader: world.reader(), store, ladder: SOLANA_LADDER, dispatcher, log, config: { ...CONFIG, ...configOver }, valuationParams: PARAMS, simPayer: Keypair.generate().publicKey, notifier, onEscalate: (e) => escalations.push(e) });
   const tick = async () => {
     world.advance();
     return monitor.tick(watchdog.beginTick());
@@ -606,6 +610,167 @@ describe("the cross-chain pair on the Solana monitor (D6 / A5.2)", () => {
     await r.tick();
     assert.equal(seen.length, 1, "the rung fired again and the dispatcher was asked");
     assert.ok(typeof seen[0] === "number" && seen[0]! >= 7100, `the burn should read about two hours old, got ${seen[0]}`);
+    await r.close();
+  });
+});
+
+describe("a crossing in flight is never forgotten (AUDIT 2026-11-16 H-1, M-3, L-2)", () => {
+  const BASE_HASH = "0x" + "ab".repeat(32);
+  const OTHER_HASH = "0x" + "cd".repeat(32);
+  const linked = { baseAccount: "0x1646587E543bC2f63137bAa86F8598E1274aED78" as const, recipientOnBase: ("0x" + "22".repeat(32)) as `0x${string}`, expectedRecipient: ("0x" + "22".repeat(32)) as `0x${string}`, status: "linked" as const };
+  const sent = { chain: "base" as const, stage: "burn-sent" as const, burnTxHash: BASE_HASH, amountUsdc: "0", recipient: linked.expectedRecipient, baseAccount: linked.baseAccount };
+  const confirmed = { ...sent, stage: "burn-confirmed" as const, amountUsdc: "1000000000", nonce: "0x" + "11".repeat(32) };
+  const wait = (): SolanaDispatchResult => ({ status: "SENT", signature: BASE_HASH, bridge: confirmed });
+
+  /** One account; derisk fires and is answered on Base: the record is SENT at `burn-sent`. */
+  async function openBurn(r: Awaited<ReturnType<typeof rig>>, id?: string): Promise<{ id: string; key: string }> {
+    const acct = id ?? r.world.add(10n * ONE_ZEC, debtForHf(10n * ONE_ZEC, 1000, 1.63), 0n);
+    await r.tick();
+    r.world.zecUsd = priceAt(between(R.derisk, R.emergency));
+    r.fake.script.push((intent) => {
+      intent.onPairRead?.(linked);
+      return { status: "SENT", signature: BASE_HASH, bridge: sent };
+    });
+    await r.tick();
+    const rec = r.store.listDispatches({ account: acct }).find((d) => d.bridge)!;
+    assert.equal(rec.status, "SENT");
+    return { id: acct, key: rec.key };
+  }
+
+  it("H-1: a bridge record that comes back FAILED mid-crossing goes back to the stage machine (confirm), never to a fresh dispatch that could burn a second time", async () => {
+    const r = await rig();
+    const { id, key } = await openBurn(r);
+    r.fake.confirmScript.push(() => ({ status: "FAILED", error: "Base burn: rpc: eth_getTransactionReceipt timed out" }));
+    await r.tick();
+    let rec = r.store.listDispatches({ account: id }).find((d) => d.key === key)!;
+    assert.equal(rec.status, "FAILED");
+    assert.equal(rec.bridge?.stage, "burn-sent", "the bridge is still on the record");
+    r.fake.confirmScript.push(() => ({ status: "SENT", signature: BASE_HASH, bridge: confirmed }));
+    await r.tick();
+    assert.equal(r.fake.calls.length, 1, "no second dispatch — only the burn that is already out");
+    assert.equal(r.fake.confirms.length, 2, "the FAILED bridge record was confirmed again");
+    rec = r.store.listDispatches({ account: id }).find((d) => d.key === key)!;
+    assert.equal(rec.status, "SENT");
+    assert.equal(rec.bridge?.stage, "burn-confirmed", "and it advanced");
+    await r.close();
+  });
+
+  it("H-1: a FAILED crossing still counts as in flight, and a more severe rung neither supersedes it nor starts a second burn", async () => {
+    const r = await rig();
+    const { id, key } = await openBurn(r);
+    r.fake.confirmScript.push(() => ({ status: "FAILED", error: "the delivery would fail: simulation blockhash not found" }));
+    await r.tick();
+    r.world.zecUsd = priceAt(R.emergency.hf - 0.02);
+    r.fake.confirmScript.push(() => ({ status: "FAILED", error: "Circle: 503" }));
+    const seen: (number | null | undefined)[] = [];
+    r.fake.script.push((intent) => {
+      seen.push(intent.inFlightAgeS);
+      return { status: "REFUSED", reason: "a Base burn is in flight — waiting for delivery" };
+    });
+    const t = await r.tick();
+    assert.equal(t.outcomes.find((o) => o.account === id)!.fired, "emergency");
+    assert.equal(seen.length, 1);
+    assert.ok(typeof seen[0] === "number", `the emergency rung is told a burn is in flight, got ${String(seen[0])}`);
+    const rec = r.store.listDispatches({ account: id }).find((d) => d.key === key)!;
+    assert.notEqual(rec.status, "SUPERSEDED", "the crossing is not superseded by the more severe rung");
+    assert.equal(rec.bridge?.burnTxHash, BASE_HASH);
+    await r.close();
+  });
+
+  it("H-1: waiting on Circle does not burn the attempt budget — a long wait then one transient failure is retried, not abandoned", async () => {
+    const r = await rig();
+    const { id, key } = await openBurn(r);
+    r.fake.confirmScript.push(wait, wait, wait, wait, wait, () => ({ status: "FAILED", error: "Circle: fetch failed" }));
+    for (let i = 0; i < 6; i++) await r.tick();
+    let rec = r.store.listDispatches({ account: id }).find((d) => d.key === key)!;
+    assert.equal(rec.status, "FAILED", `not abandoned: ${rec.error}`);
+    assert.equal(rec.attempts, 2, "the send and the one failure; the five waits are not attempts");
+    assert.ok(!r.escalations.some((e) => e.reasons.some((x) => x.includes("abandoned"))));
+    r.fake.confirmScript.push(wait);
+    await r.tick();
+    rec = r.store.listDispatches({ account: id }).find((d) => d.key === key)!;
+    assert.equal(rec.status, "SENT", "and the next tick picks the crossing back up");
+    assert.equal(r.fake.calls.length, 1);
+    await r.close();
+  });
+
+  it("H-1: repeated transient failures escalate once at the attempt cap and the crossing stays open; a permanent failure is ABANDONED, escalated, and still holds the account's bridge", async () => {
+    const r = await rig();
+    const { id, key } = await openBurn(r);
+    const fail = (): SolanaDispatchResult => ({ status: "FAILED", error: "Base burn: rpc down" });
+    r.fake.confirmScript.push(fail, fail, fail, fail);
+    for (let i = 0; i < 4; i++) await r.tick();
+    let rec = r.store.listDispatches({ account: id }).find((d) => d.key === key)!;
+    assert.equal(rec.status, "FAILED", "not abandoned: the burned USDC still has to be delivered");
+    assert.equal(r.fake.confirms.length, 4);
+    assert.equal(r.fake.calls.length, 1);
+    const crossing = r.escalations.filter((e) => e.reasons.some((x) => x.includes(key)));
+    assert.equal(crossing.length, 1, `one escalation at the cap, got ${JSON.stringify(r.escalations)}`);
+    assert.match(crossing[0].reasons[0], /crossing/);
+
+    r.fake.confirmScript.push(() => ({ status: "FAILED", error: "Circle's message is not the burn we made: amount", permanent: true }));
+    await r.tick();
+    rec = r.store.listDispatches({ account: id }).find((d) => d.key === key)!;
+    assert.equal(rec.status, "ABANDONED");
+    assert.ok(r.escalations.some((e) => e.reasons.some((x) => x.includes("retrying cannot fix this"))));
+    const confirmsBefore = r.fake.confirms.length;
+    r.world.zecUsd = priceAt(R.emergency.hf - 0.02);
+    const seen: (number | null | undefined)[] = [];
+    r.fake.script.push((intent) => {
+      seen.push(intent.inFlightAgeS);
+      return { status: "REFUSED", reason: "waiting" };
+    });
+    await r.tick();
+    assert.equal(r.fake.confirms.length, confirmsBefore, "an abandoned crossing is not re-entered");
+    assert.ok(typeof seen[0] === "number", "but the account still waits on it rather than burning again inside the stall window");
+    await r.close();
+  });
+
+  it("H-1: a result carrying a DIFFERENT burn never overwrites the crossing already on the record", async () => {
+    const r = await rig();
+    const { id, key } = await openBurn(r);
+    r.fake.confirmScript.push(() => ({ status: "SENT", signature: OTHER_HASH, bridge: { ...sent, burnTxHash: OTHER_HASH } }));
+    await r.tick();
+    const rec = r.store.listDispatches({ account: id }).find((d) => d.key === key)!;
+    assert.equal(rec.bridge?.burnTxHash, BASE_HASH, "the first burn is still the one tracked");
+    assert.ok(r.escalations.some((e) => e.reasons.some((x) => x.includes(OTHER_HASH))), "and the second is escalated by hash");
+    await r.close();
+  });
+
+  it("M-3: health recovering while a burn awaits attestation does not supersede the crossing — the USDC is still delivered", async () => {
+    const r = await rig();
+    const { id, key } = await openBurn(r);
+    r.world.zecUsd = 1000; // healthy again: this tick ends the episode
+    r.fake.confirmScript.push(wait);
+    await r.tick();
+    assert.equal(r.store.getAccount(id)!.episode, null, "the episode ended");
+    r.fake.confirmScript.push(() => ({ status: "CONFIRMED", signature: SIG(3), note: "delivered", bridge: { ...confirmed, stage: "delivered", deliveryTx: SIG(3) } }));
+    await r.tick();
+    const rec = r.store.listDispatches({ account: id }).find((d) => d.key === key)!;
+    assert.equal(r.fake.confirms.length, 2, "the crossing was resumed after the episode ended");
+    assert.equal(rec.status, "CONFIRMED");
+    assert.equal(rec.bridge?.stage, "delivered");
+    await r.close();
+  });
+
+  it("L-2: the resume budget rotates — a record waiting at the head does not starve the ones behind it", async () => {
+    const r = await rig(undefined, { maxResumePerTick: 1 });
+    const a = r.world.add(10n * ONE_ZEC, debtForHf(10n * ONE_ZEC, 1000, 1.63), 0n);
+    const b = r.world.add(10n * ONE_ZEC, debtForHf(10n * ONE_ZEC, 1000, 1.63), 0n);
+    await r.tick();
+    r.world.zecUsd = priceAt(between(R.derisk, R.emergency));
+    const burn = (intent: SolanaDispatchIntent): SolanaDispatchResult => {
+      intent.onPairRead?.(linked);
+      return { status: "SENT", signature: BASE_HASH, bridge: sent };
+    };
+    r.fake.script.push(burn, burn);
+    await r.tick();
+    assert.equal(r.store.listDispatches().filter((d) => d.bridge).length, 2);
+    for (let i = 0; i < 4; i++) r.fake.confirmScript.push((rec) => ({ status: "SENT", signature: BASE_HASH, bridge: rec.bridge! }));
+    await r.tick();
+    await r.tick();
+    const resumed = new Set(r.fake.confirms.map((c) => c.account));
+    assert.deepEqual([...resumed].sort(), [a, b].sort(), "both crossings were resumed across two ticks");
     await r.close();
   });
 });

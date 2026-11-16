@@ -162,7 +162,7 @@ export const ZEC_FORMS: Readonly<Record<ZecFormId, ZecForm>> = {
     lookalikePrefix: COUNTERFEIT_PREFIX,
     enabled: false,
     disabledReason:
-      "No lending market accepts cbZEC as collateral on Base: it is not an Aave v3 reserve and no Morpho Blue market exists for it. Oilskin does not create that market itself (decision D3, 2026-09-12) — it waits for an external market to list cbZEC. ZEC holders can borrow today through the Solana lane instead.",
+      "Not enabled as collateral here yet. cbZEC is not an Aave v3 reserve. A Morpho Blue market on Base does lend USDC against it (read 2026-11-16, liquidation threshold 62.5%), but it is not listed in Oilskin's registry: its price oracle has not been reviewed, and Oilskin does not create a market of its own (decision D3, 2026-09-12). The Solana lane lends against bridged ZEC; that program is built and not yet deployed.",
     riskNotes: [
       "Custodial wrapper: cbZEC exists only because Coinbase holds the ZEC behind it, and getting in or out goes through a Coinbase account.",
       "B20 precompile, not a plain ERC-20: balances can rebase through a live multiplier() and transfers can be blocked, seized or paused by the issuer. Oilskin can read the multiplier and simulate a zero-amount transfer from your own address; the issuer's policy itself is not readable and can change after the read.",

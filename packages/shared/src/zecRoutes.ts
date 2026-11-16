@@ -156,7 +156,7 @@ const CBZEC_ON_BASE: ZecRoute = {
   id: "cbzec-on-base",
   from: "base",
   to: "cbzec-base",
-  headline: "cbZEC is registered here, but no Base market lends against it.",
+  headline: "cbZEC is registered here, but not enabled as collateral yet.",
   steps: [
     "Confirm the token is the pinned cbZEC address and not one of the look-alikes that share its 0xb2000 prefix.",
     "You can swap it for USDC on Base. You cannot borrow against it here, for the reason below.",

@@ -48,7 +48,7 @@ test("the collateral capability is the ZEC form registry's answer, not this page
   assert.deepEqual(CBZEC_V1_CAPABILITIES.collateral, zecFormAvailability(ZEC_FORMS["cbzec-base"]));
   assert.equal(CBZEC_V1_CAPABILITIES.collateral.note, ZEC_FORMS["cbzec-base"].disabledReason);
   assert.doesNotMatch(CBZEC_V1_CAPABILITIES.collateral.note, /v1\.1|liquidity gate/i);
-  assert.match(CBZEC_V1_CAPABILITIES.collateral.note, /does not create that market/i);
+  assert.match(CBZEC_V1_CAPABILITIES.collateral.note, /does not create (that|a) market/i);
 });
 
 test("counterfeit classifier (shared) behaves as the onboarding card expects", () => {

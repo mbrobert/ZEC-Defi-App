@@ -9,6 +9,7 @@ import { BASE_TOKENS, CHAIN_ID, COLLATERAL_ASSETS } from "@/lib/chain";
 import { useAccountRead, useDeployment, useForecast, useGate, useMarket, useSession } from "@/lib/hooks";
 import { gateForDeployment } from "@/lib/gate";
 import { useMode } from "@/lib/mode";
+import { BASE_STALE_MARKET_WORDS, canSignWithMarketSource } from "@/lib/solana/sign-gate";
 import { fromAtomic } from "@/lib/math";
 import { buildOpenPlan, deadlineFromNow, type OpenPlanInput } from "@/lib/plan";
 import { grantPoolTokenPricing, grantTokenLimits, poolImpliedUsdPrices, runOpen, type Emit } from "@/lib/execute";
@@ -145,6 +146,8 @@ function Wizard() {
     }
   }, [planInput]);
 
+  // A live session never signs a loan sized from the bundled market snapshot (the hook falls back to it when the read fails).
+  const marketOk = canSignWithMarketSource(source, s.mode);
   const canNext = (): boolean => {
     switch (step) {
       case 0:
@@ -155,7 +158,7 @@ function Wizard() {
       case 2:
         return !!state.strategy;
       case 3:
-        return !!review && review.problems.length === 0 && calls.length > 0 && state.acknowledged;
+        return !!review && review.problems.length === 0 && calls.length > 0 && state.acknowledged && marketOk;
       default:
         return false;
     }
@@ -170,6 +173,7 @@ function Wizard() {
   // Live executor: wagmi wallet + viem reads/gas behind the small interfaces lib/execute expects.
   const run = async (emit: Emit) => {
     if (!planInput || !publicClient) return null;
+    if (!marketOk) throw new Error(BASE_STALE_MARKET_WORDS);
     const r = market.reserves[state.collateral];
     // Every token in ITS OWN units at ITS OWN price; a token that cannot be priced blocks the
     // grant step with the reason instead of signing a wrong line (audit wave 2, G-HIGH-1).
@@ -254,6 +258,9 @@ function Wizard() {
             <SignStep calls={calls} mode={s.mode} flowKind="open" summary={summary} owner={s.address} demoAccount={DEMO_ACCOUNT} run={run} />
           )}
 
+          {!marketOk && step === 3 && (
+            <p className="mt-4 text-[13px] text-oil-crit" data-testid="market-stale">{BASE_STALE_MARKET_WORDS}</p>
+          )}
           {step < 4 && (
             <div className="mt-7 flex justify-between">
               <button className="btn-ghost" onClick={back} disabled={step === 0} data-testid="wizard-back">

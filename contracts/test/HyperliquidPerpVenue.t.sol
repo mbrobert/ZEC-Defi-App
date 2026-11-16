@@ -480,7 +480,7 @@ contract HyperliquidPerpVenueTest is Test {
         _owner(abi.encodeCall(HyperliquidPerpVenue.addMargin, (120e6)));
     }
 
-    function test_reduce_sendsReduceOnlyBuyAndRerecordsOrClears_D9() public {
+    function test_reduce_sendsReduceOnlyBuyAndRerecords_D9_andAFullReduceKeepsTheRecord_PV1() public {
         _open();
         _scene(MARK, A0, NTL);
         _owner(abi.encodeCall(HyperliquidPerpVenue.reduce, (100, 50, uint40(block.timestamp + 600))));
@@ -491,11 +491,17 @@ contract HyperliquidPerpVenueTest is Test {
         assertEq(d, h.distance(A0, h.ntl(-400, MARK, SZ_DEC), MMR));
         vm.expectRevert(abi.encodeWithSelector(HyperliquidPerpVenue.ReduceExceedsPosition.selector, 501, SZ));
         _owner(abi.encodeCall(HyperliquidPerpVenue.reduce, (501, 50, uint40(block.timestamp + 600))));
-        vm.expectEmit(true, false, false, false, address(venue));
-        emit HyperliquidPerpVenue.EntryCleared(address(acct));
+        // the whole short: the IOC may fill partly or not at all, so the record stays (AUDIT PV-1)
+        vm.recordLogs();
         _owner(abi.encodeCall(HyperliquidPerpVenue.reduce, (SZ, 50, uint40(block.timestamp + 600))));
-        (,,,, uint40 at) = _entry();
-        assertEq(at, 0, "closing the whole short clears the record");
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i = 0; i < logs.length; i++) {
+            assertTrue(logs[i].topics[0] != HyperliquidPerpVenue.EntryCleared.selector, "a full reduce does not clear the record on intent");
+        }
+        (uint32 d2,, uint64 sz2,, uint40 at) = _entry();
+        assertGt(at, 0, "the record outlives the intent");
+        assertEq(d2, d);
+        assertEq(sz2, 400);
     }
 
     function test_withdrawToEvm_keepsTheFloorAndTheReserveWhileTheShortIsOpen() public {

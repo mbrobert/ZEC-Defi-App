@@ -3,6 +3,30 @@
 Abbreviations: ABI = application binary interface; HF = health factor; LP =
 liquidity provision; EIP = Ethereum Improvement Proposal.
 
+## 2026-11-16 — Seven weeks on: the chain moved, four audit passes, and the home page rebuilt around the one decision
+
+`docs/AUDIT-2026-11-16.md` and `docs/VERIFIED-BASE-FACTS.md` Addendum 18.
+
+- **The chain moved.** Aerodrome's gauges have been dead since 2026-10-22 (Aero is a separate deployment with a
+  different gauge interface) and the MaxFi/Snuggle engine has not followed: the curated Aerodrome pools earn nothing.
+  Recorded, not built on; the choice of what replaces them is the founder's (EXT-1). A Morpho Blue market lists cbZEC
+  (EXT-2): every surface that said none did is corrected; the asset stays disabled.
+- **Keeper.** A crossing that failed once mid-flight was re-dispatched as a new burn and the first was lost (K-H1,
+  High) — an undelivered crossing now always returns to the stage machine. `planProtect`'s one-unit overshoot (K-M1),
+  the Base send's unpinned nonce (K-M2), a crossing dropped when health recovered (K-M3), resume rotation (K-L2).
+- **Perps venue.** A full `reduce` no longer clears the entry before the order fills (PV-1); a stressed owner can
+  partly reduce or add margin (PV-2). No selector, event or error changed: the ABI bundle is still 543.
+- **Web.** A connected wallet can no longer sign a loan sized from the demo snapshot when the live read fails (W-A,
+  Solana and Base); the Solana slider's two directions agree when USDC is off $1 (W-C). The home page no longer
+  describes the forecast as a gate (D4/D5).
+- **Design.** Two typefaces (Bricolage Grotesque for headings, Hanken Grotesk for text) on the Oilcloth palette, a
+  twill ground, visible keyboard focus and reduced-motion support everywhere; the home page opens on a working
+  health-factor slider driven by the shared ladder functions, and lists the three starting points as one list.
+- **Open, by name:** S-PA (High — the Solana program's collateral sale is not tied to a keeper payment; fix before any
+  Solana deploy), Y-A, W-B, the perps dispatcher's nonce guard, and the Lows in the audit's table.
+- **Proof:** contracts 469 → **477** / 44 suites; keeper 395 → **411**; web 212 → **217**; shared 161, yield 194,
+  Solana seams 22 unchanged; prototypes 130 / 116 / 62 / 6; web e2e 24 passed / 6 skipped.
+
 ## 2026-09-26 — Every order the perps venue sent would have been rejected: the D7 pass's first wave, and its fix
 
 `docs/AUDIT-2026-09-26.md` — the adversarial read of D2, D4 and D5 the model policy reserves the stronger model for,

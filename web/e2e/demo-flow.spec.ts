@@ -120,7 +120,7 @@ test.describe("Oilskin demo mode", () => {
     await expect(onBase).toHaveAttribute("data-outcome", "no-lending-venue");
     // D3's reason, verbatim from the registry — not a softened paraphrase, and not "v1.1".
     const stops = onBase.getByTestId("route-stops");
-    await expect(stops).toContainText("does not create that market itself");
+    await expect(stops).toContainText("does not create a market of its own");
     await expect(stops).not.toContainText("v1.1");
     await expect(onBase.getByTestId("bridge-custody")).toHaveCount(0);
 
@@ -134,7 +134,7 @@ test.describe("Oilskin demo mode", () => {
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("New position");
 
     await expect(page.getByTestId("collateral-cbZEC")).toBeDisabled();
-    await expect(page.getByTestId("disabled-reason-cbZEC")).toContainText("No lending market");
+    await expect(page.getByTestId("disabled-reason-cbZEC")).toContainText("Not enabled as collateral here yet");
     await expect(page.getByTestId("collateral-WETH")).toHaveAttribute("aria-checked", "true");
     await page.getByTestId("collateral-cbBTC").click();
     await page.getByTestId("amount").fill("0.5");
@@ -236,7 +236,7 @@ test.describe("Oilskin demo mode", () => {
     await page.getByTestId("forecast-ack").check();
     await expect(page.getByTestId("wizard-next")).toBeEnabled();
     const disc = page.getByTestId("disclosures-review");
-    for (const t of ["Custodial entry", "Identity verification", "Jurisdiction", "cbZEC issuer powers", "cbZEC peg", "No cbZEC lending market on Base", "The yield forecast is a model", "Liquidation", "Impermanent loss", "Keeper dependence", "Smart-contract risk", "Demo mode"]) {
+    for (const t of ["Custodial entry", "Identity verification", "Jurisdiction", "cbZEC issuer powers", "cbZEC peg", "cbZEC is not enabled as collateral", "The yield forecast is a model", "Liquidation", "Impermanent loss", "Keeper dependence", "Smart-contract risk", "Demo mode"]) {
       await expect(disc).toContainText(t);
     }
     // Every planned call carries a plain sentence; Simple hides the technical args

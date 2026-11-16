@@ -61,9 +61,9 @@ export function clampSolanaHf(hf: number, b: SolanaHfBounds): number {
   return hf < b.minHf ? b.minHf : hf;
 }
 /** The HF a typed borrow means; +∞ for no borrow. */
-export function solanaHfForBorrow(borrowUsdc: number, collateralUsd: number, ltBps: number): number {
+export function solanaHfForBorrow(borrowUsdc: number, collateralUsd: number, ltBps: number, usdcPriceUsd: number = 1): number {
   if (!(borrowUsdc > 0) || !(collateralUsd > 0)) return Number.POSITIVE_INFINITY;
-  return (collateralUsd * ltBps) / 10_000 / borrowUsdc;
+  return (collateralUsd * ltBps) / 10_000 / (borrowUsdc * usdcPriceUsd);
 }
 
 export const toUnits = (x: number, decimals: number): bigint => BigInt(Math.round(x * 10 ** decimals));

@@ -25,8 +25,8 @@ you picked.
 v3 or Morpho Blue, and — if you want — deploy that USDC into an **Aerodrome
 Slipstream** liquidity position, after seeing what the model forecasts it will
 earn or lose. **cbZEC** is spendable in spot swaps and is registered as
-collateral but **disabled**, with the reason shown, because no lending market on
-Base lists it yet.
+collateral but **disabled**, with the reason shown: a Morpho Blue market on Base
+lends against it, and Oilskin has not reviewed that market or switched the asset on.
 
 **Solana module.** Deposit **bridged ZEC** on Kamino's ZCASH market, borrow
 **USDC**, and have the same risk ladder run by an Anchor program whose account

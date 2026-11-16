@@ -83,7 +83,7 @@ Every stage lives on the dispatch record in the keeper's store, so the state is 
 running: `bridge.stage`, `burnTxHash`, `nonce`, `messageHex`, `attestationHex`, `deliveryTx`.
 
 - **To see where a rung is**: find the dispatch whose `bridge` is set and read its stage.
-- **To resume**: start the keeper. A SENT record is re-entered every tick, one stage per tick.
+- **To resume**: start the keeper. Any record whose crossing is not yet delivered is re-entered every tick, one stage per tick — SENT, FAILED and REFUSED alike (AUDIT-2026-11-16 K-H1): a transient failure is retried and escalated once at the attempt cap, never re-dispatched as a new burn; the table rows below that say a FAILED stage waits for a person describe the escalation, not a stop.
 - **To deliver a stuck message without the keeper** (steps 3–4 only, and only the *delivery*): fetch
   `GET https://iris-api.circle.com/v2/messages/6?nonce=<nonce>` and hand the `message` and `attestation` to
   `receive_message`. The recipient is inside the message, so this cannot be misdirected — which is exactly

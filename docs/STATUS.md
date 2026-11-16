@@ -4,9 +4,9 @@
      below came from running the command in its own row, on the tree named here. README.md
      carries the prose and no numbers; this file carries the numbers and no prose. -->
 
-_Generated 2026-11-16T01:37:59Z by `npm run status` on darwin-arm64, Node 22.23.2._
+_Generated 2026-11-16T13:06:32Z by `npm run status` on darwin-arm64, Node 22.23.2._
 
-**Tree:** the working tree at `1759e55` on `main` — clean. Each suite ran against that tree, not against a published commit.
+**Tree:** the working tree at `74d83df` on `main`, with **42 file(s) modified on top of it** — including this one, when it is regenerated just before a commit. Each suite ran against that tree, not against a published commit.
 
 Abbreviations: ABI = application binary interface; e2e = end-to-end; HF = health factor;
 LP = liquidity provision; RPC = remote procedure call; CCTP = Circle's Cross-Chain Transfer Protocol.
@@ -15,7 +15,7 @@ LP = liquidity provision; RPC = remote procedure call; CCTP = Circle's Cross-Cha
 
 | Area | Command | Result |
 |---|---|---|
-| Contracts (Foundry) | `cd contracts && forge test` | **469 passed / 0 failed / 13 skipped** (482 total), 42 suites |
+| Contracts (Foundry) | `cd contracts && forge test` | **477 passed / 0 failed / 13 skipped** (490 total), 44 suites |
 | Contracts, fork | `FORK_URL=<Base archive RPC> forge test --match-path test/fork/BaseFork.t.sol` | not run — add `--all` |
 | Root ABI seam | `node scripts/verify-abi.mjs` | **543** selectors / topics / errors across 20 contracts |
 | Shared | `npm test -w @zyo/shared` | **161** |
@@ -23,9 +23,9 @@ LP = liquidity provision; RPC = remote procedure call; CCTP = Circle's Cross-Cha
 | Solana, program unit | `cd solana && cargo test --manifest-path programs/oilskin/Cargo.toml` | not run — add `--all` |
 | Solana, localnet | `bash solana/scripts/localnet.sh (terminal 1) · cd solana && anchor test --skip-build --skip-local-validator (terminal 2)` | not run — add `--all` |
 | Web, signed path on localnet | `bash solana/scripts/localnet.sh (terminal 1) · npm run test:localnet -w @zyo/web (terminal 2)` | not run — add `--all` |
-| Keeper | `npm test -w @zyo/agent` | **395**, plus its ABI seam **168 / 168** and the IDL seam **77 / 77** |
+| Keeper | `npm test -w @zyo/agent` | **411**, plus its ABI seam **168 / 168** and the IDL seam **77 / 77** |
 | Yield | `npm test -w @zyo/yield` | **194** |
-| Web, unit | `npm test -w @zyo/web` | **212** |
+| Web, unit | `npm test -w @zyo/web` | **217** |
 | Web, e2e | `cd web && npx playwright test` | not run — add `--all` |
 | Web, e2e against Base Sepolia | `cd web && npx playwright test -c playwright.sepolia.config.ts` | not run — add `--all` |
 | Prototypes | `node prototype/test/run-all.mjs` | verify-simple **130** · verify-advanced **116** · verify-toggle **62** · fuzz **6** |
@@ -72,6 +72,7 @@ with the severities the document itself records; the inquiries to external firms
 | [`AUDIT-2026-09-16.md`](AUDIT-2026-09-16.md) | Internal audit — what widening the invariant fuzz found (2026-09-16) | stated per finding in the document |
 | [`AUDIT-2026-09-25.md`](AUDIT-2026-09-25.md) | Internal audit — the cross-chain keeper path, read adversarially the day it gained its adapter (2026-09-25) | stated per finding in the document |
 | [`AUDIT-2026-09-26.md`](AUDIT-2026-09-26.md) | Internal audit — the perps module's money-moving code, read adversarially the day the keeper path and the rail landed (2026-09-26) | stated per finding in the document |
+| [`AUDIT-2026-11-16.md`](AUDIT-2026-11-16.md) | Internal audit — every module re-read after seven weeks, and what the chain changed meanwhile (2026-11-16) | 3 High · 8 Medium · 9 Low · 1 Info |
 | [`AUDIT-FINDINGS-2026-09-03.md`](AUDIT-FINDINGS-2026-09-03.md) | Project Oilskin — pre-audit findings, waves 1 and 2 (2026-09-03) | stated per finding in the document |
 
 Fix commits, the failing scenario and the regression test path are inside each record;
@@ -79,7 +80,7 @@ the regression tests themselves are `contracts/test/audit-regressions/`.
 
 ## Every document in docs/
 
-All 62 documents beside this one, from an `ls` of `docs/` at generation time, each with its own first heading, plus the subdirectory `docs/research/`.
+All 63 documents beside this one, from an `ls` of `docs/` at generation time, each with its own first heading, plus the subdirectory `docs/research/`.
 
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — Architecture — Base module v1 (the Solana module is designed in `SOLANA-ARCHITECTURE.md`)
 - [`AUDIT-2026-09-06.md`](AUDIT-2026-09-06.md) — Internal adversarial audit — wave 1, and the fix round it produced (2026-09-06)
@@ -90,6 +91,7 @@ All 62 documents beside this one, from an `ls` of `docs/` at generation time, ea
 - [`AUDIT-2026-09-16.md`](AUDIT-2026-09-16.md) — Internal audit — what widening the invariant fuzz found (2026-09-16)
 - [`AUDIT-2026-09-25.md`](AUDIT-2026-09-25.md) — Internal audit — the cross-chain keeper path, read adversarially the day it gained its adapter (2026-09-25)
 - [`AUDIT-2026-09-26.md`](AUDIT-2026-09-26.md) — Internal audit — the perps module's money-moving code, read adversarially the day the keeper path and the rail landed (2026-09-26)
+- [`AUDIT-2026-11-16.md`](AUDIT-2026-11-16.md) — Internal audit — every module re-read after seven weeks, and what the chain changed meanwhile (2026-11-16)
 - [`AUDIT-FINDINGS-2026-09-03.md`](AUDIT-FINDINGS-2026-09-03.md) — Project Oilskin — pre-audit findings, waves 1 and 2 (2026-09-03)
 - [`AUDIT-INQUIRY-2026-09-13.md`](AUDIT-INQUIRY-2026-09-13.md) — Audit inquiry — ready to send (draft, 2026-09-13)
 - [`AUDIT-LEDGER-2026-08.md`](AUDIT-LEDGER-2026-08.md) — Internal security review — v0.5 (2026-08-06)

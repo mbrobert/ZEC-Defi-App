@@ -35,7 +35,9 @@ const config: Config = {
         brass: "0 2px 14px rgba(205,163,85,.28)",
       },
       fontFamily: {
+        display: ["var(--font-display)", "ui-sans-serif", "-apple-system", "Segoe UI", "sans-serif"],
         sans: [
+          "var(--font-body)",
           "ui-sans-serif",
           "-apple-system",
           "BlinkMacSystemFont",

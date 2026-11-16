@@ -350,16 +350,19 @@ contract HyperliquidPerpVenue is Peripheral {
         uint256 spot = _spotE6(account);
         if (spot < usdcE6) revert ReserveShort(spot, usdcE6);
         uint256 d = PerpHealthLib.distanceBps(int256(l.ms.accountValue) + int256(uint256(usdcE6)), ntl, l.mmrBps);
-        uint256 hf = PerpHealthLib.equivalentHfBps(d);
-        uint256 reserve = _reserveE6(account, ntl, d, hf, l.mmrBps);
+        (bool has, uint256 bd, uint256 bhf) = _ladderBasis(account, d);
+        uint256 reserve = has ? _reserveE6(account, ntl, bd, bhf, l.mmrBps) : 0;
         if (spot - usdcE6 < reserve) revert ReserveShort(spot - usdcE6, reserve);
         _sendAction(HyperCoreLib.encodeUsdClassTransfer(usdcE6, true));
-        _record(account, d, hf, uint64(uint256(-int256(l.pos.szi))), reserve);
+        if (has) _record(account, bd, bhf, uint64(uint256(-int256(l.pos.szi))), reserve);
         emit MarginAdded(account, usdcE6);
     }
 
     /// @notice Reduce-only IOC buy of `sz` at the mark plus the band (`sz` = the whole position closes it).
-    ///         Re-records the entry with the intended remaining size, or clears it (D9).
+    ///         Re-records the entry with the intended remaining size (D9). A full reduce keeps the record as it is
+    ///         (AUDIT PV-1): the IOC lands seconds later and may fill partly or not at all, and the short it leaves
+    ///         must keep its ladder. The record outlives a closed position harmlessly: `protect` refuses a flat
+    ///         account by the live read (`NoPosition`), and `open`, which requires a flat account, overwrites it.
     function reduce(uint64 sz, uint16 maxSlippageBps, uint40 deadline) external {
         _requireOwnerPath();
         if (deadline < block.timestamp) revert Expired(deadline);
@@ -373,14 +376,10 @@ contract HyperliquidPerpVenue is Peripheral {
         _requireOrderValue(sz, l.mark);
         _sendAction(HyperCoreLib.encodeLimitOrder(PERP_ASSET, true, _toE8Px(l.mark, true, maxSlippageBps), _toE8Sz(sz), true, HyperCoreLib.TIF_IOC));
         uint64 remaining = size - sz;
-        if (remaining == 0) {
-            delete entryOf[account];
-            emit EntryCleared(account);
-        } else {
+        if (remaining != 0) {
             uint256 ntl = PerpHealthLib.notionalE6(-int64(remaining), l.mark, SZ_DECIMALS);
-            uint256 d = PerpHealthLib.distanceBps(int256(l.ms.accountValue), ntl, l.mmrBps);
-            uint256 hf = PerpHealthLib.equivalentHfBps(d);
-            _record(account, d, hf, remaining, _reserveE6(account, ntl, d, hf, l.mmrBps));
+            (bool has, uint256 bd, uint256 bhf) = _ladderBasis(account, PerpHealthLib.distanceBps(int256(l.ms.accountValue), ntl, l.mmrBps));
+            if (has) _record(account, bd, bhf, remaining, _reserveE6(account, ntl, bd, bhf, l.mmrBps));
         }
         emit ShortReduced(account, sz, remaining);
     }
@@ -600,6 +599,20 @@ contract HyperliquidPerpVenue is Peripheral {
         uint256 num = multiple * ntl * (BPS + d) * (BPS + mmr) * (disarmD - rungD);
         uint256 den = BPS * BPS * BPS * BPS;
         return (num + den - 1) / den;
+    }
+
+    /// @dev The distance and HF an owner's `reduce` / `addMargin` records (D9). Both actions only ever improve health,
+    ///      so neither may be refused for landing under the ladder minimum (AUDIT PV-2): at or above
+    ///      MIN_LADDER_ENTRY_HF the live post-action number is the basis, as before; under it, the previously recorded
+    ///      entry stays the basis (every record was written through `ladderFor`, so its ladder exists), which keeps the
+    ///      keeper's rungs where the owner last set them rather than lowering them to the thinnest ladder there is.
+    ///      With no record to keep (a short the owner opened outside `open`), `has` is false and nothing is written.
+    function _ladderBasis(address account, uint256 d) internal view returns (bool has, uint256 basisD, uint256 basisHf) {
+        uint256 hf = PerpHealthLib.equivalentHfBps(d);
+        if (hf >= PerpHealthLib.MIN_LADDER_ENTRY_HF_BPS) return (true, d, hf);
+        Entry storage e = entryOf[account];
+        if (e.at == 0) return (false, 0, 0);
+        return (true, e.distanceBps, e.hfBps);
     }
 
     function _record(address account, uint256 d, uint256 hf, uint64 sz, uint256 reserve) internal {

@@ -161,7 +161,7 @@ Circle's USDC, already minted into the account by CCTP, goes onto HyperCore thro
 for the reserve, perp dex 0 for the margin) as its own step, so that `open` reads the balances on HyperCore before it
 acts rather than assuming a credit that lands seconds later; `open(sz, band, deadline)` takes the margin as the perp
 balance already there, computes `d₀` and the reserve from live reads, and sends the IOC sell; `addMargin`; `reduce`
-(`sz` = the whole position closes it and clears the record); `withdrawToEvm(perpToSpotE6, spotToEvmE6)` — actions 7
+(`sz` = the whole position sends the closing order and leaves the record: the order may not fill, and the record's life follows the live position — AUDIT-2026-11-16 PV-1; under an equivalent HF of 1.10 `reduce` and `addMargin` still go through and keep the previous ladder — PV-2); `withdrawToEvm(perpToSpotE6, spotToEvmE6)` — actions 7
 and 13 in one call, gated on the floor and the reserve while the short is open — and then `burnToBase(amount,
 maxFee)` as a later transaction, because the USDC reaches the EVM side seconds after; `setBaseRecipient`,
 `setReserveMultipleBps`, `setPerpGrant` / `clearPerpGrant`. Keeper path: `protect(rung, topUpE6, reduceSz)` — rung 1

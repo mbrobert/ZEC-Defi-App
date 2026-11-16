@@ -53,7 +53,7 @@ await page.click(".tab[data-view=wiz]");
 check("wizard: Continue demands a wallet", (await page.textContent("#nextBtn")) === "Connect a wallet first");
 await page.click('#wizWallets [data-provider="metamask"]');
 check("wizard: MetaMask (demo) connected; account address shown", /0x7a3F…0c1E/.test(await page.textContent("#connectBtn")) && /account 0x/.test(await page.textContent("#wizWalletHint")));
-check("collateral: cbZEC listed 'spot only' with the shared disabledReason on hover; cbBTC/WETH enabled", /cbZEC · spot only/.test(await page.textContent("#assetSeg")) && await page.$eval('#assetSeg [data-asset="cbZEC"]', e => /No lending market accepts cbZEC/.test(e.dataset.tip || e.title)));
+check("collateral: cbZEC listed 'spot only' with the shared disabledReason on hover; cbBTC/WETH enabled", /cbZEC · spot only/.test(await page.textContent("#assetSeg")) && await page.$eval('#assetSeg [data-asset="cbZEC"]', e => /Not enabled as collateral here yet/.test(e.dataset.tip || e.title)));
 await page.click('#assetSeg [data-asset="cbZEC"]');
 check("collateral: picking cbZEC forces the Spot strategy and greys the borrow modes", (await o("S")).wiz.mode === "SPOT" && await page.$eval('#modeCards [data-mode="LP"]', e => e.getAttribute("aria-disabled") === "true"));
 await page.click('#assetSeg [data-asset="WETH"]');

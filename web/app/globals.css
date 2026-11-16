@@ -7,10 +7,13 @@
 }
 
 body {
-  @apply bg-oil-bg text-oil-ink antialiased;
+  @apply bg-oil-bg font-sans text-oil-ink antialiased;
+  /* Waxed cotton is a twill: a fine diagonal rib, barely there, under two soft pools of light. */
   background-image:
-    radial-gradient(1100px 500px at 85% -10%, rgba(205, 163, 85, 0.06), transparent 60%),
-    radial-gradient(900px 480px at -10% 110%, rgba(111, 169, 242, 0.05), transparent 55%);
+    repeating-linear-gradient(135deg, rgba(236, 234, 223, 0.016) 0 1px, transparent 1px 5px),
+    radial-gradient(1100px 500px at 85% -10%, rgba(205, 163, 85, 0.07), transparent 60%),
+    radial-gradient(900px 480px at -10% 110%, rgba(111, 169, 242, 0.04), transparent 55%);
+  background-attachment: fixed;
   font-size: 15px;
   line-height: 1.5;
 }
@@ -18,8 +21,31 @@ body {
 h1,
 h2,
 h3 {
-  letter-spacing: -0.02em;
-  font-weight: 650;
+  font-family: var(--font-display), ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
+  letter-spacing: -0.022em;
+  font-weight: 620;
+  text-wrap: balance;
+}
+
+p {
+  text-wrap: pretty;
+}
+
+/* One visible focus treatment everywhere a key can land. */
+:where(a, button, input, select, textarea, summary, [role="radio"], [tabindex]):focus-visible {
+  outline: 2px solid #ddb56a;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 .num {
@@ -239,4 +265,51 @@ input[type="range"]::-webkit-slider-thumb {
 
 .mono {
   @apply break-all font-mono text-[12.5px];
+}
+
+/* Cursor-following light on a surface (the technique of Magic UI's Magic Card and React Bits'
+   SpotlightCard, rewritten without a dependency): the component sets --mx / --my on pointer move
+   and a radial gradient follows them. Shown only while the pointer is over the element. */
+.spot {
+  position: relative;
+  isolation: isolate;
+}
+.spot::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: radial-gradient(260px circle at var(--mx, 50%) var(--my, 50%), rgba(205, 163, 85, 0.1), transparent 70%);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  pointer-events: none;
+}
+.spot:hover::before {
+  opacity: 1;
+}
+
+/* The home page's instrument: a surface a shade lighter than a card, with a brass hairline on top. */
+.instrument {
+  @apply rounded-[18px] border border-oil-line bg-oil-surface shadow-card;
+  background-image: linear-gradient(180deg, rgba(205, 163, 85, 0.07), transparent 28%);
+  box-shadow:
+    inset 0 1px 0 rgba(221, 181, 106, 0.35),
+    0 18px 48px rgba(0, 0, 0, 0.4);
+}
+
+/* Segmented choice: the selected option is a raised tile. */
+.seg {
+  @apply inline-flex gap-0.5 rounded-[11px] border border-oil-line bg-oil-bg2 p-0.5;
+}
+.seg > button {
+  @apply rounded-lg px-3 py-1.5 text-[13px] font-semibold text-oil-ink2 transition;
+}
+.seg > button[aria-checked="true"] {
+  @apply bg-oil-surface2 text-oil-ink shadow;
+}
+
+/* Rows of a list that are each a link. */
+.rowlink {
+  @apply grid items-center gap-x-6 gap-y-1 border-t border-oil-line px-5 py-5 transition first:border-t-0 hover:bg-white/[0.025] sm:grid-cols-[minmax(0,15rem)_minmax(0,1fr)_auto] sm:px-6;
 }

@@ -125,8 +125,8 @@ export const RISKS: readonly RiskItem[] = [
   },
   {
     id: "own-market",
-    title: "No cbZEC lending market on Base",
-    body: "No Base lending market lists cbZEC today, so cbZEC cannot be collateral here, and Oilskin will not create one of its own (decided 2026-09-12). cbZEC becomes usable on Base only if a lending market lists it; until then a ZEC holder's route is bridged ZEC on Solana, where the Oilskin program is built but not deployed.",
+    title: "cbZEC is not enabled as collateral",
+    body: "cbZEC cannot be collateral here yet. A Morpho Blue market on Base lends USDC against it (read 2026-11-16), but Oilskin has not reviewed that market's price oracle or listed it in its registry, and it will not create a market of its own (decided 2026-09-12). Until that review is done a ZEC holder's route is bridged ZEC on Solana, where the Oilskin program is built but not deployed.",
     scope: ["review"],
   },
   {
